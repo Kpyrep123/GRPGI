@@ -1,0 +1,176 @@
+{
+  "PLANETS": {
+    "cassilia": {
+      "id": "cassilia",
+      "name": "Кассилия",
+      "code": "C-24/09-HYP",
+      "color": "#f0e68c",
+      "dist": 22,
+      "speed": 0.0006,
+      "size": 9,
+      "location": {
+        "arm": "Рукав Персея",
+        "node": "Магистраль «Золотой путь»",
+        "system": "Бинарная система Кассилии (звезда G «Кассий»)",
+        "obj": "Кассилия (планета III)"
+      },
+      "physics": {
+        "type": "Каменистая, земного типа",
+        "mass": "5.01×10^24 кг (0.84 Земной)",
+        "radius": "6340 км",
+        "gravity": "0.9 G",
+        "climate": "Умеренный, аридный",
+        "temp": "+26°C",
+        "atm": "Кислородно-азотная, низкая влажность"
+      },
+      "socio": {
+        "pop": "~ 24 млн чел.",
+        "capital": "Иридия",
+        "gov": "Корпоративная олигархия (Совет инвесторов)",
+        "law": "Азартные игры легальны, долги криминализированы."
+      },
+      "pilot": {
+        "reference": "Бывший оплот пиратов. После Войны Сестёр перешла под частный контроль.",
+        "info": "Транспортный хаб, игорный бизнес, лицензии на швартовку, пустынная химия.",
+        "warning": "Орбитальный “вооружённый нейтралитет”. Огонь на поражение без авторизации."
+      },
+      "npcIds": [
+        "garrus",
+        "liara",
+        "hacket",
+        "mirabel"
+      ],
+      "floraIds": [
+        "amber_reed",
+        "glass_lichen",
+        "lumen_bloom"
+      ],
+      "faunaIds": [
+        "dust_manta",
+        "shard_hound",
+        "cave_eel"
+      ],
+      "market": [
+        {
+          "itemId": "casino_chips",
+          "price": 500
+        },
+        {
+          "itemId": "docking_clearance",
+          "price": 10000
+        },
+        {
+          "itemId": "sunshard_filter",
+          "price": 1800
+        },
+        {
+          "itemId": "dust_cloak",
+          "price": 2400
+        },
+        {
+          "itemId": "med_pack",
+          "price": 250
+        },
+        {
+          "itemId": "omni_gel",
+          "price": 380
+        },
+        {
+          "itemId": "lumen_spore",
+          "price": 950
+        },
+        {
+          "itemId": "field_decryptor",
+          "price": 420
+        }
+      ]
+    }
+  },
+  "PLANET_LIST": [
+    {
+      "id": "cassilia",
+      "name": "Кассилия",
+      "code": "C-24/09-HYP",
+      "color": "#f0e68c",
+      "dist": 22,
+      "speed": 0.0006,
+      "size": 9,
+      "location": {
+        "arm": "Рукав Персея",
+        "node": "Магистраль «Золотой путь»",
+        "system": "Бинарная система Кассилии (звезда G «Кассий»)",
+        "obj": "Кассилия (планета III)"
+      },
+      "physics": {
+        "type": "Каменистая, земного типа",
+        "mass": "5.01×10^24 кг (0.84 Земной)",
+        "radius": "6340 км",
+        "gravity": "0.9 G",
+        "climate": "Умеренный, аридный",
+        "temp": "+26°C",
+        "atm": "Кислородно-азотная, низкая влажность"
+      },
+      "socio": {
+        "pop": "~ 24 млн чел.",
+        "capital": "Иридия",
+        "gov": "Корпоративная олигархия (Совет инвесторов)",
+        "law": "Азартные игры легальны, долги криминализированы."
+      },
+      "pilot": {
+        "reference": "Бывший оплот пиратов. После Войны Сестёр перешла под частный контроль.",
+        "info": "Транспортный хаб, игорный бизнес, лицензии на швартовку, пустынная химия.",
+        "warning": "Орбитальный “вооружённый нейтралитет”. Огонь на поражение без авторизации."
+      },
+      "npcIds": [
+        "garrus",
+        "liara",
+        "hacket",
+        "mirabel"
+      ],
+      "floraIds": [
+        "amber_reed",
+        "glass_lichen",
+        "lumen_bloom"
+      ],
+      "faunaIds": [
+        "dust_manta",
+        "shard_hound",
+        "cave_eel"
+      ],
+      "market": [
+        {
+          "itemId": "casino_chips",
+          "price": 500
+        },
+        {
+          "itemId": "docking_clearance",
+          "price": 10000
+        },
+        {
+          "itemId": "sunshard_filter",
+          "price": 1800
+        },
+        {
+          "itemId": "dust_cloak",
+          "price": 2400
+        },
+        {
+          "itemId": "med_pack",
+          "price": 250
+        },
+        {
+          "itemId": "omni_gel",
+          "price": 380
+        },
+        {
+          "itemId": "lumen_spore",
+          "price": 950
+        },
+        {
+          "itemId": "field_decryptor",
+          "price": 420
+        }
+      ]
+    }
+  ]
+}

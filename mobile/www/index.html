@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Galactic RPG Mobile</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div id="setup-screen" class="boot-shell hidden">
+      <div class="boot-card">
+        <div class="eyebrow">PLAYER CLIENT</div>
+        <h1>Подключение к кампании</h1>
+        <p class="muted">На телефоне приложение не пишет в общий снапшот мира. Оно читает кампанию из облака и изменяет только разрешённые данные игрока: личный профиль, покупки в терминале и отправленные сообщения.</p>
+        <form id="setup-form" class="form stack-lg">
+          <label class="field">
+            <span>SUPABASE_URL</span>
+            <input class="input" name="url" placeholder="https://project.supabase.co" autocomplete="off" />
+          </label>
+          <label class="field">
+            <span>PUBLISHABLE / ANON KEY</span>
+            <textarea class="textarea monospace" name="anonKey" rows="4" placeholder="sb_publishable_... или anon key"></textarea>
+          </label>
+          <div class="grid-2">
+            <label class="field">
+              <span>CAMPAIGN_ID</span>
+              <input class="input" name="campaignId" placeholder="campaign-alpha" autocomplete="off" />
+            </label>
+            <label class="field">
+              <span>DEVICE_LABEL</span>
+              <input class="input" name="deviceLabel" placeholder="android-player" autocomplete="off" />
+            </label>
+          </div>
+          <details class="details-card">
+            <summary>Расширенные параметры</summary>
+            <div class="stack-md details-content">
+              <div class="grid-2">
+                <label class="field">
+                  <span>SNAPSHOT_TABLE</span>
+                  <input class="input" name="tableName" value="campaign_snapshots" />
+                </label>
+                <label class="field">
+                  <span>PLAYER_TABLE</span>
+                  <input class="input" name="playerTableName" value="campaign_players" />
+                </label>
+              </div>
+              <div class="grid-2">
+                <label class="field">
+                  <span>CHAT_TABLE</span>
+                  <input class="input" name="chatTableName" value="campaign_messages" />
+                </label>
+                <label class="field">
+                  <span>COMBAT_TABLE</span>
+                  <input class="input" name="combatRuntimeTableName" value="campaign_combat_runtime" />
+                </label>
+              </div>
+              <div class="grid-2">
+                <label class="field">
+                  <span>STORAGE_BUCKET</span>
+                  <input class="input" name="storageBucket" value="campaign-assets" />
+                </label>
+                <div></div>
+              </div>
+              <div class="grid-2">
+                <label class="field">
+                  <span>SNAPSHOT_POLL_MS</span>
+                  <input class="input" type="number" name="snapshotPollMs" value="30000" />
+                </label>
+                <label class="field">
+                  <span>LIVE_POLL_MS</span>
+                  <input class="input" type="number" name="livePollMs" value="5000" />
+                </label>
+              </div>
+            </div>
+          </details>
+          <div class="button-row">
+            <button class="primary" type="submit">Сохранить и подключить</button>
+            <button class="secondary" type="button" id="setup-clear-btn">Сбросить</button>
+          </div>
+          <div id="setup-status" class="status-line muted">После сохранения приложение проверит облако и откроет выбор персонажа.</div>
+        </form>
+      </div>
+    </div>
+
+    <div id="login-screen" class="boot-shell hidden">
+      <div class="boot-card">
+        <div class="eyebrow">CAMPAIGN LINKED</div>
+        <h1>Вход в профиль</h1>
+        <p class="muted">Конфигурация Supabase сохранена на устройстве. Сначала приложение подтягивает актуальный снапшот кампании, затем даёт выбрать персонажа.</p>
+        <form id="login-form" class="form stack-lg">
+          <label class="field">
+            <span>Персонаж</span>
+            <select class="input" id="login-player"></select>
+          </label>
+          <label class="field">
+            <span>Пароль</span>
+            <input class="input" id="login-pass" type="password" placeholder="Пароль персонажа" autocomplete="off" />
+          </label>
+          <div id="login-preview" class="preview-card"></div>
+          <div class="button-row">
+            <button class="primary" type="submit">Войти</button>
+            <button class="secondary" type="button" id="login-back-btn">Изменить подключение</button>
+          </div>
+          <div id="login-status" class="status-line muted"></div>
+        </form>
+      </div>
+    </div>
+
+    <div id="app-shell" class="app-shell hidden">
+      <header class="topbar">
+        <div>
+          <div class="eyebrow" id="campaign-label">CAMPAIGN</div>
+          <h1 id="screen-title">Мобильный клиент</h1>
+          <div class="topbar-sub" id="screen-subtitle">Player-only safe mode</div>
+        </div>
+              </header>
+
+      <main class="screens">
+        <section id="screen-home" class="screen active"></section>
+        <section id="screen-archive" class="screen"></section>
+        <section id="screen-market" class="screen"></section>
+        <section id="screen-chat" class="screen"></section>
+        <section id="screen-combat" class="screen"></section>
+        <section id="screen-profile" class="screen"></section>
+      </main>
+
+      <nav class="bottom-nav">
+        <button class="nav-btn active" data-screen="home" type="button"><span>Навигатор</span></button>
+        <button class="nav-btn" data-screen="archive" type="button"><span>Архив</span></button>
+        <button class="nav-btn" data-screen="market" type="button"><span>Терминал</span></button>
+        <button class="nav-btn" data-screen="chat" type="button"><span>Чат</span></button>
+        <button class="nav-btn" data-screen="combat" type="button"><span>Бой</span></button>
+        <button class="nav-btn" data-screen="profile" type="button"><span>Профиль</span></button>
+      </nav>
+    </div>
+
+    <div id="toast-stack" class="toast-stack"></div>
+    <script src="./app.js"></script>
+  </body>
+</html>

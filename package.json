@@ -1,0 +1,70 @@
+{
+  "name": "galactic-rpg-interface",
+  "version": "1.0.2",
+  "description": "Electron tabletop interface with isolated player/chat sync, guarded polling and draft-safe forms",
+  "author": "qwq",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron .",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder --win nsis",
+    "mobile:install": "npm --prefix mobile install",
+    "mobile:android:init": "npm --prefix mobile run android:init",
+    "mobile:sync": "npm --prefix mobile run sync",
+    "mobile:open:android": "npm --prefix mobile run open:android",
+    "mobile:copy": "npm --prefix mobile run copy",
+    "release": "electron-builder --win nsis --publish always",
+    "release:draft": "electron-builder --win nsis --publish onTagOrDraft",
+    "release:local": "electron-builder --win nsis --publish never"
+  },
+  "build": {
+    "appId": "com.qwq.galacticrpg",
+    "productName": "Galactic RPG Interface",
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer/**/*",
+      "package.json",
+      "README.md",
+      "SUPABASE_SETUP.md",
+      "supabase-setup.sql",
+      "SOUND_SETUP.md"
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "artifactName": "${productName}-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "buildVersion": "1.0.2.0",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "Kpyrep123",
+        "repo": "GRPGI",
+        "releaseType": "release"
+      }
+    ]
+  },
+  "devDependencies": {
+    "electron": "^37.0.0",
+    "electron-builder": "^26.8.1"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.57.4",
+    "electron-updater": "^6.8.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Kpyrep123/GRPGI.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Kpyrep123/GRPGI/issues"
+  },
+  "homepage": "https://github.com/Kpyrep123/GRPGI#readme"
+}

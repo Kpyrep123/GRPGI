@@ -1,0 +1,34 @@
+{
+  "ARTICLES": {
+    "sector_brief": {
+      "id": "sector_brief",
+      "name": "Секторный бриф",
+      "category": "Архив",
+      "summary": "Краткая сводка по ключевым мирам и действующим лицам кампании.",
+      "body": "Здесь можно хранить отдельные статьи архива, заметки по истории сектора, справки по фракциям и любые тексты, которые игроки будут читать вне карточек планет и NPC.",
+      "relatedPlanetIds": ["cassilia"],
+      "relatedNpcIds": [],
+      "relatedItemIds": [],
+      "relatedFloraIds": [],
+      "relatedFaunaIds": [],
+      "relatedArticleIds": [],
+      "visibility": { "playerIds": [] }
+    }
+  },
+  "ARTICLE_LIST": [
+    {
+      "id": "sector_brief",
+      "name": "Секторный бриф",
+      "category": "Архив",
+      "summary": "Краткая сводка по ключевым мирам и действующим лицам кампании.",
+      "body": "Здесь можно хранить отдельные статьи архива, заметки по истории сектора, справки по фракциям и любые тексты, которые игроки будут читать вне карточек планет и NPC.",
+      "relatedPlanetIds": ["cassilia"],
+      "relatedNpcIds": [],
+      "relatedItemIds": [],
+      "relatedFloraIds": [],
+      "relatedFaunaIds": [],
+      "relatedArticleIds": [],
+      "visibility": { "playerIds": [] }
+    }
+  ]
+}
