@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: file: https:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; worker-src 'self'; media-src 'self' data: blob: file: https:" />
+  <title>Galactic RPG Interface</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div id="app">
+    <div class="title-bar">
+      <div class="row">
+        <div id="sync-chip" class="chip">SYNC_MODE: LOCAL_FILE_CACHE</div>
+        <button id="sync-open-btn" class="tiny-btn">СИНХР.</button>
+        <div id="status-line" class="status-line">OS_CORE: v5.2 // STATUS: IDLE</div>
+      </div>
+      <div class="row">
+        <div id="state-path" class="tiny-note"></div>
+        <div id="clock">00:00:00</div>
+        <button id="ambient-mute-btn" class="tiny-btn" type="button">AMBIENT</button><input id="ambient-volume" class="ambient-slider" type="range" min="0" max="1" step="0.01" value="0.22" /><span id="ambient-volume-value" class="tiny-note">22%</span><button id="logout-btn" class="tiny-btn" style="display:none">LOGOUT</button>
+      </div>
+    </div>
+
+    <canvas id="galaxy"></canvas>
+    <div id="back-to-galaxy">← RETURN_TO_GALAXY</div>
+    <div id="return-to-center">◎ ВЕРНУТЬСЯ К ЦЕНТРУ</div>
+    <div id="add-system-map-btn">✚ ДОБАВИТЬ СИСТЕМУ</div>
+
+    <div id="hud-analysis" class="card">
+      <div class="hud-top">
+        <div>
+          <h2 id="obj-name">SCAN_IDLE</h2>
+          <div id="obj-subname" class="subtle">Выберите систему, затем планету</div>
+        </div>
+        <div id="obj-id" class="chip">---</div>
+      </div>
+      <div id="analysis-content" class="subtle hud-body">
+        Текущая сборка использует отдельные файлы мира для персонажей, планет, NPC, флоры, фауны и предметов.
+      </div>
+      <div id="market-trigger" style="display:none;margin-top:14px">
+        <button id="market-open-btn" class="primary">ОТКРЫТЬ ТОРГОВЫЙ ТЕРМИНАЛ</button>
+      </div>
+    </div>
+
+    <div id="login-screen" class="modal open">
+      <div class="login-box card">
+        <div class="mono accent tiny-space">GALACTIC_ACCESS_NODE</div>
+        <h2>Вход в профиль</h2>
+        <div id="login-copy" class="subtle login-copy">
+          Локальный вход и изменения профиля сохраняются между перезапусками. Исходные сущности мира вынесены в отдельные файлы. У каждого игрока теперь может быть свой доступ к планетам, NPC и статьям архива.
+        </div>
+        <div id="login-sync-bootstrap" class="boot-panel"></div>
+        <div id="login-auth-panel">
+          <div id="login-preview" class="card login-preview"><div class="small-note">Выбери персонажа из списка ниже.</div></div>
+          <div class="form">
+            <select id="char-select" class="select"></select>
+            <input id="pass-input" class="input" type="password" placeholder="Код доступа" />
+            <button id="login-btn" class="primary">ВОЙТИ</button>
+            <button id="reset-btn" class="ghost">СБРОСИТЬ СОХРАНЕНИЯ</button>
+            <button id="login-sync-btn" class="secondary" type="button">НАСТРОЙКИ СИНХР.</button>
+            <div id="login-error" class="error-line"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="dock">
+      <div class="dock-item" data-label="ПРОФИЛЬ" id="open-profile">
+        <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+      </div>
+      <div class="dock-item" data-label="АРХИВ" id="open-wiki">
+        <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
+      </div>
+      <div class="dock-item" data-label="РЫНОК" id="open-market-direct">
+        <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M6 6h15l-1.5 9h-12z"></path><path d="M6 6 5 3H2"></path><circle cx="9" cy="20" r="1"></circle><circle cx="18" cy="20" r="1"></circle></svg>
+      </div>
+      <div class="dock-item" data-label="СООБЩЕНИЯ" id="open-messages">
+        <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path><path d="M8 9h8"></path><path d="M8 13h5"></path></svg>
+      </div>
+      <div class="dock-item" data-label="НОВОСТИ" id="open-news">
+        <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M4 5h16v14H4z"></path><path d="M8 9h8"></path><path d="M8 13h5"></path></svg>
+      </div>
+      <div class="dock-item" data-label="ЗАДАНИЯ" id="open-tasks">
+        <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7H3V5h11"></path></svg>
+      </div>
+      <div id="gm-dock-btn" class="dock-item" style="display:none" data-label="WORLD CONFIG">
+        <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M12 2l3 7 7 3-7 3-3 7-3-7-7-3 7-3 3-7z"></path></svg>
+      </div>
+    </div>
+
+    <div id="mod-profile" class="fs-module">
+      <div class="fs-header">
+        <div class="mono accent">OPERATIVE_PROFILE_DATA</div>
+        <div class="row">
+          <button id="export-profile-btn" class="secondary">EXPORT_JSON</button>
+          <button class="secondary module-close">CLOSE_X</button>
+        </div>
+      </div>
+      <div id="profile-content"></div>
+    </div>
+
+    <div id="mod-market" class="fs-module">
+      <div class="fs-header">
+        <div>
+          <div id="market-title" class="mono accent">LOCAL_TERMINAL</div>
+          <div id="market-subtitle" class="subtle">Планетарный рынок</div>
+        </div>
+        <button class="secondary module-close">CLOSE_X</button>
+      </div>
+      <div class="module-wrap">
+        <div class="card pad18">
+          <div class="data-row"><span class="data-label">Текущий баланс</span><span id="market-balance" class="data-value">0 ₹</span></div>
+          <div class="data-row"><span class="data-label">Активная планета</span><span id="market-planet" class="data-value">—</span></div>
+        </div>
+        <div id="market-items" class="market-grid"></div>
+      </div>
+    </div>
+
+    <div id="mod-wiki" class="fs-module">
+      <div class="fs-header">
+        <div class="mono accent">NEURAL_ARCHIVE</div>
+        <button class="secondary module-close">CLOSE_X</button>
+      </div>
+      <div class="wiki-layout">
+        <div class="wiki-side card">
+          <div class="form">
+            <input id="wiki-input" class="input" placeholder="Система, планета, NPC, флора, фауна, предмет..." />
+            <button id="wiki-search-btn" class="primary">SEARCH_ARCHIVE</button>
+          </div>
+          <div id="wiki-results" class="result-stack"></div>
+        </div>
+        <div id="wiki-detail" class="wiki-body card">
+          <div class="subtle">Локальный архив ищет по отдельным файлам мира и показывает связанные сущности.</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="mod-messages" class="fs-module">
+      <div class="fs-header">
+        <div class="mono accent">COMMS_NODE</div>
+        <button class="secondary module-close">CLOSE_X</button>
+      </div>
+      <div id="messages-content" class="module-wrap"></div>
+    </div>
+
+    <div id="mod-news" class="fs-module">
+      <div class="fs-header">
+        <div class="mono accent">GALACTIC_NEWS_FEED</div>
+        <button class="secondary module-close">CLOSE_X</button>
+      </div>
+      <div id="news-content" class="module-wrap"></div>
+    </div>
+
+    <div id="mod-tasks" class="fs-module">
+      <div class="fs-header">
+        <div class="mono accent">MISSION_BOARD</div>
+        <button class="secondary module-close">CLOSE_X</button>
+      </div>
+      <div id="tasks-content" class="module-wrap"></div>
+    </div>
+
+    <div id="mod-gm" class="fs-module">
+      <div class="fs-header">
+        <div class="mono accent">WORLD_CONFIG_SHORTCUT</div>
+        <div class="row">
+                              <button class="secondary module-close">CLOSE_X</button>
+        </div>
+      </div>
+      <div id="gm-content"></div>
+    </div>
+
+    <div id="mod-config" class="fs-module">
+      <div class="fs-header">
+        <div>
+          <div class="mono accent">WORLD_CONFIGURATOR</div>
+          <div class="subtle">Добавление, удаление и редактирование планет, систем, NPC, флоры, фауны, предметов и шаблонов персонажей.</div>
+        </div>
+        <div class="row">
+          <button id="reset-world-btn" class="secondary">RESET_WORLD_FILES</button>
+          <button class="secondary module-close">CLOSE_X</button>
+        </div>
+      </div>
+      <div id="config-content"></div>
+    </div>
+
+
+    <div id="mod-tool" class="fs-module">
+      <div class="fs-header">
+        <div>
+          <div class="mono accent">FIELD_UTILITY_NODE</div>
+          <div class="subtle">Инструменты предметов, которые запускаются прямо из инвентаря.</div>
+        </div>
+        <button class="secondary module-close">CLOSE_X</button>
+      </div>
+      <div id="tool-content"></div>
+    </div>
+
+    <div id="mod-sync" class="fs-module">
+      <div class="fs-header">
+        <div>
+          <div class="mono accent">SUPABASE_СИНХР.</div>
+          <div class="subtle"></div>
+        </div>
+        <button class="secondary module-close">CLOSE_X</button>
+      </div>
+      <div id="sync-content"></div>
+    </div>
+
+    <div id="toast" class="toast info"></div>
+  </div>
+
+  <script src="./app.js"></script>
+</body>
+</html>

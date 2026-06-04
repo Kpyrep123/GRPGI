@@ -1,0 +1,406 @@
+{
+  "PLAYER_TEMPLATES": {
+    "u1": {
+      "id": "u1",
+      "role": "player",
+      "pass": "1234",
+      "shortName": "Shepard",
+      "displayName": "Коммандер Шепард",
+      "rank": "Spectre",
+      "avatarGlyph": "NS",
+      "credits": 25000,
+      "lore": "Оперативник особого допуска. Специализация: штурм, тактика и дипломатическое давление.",
+      "notes": "Репутация: высокий риск, высокий результат.",
+      "stats": {
+        "hpCurrent": 94,
+        "hpMax": 94,
+        "shieldCurrent": 120,
+        "shieldMax": 120,
+        "energyCurrent": 1,
+        "energyMax": 1
+      },
+      "abilities": {
+        "str": 14,
+        "dex": 13,
+        "con": 15,
+        "int": 12,
+        "wis": 11,
+        "cha": 16
+      },
+      "equipmentSlots": {
+        "primaryWeapon": "m97_viper",
+        "secondaryWeapon": "",
+        "armor": "n7_defender"
+      },
+      "inventory": [
+        {
+          "itemId": "med_pack",
+          "qty": 5
+        },
+        {
+          "itemId": "credit_chip",
+          "qty": 1
+        },
+        {
+          "itemId": "omni_gel",
+          "qty": 3
+        }
+      ],
+      "implants": [
+        {
+          "name": "Кибер-глаз Mk.II",
+          "energyCost": 0,
+          "desc": "Active"
+        },
+        {
+          "name": "Биотический усилитель L3",
+          "energyCost": 0,
+          "desc": "Stable"
+        },
+        {
+          "name": "Синтетические кости",
+          "energyCost": 0,
+          "desc": "98%"
+        }
+      ],
+      "social": {
+        "npcIds": [
+          "garrus",
+          "liara",
+          "hacket"
+        ],
+        "orgs": [
+          "Альянс Систем",
+          "Цитадель",
+          "Цербер (враждебно)"
+        ]
+      },
+      "currentPlanetId": "cassilia"
+    },
+    "u2": {
+      "id": "u2",
+      "role": "player",
+      "pass": "0000",
+      "shortName": "V",
+      "displayName": "Нетрaннер V",
+      "rank": "Mercenary",
+      "avatarGlyph": "VX",
+      "credits": 4200,
+      "lore": "Фрилансер с сильным уклоном в инфильтрацию, взлом и быстрые ударные операции.",
+      "notes": "Подозрительно быстро адаптируется к неизвестным сетям.",
+      "stats": {
+        "hpCurrent": 82,
+        "hpMax": 82,
+        "shieldCurrent": 18,
+        "shieldMax": 18,
+        "energyCurrent": 1,
+        "energyMax": 1
+      },
+      "abilities": {
+        "str": 10,
+        "dex": 17,
+        "con": 12,
+        "int": 16,
+        "wis": 12,
+        "cha": 11
+      },
+      "equipmentSlots": {
+        "primaryWeapon": "malorian_3516",
+        "secondaryWeapon": "malorian_3516",
+        "armor": "arasaka_vest"
+      },
+      "inventory": [
+        {
+          "itemId": "med_pack",
+          "qty": 2
+        },
+        {
+          "itemId": "virus_chip",
+          "qty": 1
+        }
+      ],
+      "implants": [
+        {
+          "name": "Kiroshi Optics",
+          "energyCost": 0,
+          "desc": "Active"
+        },
+        {
+          "name": "Sandevistan",
+          "energyCost": 0,
+          "desc": "Ready"
+        },
+        {
+          "name": "Mantis Blades",
+          "energyCost": 0,
+          "desc": "Online"
+        }
+      ],
+      "social": {
+        "npcIds": [
+          "jackie",
+          "viktor",
+          "judy"
+        ],
+        "orgs": [
+          "Afterlife",
+          "Moxes",
+          "Arasaka (в розыске)"
+        ]
+      },
+      "currentPlanetId": "cassilia"
+    },
+    "gm": {
+      "id": "gm",
+      "role": "gm",
+      "pass": "admin",
+      "shortName": "Master Node",
+      "displayName": "Ведущий",
+      "rank": "Game Master",
+      "avatarGlyph": "GM",
+      "credits": 0,
+      "lore": "Администратор локального узла. Управляет данными игроков и состоянием мира.",
+      "notes": "Права изменять ресурсы, статистику, инвентарь и лор.",
+      "stats": {
+        "hpCurrent": 999,
+        "hpMax": 999,
+        "shieldCurrent": 999,
+        "shieldMax": 999,
+        "energyCurrent": 1,
+        "energyMax": 1
+      },
+      "abilities": {
+        "str": 20,
+        "dex": 20,
+        "con": 20,
+        "int": 20,
+        "wis": 20,
+        "cha": 20
+      },
+      "equipmentSlots": {
+        "primaryWeapon": "m97_viper",
+        "secondaryWeapon": "",
+        "armor": "n7_defender"
+      },
+      "inventory": [],
+      "implants": [
+        {
+          "name": "Master Override",
+          "energyCost": 0,
+          "desc": "Enabled"
+        }
+      ],
+      "social": {
+        "npcIds": [
+          "mirabel"
+        ],
+        "orgs": [
+          "Control Node"
+        ]
+      },
+      "currentPlanetId": ""
+    }
+  },
+  "PLAYER_LIST": [
+    {
+      "id": "gm",
+      "role": "gm",
+      "pass": "admin",
+      "shortName": "Master Node",
+      "displayName": "Ведущий",
+      "rank": "Game Master",
+      "avatarGlyph": "GM",
+      "credits": 0,
+      "lore": "Администратор локального узла. Управляет данными игроков и состоянием мира.",
+      "notes": "Права изменять ресурсы, статистику, инвентарь и лор.",
+      "stats": {
+        "hpCurrent": 999,
+        "hpMax": 999,
+        "shieldCurrent": 999,
+        "shieldMax": 999,
+        "energyCurrent": 1,
+        "energyMax": 1
+      },
+      "abilities": {
+        "str": 20,
+        "dex": 20,
+        "con": 20,
+        "int": 20,
+        "wis": 20,
+        "cha": 20
+      },
+      "equipmentSlots": {
+        "primaryWeapon": "m97_viper",
+        "secondaryWeapon": "",
+        "armor": "n7_defender"
+      },
+      "inventory": [],
+      "implants": [
+        {
+          "name": "Master Override",
+          "energyCost": 0,
+          "desc": "Enabled"
+        }
+      ],
+      "social": {
+        "npcIds": [
+          "mirabel"
+        ],
+        "orgs": [
+          "Control Node"
+        ]
+      },
+      "currentPlanetId": ""
+    },
+    {
+      "id": "u1",
+      "role": "player",
+      "pass": "1234",
+      "shortName": "Shepard",
+      "displayName": "Коммандер Шепард",
+      "rank": "Spectre",
+      "avatarGlyph": "NS",
+      "credits": 25000,
+      "lore": "Оперативник особого допуска. Специализация: штурм, тактика и дипломатическое давление.",
+      "notes": "Репутация: высокий риск, высокий результат.",
+      "stats": {
+        "hpCurrent": 94,
+        "hpMax": 94,
+        "shieldCurrent": 120,
+        "shieldMax": 120,
+        "energyCurrent": 1,
+        "energyMax": 1
+      },
+      "abilities": {
+        "str": 14,
+        "dex": 13,
+        "con": 15,
+        "int": 12,
+        "wis": 11,
+        "cha": 16
+      },
+      "equipmentSlots": {
+        "primaryWeapon": "m97_viper",
+        "secondaryWeapon": "",
+        "armor": "n7_defender"
+      },
+      "inventory": [
+        {
+          "itemId": "med_pack",
+          "qty": 5
+        },
+        {
+          "itemId": "credit_chip",
+          "qty": 1
+        },
+        {
+          "itemId": "omni_gel",
+          "qty": 3
+        }
+      ],
+      "implants": [
+        {
+          "name": "Кибер-глаз Mk.II",
+          "energyCost": 0,
+          "desc": "Active"
+        },
+        {
+          "name": "Биотический усилитель L3",
+          "energyCost": 0,
+          "desc": "Stable"
+        },
+        {
+          "name": "Синтетические кости",
+          "energyCost": 0,
+          "desc": "98%"
+        }
+      ],
+      "social": {
+        "npcIds": [
+          "garrus",
+          "liara",
+          "hacket"
+        ],
+        "orgs": [
+          "Альянс Систем",
+          "Цитадель",
+          "Цербер (враждебно)"
+        ]
+      },
+      "currentPlanetId": "cassilia"
+    },
+    {
+      "id": "u2",
+      "role": "player",
+      "pass": "0000",
+      "shortName": "V",
+      "displayName": "Нетрaннер V",
+      "rank": "Mercenary",
+      "avatarGlyph": "VX",
+      "credits": 4200,
+      "lore": "Фрилансер с сильным уклоном в инфильтрацию, взлом и быстрые ударные операции.",
+      "notes": "Подозрительно быстро адаптируется к неизвестным сетям.",
+      "stats": {
+        "hpCurrent": 82,
+        "hpMax": 82,
+        "shieldCurrent": 18,
+        "shieldMax": 18,
+        "energyCurrent": 1,
+        "energyMax": 1
+      },
+      "abilities": {
+        "str": 10,
+        "dex": 17,
+        "con": 12,
+        "int": 16,
+        "wis": 12,
+        "cha": 11
+      },
+      "equipmentSlots": {
+        "primaryWeapon": "malorian_3516",
+        "secondaryWeapon": "malorian_3516",
+        "armor": "arasaka_vest"
+      },
+      "inventory": [
+        {
+          "itemId": "med_pack",
+          "qty": 2
+        },
+        {
+          "itemId": "virus_chip",
+          "qty": 1
+        }
+      ],
+      "implants": [
+        {
+          "name": "Kiroshi Optics",
+          "energyCost": 0,
+          "desc": "Active"
+        },
+        {
+          "name": "Sandevistan",
+          "energyCost": 0,
+          "desc": "Ready"
+        },
+        {
+          "name": "Mantis Blades",
+          "energyCost": 0,
+          "desc": "Online"
+        }
+      ],
+      "social": {
+        "npcIds": [
+          "jackie",
+          "viktor",
+          "judy"
+        ],
+        "orgs": [
+          "Afterlife",
+          "Moxes",
+          "Arasaka (в розыске)"
+        ]
+      },
+      "currentPlanetId": "cassilia"
+    }
+  ]
+}

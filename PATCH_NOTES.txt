@@ -1,0 +1,16 @@
+Patch 0.6.7c — global map editor + searchable route selectors + legend
+
+Replace:
+- renderer/app.js
+- renderer/styles.css
+
+Changes:
+- World Config system search now matches map labels too.
+- System entries in World Config show map label as primary title and ID as secondary line.
+- Quick GM system editor added directly on the global map HUD while focused on a system.
+  Editable from map: marker label, internal name, system color, marker style, Pos X/Y, route list.
+- Route target selection now uses an inline searchable typeahead field.
+- Long dropdowns in forms get an inline filter field above the native select.
+- Galaxy legend / faction color labels added and rendered as an overlay for both GM and players.
+  Stored in App.state.galaxyLegend and synced through the normal state snapshot.
+- Exiting a system no longer auto-recenters and auto-zooms out to the galaxy center. Focus resets from the system but the current view/zoom is preserved.

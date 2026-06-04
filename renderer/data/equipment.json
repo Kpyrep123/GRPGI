@@ -1,0 +1,460 @@
+{
+  "EQUIPMENT": {
+    "m97_viper": {
+      "id": "m97_viper",
+      "type": "weapon",
+      "name": "M-97 Viper",
+      "desc": "Снайперская винтовка",
+      "rarity": "редкий",
+      "tags": [
+        "дальнобойное",
+        "точность"
+      ],
+      "weaponSlot": "primary",
+      "damage": "2d8",
+      "energyDelta": 0
+    },
+    "n7_defender": {
+      "id": "n7_defender",
+      "type": "armor",
+      "name": "N7 Defender",
+      "desc": "Тяжёлая броня",
+      "rarity": "редкий",
+      "tags": [
+        "броня",
+        "mil-spec"
+      ],
+      "armorClass": 17,
+      "energyDelta": 0
+    },
+    "malorian_3516": {
+      "id": "malorian_3516",
+      "type": "weapon",
+      "name": "Malorian Arms 3516",
+      "desc": "Кастомный пистолет",
+      "rarity": "легендарный",
+      "tags": [
+        "пистолет",
+        "кастом"
+      ],
+      "weaponSlot": "secondary",
+      "damage": "2d6+2",
+      "energyDelta": 0
+    },
+    "arasaka_vest": {
+      "id": "arasaka_vest",
+      "type": "armor",
+      "name": "Arasaka Vest",
+      "desc": "Лёгкий защитный жилет",
+      "rarity": "обычный",
+      "tags": [
+        "лёгкая броня"
+      ],
+      "armorClass": 13,
+      "energyDelta": 0
+    },
+    "med_pack": {
+      "id": "med_pack",
+      "type": "consumable",
+      "name": "Мед-пак",
+      "desc": "Быстрое медицинское восстановление",
+      "rarity": "обычный",
+      "tags": [
+        "лечение"
+      ],
+      "energyDelta": 0
+    },
+    "omni_gel": {
+      "id": "omni_gel",
+      "type": "tech",
+      "name": "Омни-гель",
+      "desc": "Ремонт и вскрытие модулей",
+      "rarity": "обычный",
+      "tags": [
+        "ремонт",
+        "тех"
+      ],
+      "energyDelta": 0
+    },
+    "credit_chip": {
+      "id": "credit_chip",
+      "type": "misc",
+      "name": "Кредитный чип",
+      "desc": "Защищённый носитель средств",
+      "rarity": "обычный",
+      "tags": [
+        "финансы"
+      ],
+      "energyDelta": 0
+    },
+    "virus_chip": {
+      "id": "virus_chip",
+      "type": "tech",
+      "name": "Вирусный чип",
+      "desc": "Одноразовая инъекция вредоносного пакета",
+      "rarity": "редкий",
+      "tags": [
+        "взлом",
+        "одноразовое"
+      ],
+      "energyDelta": 0
+    },
+    "casino_chips": {
+      "id": "casino_chips",
+      "type": "misc",
+      "name": "Фишки казино",
+      "desc": "Локальная расчётная единица развлекательного квартала",
+      "rarity": "обычный",
+      "tags": [
+        "торговля"
+      ],
+      "energyDelta": 0
+    },
+    "docking_clearance": {
+      "id": "docking_clearance",
+      "type": "document",
+      "name": "Авторизация на швартовку",
+      "desc": "Допуск в частный орбитальный сектор",
+      "rarity": "редкий",
+      "tags": [
+        "документ",
+        "доступ"
+      ],
+      "energyDelta": 0
+    },
+    "sunshard_filter": {
+      "id": "sunshard_filter",
+      "type": "implant",
+      "name": "Солнечный фильтр “Shard”",
+      "desc": "Имплантный фильтр для ярких пустынных миров",
+      "rarity": "необычный",
+      "tags": [
+        "имплант",
+        "защита"
+      ],
+      "energyDelta": 0
+    },
+    "dust_cloak": {
+      "id": "dust_cloak",
+      "type": "armor",
+      "name": "Пустынный плащ “Dustcloak”",
+      "desc": "Лёгкая защита от песчаных штормов",
+      "rarity": "необычный",
+      "tags": [
+        "пустыня",
+        "маскировка"
+      ],
+      "armorClass": 13,
+      "energyDelta": 0
+    },
+    "lumen_spore": {
+      "id": "lumen_spore",
+      "type": "misc",
+      "name": "Люмен-спора",
+      "desc": "Биолюминесцентный образец флоры",
+      "rarity": "необычный",
+      "tags": [
+        "образец",
+        "био"
+      ],
+      "energyDelta": 0
+    },
+    "void_scale": {
+      "id": "void_scale",
+      "type": "misc",
+      "name": "Пластина пустотного ската",
+      "desc": "Редкий биоматериал с высокой ценностью",
+      "rarity": "редкий",
+      "tags": [
+        "трофей",
+        "био"
+      ],
+      "energyDelta": 0
+    },
+    "field_decryptor": {
+      "id": "field_decryptor",
+      "type": "hacking",
+      "name": "Полевой дешифратор",
+      "desc": "Компактный крипто-модуль для работы с сообщениями и защищёнными архивами.",
+      "rarity": "редкий",
+      "tags": [
+        "утилита",
+        "шифрование",
+        "архив"
+      ],
+      "mechanicType": "decryptor",
+      "mechanicTitle": "Крипто-модуль дешифратора",
+      "decryptorDefaultCipher": "caesar",
+      "mechanicHint": "Подходит для кодов Цезаря, Виженера, Атбаша и XOR/Base64. Полезен для работы с заметками, радиограммами и обрывками журналов.",
+      "decryptorMode": "decryptor",
+      "mechanicTimeLimit": 20,
+      "mechanicCodeLength": 5,
+      "mechanicSlots": 3,
+      "energyDelta": 0
+    }
+  },
+  "EQUIPMENT_LIST": [
+    {
+      "id": "arasaka_vest",
+      "type": "armor",
+      "name": "Arasaka Vest",
+      "desc": "Лёгкий защитный жилет",
+      "rarity": "обычный",
+      "tags": [
+        "лёгкая броня"
+      ],
+      "armorClass": 13,
+      "energyDelta": 0
+    },
+    {
+      "id": "m97_viper",
+      "type": "weapon",
+      "name": "M-97 Viper",
+      "desc": "Снайперская винтовка",
+      "rarity": "редкий",
+      "tags": [
+        "дальнобойное",
+        "точность"
+      ],
+      "weaponSlot": "primary",
+      "damage": "2d8",
+      "energyDelta": 0
+    },
+    {
+      "id": "malorian_3516",
+      "type": "weapon",
+      "name": "Malorian Arms 3516",
+      "desc": "Кастомный пистолет",
+      "rarity": "легендарный",
+      "tags": [
+        "пистолет",
+        "кастом"
+      ],
+      "weaponSlot": "secondary",
+      "damage": "2d6+2",
+      "energyDelta": 0
+    },
+    {
+      "id": "n7_defender",
+      "type": "armor",
+      "name": "N7 Defender",
+      "desc": "Тяжёлая броня",
+      "rarity": "редкий",
+      "tags": [
+        "броня",
+        "mil-spec"
+      ],
+      "armorClass": 17,
+      "energyDelta": 0
+    },
+    {
+      "id": "docking_clearance",
+      "type": "document",
+      "name": "Авторизация на швартовку",
+      "desc": "Допуск в частный орбитальный сектор",
+      "rarity": "редкий",
+      "tags": [
+        "документ",
+        "доступ"
+      ],
+      "energyDelta": 0
+    },
+    {
+      "id": "virus_chip",
+      "type": "tech",
+      "name": "Вирусный чип",
+      "desc": "Одноразовая инъекция вредоносного пакета",
+      "rarity": "редкий",
+      "tags": [
+        "взлом",
+        "одноразовое"
+      ],
+      "energyDelta": 0
+    },
+    {
+      "id": "credit_chip",
+      "type": "misc",
+      "name": "Кредитный чип",
+      "desc": "Защищённый носитель средств",
+      "rarity": "обычный",
+      "tags": [
+        "финансы"
+      ],
+      "energyDelta": 0
+    },
+    {
+      "id": "lumen_spore",
+      "type": "misc",
+      "name": "Люмен-спора",
+      "desc": "Биолюминесцентный образец флоры",
+      "rarity": "необычный",
+      "tags": [
+        "образец",
+        "био"
+      ],
+      "energyDelta": 0
+    },
+    {
+      "id": "med_pack",
+      "type": "consumable",
+      "name": "Мед-пак",
+      "desc": "Быстрое медицинское восстановление",
+      "rarity": "обычный",
+      "tags": [
+        "лечение"
+      ],
+      "energyDelta": 0
+    },
+    {
+      "id": "omni_gel",
+      "type": "tech",
+      "name": "Омни-гель",
+      "desc": "Ремонт и вскрытие модулей",
+      "rarity": "обычный",
+      "tags": [
+        "ремонт",
+        "тех"
+      ],
+      "energyDelta": 0
+    },
+    {
+      "id": "void_scale",
+      "type": "misc",
+      "name": "Пластина пустотного ската",
+      "desc": "Редкий биоматериал с высокой ценностью",
+      "rarity": "редкий",
+      "tags": [
+        "трофей",
+        "био"
+      ],
+      "energyDelta": 0
+    },
+    {
+      "id": "field_decryptor",
+      "type": "hacking",
+      "name": "Полевой дешифратор",
+      "desc": "Компактный крипто-модуль для работы с сообщениями и защищёнными архивами.",
+      "rarity": "редкий",
+      "tags": [
+        "утилита",
+        "шифрование",
+        "архив"
+      ],
+      "mechanicType": "decryptor",
+      "mechanicTitle": "Крипто-модуль дешифратора",
+      "decryptorDefaultCipher": "caesar",
+      "mechanicHint": "Подходит для кодов Цезаря, Виженера, Атбаша и XOR/Base64. Полезен для работы с заметками, радиограммами и обрывками журналов.",
+      "decryptorMode": "decryptor",
+      "mechanicTimeLimit": 20,
+      "mechanicCodeLength": 5,
+      "mechanicSlots": 3,
+      "energyDelta": 0
+    },
+    {
+      "id": "dust_cloak",
+      "type": "armor",
+      "name": "Пустынный плащ “Dustcloak”",
+      "desc": "Лёгкая защита от песчаных штормов",
+      "rarity": "необычный",
+      "tags": [
+        "пустыня",
+        "маскировка"
+      ],
+      "armorClass": 13,
+      "energyDelta": 0
+    },
+    {
+      "id": "sunshard_filter",
+      "type": "implant",
+      "name": "Солнечный фильтр “Shard”",
+      "desc": "Имплантный фильтр для ярких пустынных миров",
+      "rarity": "необычный",
+      "tags": [
+        "имплант",
+        "защита"
+      ],
+      "energyDelta": 0
+    },
+    {
+      "id": "casino_chips",
+      "type": "misc",
+      "name": "Фишки казино",
+      "desc": "Локальная расчётная единица развлекательного квартала",
+      "rarity": "обычный",
+      "tags": [
+        "торговля"
+      ],
+      "energyDelta": 0
+    }
+  ],
+  "WEAPON_OPTIONS": [
+    {
+      "id": "m97_viper",
+      "type": "weapon",
+      "name": "M-97 Viper",
+      "desc": "Снайперская винтовка",
+      "rarity": "редкий",
+      "tags": [
+        "дальнобойное",
+        "точность"
+      ],
+      "weaponSlot": "primary",
+      "damage": "2d8",
+      "energyDelta": 0
+    },
+    {
+      "id": "malorian_3516",
+      "type": "weapon",
+      "name": "Malorian Arms 3516",
+      "desc": "Кастомный пистолет",
+      "rarity": "легендарный",
+      "tags": [
+        "пистолет",
+        "кастом"
+      ],
+      "weaponSlot": "secondary",
+      "damage": "2d6+2",
+      "energyDelta": 0
+    }
+  ],
+  "ARMOR_OPTIONS": [
+    {
+      "id": "arasaka_vest",
+      "type": "armor",
+      "name": "Arasaka Vest",
+      "desc": "Лёгкий защитный жилет",
+      "rarity": "обычный",
+      "tags": [
+        "лёгкая броня"
+      ],
+      "armorClass": 13,
+      "energyDelta": 0
+    },
+    {
+      "id": "n7_defender",
+      "type": "armor",
+      "name": "N7 Defender",
+      "desc": "Тяжёлая броня",
+      "rarity": "редкий",
+      "tags": [
+        "броня",
+        "mil-spec"
+      ],
+      "armorClass": 17,
+      "energyDelta": 0
+    },
+    {
+      "id": "dust_cloak",
+      "type": "armor",
+      "name": "Пустынный плащ “Dustcloak”",
+      "desc": "Лёгкая защита от песчаных штормов",
+      "rarity": "необычный",
+      "tags": [
+        "пустыня",
+        "маскировка"
+      ],
+      "armorClass": 13,
+      "energyDelta": 0
+    }
+  ]
+}

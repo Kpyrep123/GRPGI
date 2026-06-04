@@ -1,0 +1,1998 @@
+(() => {
+  const DEFAULTS = {
+    tableName: 'campaign_snapshots',
+    playerTableName: 'campaign_players',
+    chatTableName: 'campaign_messages',
+    combatRuntimeTableName: 'campaign_combat_runtime',
+    storageBucket: 'campaign-assets',
+    snapshotPollMs: 30000,
+    livePollMs: 5000
+  };
+
+  const KEYS = {
+    config: 'grpg.mobile.syncConfig.v1',
+    cache: 'grpg.mobile.cache.v1',
+    session: 'grpg.mobile.session.v1'
+  };
+
+  const App = {
+    config: null,
+    cache: { snapshot: null, players: [], chat: [], combatRuntime: null, fetchedAt: null },
+    session: null,
+    data: {
+      world: null,
+      state: null,
+      players: new Map(),
+      playerRows: new Map(),
+      systems: [],
+      planets: new Map(),
+      articles: new Map(),
+      articleList: [],
+      newsList: [],
+      tasksList: [],
+      npcs: new Map(),
+      items: new Map(),
+      combatScenes: [],
+      combatRuntime: null,
+      combatRuntimeByScene: new Map(),
+      chatRows: []
+    },
+    ui: {
+      boot: 'setup',
+      screen: 'home',
+      archiveTab: 'articles',
+      selectedArchiveId: '',
+      selectedArchiveType: 'article',
+      selectedThreadKey: '',
+      selectedCombatSceneId: '',
+      focusedSystemId: '',
+      archiveQuery: '',
+      combatFullscreen: false,
+      combatViewByScene: {},
+      lastLivePullAt: null,
+      chatDrafts: {},
+      lastSnapshotRevision: 0,
+      lastChatStamp: null,
+      lastCombatStamp: null
+    },
+    pollers: { snapshot: null, live: null },
+    realtime: {
+      socket: null,
+      joined: false,
+      heartbeat: null,
+      reconnectTimer: null,
+      ref: 1,
+      pending: { players: false, chat: false, combat: false, snapshot: false },
+      flushTimer: null,
+      eventKeys: new Set(),
+      suppressClose: false
+    },
+    busy: false
+  };
+
+  const $ = sel => document.querySelector(sel);
+  const $$ = sel => Array.from(document.querySelectorAll(sel));
+
+  function esc(value) {
+    return String(value ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+  }
+
+  function deep(value) {
+    try { return JSON.parse(JSON.stringify(value)); }
+    catch { return value; }
+  }
+
+  function clamp(value, min, max) {
+    return Math.min(max, Math.max(min, value));
+  }
+
+  function notify(text, tone = 'ok') {
+    const stack = $('#toast-stack');
+    if (!stack) return;
+    const node = document.createElement('div');
+    node.className = `toast ${tone}`;
+    node.textContent = text;
+    stack.appendChild(node);
+    setTimeout(() => node.remove(), 3800);
+  }
+
+  function formatCredits(value) {
+    return `${Number(value || 0).toLocaleString('ru-RU')} cr`;
+  }
+
+  function formatDate(value) {
+    if (!value) return '—';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return String(value);
+    return date.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+  }
+
+  function initials(name) {
+    return String(name || '?').split(/\s+/).filter(Boolean).slice(0, 2).map(word => word[0]?.toUpperCase() || '').join('') || '?';
+  }
+
+  function slugText(value) {
+    return String(value || '').trim().toLowerCase();
+  }
+
+  function stripHtml(value) {
+    return String(value || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+
+  function normalizeConfig(payload = {}) {
+    return {
+      url: String(payload.url || '').trim(),
+      anonKey: String(payload.anonKey || '').trim(),
+      campaignId: String(payload.campaignId || '').trim(),
+      deviceLabel: String(payload.deviceLabel || '').trim(),
+      tableName: String(payload.tableName || DEFAULTS.tableName).trim() || DEFAULTS.tableName,
+      playerTableName: String(payload.playerTableName || DEFAULTS.playerTableName).trim() || DEFAULTS.playerTableName,
+      chatTableName: String(payload.chatTableName || DEFAULTS.chatTableName).trim() || DEFAULTS.chatTableName,
+      combatRuntimeTableName: String(payload.combatRuntimeTableName || DEFAULTS.combatRuntimeTableName).trim() || DEFAULTS.combatRuntimeTableName,
+      storageBucket: String(payload.storageBucket || DEFAULTS.storageBucket).trim() || DEFAULTS.storageBucket,
+      snapshotPollMs: Math.max(10000, Number(payload.snapshotPollMs || DEFAULTS.snapshotPollMs)),
+      livePollMs: Math.max(2500, Number(payload.livePollMs || DEFAULTS.livePollMs))
+    };
+  }
+
+  function hasConfig(config = App.config) {
+    return Boolean(config?.url && config?.anonKey && config?.campaignId);
+  }
+
+
+  function encodeStoragePath(path) {
+    return String(path || '').split('/').map(part => encodeURIComponent(part)).join('/');
+  }
+
+  function publicStorageUrl(storagePath, bucket = App.config?.storageBucket || DEFAULTS.storageBucket) {
+    const base = String(App.config?.url || '').replace(/\/+$/, '');
+    const cleanPath = String(storagePath || '').replace(/^\/+/, '');
+    if (!base || !cleanPath) return '';
+    return `${base}/storage/v1/object/public/${encodeURIComponent(bucket)}/${encodeStoragePath(cleanPath)}`;
+  }
+
+  function resolveMediaUrl(source, storagePath = '') {
+    const raw = String(source || '').trim();
+    if (storagePath) return publicStorageUrl(storagePath);
+    if (!raw) return '';
+    if (/^(data:|blob:|https?:|content:|capacitor:|file:)/i.test(raw)) {
+      return encodeURI(raw).replace(/%5C/g, '/');
+    }
+    if (/^[a-z]:\\/i.test(raw) || raw.includes('\\') || raw.startsWith('/world-data/') || raw.includes('/world-data/')) {
+      return '';
+    }
+    if (raw.startsWith('./') || raw.startsWith('../') || raw.startsWith('/')) {
+      return encodeURI(raw).replace(/%5C/g, '/');
+    }
+    if (/^[\w./-]+\.(png|jpe?g|webp|gif|svg)(\?.*)?$/i.test(raw)) {
+      return encodeURI(raw).replace(/%5C/g, '/');
+    }
+    return raw;
+  }
+
+  function renderAvatar(player, sizeClass = '') {
+    const image = resolveMediaUrl(player?.image || player?.avatarImage || player?.photo, player?.imageStoragePath || player?.avatarImageStoragePath || player?.photoStoragePath || '');
+    if (image) return `<div class="avatar-circle ${sizeClass}"><img src="${esc(image)}" alt="${esc(player?.displayName || player?.id || 'avatar')}" /></div>`;
+    return `<div class="avatar-circle ${sizeClass}">${esc(player?.avatarGlyph || initials(player?.displayName || player?.id))}</div>`;
+  }
+
+  function mediaFromEntity(entity) {
+    if (!entity) return '';
+    const pairs = [
+      ['image', 'imageStoragePath'],
+      ['coverImage', 'coverImageStoragePath'],
+      ['avatarImage', 'avatarImageStoragePath'],
+      ['photo', 'photoStoragePath'],
+      ['portrait', 'portraitStoragePath'],
+      ['thumbnail', 'thumbnailStoragePath'],
+      ['art', 'artStoragePath'],
+      ['backgroundImage', 'backgroundImageStoragePath']
+    ];
+    for (const [srcField, pathField] of pairs) {
+      const url = resolveMediaUrl(entity?.[srcField] || '', entity?.[pathField] || '');
+      if (url) return url;
+    }
+    if (entity._type === 'article') {
+      const planetId = Array.isArray(entity.relatedPlanetIds) ? entity.relatedPlanetIds[0] : '';
+      if (planetId && App.data.planets.has(planetId)) return mediaFromEntity(App.data.planets.get(planetId));
+    }
+    if (entity._type === 'system') {
+      const firstPlanet = Array.isArray(entity.planetIds) ? entity.planetIds.map(id => App.data.planets.get(id)).find(Boolean) : null;
+      if (firstPlanet) return mediaFromEntity(firstPlanet);
+    }
+    return '';
+  }
+
+  function renderEntityThumb(entity, mode = 'tile') {
+    const image = mediaFromEntity(entity);
+    const title = entity?.name || entity?.title || entity?.displayName || entity?.id || '—';
+    const cls = mode === 'hero' ? 'entity-hero-image' : 'entity-thumb';
+    if (image) return `<div class="${cls}"><img src="${esc(image)}" alt="${esc(title)}" /></div>`;
+    const glyph = initials(title);
+    return `<div class="${cls} placeholder-thumb"><span>${esc(glyph)}</span></div>`;
+  }
+
+  function renderEntityAvatar(entity, label = '', sizeClass = '') {
+    const image = mediaFromEntity(entity);
+    const title = label || entity?.name || entity?.title || entity?.displayName || entity?.id || '—';
+    if (image) return `<div class="avatar-circle ${sizeClass}"><img src="${esc(image)}" alt="${esc(title)}" /></div>`;
+    return `<div class="avatar-circle ${sizeClass}">${esc(entity?.avatarGlyph || initials(title))}</div>`;
+  }
+
+  function equipmentLabel(slot) {
+    return ({ primaryWeapon: 'Основное оружие', secondaryWeapon: 'Вторичное оружие', armor: 'Броня' }[slot] || slot);
+  }
+
+  function findPlayerById(playerId) {
+    return App.data.players.get(playerId) || null;
+  }
+
+  function findNpcById(npcId) {
+    return App.data.npcs.get(npcId) || null;
+  }
+
+  function threadEntity(thread) {
+    if (!thread) return null;
+    if (thread.type === 'npc') return findNpcById(thread.npcId);
+    return findPlayerById(thread.otherId);
+  }
+
+  function messageActor(row, thread = null) {
+    if (!row) return null;
+    if (row.sender_type === 'npc' || row.npc_id) return findNpcById(row.npc_id || row.sender_id);
+    if (row.sender_id) return findPlayerById(row.sender_id);
+    return threadEntity(thread);
+  }
+
+  function archiveItemLabel(item) {
+    return item?.name || item?.title || item?.id || '—';
+  }
+
+  const MOBILE_READ_MARKERS_KEY = 'grpg.mobile.readMarkers.v1';
+
+  function loadMobileReadMarkers() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(MOBILE_READ_MARKERS_KEY) || '{}');
+      return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+
+  function saveMobileReadMarkers(markers = {}) {
+    try { localStorage.setItem(MOBILE_READ_MARKERS_KEY, JSON.stringify(markers || {})); } catch {}
+  }
+
+  function isArchiveArticleRead(id) {
+    const key = String(id || '').trim();
+    if (!key) return true;
+    return Boolean(loadMobileReadMarkers().articles?.[key]);
+  }
+
+  function markArchiveArticleRead(id) {
+    const key = String(id || '').trim();
+    if (!key) return;
+    const markers = loadMobileReadMarkers();
+    markers.articles = markers.articles && typeof markers.articles === 'object' ? markers.articles : {};
+    markers.articles[key] = new Date().toISOString();
+    saveMobileReadMarkers(markers);
+  }
+
+  function sortArchiveItemsForMobile(items = [], tab = '') {
+    const list = [...(Array.isArray(items) ? items : [])];
+    if (tab !== 'articles') return list.sort((a, b) => slugText(archiveItemLabel(a)).localeCompare(slugText(archiveItemLabel(b)), 'ru'));
+    return list.sort((a, b) => {
+      const ar = isArchiveArticleRead(a?.id);
+      const br = isArchiveArticleRead(b?.id);
+      if (ar !== br) return ar ? 1 : -1;
+      return slugText(archiveItemLabel(a)).localeCompare(slugText(archiveItemLabel(b)), 'ru');
+    });
+  }
+
+  function normalizeRichHtml(html = '') {
+    const template = document.createElement('template');
+    template.innerHTML = String(html || '');
+    template.content.querySelectorAll('img').forEach(img => {
+      const src = resolveMediaUrl(img.getAttribute('src') || '', img.getAttribute('data-storage-path') || img.dataset.storagePath || '');
+      if (!src) {
+        const stub = document.createElement('div');
+        stub.className = 'media-missing';
+        stub.textContent = 'Изображение недоступно на мобильном устройстве';
+        img.replaceWith(stub);
+        return;
+      }
+      img.setAttribute('src', src);
+      img.setAttribute('loading', 'lazy');
+      img.setAttribute('decoding', 'async');
+    });
+    template.content.querySelectorAll('a[href]').forEach(link => {
+      const href = String(link.getAttribute('href') || '').trim();
+      if (!href || href.startsWith('article:')) return;
+      if (/^(https?:|mailto:|tel:|#)/i.test(href)) return;
+      link.setAttribute('href', resolveMediaUrl(href));
+    });
+    return template.innerHTML;
+  }
+
+  function maxUpdatedAt(rows = []) {
+    let value = null;
+    rows.forEach(row => {
+      const stamp = row?.updated_at || row?.client_updated_at || row?.created_at || null;
+      if (!stamp) return;
+      if (!value || new Date(stamp) > new Date(value)) value = stamp;
+    });
+    return value;
+  }
+
+  function combatRowActiveSceneId(row) {
+    return String(row?.active_scene_id || row?.activeSceneId || '').trim();
+  }
+
+  function combatRowRuntime(row) {
+    if (!row) return {};
+    const raw = row.runtime_json || row.runtime || {};
+    return raw && typeof raw === 'object' ? deep(raw) : {};
+  }
+
+  function mergeCombatRuntime(current, incoming) {
+    if (!current) return incoming ? deep(incoming) : null;
+    if (!incoming) return deep(current);
+    const currentRevision = Number(current.revision || 0);
+    const incomingRevision = Number(incoming.revision || 0);
+    if (incomingRevision && incomingRevision !== currentRevision) return incomingRevision > currentRevision ? deep(incoming) : deep(current);
+    const currentStamp = new Date(current.updated_at || current.client_updated_at || 0).getTime();
+    const incomingStamp = new Date(incoming.updated_at || incoming.client_updated_at || 0).getTime();
+    const preferred = incomingStamp >= currentStamp ? deep(incoming) : deep(current);
+    const fallback = incomingStamp >= currentStamp ? deep(current) : deep(incoming);
+    return {
+      ...fallback,
+      ...preferred,
+      scene_json: preferred.scene_json || preferred.scene || fallback.scene_json || fallback.scene || {},
+      runtime_json: preferred.runtime_json || preferred.runtime || fallback.runtime_json || fallback.runtime || {}
+    };
+  }
+
+  function getCombatSceneRuntime(sceneId) {
+    const key = String(sceneId || '').trim();
+    if (!key) return {};
+    const cached = App.data.combatRuntimeByScene instanceof Map ? App.data.combatRuntimeByScene.get(key) : null;
+    if (cached && typeof cached === 'object') return cached;
+    const activeSceneId = combatRowActiveSceneId(App.data.combatRuntime);
+    if (activeSceneId && activeSceneId === key) return combatRowRuntime(App.data.combatRuntime);
+    return {};
+  }
+
+  function getCombatView(sceneId) {
+    const key = String(sceneId || '').trim();
+    const current = App.ui.combatViewByScene?.[key] || {};
+    return {
+      scale: clamp(Number(current.scale || 1), 1, 4),
+      panX: Number(current.panX || 0),
+      panY: Number(current.panY || 0)
+    };
+  }
+
+  function setCombatView(sceneId, patch = {}, viewport = null) {
+    const key = String(sceneId || '').trim();
+    if (!key) return getCombatView(key);
+    const base = getCombatView(key);
+    const scale = clamp(Number(patch.scale ?? base.scale), 1, 4);
+    let panX = Number(patch.panX ?? base.panX);
+    let panY = Number(patch.panY ?? base.panY);
+    if (viewport) {
+      const rect = viewport.getBoundingClientRect();
+      const maxX = Math.max(0, ((rect.width * scale) - rect.width) / 2);
+      const maxY = Math.max(0, ((rect.height * scale) - rect.height) / 2);
+      panX = clamp(panX, -maxX, maxX);
+      panY = clamp(panY, -maxY, maxY);
+    }
+    const next = { scale, panX, panY };
+    App.ui.combatViewByScene = { ...(App.ui.combatViewByScene || {}), [key]: next };
+    return next;
+  }
+
+  function combatStageTransformStyle(sceneId) {
+    const view = getCombatView(sceneId);
+    return `--cam-scale:${view.scale};--cam-pan-x:${view.panX}px;--cam-pan-y:${view.panY}px;`;
+  }
+
+  function bindCombatViewport(viewport) {
+    if (!viewport || viewport.dataset.bound === '1') return;
+    viewport.dataset.bound = '1';
+    const sceneId = String(viewport.dataset.sceneId || '').trim();
+    if (!sceneId) return;
+    viewport.style.touchAction = 'none';
+    const state = { pointers: new Map(), dragOrigin: null, pinchBase: null };
+
+    const midpoint = pts => ({ x: pts.reduce((sum, pt) => sum + pt.x, 0) / pts.length, y: pts.reduce((sum, pt) => sum + pt.y, 0) / pts.length });
+    const distance = (a, b) => Math.hypot((b.x || 0) - (a.x || 0), (b.y || 0) - (a.y || 0));
+
+    const refreshStage = () => {
+      const stage = viewport.querySelector('.combat-board-stage');
+      if (!stage) return;
+      const view = setCombatView(sceneId, {}, viewport);
+      stage.style.setProperty('--cam-scale', String(view.scale));
+      stage.style.setProperty('--cam-pan-x', `${view.panX}px`);
+      stage.style.setProperty('--cam-pan-y', `${view.panY}px`);
+    };
+
+    const resetFromPointers = () => {
+      const points = [...state.pointers.values()];
+      if (points.length >= 2) {
+        const pair = points.slice(0, 2);
+        const view = getCombatView(sceneId);
+        state.pinchBase = { center: midpoint(pair), distance: Math.max(12, distance(pair[0], pair[1])), scale: view.scale, panX: view.panX, panY: view.panY };
+        state.dragOrigin = null;
+        return;
+      }
+      state.pinchBase = null;
+      if (points.length === 1) {
+        const point = points[0];
+        const view = getCombatView(sceneId);
+        state.dragOrigin = { x: point.x, y: point.y, panX: view.panX, panY: view.panY };
+        return;
+      }
+      state.dragOrigin = null;
+    };
+
+    viewport.addEventListener('pointerdown', event => {
+      state.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      viewport.setPointerCapture?.(event.pointerId);
+      resetFromPointers();
+      event.preventDefault();
+    });
+
+    viewport.addEventListener('pointermove', event => {
+      if (!state.pointers.has(event.pointerId)) return;
+      state.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      const points = [...state.pointers.values()];
+      if (points.length >= 2 && state.pinchBase) {
+        const pair = points.slice(0, 2);
+        const center = midpoint(pair);
+        const nextScale = clamp(state.pinchBase.scale * (distance(pair[0], pair[1]) / Math.max(12, state.pinchBase.distance)), 1, 4);
+        setCombatView(sceneId, {
+          scale: nextScale,
+          panX: state.pinchBase.panX + (center.x - state.pinchBase.center.x),
+          panY: state.pinchBase.panY + (center.y - state.pinchBase.center.y)
+        }, viewport);
+        refreshStage();
+        event.preventDefault();
+        return;
+      }
+      if (points.length === 1 && state.dragOrigin) {
+        const point = points[0];
+        setCombatView(sceneId, {
+          panX: state.dragOrigin.panX + (point.x - state.dragOrigin.x),
+          panY: state.dragOrigin.panY + (point.y - state.dragOrigin.y)
+        }, viewport);
+        refreshStage();
+        event.preventDefault();
+      }
+    });
+
+    const releasePointer = event => {
+      state.pointers.delete(event.pointerId);
+      viewport.releasePointerCapture?.(event.pointerId);
+      resetFromPointers();
+    };
+
+    viewport.addEventListener('pointerup', releasePointer);
+    viewport.addEventListener('pointercancel', releasePointer);
+    viewport.addEventListener('pointerleave', event => {
+      if (state.pointers.size <= 1) releasePointer(event);
+    });
+    viewport.addEventListener('wheel', event => {
+      event.preventDefault();
+      const current = getCombatView(sceneId);
+      const factor = event.deltaY < 0 ? 1.12 : 0.9;
+      setCombatView(sceneId, { scale: clamp(current.scale * factor, 1, 4) }, viewport);
+      refreshStage();
+    }, { passive: false });
+
+    refreshStage();
+  }
+
+  function initCombatViewports() {
+    $$('.combat-board-viewport').forEach(bindCombatViewport);
+  }
+
+  function renderActiveScreenSafely() {
+    if (App.ui.boot !== 'app') return;
+    const scrollY = window.scrollY || 0;
+    const active = document.activeElement;
+    const focusKey = active?.name === 'body' && App.ui.screen === 'chat' ? App.ui.selectedThreadKey : null;
+    const focusValue = active && active instanceof HTMLTextAreaElement ? active.value : null;
+    renderCurrentScreen();
+    requestAnimationFrame(() => {
+      window.scrollTo({ top: scrollY, left: 0, behavior: 'auto' });
+      if (focusKey && focusValue != null) {
+        const next = document.querySelector('#chat-compose-form textarea[name="body"]');
+        if (next && App.ui.selectedThreadKey === focusKey) {
+          next.value = focusValue;
+          next.focus({ preventScroll: true });
+          next.selectionStart = next.selectionEnd = next.value.length;
+        }
+      }
+    });
+  }
+
+  function renderAffectedScreens(changed = {}) {
+    if (App.ui.boot === 'login') {
+      renderLogin();
+      return;
+    }
+    if (App.ui.boot !== 'app') return;
+    const active = App.ui.screen;
+    if ((changed.chat && active === 'chat') || (changed.combat && active === 'combat') || (changed.players && active === 'profile') || (changed.snapshot && ['home', 'archive', 'market'].includes(active))) {
+      renderActiveScreenSafely();
+      return;
+    }
+    if (changed.players && ['home', 'market', 'chat'].includes(active)) {
+      renderActiveScreenSafely();
+    }
+  }
+
+  async function storageGet(key, fallback = null) {
+    try {
+      const preferences = window.Capacitor?.Plugins?.Preferences;
+      if (preferences?.get) {
+        const res = await preferences.get({ key });
+        return res?.value ? JSON.parse(res.value) : fallback;
+      }
+      const raw = window.localStorage.getItem(key);
+      return raw ? JSON.parse(raw) : fallback;
+    } catch {
+      return fallback;
+    }
+  }
+
+  async function storageSet(key, value) {
+    const raw = JSON.stringify(value);
+    const preferences = window.Capacitor?.Plugins?.Preferences;
+    if (preferences?.set) return preferences.set({ key, value: raw });
+    window.localStorage.setItem(key, raw);
+  }
+
+  async function storageRemove(key) {
+    const preferences = window.Capacitor?.Plugins?.Preferences;
+    if (preferences?.remove) return preferences.remove({ key });
+    window.localStorage.removeItem(key);
+  }
+
+  function requestHeaders(config, extra = {}) {
+    return {
+      apikey: config.anonKey,
+      Authorization: `Bearer ${config.anonKey}`,
+      'Content-Type': 'application/json',
+      ...extra
+    };
+  }
+
+  async function rest(config, table, query = '', options = {}) {
+    const base = String(config.url || '').replace(/\/+$/, '');
+    const url = `${base}/rest/v1/${table}${query ? (query.startsWith('?') ? query : `?${query}`) : ''}`;
+    const response = await fetch(url, {
+      method: options.method || 'GET',
+      headers: requestHeaders(config, options.headers || {}),
+      body: options.body == null ? undefined : JSON.stringify(options.body)
+    });
+    if (!response.ok) {
+      const text = await response.text().catch(() => '');
+      throw new Error(text || `${response.status} ${response.statusText}`);
+    }
+    if (response.status === 204) return null;
+    const text = await response.text();
+    return text ? JSON.parse(text) : null;
+  }
+
+  function qs(params = {}) {
+    const search = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value == null || value === '') return;
+      search.set(key, value);
+    });
+    return search.toString();
+  }
+
+  async function apiPing(config) {
+    await apiPullSnapshot(config, false);
+    return true;
+  }
+
+  async function apiPullSnapshot(config, includePayload = true) {
+    const select = includePayload
+      ? 'campaign_id,revision,updated_at,updated_by,client_updated_at,world_json,state_json'
+      : 'campaign_id,revision,updated_at';
+    const rows = await rest(config, config.tableName, qs({
+      campaign_id: `eq.${config.campaignId}`,
+      select,
+      order: 'updated_at.desc',
+      limit: '1'
+    }));
+    return Array.isArray(rows) ? rows[0] || null : null;
+  }
+
+  async function apiPullPlayers(config) {
+    const rows = await rest(config, config.playerTableName, qs({
+      campaign_id: `eq.${config.campaignId}`,
+      select: 'campaign_id,player_id,version,updated_at,updated_by,client_updated_at,profile_json,inventory_json,private_state_json',
+      order: 'updated_at.asc'
+    }));
+    return Array.isArray(rows) ? rows : [];
+  }
+
+  async function apiPullPlayer(config, playerId) {
+    const rows = await rest(config, config.playerTableName, qs({
+      campaign_id: `eq.${config.campaignId}`,
+      player_id: `eq.${playerId}`,
+      select: 'campaign_id,player_id,version,updated_at,updated_by,client_updated_at,profile_json,inventory_json,private_state_json',
+      limit: '1'
+    }));
+    return Array.isArray(rows) ? rows[0] || null : null;
+  }
+
+  async function apiUpsertPlayer(config, payload) {
+    const now = new Date().toISOString();
+    const body = {
+      campaign_id: config.campaignId,
+      player_id: payload.player_id,
+      version: payload.version,
+      updated_at: now,
+      updated_by: payload.updated_by || config.deviceLabel || 'android-player',
+      client_updated_at: payload.client_updated_at || now,
+      profile_json: payload.profile_json || {},
+      inventory_json: payload.inventory_json || [],
+      private_state_json: payload.private_state_json || {}
+    };
+    const rows = await rest(config, config.playerTableName, 'select=campaign_id,player_id,version,updated_at,updated_by,client_updated_at,profile_json,inventory_json,private_state_json', {
+      method: 'POST',
+      headers: { Prefer: 'resolution=merge-duplicates,return=representation' },
+      body
+    });
+    return Array.isArray(rows) ? rows[0] || null : rows;
+  }
+
+  async function apiPatchPlayerWithVersion(config, playerId, expectedVersion, payload) {
+    const now = new Date().toISOString();
+    const query = qs({
+      campaign_id: `eq.${config.campaignId}`,
+      player_id: `eq.${playerId}`,
+      version: `eq.${expectedVersion}`,
+      select: 'campaign_id,player_id,version,updated_at,updated_by,client_updated_at,profile_json,inventory_json,private_state_json'
+    });
+    const rows = await rest(config, config.playerTableName, query, {
+      method: 'PATCH',
+      headers: { Prefer: 'return=representation' },
+      body: {
+        version: expectedVersion + 1,
+        updated_at: now,
+        updated_by: payload.updated_by || config.deviceLabel || 'android-player',
+        client_updated_at: payload.client_updated_at || now,
+        profile_json: payload.profile_json || {},
+        inventory_json: payload.inventory_json || [],
+        private_state_json: payload.private_state_json || {}
+      }
+    });
+    return Array.isArray(rows) ? rows[0] || null : rows;
+  }
+
+  async function apiPullChat(config, since = null) {
+    const params = {
+      campaign_id: `eq.${config.campaignId}`,
+      select: 'campaign_id,message_id,kind,thread_key,sender_type,sender_id,recipient_player_id,npc_id,direct_a,direct_b,author_label,body_html,created_at,edited_at,deleted_at,updated_at,client_updated_at',
+      order: 'updated_at.asc,message_id.asc'
+    };
+    if (since) params.updated_at = `gte.${since}`;
+    const rows = await rest(config, config.chatTableName, qs(params));
+    return Array.isArray(rows) ? rows : [];
+  }
+
+  async function apiUpsertChat(config, row) {
+    const now = new Date().toISOString();
+    const body = {
+      campaign_id: config.campaignId,
+      message_id: row.message_id,
+      kind: row.kind || 'direct',
+      thread_key: row.thread_key,
+      sender_type: row.sender_type || 'player',
+      sender_id: row.sender_id || null,
+      recipient_player_id: row.recipient_player_id || null,
+      npc_id: row.npc_id || null,
+      direct_a: row.direct_a || null,
+      direct_b: row.direct_b || null,
+      author_label: row.author_label || null,
+      body_html: row.body_html || '',
+      created_at: row.created_at || now,
+      edited_at: row.edited_at || null,
+      deleted_at: row.deleted_at || null,
+      updated_at: now,
+      client_updated_at: row.client_updated_at || now
+    };
+    const rows = await rest(config, config.chatTableName, 'select=campaign_id,message_id,kind,thread_key,sender_type,sender_id,recipient_player_id,npc_id,direct_a,direct_b,author_label,body_html,created_at,edited_at,deleted_at,updated_at,client_updated_at', {
+      method: 'POST',
+      headers: { Prefer: 'resolution=merge-duplicates,return=representation' },
+      body
+    });
+    return Array.isArray(rows) ? rows[0] || null : rows;
+  }
+
+  async function apiPullCombatRuntime(config) {
+    const rows = await rest(config, config.combatRuntimeTableName, qs({
+      campaign_id: `eq.${config.campaignId}`,
+      select: 'campaign_id,revision,updated_at,updated_by,client_updated_at,active_scene_id,scene_json,runtime_json',
+      limit: '1'
+    }));
+    return Array.isArray(rows) ? rows[0] || null : null;
+  }
+
+  function visibleForPlayer(entity, playerId) {
+    const ids = entity?.visibility?.playerIds;
+    if (!Array.isArray(ids) || !ids.length) return true;
+    return ids.includes(playerId);
+  }
+
+  function buildPlayerMap(snapshot, playerRows) {
+    const base = new Map();
+    const fromWorld = snapshot?.world_json?.players?.PLAYER_TEMPLATES || {};
+    const fromState = snapshot?.state_json?.users || {};
+    Object.entries(fromWorld).forEach(([id, value]) => base.set(id, deep(value)));
+    Object.entries(fromState).forEach(([id, value]) => base.set(id, { ...(base.get(id) || {}), ...deep(value) }));
+    playerRows.forEach(row => {
+      if (row?.deleted_at) {
+        base.delete(row.player_id);
+        return;
+      }
+      const current = base.get(row.player_id) || { id: row.player_id };
+      const merged = {
+        ...current,
+        ...(row.profile_json || {}),
+        ...(row.private_state_json || {}),
+        inventory: Array.isArray(row.inventory_json) ? deep(row.inventory_json) : deep(current.inventory || [])
+      };
+      merged.id = row.player_id;
+      base.set(row.player_id, merged);
+    });
+    return base;
+  }
+
+  function currentPlayer() {
+    return App.data.players.get(App.session?.userId || '') || null;
+  }
+
+  function currentPlanet() {
+    const player = currentPlayer();
+    if (!player?.currentPlanetId) return null;
+    return App.data.planets.get(player.currentPlanetId) || null;
+  }
+
+  function currentSystem() {
+    const planet = currentPlanet();
+    if (!planet) return null;
+    return App.data.systems.find(system => (system.planetIds || []).includes(planet.id)) || null;
+  }
+
+  function relatedSystemForPlanetId(planetId) {
+    if (!planetId) return null;
+    return App.data.systems.find(system => (system.planetIds || []).includes(planetId)) || null;
+  }
+
+  function articleSystemTarget(article) {
+    const planetId = Array.isArray(article?.relatedPlanetIds) ? article.relatedPlanetIds[0] : null;
+    return relatedSystemForPlanetId(planetId);
+  }
+
+  function decomposePlayer(player) {
+    const clean = deep(player || {});
+    const inventory = Array.isArray(clean.inventory) ? clean.inventory : [];
+    delete clean.inventory;
+    const privateState = {};
+    if (clean.currentPlanetId != null) privateState.currentPlanetId = clean.currentPlanetId;
+    return {
+      profile_json: clean,
+      inventory_json: inventory,
+      private_state_json: privateState
+    };
+  }
+
+  function compileData(snapshot, playerRows, chatRows, combatRuntime) {
+    const world = snapshot?.world_json || {};
+    const state = snapshot?.state_json || {};
+    App.data.world = world;
+    App.data.state = state;
+    App.data.playerRows = new Map(playerRows.map(row => [row.player_id, row]));
+    App.data.players = buildPlayerMap(snapshot, playerRows);
+    App.data.systems = Array.isArray(world.systems?.SYSTEMS) ? deep(world.systems.SYSTEMS) : [];
+    App.data.planets = new Map(Object.entries(world.planets?.PLANETS || {}).map(([id, value]) => [id, deep(value)]));
+    App.data.articles = new Map(Object.entries(world.articles?.ARTICLES || {}).map(([id, value]) => [id, deep(value)]));
+    App.data.articleList = Array.isArray(world.articles?.ARTICLE_LIST) ? deep(world.articles.ARTICLE_LIST) : Array.from(App.data.articles.values());
+    App.data.newsList = Array.isArray(world.news?.NEWS_LIST) ? deep(world.news.NEWS_LIST) : Object.values(world.news?.NEWS || {});
+    App.data.tasksList = Array.isArray(world.tasks?.TASK_LIST) ? deep(world.tasks.TASK_LIST) : Object.values(world.tasks?.TASKS || {});
+    App.data.npcs = new Map(Object.entries(world.npcs?.NPCS || {}).map(([id, value]) => [id, deep(value)]));
+    App.data.items = new Map(Object.entries(world.equipment?.EQUIPMENT || {}).map(([id, value]) => [id, deep(value)]));
+    App.data.combatScenes = Object.values(world.combatScenes?.COMBAT_SCENES || {}).map(scene => deep(scene));
+    App.data.chatRows = Array.isArray(chatRows) ? deep(chatRows) : [];
+    const runtimeCache = App.data.combatRuntimeByScene instanceof Map ? new Map(App.data.combatRuntimeByScene) : new Map();
+    App.data.combatRuntime = combatRuntime ? deep(combatRuntime) : null;
+    const remoteScene = App.data.combatRuntime?.scene_json || App.data.combatRuntime?.scene || null;
+    const remoteSceneId = String(App.data.combatRuntime?.active_scene_id || App.data.combatRuntime?.activeSceneId || remoteScene?.id || '').trim();
+    if (remoteScene && remoteSceneId && !App.data.combatScenes.some(scene => String(scene.id) === remoteSceneId)) {
+      App.data.combatScenes.unshift({ ...deep(remoteScene), id: remoteSceneId });
+    } else if (remoteScene && remoteSceneId) {
+      App.data.combatScenes = App.data.combatScenes.map(scene => String(scene.id) === remoteSceneId ? { ...deep(remoteScene), id: remoteSceneId } : scene);
+    }
+    const activeSceneId = combatRowActiveSceneId(App.data.combatRuntime);
+    const activeRuntime = combatRowRuntime(App.data.combatRuntime);
+    if (activeSceneId && activeRuntime && Object.keys(activeRuntime).length) runtimeCache.set(activeSceneId, deep(activeRuntime));
+    App.data.combatRuntimeByScene = runtimeCache;
+    App.ui.lastSnapshotRevision = Number(snapshot?.revision || App.ui.lastSnapshotRevision || 0);
+    App.ui.lastChatStamp = maxUpdatedAt(App.data.chatRows) || App.ui.lastChatStamp;
+    App.ui.lastCombatStamp = combatRuntime?.updated_at || combatRuntime?.client_updated_at || App.ui.lastCombatStamp;
+  }
+
+  async function saveCache() {
+    App.cache = {
+      snapshot: App.cache.snapshot,
+      players: Array.from(App.data.playerRows.values()),
+      chat: App.data.chatRows,
+      combatRuntime: App.data.combatRuntime,
+      combatRuntimeByScene: Object.fromEntries(App.data.combatRuntimeByScene instanceof Map ? App.data.combatRuntimeByScene.entries() : []),
+      fetchedAt: new Date().toISOString()
+    };
+    await storageSet(KEYS.cache, App.cache);
+  }
+
+  async function loadLocalState() {
+    App.config = normalizeConfig(await storageGet(KEYS.config, {}));
+    App.cache = await storageGet(KEYS.cache, App.cache);
+    App.session = await storageGet(KEYS.session, null);
+  }
+
+  function screenNodes() {
+    return {
+      setup: $('#setup-screen'),
+      login: $('#login-screen'),
+      app: $('#app-shell')
+    };
+  }
+
+  function openBoot(mode) {
+    App.ui.boot = mode;
+    const nodes = screenNodes();
+    nodes.setup.classList.toggle('hidden', mode !== 'setup');
+    nodes.login.classList.toggle('hidden', mode !== 'login');
+    nodes.app.classList.toggle('hidden', mode !== 'app');
+  }
+
+  function setTopbar(title, subtitle) {
+    $('#screen-title').textContent = title;
+    $('#screen-subtitle').textContent = subtitle;
+    $('#campaign-label').textContent = App.config?.campaignId || 'CAMPAIGN';
+  }
+
+  async function bootFromCacheIfNeeded() {
+    if (!App.cache?.snapshot) return false;
+    if (App.cache?.combatRuntimeByScene && typeof App.cache.combatRuntimeByScene === 'object') App.data.combatRuntimeByScene = new Map(Object.entries(App.cache.combatRuntimeByScene).map(([id, runtime]) => [id, deep(runtime)]));
+    compileData(App.cache.snapshot, App.cache.players || [], App.cache.chat || [], App.cache.combatRuntime || null);
+    return true;
+  }
+
+  async function pullEverything({ silent = false, render = true } = {}) {
+    if (!hasConfig()) throw new Error('Supabase ещё не настроен');
+    const [snapshot, players, chatRows, combatRuntime] = await Promise.all([
+      apiPullSnapshot(App.config, true),
+      apiPullPlayers(App.config),
+      apiPullChat(App.config, null),
+      apiPullCombatRuntime(App.config)
+    ]);
+    if (!snapshot) throw new Error('В облаке нет кампании с таким CAMPAIGN_ID');
+    App.cache.snapshot = snapshot;
+    compileData(snapshot, players, chatRows, combatRuntime);
+    await saveCache();
+    if (render) renderAffectedScreens({ snapshot: true, players: true, chat: true, combat: true });
+    if (!silent) notify('Кампания обновлена из облака', 'ok');
+  }
+
+  async function pullLiveData(kinds = { players: true, chat: true, combat: true }) {
+    if (!App.session?.userId || !hasConfig()) return;
+    const jobs = [];
+    if (kinds.players) jobs.push(apiPullPlayers(App.config)); else jobs.push(Promise.resolve(null));
+    if (kinds.chat) jobs.push(apiPullChat(App.config, App.ui.lastChatStamp)); else jobs.push(Promise.resolve(null));
+    if (kinds.combat) jobs.push(apiPullCombatRuntime(App.config)); else jobs.push(Promise.resolve(null));
+    const [rows, chatRows, combatRuntime] = await Promise.all(jobs);
+    const nextPlayers = rows || Array.from(App.data.playerRows.values());
+    const mergedChat = kinds.chat ? mergeChatRows(App.data.chatRows, chatRows) : App.data.chatRows;
+    const nextCombat = kinds.combat ? mergeCombatRuntime(App.data.combatRuntime, combatRuntime || App.data.combatRuntime) : App.data.combatRuntime;
+    compileData(App.cache.snapshot, nextPlayers, mergedChat, nextCombat);
+    await saveCache();
+    renderAffectedScreens({ players: !!kinds.players, chat: !!kinds.chat, combat: !!kinds.combat });
+  }
+
+  function mergeChatRows(existing, incoming) {
+    const map = new Map();
+    [...(existing || []), ...(incoming || [])].forEach(row => {
+      if (!row?.message_id) return;
+      map.set(row.message_id, deep(row));
+    });
+    return Array.from(map.values()).sort((a, b) => new Date(a.updated_at || a.created_at || 0) - new Date(b.updated_at || b.created_at || 0));
+  }
+
+  function renderLogin() {
+    const select = $('#login-player');
+    const players = Array.from(App.data.players.values()).sort((a, b) => slugText(a.displayName || a.id).localeCompare(slugText(b.displayName || b.id), 'ru'));
+    if (!players.length) {
+      select.innerHTML = '<option value="">Нет доступных профилей</option>';
+      $('#login-preview').innerHTML = '<div class="muted">В кампании пока нет доступных персонажей.</div>';
+      return;
+    }
+    const current = App.session?.userId && App.data.players.has(App.session.userId) ? App.session.userId : players[0].id;
+    select.innerHTML = players.map(player => `<option value="${esc(player.id)}">${esc(player.displayName || player.shortName || player.id)}</option>`).join('');
+    select.value = current;
+    renderLoginPreview();
+  }
+
+  function renderLoginPreview() {
+    const player = App.data.players.get($('#login-player')?.value || '') || null;
+    const root = $('#login-preview');
+    if (!player) {
+      root.innerHTML = '<div class="muted">Нет персонажа для предпросмотра.</div>';
+      return;
+    }
+    const planet = player.currentPlanetId ? App.data.planets.get(player.currentPlanetId) : null;
+    root.innerHTML = `
+      <div class="profile-hero">
+        ${renderAvatar(player)}
+        <div>
+          <div><b>${esc(player.displayName || player.id)}</b></div>
+          <div class="muted">${esc(player.rank || player.role || 'Игрок')}</div>
+          <div class="small-note" style="margin-top:6px">${planet ? `Текущая планета: ${esc(planet.name)}` : 'Текущая планета не задана'} · ${formatCredits(player.credits || 0)}</div>
+        </div>
+      </div>
+    `;
+  }
+
+  function entityActionsSystemButton(systemId) {
+    if (!systemId) return '';
+    return `<button class="secondary" type="button" data-action="open-system" data-system-id="${esc(systemId)}">Перейти к системе</button>`;
+  }
+
+  function renderHome() {
+    setTopbar('Навигатор', 'Системы, планеты и быстрый доступ к текущему миру без тяжёлой галактической карты');
+    const root = $('#screen-home');
+    const player = currentPlayer();
+    const planet = currentPlanet();
+    const system = currentSystem();
+    const visibleSystems = App.data.systems.filter(item => visibleForPlayer(item, App.session.userId));
+    const focusId = App.ui.focusedSystemId || system?.id || visibleSystems[0]?.id || '';
+    const focusSystem = visibleSystems.find(item => item.id === focusId) || system || visibleSystems[0] || null;
+    const focusPlanets = focusSystem ? (focusSystem.planetIds || []).map(id => App.data.planets.get(id)).filter(Boolean).filter(item => visibleForPlayer(item, App.session.userId)) : [];
+    root.innerHTML = `
+      <div class="hero-card">
+        <div class="hero-cover">
+          <div class="hero-map-bg"></div>
+          <div class="hero-overlay">
+            <div class="eyebrow">Текущая локация</div>
+            <h2 class="hero-title">${esc(system?.name || 'Система не выбрана')}</h2>
+            <p class="hero-subtitle">${planet ? `${esc(planet.name)} — текущая планета персонажа.` : 'У профиля ещё не задана текущая планета. Торговый терминал будет заблокирован, пока планета не появится в профиле.'}</p>
+            <div class="chip-row">
+              <div class="info-chip">Персонаж: ${esc(player?.displayName || '—')}</div>
+              <div class="info-chip">Кредиты: ${formatCredits(player?.credits || 0)}</div>
+              <div class="info-chip">Система: ${esc(system?.name || '—')}</div>
+            </div>
+          </div>
+        </div>
+        <div class="info-grid">
+          <div class="info-card"><div class="k">Текущая планета</div><div class="v">${esc(planet?.name || 'Не задана')}</div></div>
+          <div class="info-card"><div class="k">Маршруты</div><div class="v">${focusSystem ? Number((focusSystem.routes || []).length) : 0}</div></div>
+          <div class="info-card"><div class="k">Видимых систем</div><div class="v">${visibleSystems.length}</div></div>
+          <div class="info-card"><div class="k">Активный терминал</div><div class="v">${planet ? 'Доступен на текущей планете' : 'Заблокирован'}</div></div>
+        </div>
+      </div>
+      <div class="section-head" style="margin-top:18px"><div class="section-title">Системы сектора</div></div>
+      <div class="system-grid">
+        ${visibleSystems.map(item => {
+          const planets = (item.planetIds || []).map(id => App.data.planets.get(id)).filter(Boolean);
+          const active = item.id === focusSystem?.id;
+          return `
+            <article class="entity-card ${active ? 'active' : ''}">
+              <div class="eyebrow">Система</div>
+              <h3>${esc(item.name || item.id)}</h3>
+              <div class="entity-meta">Планет: ${planets.length}. Маршрутов: ${(item.routes || []).length}. ${item.markerLabel ? `Маркер: ${esc(item.markerLabel)}.` : ''}</div>
+              <div class="entity-actions">
+                <button class="secondary" type="button" data-action="focus-system" data-system-id="${esc(item.id)}">Открыть</button>
+                ${planets[0] ? `<button class="secondary" type="button" data-action="open-planet" data-planet-id="${esc(planets[0].id)}">Первая планета</button>` : ''}
+              </div>
+            </article>
+          `;
+        }).join('') || '<div class="placeholder">Нет доступных систем.</div>'}
+      </div>
+      ${focusSystem ? `
+        <div class="card" style="padding:16px; margin-top:18px;">
+          <div class="section-head"><div class="section-title">${esc(focusSystem.name)}</div>${entityActionsSystemButton(focusSystem.id)}</div>
+          <div class="small-note">${focusSystem.markerLabel ? esc(focusSystem.markerLabel) : 'Описание системы можно привязать через статьи и связанные планеты.'}</div>
+          <div class="planet-grid" style="margin-top:14px;">
+            ${focusPlanets.map(item => `
+              <article class="planet-card ${item.id === planet?.id ? 'active' : ''}">
+                <div class="eyebrow">Планета</div>
+                <h3>${esc(item.name)}</h3>
+                <div class="entity-meta">${esc(item.location?.obj || item.location?.system || item.code || '')}</div>
+                <div class="entity-actions">
+                  <button class="secondary" type="button" data-action="open-planet" data-planet-id="${esc(item.id)}">Открыть карточку</button>
+                </div>
+              </article>
+            `).join('') || '<div class="placeholder">В этой системе нет планет.</div>'}
+          </div>
+        </div>
+      ` : ''}
+    `;
+  }
+
+  function archiveCollections() {
+    const playerId = App.session?.userId || '';
+    return {
+      articles: App.data.articleList.filter(item => visibleForPlayer(item, playerId)).map(item => ({ ...item, _type: 'article' })),
+      planets: Array.from(App.data.planets.values()).filter(item => visibleForPlayer(item, playerId)).map(item => ({ ...item, _type: 'planet' })),
+      tasks: App.data.tasksList.filter(item => visibleForPlayer(item, playerId)).map(item => ({ ...item, _type: 'task' })),
+      news: App.data.newsList.filter(item => visibleForPlayer(item, playerId)).map(item => ({ ...item, _type: 'news' }))
+    };
+  }
+
+  function currentArchiveEntity() {
+    if (App.ui.archiveTab === 'systems') App.ui.archiveTab = 'articles';
+    const collections = archiveCollections();
+    const items = sortArchiveItemsForMobile(collections[App.ui.archiveTab] || [], App.ui.archiveTab);
+    let entity = items.find(item => item.id === App.ui.selectedArchiveId) || null;
+    if (!entity && items[0]) {
+      entity = items[0];
+      App.ui.selectedArchiveId = entity.id;
+      App.ui.selectedArchiveType = entity._type;
+    }
+    return entity;
+  }
+
+  function renderEntityBody(entity) {
+    if (!entity) return '<div class="placeholder">Выбери карточку слева.</div>';
+    const type = entity._type;
+    if (type === 'article') {
+      const relatedSystem = articleSystemTarget(entity);
+      return `
+        <article class="article-card">
+          ${renderEntityThumb(entity, 'hero')}
+          <div class="eyebrow">Статья</div>
+          <h3>${esc(entity.name || entity.title || entity.id)}</h3>
+          <div class="small-note">${esc(entity.summary || '')}</div>
+          <div class="divider"></div>
+          <div class="article-body" data-article-body>${normalizeRichHtml(entity.body || '<p class="muted">Текст статьи пуст.</p>')}</div>
+          <div class="article-toolbar">
+            ${entity.relatedPlanetIds?.[0] ? `<button class="secondary" type="button" data-action="open-planet" data-planet-id="${esc(entity.relatedPlanetIds[0])}">Открыть планету</button>` : ''}
+            ${relatedSystem ? entityActionsSystemButton(relatedSystem.id) : ''}
+          </div>
+        </article>
+      `;
+    }
+    if (type === 'planet') {
+      const relatedSystem = relatedSystemForPlanetId(entity.id);
+      return `
+        <article class="article-card">
+          ${renderEntityThumb(entity, 'hero')}
+          <div class="eyebrow">Планета</div>
+          <h3>${esc(entity.name)}</h3>
+          <div class="small-note">${esc(entity.location?.obj || entity.location?.system || entity.code || '')}</div>
+          <div class="info-grid" style="margin-top:14px;">
+            <div class="info-card"><div class="k">Климат</div><div class="v">${esc(entity.physics?.climate || '—')}</div></div>
+            <div class="info-card"><div class="k">Гравитация</div><div class="v">${esc(entity.physics?.gravity || '—')}</div></div>
+            <div class="info-card"><div class="k">Население</div><div class="v">${esc(entity.socio?.pop || '—')}</div></div>
+            <div class="info-card"><div class="k">Правление</div><div class="v">${esc(entity.socio?.gov || '—')}</div></div>
+          </div>
+          <div class="divider"></div>
+          <div class="article-body"><p>${esc(entity.pilot?.reference || entity.pilot?.info || 'Карточка планеты доступна без отдельного фонового режима карты.')}</p><p>${esc(entity.pilot?.warning || '')}</p></div>
+          <div class="article-toolbar">
+            ${relatedSystem ? entityActionsSystemButton(relatedSystem.id) : ''}
+            ${Array.isArray(entity.relatedArticleIds) && entity.relatedArticleIds[0] ? `<button class="secondary" type="button" data-action="open-article" data-article-id="${esc(entity.relatedArticleIds[0])}">Связанная статья</button>` : ''}
+          </div>
+        </article>
+      `;
+    }
+    if (type === 'system') {
+      const planets = (entity.planetIds || []).map(id => App.data.planets.get(id)).filter(Boolean);
+      return `
+        <article class="article-card">
+          ${renderEntityThumb(entity, 'hero')}
+          <div class="eyebrow">Система</div>
+          <h3>${esc(entity.name)}</h3>
+          <div class="small-note">${esc(entity.markerLabel || 'Системная карточка без тяжёлой галактической карты.')}</div>
+          <div class="divider"></div>
+          <div class="planet-grid">
+            ${planets.map(planet => `
+              <article class="planet-card">
+                ${renderEntityThumb(planet)}
+                <div class="eyebrow">Планета</div>
+                <h3>${esc(planet.name)}</h3>
+                <div class="small-note">${esc(planet.location?.obj || '')}</div>
+                <div class="entity-actions"><button class="secondary" type="button" data-action="open-planet" data-planet-id="${esc(planet.id)}">Открыть</button></div>
+              </article>
+            `).join('') || '<div class="placeholder">В системе нет открытых планет.</div>'}
+          </div>
+          <div class="article-toolbar">${entityActionsSystemButton(entity.id)}</div>
+        </article>
+      `;
+    }
+    if (type === 'news' || type === 'task') {
+      return `
+        <article class="article-card">
+          ${renderEntityThumb(entity, 'hero')}
+          <div class="eyebrow">${type === 'news' ? 'Новость' : 'Задание'}</div>
+          <h3>${esc(entity.title || entity.name || entity.id)}</h3>
+          <div class="small-note">${esc(entity.subtitle || entity.summary || entity.status || '')}</div>
+          <div class="divider"></div>
+          <div class="article-body">${normalizeRichHtml(entity.body || `<p>${esc(entity.summary || 'Без дополнительного текста.')}</p>`)}</div>
+        </article>
+      `;
+    }
+    return '<div class="placeholder">Нет содержимого.</div>';
+  }
+
+  function renderArchive() {
+    if (App.ui.archiveTab === 'systems') App.ui.archiveTab = 'articles';
+    setTopbar('Архив', 'Сначала выбранная статья или карточка, ниже список и связанные материалы');
+    const root = $('#screen-archive');
+    const collections = archiveCollections();
+    const rawList = sortArchiveItemsForMobile(collections[App.ui.archiveTab] || [], App.ui.archiveTab);
+    const query = slugText(App.ui.archiveQuery || '');
+    const activeList = query
+      ? rawList.filter(item => slugText([archiveItemLabel(item), item.summary, item.subtitle, item.location?.system, item.markerLabel].filter(Boolean).join(' ')).includes(query))
+      : rawList;
+    let entity = activeList.find(item => item.id === App.ui.selectedArchiveId) || null;
+    if (!entity && activeList[0]) {
+      entity = activeList[0];
+      App.ui.selectedArchiveId = entity.id;
+      App.ui.selectedArchiveType = entity._type;
+    }
+    const isSelectedUnreadArticle = entity?._type === 'article' && !isArchiveArticleRead(entity.id);
+    root.innerHTML = `
+      <div class="segmented">
+        <button class="chip-btn ${App.ui.archiveTab === 'articles' ? 'active' : ''}" data-action="archive-tab" data-tab="articles">Статьи</button>
+        <button class="chip-btn ${App.ui.archiveTab === 'planets' ? 'active' : ''}" data-action="archive-tab" data-tab="planets">Планеты</button>
+        <button class="chip-btn ${App.ui.archiveTab === 'tasks' ? 'active' : ''}" data-action="archive-tab" data-tab="tasks">Задания</button>
+        <button class="chip-btn ${App.ui.archiveTab === 'news' ? 'active' : ''}" data-action="archive-tab" data-tab="news">Новости</button>
+      </div>
+      <div class="archive-search-row" style="margin-top:14px;">
+        <input class="input" id="archive-search-input" placeholder="Поиск по текущему разделу" value="${esc(App.ui.archiveQuery || '')}" />
+      </div>
+      <div class="archive-detail-top" style="margin-top:14px;">
+        ${renderEntityBody(entity)}
+      </div>
+      <div class="archive-list-title"><div class="eyebrow">Список</div><div class="small-note">Непрочитанные статьи показываются первыми. Системы убраны из архива.</div></div>
+      <div class="archive-catalog archive-catalog-bottom">
+        ${activeList.map(item => {
+          const unread = item._type === 'article' && !isArchiveArticleRead(item.id);
+          return `
+            <article class="archive-tile ${item.id === entity?.id ? 'active' : ''} ${unread ? 'unread' : ''}">
+              ${renderEntityThumb(item)}
+              <button class="archive-tile-btn" type="button" data-action="select-archive" data-type="${esc(item._type)}" data-id="${esc(item.id)}">
+                <span>${unread ? '<b class="new-badge">NEW</b> ' : ''}${esc(archiveItemLabel(item))}</span>
+              </button>
+            </article>
+          `;
+        }).join('') || '<div class="placeholder">Ничего не найдено.</div>'}
+      </div>
+    `;
+    if (isSelectedUnreadArticle) markArchiveArticleRead(entity.id);
+    root.querySelectorAll('[data-article-body] a').forEach(link => {
+      link.addEventListener('click', event => {
+        const href = link.getAttribute('href') || '';
+        if (href.startsWith('article:')) {
+          event.preventDefault();
+          openArticleById(href.slice('article:'.length));
+        }
+      });
+    });
+  }
+
+  function renderMarket() {
+    const root = $('#screen-market');
+    const player = currentPlayer();
+    const planet = currentPlanet();
+    setTopbar('Торговый терминал', 'Терминал доступен только на текущей планете персонажа и меняет только личную запись игрока');
+    if (!player || !planet) {
+      root.innerHTML = '<div class="placeholder market-disabled">Терминал заблокирован. У профиля нет текущей планеты.</div>';
+      return;
+    }
+    const market = Array.isArray(planet.market) ? planet.market : [];
+    root.innerHTML = `
+      <div class="hero-card" style="padding:16px;">
+        <div class="section-head"><div><div class="eyebrow">LOCAL TERMINAL</div><div class="section-title">${esc(planet.name)}</div></div><div class="pill">Баланс: ${formatCredits(player.credits || 0)}</div></div>
+        <div class="small-note">Покупка в мобильном клиенте пишет только в строку текущего игрока в таблице <code>${esc(App.config.playerTableName)}</code>. Общий мир и снапшот кампании не перезаписываются.</div>
+      </div>
+      <div class="planet-grid" style="margin-top:16px;">
+        ${market.map(entry => {
+          const item = App.data.items.get(entry.itemId);
+          if (!item) return '';
+          return `
+            <article class="planet-card">
+              <div class="eyebrow">${esc(item.type || 'предмет')}</div>
+              <h3>${esc(item.name)}</h3>
+              <div class="small-note">${esc(item.desc || '')}</div>
+              <div class="market-buy-row">
+                <div class="price">${formatCredits(entry.price || 0)}</div>
+                <button class="primary" type="button" data-action="buy-item" data-item-id="${esc(item.id)}" data-price="${Number(entry.price || 0)}">Купить</button>
+              </div>
+            </article>
+          `;
+        }).join('') || '<div class="placeholder">На этой планете нет рыночных предложений.</div>'}
+      </div>
+    `;
+  }
+
+  function buildThreads() {
+    const player = currentPlayer();
+    if (!player) return [];
+    const threads = [];
+    Array.from(App.data.players.values())
+      .filter(other => other.id !== player.id)
+      .sort((a, b) => slugText(a.displayName || a.id).localeCompare(slugText(b.displayName || b.id), 'ru'))
+      .forEach(other => {
+        const threadKey = [player.id, other.id].sort().join('__');
+        threads.push({ key: threadKey, label: other.displayName || other.id, type: 'direct', otherId: other.id, subtitle: other.rank || 'Игрок', entity: other });
+      });
+    const npcPool = new Set([...(Array.isArray(currentPlanet()?.npcIds) ? currentPlanet().npcIds : []), ...(Array.isArray(player?.social?.npcIds) ? player.social.npcIds : [])]);
+    Array.from(npcPool).forEach(npcId => {
+      const npc = App.data.npcs.get(npcId);
+      if (!npc) return;
+      const threadKey = `${npc.id}__${player.id}`;
+      threads.push({ key: threadKey, label: npc.name, type: 'npc', npcId: npc.id, subtitle: npc.role || 'NPC', entity: npc });
+    });
+    return threads;
+  }
+
+  function messagesForThread(threadKey) {
+    return App.data.chatRows.filter(row => row.thread_key === threadKey && !row.deleted_at);
+  }
+
+  function renderChat() {
+    setTopbar('Чат', 'Активный канал сверху, список контактов ниже; realtime и fallback-poll работают параллельно');
+    const root = $('#screen-chat');
+    const threads = buildThreads();
+    if (!App.ui.selectedThreadKey && threads[0]) App.ui.selectedThreadKey = threads[0].key;
+    const selected = threads.find(thread => thread.key === App.ui.selectedThreadKey) || threads[0] || null;
+    const messages = selected ? messagesForThread(selected.key) : [];
+    root.innerHTML = `
+      <div class="chat-mobile-layout">
+        <div class="card chat-active-card" style="padding:16px;">
+          <div class="section-head">
+            <div class="thread-row compact">
+              ${selected ? renderEntityAvatar(selected.entity, selected.label, 'sm') : ''}
+              <div><div class="section-title">${esc(selected?.label || 'Канал')}</div><div class="small-note">${esc(selected?.subtitle || '')}</div></div>
+            </div>
+          </div>
+          <div class="message-list">
+            ${messages.map(row => {
+              const own = row.sender_id === App.session.userId && row.sender_type === 'player';
+              const actor = messageActor(row, selected);
+              return `
+                <div class="chat-row ${own ? 'own' : ''}">
+                  ${renderEntityAvatar(actor || {}, row.author_label || (own ? 'Ты' : selected?.label || 'Контакт'), 'sm')}
+                  <div class="chat-bubble ${own ? 'own' : ''}">
+                    <div class="chat-meta">${esc(row.author_label || (own ? (currentPlayer()?.displayName || 'Ты') : selected?.label || 'Контакт'))} · ${formatDate(row.created_at)}</div>
+                    <div class="article-body">${normalizeRichHtml(row.body_html || '')}</div>
+                  </div>
+                </div>
+              `;
+            }).join('') || '<div class="placeholder">Сообщений ещё нет.</div>'}
+          </div>
+          ${selected ? `
+            <form id="chat-compose-form" class="chat-compose" data-thread-key="${esc(selected.key)}">
+              <textarea class="textarea" name="body" rows="4" placeholder="Написать сообщение...">${esc(App.ui.chatDrafts[selected.key] || '')}</textarea>
+              <button class="primary" type="submit">Отправить</button>
+            </form>
+          ` : ''}
+        </div>
+        <div class="thread-list chat-contact-list">
+          ${threads.map(thread => {
+            const last = messagesForThread(thread.key).slice(-1)[0] || null;
+            return `
+              <article class="thread-card ${thread.key === selected?.key ? 'active' : ''}">
+                <div class="thread-row">
+                  ${renderEntityAvatar(thread.entity, thread.label)}
+                  <div class="thread-copy">
+                    <div class="eyebrow">${esc(thread.type === 'npc' ? 'NPC thread' : 'Direct thread')}</div>
+                    <h3>${esc(thread.label)}</h3>
+                    <div class="small-note">${esc(last ? stripHtml(last.body_html || '').slice(0, 82) : (thread.subtitle || 'Без сообщений'))}</div>
+                  </div>
+                </div>
+                <div class="entity-actions"><button class="secondary" type="button" data-action="select-thread" data-thread-key="${esc(thread.key)}">Открыть</button></div>
+              </article>
+            `;
+          }).join('') || '<div class="placeholder">Нет доступных каналов связи.</div>'}
+        </div>
+      </div>
+    `;
+  }
+
+  function tokenVisibleToPlayer(token) {
+    if (!token) return false;
+    if (!token.hidden) return true;
+    return token.ownerId === App.session.userId || token.playerId === App.session.userId;
+  }
+
+  function boardRectStyle(scene, entity) {
+    const left = (Number(entity.x || 0) / Number(scene.width || 1)) * 100;
+    const top = (Number(entity.y || 0) / Number(scene.height || 1)) * 100;
+    const width = (Number(entity.w || 1) / Number(scene.width || 1)) * 100;
+    const height = (Number(entity.h || 1) / Number(scene.height || 1)) * 100;
+    return `left:${left}%;top:${top}%;width:${width}%;height:${height}%;transform:rotate(${Number(entity.rotation || 0)}deg);`;
+  }
+
+  function renderCombatSceneCard(selected, sceneRuntime, tokens, log, fullscreen = false) {
+    const sceneImage = resolveMediaUrl(selected.backgroundImage || '', selected.backgroundImageStoragePath || '');
+    const activeSceneId = combatRowActiveSceneId(App.data.combatRuntime);
+    const isSyncedScene = !activeSceneId || activeSceneId === selected.id;
+    return `
+      <div class="combat-stage-shell ${fullscreen ? 'fullscreen' : ''}">
+        <div class="combat-stage-head">
+          <div>
+            <div class="eyebrow">ACTIVE VIEW</div>
+            <div class="section-title">${esc(selected.name)}</div>
+            <div class="small-note">Раунд ${Number(sceneRuntime?.round || 1)}${isSyncedScene ? '' : ' · показывается последний локальный снимок этой сцены'}</div>
+          </div>
+          <div class="combat-head-actions">
+            <div class="pill">${isSyncedScene ? 'Realtime sync' : 'Кэш сцены'}</div>
+            <button class="ghost-btn mini-icon-btn" type="button" data-action="toggle-combat-fullscreen" title="${fullscreen ? 'Свернуть' : 'Развернуть'}">${fullscreen ? '🗕' : '⤢'}</button>
+          </div>
+        </div>
+        <div class="combat-stage-grid ${fullscreen ? 'fullscreen' : ''}">
+          <div class="combat-board-wrap ${fullscreen ? 'fullscreen' : ''}">
+            <div class="combat-board-viewport ${fullscreen ? 'fullscreen' : ''}" data-scene-id="${esc(selected.id)}">
+              <div class="combat-board" style="--board-cols:${Number(selected.width || 1)};--board-rows:${Number(selected.height || 1)};--board-ratio:${Number(selected.width || 1)} / ${Number(selected.height || 1)};--board-color:${esc(selected.backgroundColor || '#0b1420')}">
+                <div class="combat-board-stage" style="${combatStageTransformStyle(selected.id)}">
+                  <div class="combat-board-bg ${sceneImage ? 'with-image' : ''}" style="${sceneImage ? `background-image:url('${esc(sceneImage)}');` : ''}"></div>
+                  <div class="combat-board-grid"></div>
+                  <div class="combat-board-assets">
+                    ${(Array.isArray(selected.assets) ? selected.assets : []).map(asset => `
+                      <div class="board-asset" style="${boardRectStyle(selected, asset)};opacity:${clamp(Number(asset.opacity ?? 1), 0.1, 1)};z-index:${Number(asset.z || 10)};">
+                        ${resolveMediaUrl(asset.image || '', asset.imageStoragePath || '') ? `<img src="${esc(resolveMediaUrl(asset.image || '', asset.imageStoragePath || ''))}" alt="${esc(asset.name || 'asset')}" />` : '<div class="token-glyph">□</div>'}
+                      </div>
+                    `).join('')}
+                  </div>
+                  <div class="combat-board-tokens">
+                    ${tokens.map(token => `
+                      <div class="board-token ${token.ownerId === App.session.userId || token.playerId === App.session.userId ? 'player-owned' : ''}" style="${boardRectStyle(selected, token)};background:${esc(token.color || '#1a2334')};">
+                        ${resolveMediaUrl(token.image || '', token.imageStoragePath || '') ? `<img src="${esc(resolveMediaUrl(token.image || '', token.imageStoragePath || ''))}" alt="${esc(token.name || 'token')}" />` : `<div class="token-glyph">${esc(initials(token.name || token.id))}</div>`}
+                        <div class="token-label">${esc(token.name)} · ${Number(token.hpCurrent ?? token.hpMax ?? 0)}/${Number(token.hpMax || token.hpCurrent || 0)}</div>
+                      </div>
+                    `).join('')}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <aside class="combat-log-side ${fullscreen ? 'fullscreen' : ''}">
+            <div class="eyebrow">Журнал боя</div>
+            <div class="log-list compact">
+              ${log.slice(0, fullscreen ? 60 : 16).map(entry => `
+                <div class="log-entry ${entry.kind === 'dice' ? 'dice' : ''}">
+                  <div class="chat-meta">${formatDate(entry.createdAt || entry.created_at)}${entry.by ? ` · ${esc(entry.by)}` : ''}</div>
+                  <div>${esc(entry.text || 'Боевой журнал')}</div>
+                </div>
+              `).join('') || '<div class="placeholder">Журнал боя пуст.</div>'}
+            </div>
+          </aside>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderCombat() {
+    setTopbar('Боевые сцены', 'Fullscreen-поле с pinch/drag камерой и компактным полупрозрачным журналом');
+    const root = $('#screen-combat');
+    const scenes = App.data.combatScenes || [];
+    const activeSceneId = combatRowActiveSceneId(App.data.combatRuntime);
+    if (!App.ui.selectedCombatSceneId && (activeSceneId || scenes[0])) App.ui.selectedCombatSceneId = activeSceneId || scenes[0].id;
+    const selected = scenes.find(scene => scene.id === App.ui.selectedCombatSceneId) || scenes.find(scene => scene.id === activeSceneId) || scenes[0] || null;
+    const sceneRuntime = selected ? getCombatSceneRuntime(selected.id) : null;
+    const tokens = Array.isArray(sceneRuntime?.tokens) ? sceneRuntime.tokens.filter(tokenVisibleToPlayer) : [];
+    const log = Array.isArray(sceneRuntime?.log) ? [...sceneRuntime.log].sort((a, b) => new Date(b.createdAt || b.created_at || 0) - new Date(a.createdAt || a.created_at || 0)) : [];
+    document.body.classList.toggle('combat-modal-open', !!App.ui.combatFullscreen && !!selected);
+    root.innerHTML = `
+      <div class="combat-scene-list">
+        ${scenes.map(scene => `
+          <article class="combat-card ${scene.id === selected?.id ? 'active' : ''}">
+            <div class="eyebrow">Сцена</div>
+            <h3>${esc(scene.name)}</h3>
+            <div class="small-note">Поле ${Number(scene.width || 0)} × ${Number(scene.height || 0)} · ${scene.fogEnabled ? 'Туман включён' : 'Без тумана'}</div>
+            <div class="entity-actions">
+              <button class="secondary" type="button" data-action="select-combat-scene" data-scene-id="${esc(scene.id)}">Открыть</button>
+              <button class="ghost-btn mini-icon-btn" type="button" data-action="open-combat-fullscreen" data-scene-id="${esc(scene.id)}" title="Развернуть">⤢</button>
+            </div>
+          </article>
+        `).join('') || '<div class="placeholder">Боевых сцен пока нет.</div>'}
+      </div>
+      ${selected ? `
+        <div class="card" style="padding:16px; margin-top:16px;">
+          ${renderCombatSceneCard(selected, sceneRuntime, tokens, log, false)}
+        </div>
+        ${App.ui.combatFullscreen ? `<div class="combat-fullscreen">${renderCombatSceneCard(selected, sceneRuntime, tokens, log, true)}</div>` : ''}
+      ` : ''}
+    `;
+    requestAnimationFrame(initCombatViewports);
+  }
+
+  function renderProfile() {
+    setTopbar('Профиль', 'Личные данные игрока, экипировка, импланты и состояние синхронизации');
+    const root = $('#screen-profile');
+    const player = currentPlayer();
+    const planet = currentPlanet();
+    const row = App.data.playerRows.get(player?.id || '');
+    if (!player) {
+      root.innerHTML = '<div class="placeholder">Профиль не выбран.</div>';
+      return;
+    }
+    const stats = player.stats || {};
+    const inventory = Array.isArray(player.inventory) ? player.inventory : [];
+    const equipmentSlots = player.equipmentSlots || {};
+    const equippedCards = Object.entries(equipmentSlots).filter(([, itemId]) => itemId).map(([slot, itemId]) => ({ slot, item: App.data.items.get(itemId) || { id: itemId, name: itemId, desc: '' } }));
+    root.innerHTML = `
+      <div class="profile-card" style="padding:16px;">
+        <div class="profile-hero">
+          ${renderAvatar(player)}
+          <div>
+            <div class="eyebrow">PLAYER PROFILE</div>
+            <h3>${esc(player.displayName || player.id)}</h3>
+            <div class="small-note">${esc(player.rank || player.role || 'Игрок')} · версия строки ${Number(row?.version || 0)}</div>
+          </div>
+        </div>
+        <div class="profile-toolbar">
+          <button class="ghost-btn mini-btn" type="button" data-action="profile-refresh">Обновить</button>
+          <button class="ghost-btn mini-btn" type="button" data-action="profile-logout">Выйти</button>
+        </div>
+        <div class="stat-grid">
+          <div class="stat"><div class="data-label">HP</div><div class="data-value">${Number(stats.hpCurrent || 0)} / ${Number(stats.hpMax || 0)}</div></div>
+          <div class="stat"><div class="data-label">Shield</div><div class="data-value">${Number(stats.shieldCurrent || 0)} / ${Number(stats.shieldMax || 0)}</div></div>
+          <div class="stat"><div class="data-label">Energy</div><div class="data-value">${Number(stats.energyCurrent || 0)} / ${Number(stats.energyMax || 0)}</div></div>
+          <div class="stat"><div class="data-label">Credits</div><div class="data-value">${formatCredits(player.credits || 0)}</div></div>
+        </div>
+        <div class="divider"></div>
+        <div class="info-grid">
+          <div class="info-card"><div class="k">Текущая планета</div><div class="v">${esc(planet?.name || 'Не задана')}</div></div>
+          <div class="info-card"><div class="k">Последнее обновление</div><div class="v">${esc(row?.updated_at ? formatDate(row.updated_at) : 'Локальный fallback')}</div></div>
+          <div class="info-card"><div class="k">Роль</div><div class="v">${esc(player.rank || player.role || 'Игрок')}</div></div>
+          <div class="info-card"><div class="k">Локация</div><div class="v">${esc(currentSystem()?.name || 'Система не задана')}</div></div>
+        </div>
+        ${(player.lore || player.notes) ? `<div class="divider"></div><div class="article-body"><p>${esc(player.lore || '')}</p><p>${esc(player.notes || '')}</p></div>` : ''}
+      </div>
+      <div class="section-head" style="margin-top:18px"><div class="section-title">Текущее снаряжение</div></div>
+      <div class="inventory-list">
+        ${equippedCards.map(({ slot, item }) => `
+          <article class="entity-card">
+            ${renderEntityThumb(item)}
+            <div class="eyebrow">${esc(equipmentLabel(slot))}</div>
+            <h3>${esc(item.name)}</h3>
+            <div class="small-note">${esc(item.desc || item.rarity || '')}</div>
+            <div class="pill-row" style="margin-top:12px;">
+              ${item.damage ? `<div class="pill">Урон: ${esc(item.damage)}</div>` : ''}
+              ${item.weaponSlot ? `<div class="pill">Слот: ${esc(item.weaponSlot)}</div>` : ''}
+              ${item.rarity ? `<div class="pill">${esc(item.rarity)}</div>` : ''}
+            </div>
+          </article>
+        `).join('') || '<div class="placeholder">Снаряжение не задано.</div>'}
+      </div>
+      <div class="section-head" style="margin-top:18px"><div class="section-title">Инвентарь</div></div>
+      <div class="inventory-list">
+        ${inventory.map(entry => {
+          const item = App.data.items.get(entry.itemId) || { name: entry.itemId, desc: '' };
+          return `
+            <article class="entity-card">
+              ${renderEntityThumb(item)}
+              <div class="eyebrow">${esc(item.type || 'предмет')}</div>
+              <h3>${esc(item.name)}</h3>
+              <div class="small-note">${esc(item.desc || '')}</div>
+              <div class="pill-row" style="margin-top:12px;"><div class="pill">Количество: ${Number(entry.qty || 0)}</div></div>
+            </article>
+          `;
+        }).join('') || '<div class="placeholder">Инвентарь пуст.</div>'}
+      </div>
+      ${(Array.isArray(player.implants) && player.implants.length) ? `
+        <div class="section-head" style="margin-top:18px"><div class="section-title">Импланты</div></div>
+        <div class="card-list">
+          ${player.implants.map(implant => `<article class="entity-card"><div class="eyebrow">Имплант</div><h3>${esc(implant.name || 'Имплант')}</h3><div class="small-note">${esc(implant.desc || '')}</div></article>`).join('')}
+        </div>
+      ` : ''}
+      ${(player.abilities && Object.keys(player.abilities).length) ? `
+        <div class="section-head" style="margin-top:18px"><div class="section-title">Характеристики</div></div>
+        <div class="stat-grid">
+          ${Object.entries(player.abilities).map(([key, value]) => `<div class="stat"><div class="data-label">${esc(key)}</div><div class="data-value">${esc(value)}</div></div>`).join('')}
+        </div>
+      ` : ''}
+    `;
+  }
+
+  function renderCurrentScreen() {
+    if (App.ui.screen !== 'combat') document.body.classList.remove('combat-modal-open');
+    $$('.screen').forEach(node => node.classList.remove('active'));
+    $(`#screen-${App.ui.screen}`)?.classList.add('active');
+    $$('.nav-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.screen === App.ui.screen));
+    if (App.ui.screen === 'home') renderHome();
+    if (App.ui.screen === 'archive') renderArchive();
+    if (App.ui.screen === 'market') renderMarket();
+    if (App.ui.screen === 'chat') renderChat();
+    if (App.ui.screen === 'combat') renderCombat();
+    if (App.ui.screen === 'profile') renderProfile();
+  }
+
+  function openArticleById(articleId) {
+    if (!App.data.articles.has(articleId)) {
+      notify('Статья не найдена в локальном архиве', 'warn');
+      return;
+    }
+    App.ui.archiveTab = 'articles';
+    App.ui.selectedArchiveId = articleId;
+    App.ui.selectedArchiveType = 'article';
+    App.ui.screen = 'archive';
+    renderCurrentScreen();
+  }
+
+  function focusSystem(systemId) {
+    App.ui.focusedSystemId = systemId;
+    App.ui.screen = 'home';
+    renderCurrentScreen();
+  }
+
+  function openPlanet(planetId) {
+    if (!App.data.planets.has(planetId)) return notify('Планета не найдена', 'warn');
+    App.ui.archiveTab = 'planets';
+    App.ui.selectedArchiveId = planetId;
+    App.ui.selectedArchiveType = 'planet';
+    App.ui.screen = 'archive';
+    renderCurrentScreen();
+  }
+
+  function openSystem(systemId) {
+    const system = App.data.systems.find(item => item.id === systemId);
+    if (!system) return notify('Система не найдена', 'warn');
+    App.ui.focusedSystemId = systemId;
+    App.ui.screen = 'home';
+    renderCurrentScreen();
+  }
+
+  async function safeRefresh(options = {}) {
+    try {
+      await pullEverything({ silent: true, render: !options.deferRender });
+      if (!options.deferRender) {
+        renderLogin();
+        renderAffectedScreens({ snapshot: true, players: true, chat: true, combat: true });
+      }
+      notify('Данные кампании обновлены', 'ok');
+    } catch (error) {
+      notify(`Не удалось обновить данные: ${error.message}`, 'err');
+    }
+  }
+
+  function realtimeWsUrl(config) {
+    const url = new URL(String(config.url || ''));
+    url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+    url.pathname = '/realtime/v1/websocket';
+    url.search = `apikey=${encodeURIComponent(config.anonKey)}&vsn=1.0.0`;
+    return url.toString();
+  }
+
+  function nextRealtimeRef() {
+    App.realtime.ref += 1;
+    return String(App.realtime.ref);
+  }
+
+  function scheduleRealtimeRefresh(kinds = {}) {
+    App.realtime.pending.players = App.realtime.pending.players || !!kinds.players;
+    App.realtime.pending.chat = App.realtime.pending.chat || !!kinds.chat;
+    App.realtime.pending.combat = App.realtime.pending.combat || !!kinds.combat;
+    App.realtime.pending.snapshot = App.realtime.pending.snapshot || !!kinds.snapshot;
+    if (App.realtime.flushTimer) return;
+    App.realtime.flushTimer = setTimeout(async () => {
+      App.realtime.flushTimer = null;
+      const pending = { ...App.realtime.pending };
+      App.realtime.pending = { players: false, chat: false, combat: false, snapshot: false };
+      try {
+        if (pending.snapshot) {
+          await pullEverything({ silent: true, render: true });
+          renderLogin();
+          return;
+        }
+        await pullLiveData({ players: pending.players, chat: pending.chat, combat: pending.combat });
+      } catch (error) {
+        console.warn('realtime refresh failed', error);
+      }
+    }, 140);
+  }
+
+  function handleRealtimePayload(message) {
+    const topic = String(message?.topic || '');
+    const event = String(message?.event || '');
+    if (event !== 'postgres_changes') return;
+    const payload = message?.payload || {};
+    const key = `${topic}:${payload?.ids?.join(',') || ''}:${payload?.data?.schema || ''}:${payload?.data?.table || ''}:${payload?.data?.commit_timestamp || payload?.data?.record?.updated_at || ''}`;
+    if (App.realtime.eventKeys.has(key)) return;
+    App.realtime.eventKeys.add(key);
+    if (App.realtime.eventKeys.size > 200) {
+      const first = App.realtime.eventKeys.values().next().value;
+      if (first) App.realtime.eventKeys.delete(first);
+    }
+    if (topic.endsWith(App.config.chatTableName)) scheduleRealtimeRefresh({ chat: true });
+    else if (topic.endsWith(App.config.combatRuntimeTableName)) scheduleRealtimeRefresh({ combat: true });
+    else if (topic.endsWith(App.config.playerTableName)) scheduleRealtimeRefresh({ players: true });
+    else scheduleRealtimeRefresh({ snapshot: true });
+  }
+
+  function joinRealtimeTopic(tableName) {
+    if (!App.realtime.socket || App.realtime.socket.readyState !== WebSocket.OPEN) return;
+    const topic = `realtime:public:${tableName}`;
+    App.realtime.socket.send(JSON.stringify({
+      topic,
+      event: 'phx_join',
+      payload: {
+        config: {
+          broadcast: { ack: false, self: false },
+          presence: { key: '' },
+          postgres_changes: [{ event: '*', schema: 'public', table: tableName, filter: `campaign_id=eq.${App.config.campaignId}` }]
+        }
+      },
+      ref: nextRealtimeRef()
+    }));
+  }
+
+  function startRealtime() {
+    stopRealtime();
+    if (!hasConfig() || !App.session?.userId) return;
+    try {
+      const socket = new WebSocket(realtimeWsUrl(App.config));
+      App.realtime.socket = socket;
+      socket.addEventListener('open', () => {
+        joinRealtimeTopic(App.config.chatTableName);
+        joinRealtimeTopic(App.config.combatRuntimeTableName);
+        joinRealtimeTopic(App.config.playerTableName);
+        App.realtime.heartbeat = setInterval(() => {
+          if (socket.readyState === WebSocket.OPEN) {
+            socket.send(JSON.stringify({ topic: 'phoenix', event: 'heartbeat', payload: {}, ref: nextRealtimeRef() }));
+          }
+        }, 25000);
+      });
+      socket.addEventListener('message', event => {
+        try {
+          handleRealtimePayload(JSON.parse(event.data));
+        } catch (error) {
+          console.warn('realtime parse failed', error);
+        }
+      });
+      socket.addEventListener('close', () => {
+        const shouldReconnect = App.session?.userId && !App.realtime.suppressClose;
+        if (App.realtime.heartbeat) clearInterval(App.realtime.heartbeat);
+        App.realtime.heartbeat = null;
+        App.realtime.socket = null;
+        App.realtime.suppressClose = false;
+        if (shouldReconnect) {
+          App.realtime.reconnectTimer = setTimeout(() => startRealtime(), 2200);
+        }
+      });
+      socket.addEventListener('error', () => {
+        try { socket.close(); } catch {}
+      });
+    } catch (error) {
+      console.warn('realtime init failed', error);
+    }
+  }
+
+  function stopRealtime() {
+    if (App.realtime.flushTimer) clearTimeout(App.realtime.flushTimer);
+    App.realtime.flushTimer = null;
+    if (App.realtime.heartbeat) clearInterval(App.realtime.heartbeat);
+    App.realtime.heartbeat = null;
+    if (App.realtime.reconnectTimer) clearTimeout(App.realtime.reconnectTimer);
+    App.realtime.reconnectTimer = null;
+    App.realtime.suppressClose = true;
+    try { App.realtime.socket?.close(); } catch {}
+    App.realtime.socket = null;
+  }
+
+  function startPolling() {
+    stopPolling();
+    if (!hasConfig() || !App.session?.userId) return;
+    startRealtime();
+    App.pollers.snapshot = setInterval(() => {
+      pullEverything({ silent: true, render: false }).catch(() => {});
+    }, Math.max(15000, Number(App.config.snapshotPollMs || DEFAULTS.snapshotPollMs)));
+    App.pollers.live = setInterval(() => {
+      pullLiveData({ players: true, chat: true, combat: true }).catch(() => {});
+    }, Math.max(2500, Number(App.config.livePollMs || DEFAULTS.livePollMs)));
+  }
+
+  function stopPolling() {
+    Object.values(App.pollers).forEach(timer => timer && clearInterval(timer));
+    App.pollers.snapshot = null;
+    App.pollers.live = null;
+    stopRealtime();
+  }
+
+  async function login(playerId, pass) {
+    const player = App.data.players.get(playerId);
+    if (!player) throw new Error('Персонаж не найден');
+    if (String(player.pass || '') !== String(pass || '')) throw new Error('Неверный пароль персонажа');
+    App.session = { userId: playerId, loggedInAt: new Date().toISOString() };
+    await storageSet(KEYS.session, App.session);
+    openBoot('app');
+    App.ui.screen = 'home';
+    renderCurrentScreen();
+    startPolling();
+    notify(`Вход выполнен: ${player.displayName || player.id}`, 'ok');
+  }
+
+  async function logout() {
+    stopPolling();
+    App.ui.combatFullscreen = false;
+    App.session = null;
+    await storageRemove(KEYS.session);
+    openBoot('login');
+    renderLogin();
+  }
+
+  async function handleSetupSave(form) {
+    const fd = new FormData(form);
+    const config = normalizeConfig(Object.fromEntries(fd.entries()));
+    $('#setup-status').textContent = 'Проверяю подключение и читаю кампанию из облака...';
+    await apiPing(config);
+    App.config = config;
+    await storageSet(KEYS.config, config);
+    await pullEverything({ silent: true });
+    App.ui.lastLivePullAt = new Date().toISOString();
+    openBoot('login');
+    renderLogin();
+    $('#setup-status').textContent = 'Готово.';
+    notify('Подключение сохранено', 'ok');
+  }
+
+  async function commitPlayerMutation(mutator, successMessage) {
+    const player = currentPlayer();
+    if (!player) throw new Error('Профиль игрока не выбран');
+    const baseRow = await apiPullPlayer(App.config, player.id);
+    const mergedBase = buildPlayerMap(App.cache.snapshot, baseRow ? [baseRow] : []).get(player.id) || deep(player);
+    const nextPlayer = deep(mergedBase);
+    await mutator(nextPlayer);
+    const segments = decomposePlayer(nextPlayer);
+    let saved;
+    if (!baseRow) {
+      saved = await apiUpsertPlayer(App.config, {
+        player_id: player.id,
+        version: 1,
+        updated_by: App.config.deviceLabel || 'android-player',
+        ...segments
+      });
+    } else {
+      saved = await apiPatchPlayerWithVersion(App.config, player.id, Number(baseRow.version || 0), {
+        updated_by: App.config.deviceLabel || 'android-player',
+        ...segments
+      });
+      if (!saved) throw new Error('Конфликт версии строки игрока. Обнови данные и повтори действие.');
+    }
+    App.data.playerRows.set(player.id, saved);
+    App.data.players = buildPlayerMap(App.cache.snapshot, Array.from(App.data.playerRows.values()));
+    await saveCache();
+    renderCurrentScreen();
+    notify(successMessage, 'ok');
+  }
+
+  async function buyItem(itemId, price) {
+    await commitPlayerMutation(player => {
+      const cost = Number(price || 0);
+      if (Number(player.credits || 0) < cost) throw new Error('Недостаточно кредитов');
+      player.credits = Number(player.credits || 0) - cost;
+      if (!Array.isArray(player.inventory)) player.inventory = [];
+      const existing = player.inventory.find(entry => entry.itemId === itemId);
+      if (existing) existing.qty = Number(existing.qty || 0) + 1;
+      else player.inventory.push({ itemId, qty: 1 });
+    }, 'Покупка сохранена в облаке');
+  }
+
+  async function sendMessage(form) {
+    const threadKey = form.dataset.threadKey;
+    const body = String(new FormData(form).get('body') || '').trim();
+    if (!threadKey || !body) return;
+    const thread = buildThreads().find(item => item.key === threadKey);
+    if (!thread) throw new Error('Канал связи не найден');
+    const player = currentPlayer();
+    const messageId = `msg_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+    const row = {
+      message_id: messageId,
+      kind: thread.type === 'npc' ? 'npc' : 'direct',
+      thread_key: thread.key,
+      sender_type: 'player',
+      sender_id: player.id,
+      recipient_player_id: thread.type === 'direct' ? thread.otherId : player.id,
+      npc_id: thread.type === 'npc' ? thread.npcId : null,
+      direct_a: thread.type === 'direct' ? player.id : null,
+      direct_b: thread.type === 'direct' ? thread.otherId : null,
+      author_label: player.displayName || player.id,
+      body_html: `<p>${esc(body)}</p>`
+    };
+    const saved = await apiUpsertChat(App.config, row);
+    App.data.chatRows = mergeChatRows(App.data.chatRows, [saved]);
+    await saveCache();
+    App.ui.chatDrafts[thread.key] = '';
+    form.reset();
+    renderChat();
+    notify('Сообщение отправлено', 'ok');
+  }
+
+  function bindGlobalEvents() {
+    document.body.addEventListener('click', event => {
+      const button = event.target.closest('[data-action]');
+      if (!button) return;
+      const action = button.dataset.action;
+      if (action === 'archive-tab') {
+        App.ui.archiveTab = button.dataset.tab === 'systems' ? 'articles' : button.dataset.tab;
+        App.ui.selectedArchiveId = '';
+        renderArchive();
+      }
+      if (action === 'select-archive') {
+        App.ui.selectedArchiveType = button.dataset.type;
+        App.ui.selectedArchiveId = button.dataset.id;
+        if (button.dataset.type === 'article') markArchiveArticleRead(button.dataset.id);
+        renderArchive();
+      }
+      if (action === 'open-article') openArticleById(button.dataset.articleId);
+      if (action === 'open-planet') openPlanet(button.dataset.planetId);
+      if (action === 'open-system') openSystem(button.dataset.systemId);
+      if (action === 'focus-system') focusSystem(button.dataset.systemId);
+      if (action === 'buy-item') {
+        buyItem(button.dataset.itemId, button.dataset.price).catch(error => notify(error.message, 'err'));
+      }
+      if (action === 'select-thread') {
+        App.ui.selectedThreadKey = button.dataset.threadKey;
+        renderChat();
+      }
+      if (action === 'select-combat-scene') {
+        App.ui.selectedCombatSceneId = button.dataset.sceneId;
+        App.ui.combatFullscreen = true;
+        renderCombat();
+      }
+      if (action === 'open-combat-fullscreen') {
+        App.ui.selectedCombatSceneId = button.dataset.sceneId || App.ui.selectedCombatSceneId;
+        App.ui.combatFullscreen = true;
+        renderCombat();
+      }
+      if (action === 'toggle-combat-fullscreen') {
+        App.ui.combatFullscreen = !App.ui.combatFullscreen;
+        renderCombat();
+      }
+      if (action === 'profile-refresh') {
+        safeRefresh({ deferRender: false }).catch(error => notify(error.message, 'err'));
+      }
+      if (action === 'profile-logout') {
+        logout().catch(error => notify(error.message, 'err'));
+      }
+    });
+
+    document.body.addEventListener('submit', event => {
+      const form = event.target;
+      if (!(form instanceof HTMLFormElement)) return;
+      if (form.id === 'setup-form') {
+        event.preventDefault();
+        handleSetupSave(form).catch(error => {
+          $('#setup-status').textContent = error.message;
+          notify(`Не удалось подключиться: ${error.message}`, 'err');
+        });
+      }
+      if (form.id === 'login-form') {
+        event.preventDefault();
+        login($('#login-player').value, $('#login-pass').value).catch(error => {
+          $('#login-status').textContent = error.message;
+          notify(error.message, 'err');
+        });
+      }
+      if (form.id === 'chat-compose-form') {
+        event.preventDefault();
+        sendMessage(form).catch(error => notify(error.message, 'err'));
+      }
+    });
+
+    document.body.addEventListener('change', event => {
+      if (event.target.id === 'login-player') renderLoginPreview();
+    });
+
+    document.body.addEventListener('input', event => {
+      const archiveSearch = event.target.closest('#archive-search-input');
+      if (archiveSearch) {
+        App.ui.archiveQuery = archiveSearch.value || '';
+        renderArchive();
+        const next = $('#archive-search-input');
+        if (next) { next.focus(); next.selectionStart = next.selectionEnd = next.value.length; }
+        return;
+      }
+      const textarea = event.target.closest('#chat-compose-form textarea[name="body"]');
+      if (!textarea) return;
+      const form = textarea.closest('#chat-compose-form');
+      const threadKey = form?.dataset.threadKey || App.ui.selectedThreadKey || '';
+      if (threadKey) App.ui.chatDrafts[threadKey] = textarea.value;
+    });
+
+    window.addEventListener('resize', () => {
+      if (App.ui.screen === 'combat') requestAnimationFrame(initCombatViewports);
+    });
+
+    $$('.nav-btn').forEach(btn => btn.addEventListener('click', () => {
+      App.ui.screen = btn.dataset.screen;
+      renderCurrentScreen();
+    }));
+
+    $('#login-back-btn').addEventListener('click', () => {
+      openBoot('setup');
+      fillSetupForm();
+    });
+
+    $('#setup-clear-btn').addEventListener('click', async () => {
+      await storageRemove(KEYS.config);
+      await storageRemove(KEYS.cache);
+      App.config = normalizeConfig({});
+      App.cache = { snapshot: null, players: [], chat: [], combatRuntime: null, fetchedAt: null };
+      fillSetupForm();
+      notify('Локальная конфигурация очищена', 'warn');
+    });
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) stopPolling();
+      else if (App.session?.userId) startPolling();
+    });
+
+    window.addEventListener('online', () => { if (App.session?.userId) startPolling(); });
+    window.addEventListener('offline', () => notify('Сеть пропала, остаёмся на локальном кеше', 'warn'));
+  }
+
+  function fillSetupForm() {
+    const form = $('#setup-form');
+    if (!form) return;
+    const config = normalizeConfig(App.config || {});
+    form.url.value = config.url || '';
+    form.anonKey.value = config.anonKey || '';
+    form.campaignId.value = config.campaignId || '';
+    form.deviceLabel.value = config.deviceLabel || '';
+    form.tableName.value = config.tableName || DEFAULTS.tableName;
+    form.playerTableName.value = config.playerTableName || DEFAULTS.playerTableName;
+    form.chatTableName.value = config.chatTableName || DEFAULTS.chatTableName;
+    form.combatRuntimeTableName.value = config.combatRuntimeTableName || DEFAULTS.combatRuntimeTableName;
+    if (form.storageBucket) form.storageBucket.value = config.storageBucket || DEFAULTS.storageBucket;
+    form.snapshotPollMs.value = config.snapshotPollMs || DEFAULTS.snapshotPollMs;
+    form.livePollMs.value = config.livePollMs || DEFAULTS.livePollMs;
+  }
+
+  async function init() {
+    bindGlobalEvents();
+    await loadLocalState();
+    fillSetupForm();
+
+    const hasCached = await bootFromCacheIfNeeded();
+    if (hasConfig()) {
+      try {
+        await pullEverything({ silent: true });
+      } catch (error) {
+        if (!hasCached) {
+          openBoot('setup');
+          $('#setup-status').textContent = `Не удалось подключиться: ${error.message}`;
+          notify(`Не удалось подключиться: ${error.message}`, 'err');
+          return;
+        }
+        notify(`Загружен локальный кеш. Облако сейчас недоступно: ${error.message}`, 'warn');
+      }
+      renderLogin();
+      if (App.session?.userId && App.data.players.has(App.session.userId)) {
+        openBoot('app');
+        renderCurrentScreen();
+        startPolling();
+      } else {
+        openBoot('login');
+      }
+      return;
+    }
+    openBoot('setup');
+  }
+
+  init().catch(error => {
+    openBoot('setup');
+    $('#setup-status').textContent = error.message;
+    notify(`Ошибка запуска: ${error.message}`, 'err');
+  });
+})();
