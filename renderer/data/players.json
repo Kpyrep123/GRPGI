@@ -20,12 +20,12 @@
         "energyMax": 1
       },
       "abilities": {
-        "str": 14,
-        "dex": 13,
-        "con": 15,
-        "int": 12,
-        "wis": 11,
-        "cha": 16
+        "strength": 14,
+        "dexterity": 13,
+        "intelligence": 12,
+        "endurance": 15,
+        "will": 11,
+        "glory": 16
       },
       "equipmentSlots": {
         "primaryWeapon": "m97_viper",
@@ -73,9 +73,34 @@
           "Альянс Систем",
           "Цитадель",
           "Цербер (враждебно)"
+        ],
+        "reputation": [
+          {
+            "orgId": "",
+            "name": "Альянс Систем",
+            "value": 0,
+            "status": "Альянс Систем",
+            "note": ""
+          },
+          {
+            "orgId": "",
+            "name": "Цитадель",
+            "value": 0,
+            "status": "Цитадель",
+            "note": ""
+          },
+          {
+            "orgId": "",
+            "name": "Цербер (враждебно)",
+            "value": 0,
+            "status": "Цербер (враждебно)",
+            "note": ""
+          }
         ]
       },
-      "currentPlanetId": "cassilia"
+      "currentPlanetId": "cassilia",
+      "skillPoints": 0,
+      "skills": []
     },
     "u2": {
       "id": "u2",
@@ -97,12 +122,12 @@
         "energyMax": 1
       },
       "abilities": {
-        "str": 10,
-        "dex": 17,
-        "con": 12,
-        "int": 16,
-        "wis": 12,
-        "cha": 11
+        "strength": 10,
+        "dexterity": 17,
+        "intelligence": 16,
+        "endurance": 12,
+        "will": 12,
+        "glory": 11
       },
       "equipmentSlots": {
         "primaryWeapon": "malorian_3516",
@@ -146,9 +171,34 @@
           "Afterlife",
           "Moxes",
           "Arasaka (в розыске)"
+        ],
+        "reputation": [
+          {
+            "orgId": "",
+            "name": "Afterlife",
+            "value": 0,
+            "status": "Afterlife",
+            "note": ""
+          },
+          {
+            "orgId": "",
+            "name": "Moxes",
+            "value": 0,
+            "status": "Moxes",
+            "note": ""
+          },
+          {
+            "orgId": "",
+            "name": "Arasaka (в розыске)",
+            "value": 0,
+            "status": "Arasaka (в розыске)",
+            "note": ""
+          }
         ]
       },
-      "currentPlanetId": "cassilia"
+      "currentPlanetId": "cassilia",
+      "skillPoints": 0,
+      "skills": []
     },
     "gm": {
       "id": "gm",
@@ -170,12 +220,12 @@
         "energyMax": 1
       },
       "abilities": {
-        "str": 20,
-        "dex": 20,
-        "con": 20,
-        "int": 20,
-        "wis": 20,
-        "cha": 20
+        "strength": 20,
+        "dexterity": 20,
+        "intelligence": 20,
+        "endurance": 20,
+        "will": 20,
+        "glory": 20
       },
       "equipmentSlots": {
         "primaryWeapon": "m97_viper",
@@ -196,9 +246,20 @@
         ],
         "orgs": [
           "Control Node"
+        ],
+        "reputation": [
+          {
+            "orgId": "",
+            "name": "Control Node",
+            "value": 0,
+            "status": "Control Node",
+            "note": ""
+          }
         ]
       },
-      "currentPlanetId": ""
+      "currentPlanetId": "",
+      "skillPoints": 0,
+      "skills": []
     }
   },
   "PLAYER_LIST": [
@@ -222,12 +283,12 @@
         "energyMax": 1
       },
       "abilities": {
-        "str": 20,
-        "dex": 20,
-        "con": 20,
-        "int": 20,
-        "wis": 20,
-        "cha": 20
+        "strength": 20,
+        "dexterity": 20,
+        "intelligence": 20,
+        "endurance": 20,
+        "will": 20,
+        "glory": 20
       },
       "equipmentSlots": {
         "primaryWeapon": "m97_viper",
@@ -248,9 +309,20 @@
         ],
         "orgs": [
           "Control Node"
+        ],
+        "reputation": [
+          {
+            "orgId": "",
+            "name": "Control Node",
+            "value": 0,
+            "status": "Control Node",
+            "note": ""
+          }
         ]
       },
-      "currentPlanetId": ""
+      "currentPlanetId": "",
+      "skillPoints": 0,
+      "skills": []
     },
     {
       "id": "u1",
@@ -272,12 +344,12 @@
         "energyMax": 1
       },
       "abilities": {
-        "str": 14,
-        "dex": 13,
-        "con": 15,
-        "int": 12,
-        "wis": 11,
-        "cha": 16
+        "strength": 14,
+        "dexterity": 13,
+        "intelligence": 12,
+        "endurance": 15,
+        "will": 11,
+        "glory": 16
       },
       "equipmentSlots": {
         "primaryWeapon": "m97_viper",
@@ -325,9 +397,34 @@
           "Альянс Систем",
           "Цитадель",
           "Цербер (враждебно)"
+        ],
+        "reputation": [
+          {
+            "orgId": "",
+            "name": "Альянс Систем",
+            "value": 0,
+            "status": "Альянс Систем",
+            "note": ""
+          },
+          {
+            "orgId": "",
+            "name": "Цитадель",
+            "value": 0,
+            "status": "Цитадель",
+            "note": ""
+          },
+          {
+            "orgId": "",
+            "name": "Цербер (враждебно)",
+            "value": 0,
+            "status": "Цербер (враждебно)",
+            "note": ""
+          }
         ]
       },
-      "currentPlanetId": "cassilia"
+      "currentPlanetId": "cassilia",
+      "skillPoints": 0,
+      "skills": []
     },
     {
       "id": "u2",
@@ -349,12 +446,12 @@
         "energyMax": 1
       },
       "abilities": {
-        "str": 10,
-        "dex": 17,
-        "con": 12,
-        "int": 16,
-        "wis": 12,
-        "cha": 11
+        "strength": 10,
+        "dexterity": 17,
+        "intelligence": 16,
+        "endurance": 12,
+        "will": 12,
+        "glory": 11
       },
       "equipmentSlots": {
         "primaryWeapon": "malorian_3516",
@@ -398,9 +495,34 @@
           "Afterlife",
           "Moxes",
           "Arasaka (в розыске)"
+        ],
+        "reputation": [
+          {
+            "orgId": "",
+            "name": "Afterlife",
+            "value": 0,
+            "status": "Afterlife",
+            "note": ""
+          },
+          {
+            "orgId": "",
+            "name": "Moxes",
+            "value": 0,
+            "status": "Moxes",
+            "note": ""
+          },
+          {
+            "orgId": "",
+            "name": "Arasaka (в розыске)",
+            "value": 0,
+            "status": "Arasaka (в розыске)",
+            "note": ""
+          }
         ]
       },
-      "currentPlanetId": "cassilia"
+      "currentPlanetId": "cassilia",
+      "skillPoints": 0,
+      "skills": []
     }
   ]
 }

@@ -845,3 +845,314 @@ body.media-preview-open{overflow:hidden}
 .updater-profile-panel { margin-top: 14px; border-color: rgba(125,249,255,.18); }
 .updater-progress-wrap { height: 8px; border-radius: 999px; background: rgba(125,249,255,.12); overflow: hidden; border: 1px solid rgba(125,249,255,.18); }
 .updater-progress-bar { height: 100%; width: 0%; border-radius: inherit; background: linear-gradient(90deg, rgba(125,249,255,.35), rgba(125,249,255,.95)); box-shadow: 0 0 18px rgba(125,249,255,.35); transition: width .18s ease; }
+
+/* v50 profile reputation + skills */
+.profile-abilities-grid-v50{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(92px,1fr));
+  gap:8px;
+}
+.profile-ability-compact{
+  min-height:54px;
+  padding:8px 10px;
+}
+.profile-ability-compact span{
+  font-size:10px;
+  letter-spacing:.08em;
+}
+.profile-ability-compact b{
+  font-size:20px;
+  line-height:1;
+}
+.profile-social-actions-v50{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:10px;
+  margin-top:18px;
+}
+.profile-extra-modal-box-v50{
+  width:min(980px,calc(100vw - 44px));
+  max-height:min(88vh,860px);
+  overflow:auto;
+}
+.profile-rep-card-v50,.profile-skill-card-v50{
+  display:grid;
+  grid-template-columns:auto 1fr;
+  gap:14px;
+  align-items:start;
+  padding:14px;
+  border:1px solid rgba(125,249,255,.16);
+  background:rgba(7,12,22,.74);
+  border-radius:16px;
+}
+.profile-skill-card-v50.owned{
+  border-color:rgba(120,255,180,.22);
+}
+.profile-skill-card-v50.available{
+  border-color:rgba(125,249,255,.32);
+}
+.profile-skill-card-v50.locked{
+  opacity:.72;
+}
+.reputation-editor-v50{
+  display:grid;
+  gap:8px;
+}
+.reputation-editor-row-v50{
+  display:grid;
+  grid-template-columns:minmax(150px,1.1fr) minmax(120px,.9fr) 90px minmax(120px,1fr) minmax(160px,1.2fr) auto;
+  gap:8px;
+  align-items:center;
+}
+@media (max-width:1200px){
+  .reputation-editor-row-v50{grid-template-columns:1fr 1fr;}
+}
+@media (max-width:760px){
+  .profile-social-actions-v50{grid-template-columns:1fr;}
+  .profile-rep-card-v50,.profile-skill-card-v50{grid-template-columns:1fr;}
+  .reputation-editor-row-v50{grid-template-columns:1fr;}
+}
+
+/* v51 skill tree */
+.profile-extra-modal-box-v50:has([data-skill-tree="1"]){
+  width:min(1320px,calc(100vw - 36px));
+  max-height:calc(100vh - 32px);
+  display:flex;
+  flex-direction:column;
+  overflow:hidden;
+}
+.profile-extra-modal-box-v50:has([data-skill-tree="1"]) #profile-extra-modal-body-v50{
+  min-height:0;
+  display:flex;
+  flex-direction:column;
+  overflow:hidden;
+}
+.profile-skill-tree-toolbar-v51{
+  display:flex;
+  justify-content:flex-end;
+  align-items:center;
+  gap:12px;
+  margin-bottom:10px;
+  flex:0 0 auto;
+}
+.profile-skill-tree-scroll-v51{
+  overflow:auto;
+  max-height:calc(100vh - 190px);
+  min-height:360px;
+  padding:16px;
+  border:1px solid rgba(125,249,255,.12);
+  border-radius:18px;
+  background:linear-gradient(180deg,rgba(7,12,22,.74),rgba(5,9,16,.92));
+  overscroll-behavior:contain;
+}
+.profile-skill-tree-canvas-v51{
+  position:relative;
+  min-width:1040px;
+  padding:12px 38px 38px;
+}
+.profile-skill-lines-v51{
+  position:absolute;
+  inset:0;
+  z-index:0;
+  overflow:visible;
+  pointer-events:none;
+}
+.profile-skill-edge-v51{
+  fill:none;
+  stroke:rgba(125,249,255,.45);
+  stroke-width:2;
+  stroke-linecap:round;
+  stroke-linejoin:round;
+}
+.profile-skill-edge-v51.ability{
+  stroke:rgba(255,231,160,.46);
+}
+.profile-skill-row-v51{
+  position:relative;
+  z-index:1;
+  display:grid;
+  grid-template-columns:repeat(6,minmax(118px,1fr));
+  gap:18px;
+  align-items:start;
+  margin-bottom:58px;
+}
+.profile-skill-row-v51:last-child{
+  margin-bottom:0;
+}
+.profile-skill-ability-row-v51{
+  margin-bottom:66px;
+}
+.profile-skill-column-v51{
+  min-width:0;
+  display:grid;
+  gap:16px;
+  align-content:start;
+}
+.profile-skill-node-v51{
+  position:relative;
+  z-index:2;
+  box-shadow:0 14px 34px rgba(0,0,0,.3);
+}
+.profile-ability-node-v51{
+  display:grid;
+  gap:6px;
+  min-height:94px;
+  padding:10px;
+  border:1px solid rgba(255,231,160,.22);
+  border-radius:15px;
+  background:linear-gradient(180deg,#1b1810,#07101d);
+}
+.profile-ability-node-v51.available{
+  border-color:rgba(255,231,160,.44);
+}
+.profile-ability-node-v51.maxed{
+  border-color:rgba(120,255,180,.32);
+}
+.profile-ability-node-v51.locked{
+  opacity:.78;
+}
+.profile-skill-node-head-v51{
+  display:flex;
+  justify-content:space-between;
+  gap:8px;
+  align-items:center;
+}
+.profile-skill-node-head-v51 span{
+  font:10px var(--mono);
+  color:var(--muted);
+  letter-spacing:.08em;
+}
+.profile-skill-node-head-v51 b{
+  font-size:12px;
+}
+.profile-skill-node-value-v51{
+  font:28px var(--mono);
+  line-height:1;
+}
+.profile-upgrade-ability-btn-v51{
+  justify-self:start;
+  min-height:27px;
+  padding:4px 8px;
+  font-size:11px;
+}
+.profile-skill-node-v51.profile-skill-card-v50{
+  grid-template-columns:38px 1fr;
+  gap:8px;
+  padding:8px;
+  border-radius:14px;
+  min-height:76px;
+  background:linear-gradient(180deg,#07101d,#050910);
+}
+.profile-skill-node-thumb-v51 .thumb,
+.profile-skill-node-thumb-v51 img{
+  width:38px;
+  height:38px;
+}
+.profile-skill-node-main-v51{
+  min-width:0;
+  display:grid;
+  gap:7px;
+}
+.profile-skill-node-title-v51{
+  min-width:0;
+}
+.profile-skill-node-title-v51 b{
+  display:-webkit-box;
+  -webkit-line-clamp:2;
+  -webkit-box-orient:vertical;
+  overflow:hidden;
+  font-size:13px;
+  line-height:1.18;
+}
+.profile-skill-node-actions-v52{
+  display:flex;
+  align-items:center;
+  gap:6px;
+  min-width:0;
+}
+.profile-skill-info-btn-v52{
+  width:26px;
+  height:26px;
+  min-height:26px;
+  padding:0;
+  display:inline-grid;
+  place-items:center;
+  border-radius:999px;
+  font:700 13px var(--mono);
+  text-transform:none;
+}
+.profile-skill-node-v51 .profile-learn-skill-btn-v50{
+  min-height:26px;
+  padding:4px 8px;
+  margin:0;
+  font-size:10px;
+  white-space:nowrap;
+}
+.profile-skill-node-v51 .profile-learn-skill-btn-v50[disabled]{
+  opacity:.72;
+  cursor:not-allowed;
+}
+.profile-skill-card-v50.owned{
+  border-color:rgba(120,255,180,.24);
+}
+.profile-skill-card-v50.available{
+  border-color:rgba(125,249,255,.36);
+}
+.profile-skill-card-v50.locked{
+  border-color:rgba(255,120,120,.2);
+}
+.skill-ability-req-grid-v52{
+  display:grid;
+  grid-template-columns:repeat(6,minmax(96px,1fr));
+  gap:10px;
+}
+.profile-skill-info-modal-v52{
+  z-index:5100;
+}
+.profile-skill-info-box-v52{
+  width:min(560px,calc(100vw - 36px));
+  max-height:calc(100vh - 64px);
+  overflow:auto;
+}
+.profile-skill-detail-v52{
+  display:grid;
+  gap:12px;
+}
+.profile-skill-detail-head-v52{
+  display:grid;
+  grid-template-columns:56px 1fr;
+  gap:12px;
+  align-items:center;
+}
+.profile-skill-detail-description-v52{
+  line-height:1.48;
+  color:#d7edf3;
+}
+.profile-skill-detail-reqs-v52{
+  margin:0;
+  padding-left:18px;
+  color:#d7edf3;
+}
+.profile-skill-detail-warning-v52{
+  padding:10px 12px;
+  border:1px solid rgba(255,120,120,.24);
+  border-radius:12px;
+  color:#f1b8b8;
+  background:rgba(80,10,10,.18);
+}
+@media (max-width:1100px){
+  .profile-skill-tree-canvas-v51{min-width:860px;}
+  .profile-skill-row-v51{grid-template-columns:repeat(3,minmax(150px,1fr));}
+  .skill-ability-req-grid-v52{grid-template-columns:repeat(3,minmax(120px,1fr));}
+}
+@media (max-width:760px){
+  .profile-skill-tree-toolbar-v51{display:grid;justify-content:start;}
+  .profile-skill-tree-canvas-v51{min-width:680px;padding:10px 26px 34px;}
+  .profile-skill-row-v51{grid-template-columns:repeat(2,minmax(150px,1fr));gap:14px;margin-bottom:50px;}
+  .skill-ability-req-grid-v52{grid-template-columns:repeat(2,minmax(120px,1fr));}
+}
+.profile-skill-node-thumb-v51 .entity-thumb{
+  width:38px;
+  height:38px;
+  border-radius:13px;
+}

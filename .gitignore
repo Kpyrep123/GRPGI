@@ -1,15 +1,13 @@
-(
-echo node_modules/
-echo dist/
-echo *.zip
-echo *.7z
-echo *.rar
-echo *.log
-echo .env
-echo .env.*
-echo renderer/assets/audio/*.mp3
-echo renderer/assets/audio/*.wav
-echo renderer/assets/audio/*.ogg
-echo renderer/assets/audio/*.flac
-echo !renderer/assets/audio/.gitkeep
-) > .gitignore
+node_modules/
+dist/
+*.zip
+*.7z
+*.rar
+*.log
+.env
+.env.*
+renderer/assets/audio/*.mp3
+renderer/assets/audio/*.wav
+renderer/assets/audio/*.ogg
+renderer/assets/audio/*.flac
+!renderer/assets/audio/.gitkeep

@@ -1,6 +1,6 @@
 {
   "name": "galactic-rpg-interface",
-  "version": "1.0.2",
+  "version": "1.0.8",
   "description": "Electron tabletop interface with isolated player/chat sync, guarded polling and draft-safe forms",
   "author": "qwq",
   "main": "main.js",
@@ -41,7 +41,7 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true
     },
-    "buildVersion": "1.0.2.0",
+    "buildVersion": "1.0.7.0",
     "publish": [
       {
         "provider": "github",

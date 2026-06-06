@@ -11,7 +11,7 @@ try {
   updaterLoadError = error;
 }
 
-const WORLD_FILE_NAMES = ['players','systems','planets','npcs','equipment','flora','fauna','articles','news','tasks','organizations','combatScenes','ui'];
+const WORLD_FILE_NAMES = ['players','systems','planets','npcs','equipment','flora','fauna','articles','news','tasks','organizations','factions','skills','combatScenes','ui'];
 const DEFAULT_SYNC_TABLE = 'campaign_snapshots';
 const DEFAULT_CHAT_TABLE = 'campaign_messages';
 const DEFAULT_PLAYER_TABLE = 'campaign_players';
@@ -148,6 +148,18 @@ function getWorldSectionItemCount(sectionName, payload) {
   if (sectionName === 'articles') return payload.ARTICLES && typeof payload.ARTICLES === 'object' ? Object.keys(payload.ARTICLES).length : 0;
   if (sectionName === 'news') return payload.NEWS && typeof payload.NEWS === 'object' ? Object.keys(payload.NEWS).length : 0;
   if (sectionName === 'tasks') return payload.TASKS && typeof payload.TASKS === 'object' ? Object.keys(payload.TASKS).length : 0;
+  if (sectionName === 'organizations') {
+    if (payload.ORGANIZATIONS && typeof payload.ORGANIZATIONS === 'object') return Object.keys(payload.ORGANIZATIONS).length;
+    return Array.isArray(payload.ORGANIZATION_LIST) ? payload.ORGANIZATION_LIST.length : 0;
+  }
+  if (sectionName === 'factions') {
+    if (payload.FACTIONS && typeof payload.FACTIONS === 'object') return Object.keys(payload.FACTIONS).length;
+    return Array.isArray(payload.FACTION_LIST) ? payload.FACTION_LIST.length : 0;
+  }
+  if (sectionName === 'skills') {
+    if (payload.SKILLS && typeof payload.SKILLS === 'object') return Object.keys(payload.SKILLS).length;
+    return Array.isArray(payload.SKILL_LIST) ? payload.SKILL_LIST.length : 0;
+  }
   if (sectionName === 'combatScenes') return payload.COMBAT_SCENES && typeof payload.COMBAT_SCENES === 'object' ? Object.keys(payload.COMBAT_SCENES).length : 0;
   if (sectionName === 'ui') return Array.isArray(payload.galaxyLegend) ? payload.galaxyLegend.length : 0;
   return 0;
@@ -407,6 +419,82 @@ async function ensureEntityImageOnSupabase(config = {}, entity = {}, options = {
   return entity;
 }
 
+function normalizeMapListSectionForSync(section = {}, mapKey, listKey, idKeys = ['id', 'name']) {
+  const source = section && typeof section === 'object' ? section : {};
+  const recordSource = source[mapKey] && typeof source[mapKey] === 'object' ? source[mapKey] : {};
+  const listSource = Array.isArray(source[listKey]) ? source[listKey] : [];
+  const record = {};
+
+  const addEntry = (entry, fallbackId = '') => {
+    if (!entry || typeof entry !== 'object') return;
+    let id = String(fallbackId || '').trim();
+    for (const key of idKeys) {
+      if (id) break;
+      id = String(entry[key] || '').trim();
+    }
+    if (!id) return;
+    record[id] = { ...entry, id };
+  };
+
+  Object.entries(recordSource).forEach(([id, entry]) => addEntry(entry, id));
+  listSource.forEach(entry => {
+    let id = '';
+    if (entry && typeof entry === 'object') {
+      for (const key of idKeys) {
+        id = String(entry[key] || '').trim();
+        if (id) break;
+      }
+    }
+    if (!id || !record[id]) addEntry(entry);
+  });
+
+  return {
+    [mapKey]: record,
+    [listKey]: Object.values(record).sort((a, b) => {
+      const av = String(a.ticker || a.name || a.id || '').toLowerCase();
+      const bv = String(b.ticker || b.name || b.id || '').toLowerCase();
+      return av.localeCompare(bv, 'ru');
+    })
+  };
+}
+
+function normalizeOrganizationsSectionForSync(section = {}) {
+  const source = section && typeof section === 'object' ? section : {};
+  const recordSource = source.ORGANIZATIONS && typeof source.ORGANIZATIONS === 'object' ? source.ORGANIZATIONS : {};
+  const listSource = Array.isArray(source.ORGANIZATION_LIST) ? source.ORGANIZATION_LIST : [];
+  const organizations = {};
+
+  const addOrganization = (entry, fallbackId = '') => {
+    if (!entry || typeof entry !== 'object') return;
+    const id = String(entry.id || fallbackId || entry.ticker || entry.symbol || entry.name || '').trim();
+    if (!id) return;
+    organizations[id] = { ...entry, id };
+  };
+
+  Object.entries(recordSource).forEach(([id, entry]) => addOrganization(entry, id));
+  listSource.forEach(entry => {
+    const id = String(entry?.id || entry?.ticker || entry?.symbol || entry?.name || '').trim();
+    if (!id || !organizations[id]) addOrganization(entry);
+  });
+
+  return {
+    ORGANIZATIONS: organizations,
+    ORGANIZATION_LIST: Object.values(organizations).sort((a, b) => {
+      const av = String(a.ticker || a.name || a.id || '').toLowerCase();
+      const bv = String(b.ticker || b.name || b.id || '').toLowerCase();
+      return av.localeCompare(bv, 'ru');
+    })
+  };
+}
+
+function normalizeFactionsSectionForSync(section = {}) {
+  return normalizeMapListSectionForSync(section, 'FACTIONS', 'FACTION_LIST', ['id', 'name', 'title']);
+}
+
+function normalizeSkillsSectionForSync(section = {}) {
+  return normalizeMapListSectionForSync(section, 'SKILLS', 'SKILL_LIST', ['id', 'name', 'title']);
+}
+
 async function normalizeSnapshotImagesForCloud(config = {}, snapshot = {}) {
   const clone = JSON.parse(JSON.stringify(snapshot || {}));
   const playersMap = clone?.world?.players?.PLAYER_TEMPLATES || {};
@@ -448,6 +536,34 @@ async function normalizeSnapshotImagesForCloud(config = {}, snapshot = {}) {
   const tasks = clone?.world?.tasks?.TASKS || {};
   for (const entry of Object.values(tasks)) {
     await ensureEntityImageOnSupabase(config, entry, { section: 'tasks' });
+  }
+  if (clone?.world?.organizations) {
+    clone.world.organizations = normalizeOrganizationsSectionForSync(clone.world.organizations);
+    const organizations = clone.world.organizations.ORGANIZATIONS || {};
+    for (const entry of Object.values(organizations)) {
+      await ensureEntityImageOnSupabase(config, entry, { section: 'organizations' });
+    }
+    clone.world.organizations.ORGANIZATION_LIST = Object.values(organizations).sort((a, b) => {
+      const av = String(a.ticker || a.name || a.id || '').toLowerCase();
+      const bv = String(b.ticker || b.name || b.id || '').toLowerCase();
+      return av.localeCompare(bv, 'ru');
+    });
+  }
+  if (clone?.world?.factions) {
+    clone.world.factions = normalizeFactionsSectionForSync(clone.world.factions);
+    const factions = clone.world.factions.FACTIONS || {};
+    for (const entry of Object.values(factions)) {
+      await ensureEntityImageOnSupabase(config, entry, { section: 'factions' });
+    }
+    clone.world.factions.FACTION_LIST = Object.values(factions).sort((a, b) => String(a.name || a.id || '').localeCompare(String(b.name || b.id || ''), 'ru'));
+  }
+  if (clone?.world?.skills) {
+    clone.world.skills = normalizeSkillsSectionForSync(clone.world.skills);
+    const skills = clone.world.skills.SKILLS || {};
+    for (const entry of Object.values(skills)) {
+      await ensureEntityImageOnSupabase(config, entry, { section: 'skills' });
+    }
+    clone.world.skills.SKILL_LIST = Object.values(skills).sort((a, b) => String(a.category || '').localeCompare(String(b.category || ''), 'ru') || String(a.name || a.id || '').localeCompare(String(b.name || b.id || ''), 'ru'));
   }
   const stateUsers = clone?.state?.users || {};
   for (const player of Object.values(stateUsers)) {
@@ -636,6 +752,24 @@ function isWorldSectionUsable(name, payload) {
   if (name === 'systems') return Array.isArray(payload.SYSTEMS) && payload.SYSTEMS.length > 0;
   if (name === 'planets') return Boolean(payload.PLANETS && Object.keys(payload.PLANETS).length);
   if (name === 'npcs') return Boolean(payload.NPCS && Object.keys(payload.NPCS).length);
+  if (name === 'organizations') {
+    return Boolean(
+      (payload.ORGANIZATIONS && typeof payload.ORGANIZATIONS === 'object') ||
+      Array.isArray(payload.ORGANIZATION_LIST)
+    );
+  }
+  if (name === 'factions') {
+    return Boolean(
+      (payload.FACTIONS && typeof payload.FACTIONS === 'object') ||
+      Array.isArray(payload.FACTION_LIST)
+    );
+  }
+  if (name === 'skills') {
+    return Boolean(
+      (payload.SKILLS && typeof payload.SKILLS === 'object') ||
+      Array.isArray(payload.SKILL_LIST)
+    );
+  }
   return true;
 }
 

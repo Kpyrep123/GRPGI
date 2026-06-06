@@ -2888,9 +2888,9 @@ function imageFieldMarkup(entity, title = 'Изображение') {
           ${renderThumb(entity, { size: 'xl', type: 'entity', glyph: entity?.avatarGlyph || '✦' })}
         </div>
         <div class="media-actions">
-          <input class="input image-file-input" type="file" accept="image/*" />
+          <input class="input image-file-input" type="file" accept="image/*,.dds,image/vnd.ms-dds,application/octet-stream" />
           <button type="button" class="secondary clear-image-btn">REMOVE_IMAGE</button>
-          <div class="small-note">Изображение копируется в локальную папку world-data/assets. Если включён Supabase, оно дополнительно грузится в Storage и раздаётся на другие ПК по cloud URL.</div>
+          <div class="small-note">Изображение копируется в локальную папку world-data/assets. DDS автоматически конвертируется в PNG для корректного отображения. Если включён Supabase, файл дополнительно грузится в Storage и раздаётся на другие ПК по cloud URL.</div>
         </div>
       </div>
     </div>
@@ -2901,6 +2901,295 @@ function waitForPendingImageTasks(root) {
   const tasks = Array.isArray(root?._imagePendingTasks) ? root._imagePendingTasks.filter(Boolean) : [];
   if (!tasks.length) return Promise.resolve();
   return Promise.allSettled(tasks);
+}
+
+function isDdsFileV51(file) {
+  const name = String(file?.name || '').toLowerCase();
+  const type = String(file?.type || '').toLowerCase();
+  return name.endsWith('.dds') || type.includes('dds') || type === 'image/vnd.ms-dds';
+}
+
+function readFileAsDataUrlV51(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(reader.error || new Error('file read failed'));
+    reader.readAsDataURL(file);
+  });
+}
+
+function readFileAsArrayBufferV51(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error || new Error('file read failed'));
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+function fourCcFromViewV51(view, offset) {
+  return String.fromCharCode(
+    view.getUint8(offset),
+    view.getUint8(offset + 1),
+    view.getUint8(offset + 2),
+    view.getUint8(offset + 3)
+  );
+}
+
+function rgb565ToRgbaV51(value, alpha = 255) {
+  return [
+    Math.round(((value >> 11) & 31) * 255 / 31),
+    Math.round(((value >> 5) & 63) * 255 / 63),
+    Math.round((value & 31) * 255 / 31),
+    alpha
+  ];
+}
+
+function buildDxtColorPaletteV51(c0, c1, forceFourColor = false) {
+  const a = rgb565ToRgbaV51(c0, 255);
+  const b = rgb565ToRgbaV51(c1, 255);
+  const out = [a, b];
+  if (forceFourColor || c0 > c1) {
+    out[2] = [
+      Math.round((2 * a[0] + b[0]) / 3),
+      Math.round((2 * a[1] + b[1]) / 3),
+      Math.round((2 * a[2] + b[2]) / 3),
+      255
+    ];
+    out[3] = [
+      Math.round((a[0] + 2 * b[0]) / 3),
+      Math.round((a[1] + 2 * b[1]) / 3),
+      Math.round((a[2] + 2 * b[2]) / 3),
+      255
+    ];
+  } else {
+    out[2] = [
+      Math.round((a[0] + b[0]) / 2),
+      Math.round((a[1] + b[1]) / 2),
+      Math.round((a[2] + b[2]) / 2),
+      255
+    ];
+    out[3] = [0, 0, 0, 0];
+  }
+  return out;
+}
+
+function writePixelV51(target, width, height, x, y, rgba) {
+  if (x < 0 || y < 0 || x >= width || y >= height) return;
+  const index = (y * width + x) * 4;
+  target[index] = rgba[0];
+  target[index + 1] = rgba[1];
+  target[index + 2] = rgba[2];
+  target[index + 3] = rgba[3];
+}
+
+function decodeDxtColorBlockV51(bytes, offset, target, width, height, blockX, blockY, alphaValues = null, forceFourColor = false) {
+  const c0 = bytes[offset] | (bytes[offset + 1] << 8);
+  const c1 = bytes[offset + 2] | (bytes[offset + 3] << 8);
+  const palette = buildDxtColorPaletteV51(c0, c1, forceFourColor);
+  const code = (bytes[offset + 4] | (bytes[offset + 5] << 8) | (bytes[offset + 6] << 16) | (bytes[offset + 7] << 24)) >>> 0;
+  for (let py = 0; py < 4; py += 1) {
+    for (let px = 0; px < 4; px += 1) {
+      const pixelIndex = py * 4 + px;
+      const colorIndex = (code >>> (2 * pixelIndex)) & 3;
+      const color = palette[colorIndex].slice();
+      if (alphaValues) color[3] = alphaValues[pixelIndex];
+      writePixelV51(target, width, height, blockX * 4 + px, blockY * 4 + py, color);
+    }
+  }
+}
+
+function decodeDxt1V51(bytes, offset, width, height) {
+  const target = new Uint8Array(width * height * 4);
+  const blocksWide = Math.ceil(width / 4);
+  const blocksHigh = Math.ceil(height / 4);
+  let cursor = offset;
+  for (let by = 0; by < blocksHigh; by += 1) {
+    for (let bx = 0; bx < blocksWide; bx += 1) {
+      decodeDxtColorBlockV51(bytes, cursor, target, width, height, bx, by, null, false);
+      cursor += 8;
+    }
+  }
+  return target;
+}
+
+function decodeDxt3V51(bytes, offset, width, height) {
+  const target = new Uint8Array(width * height * 4);
+  const blocksWide = Math.ceil(width / 4);
+  const blocksHigh = Math.ceil(height / 4);
+  let cursor = offset;
+  for (let by = 0; by < blocksHigh; by += 1) {
+    for (let bx = 0; bx < blocksWide; bx += 1) {
+      const alpha = new Array(16);
+      for (let i = 0; i < 16; i += 1) {
+        const byte = bytes[cursor + Math.floor(i / 2)];
+        const nibble = (i % 2 === 0) ? (byte & 0x0f) : (byte >> 4);
+        alpha[i] = nibble * 17;
+      }
+      decodeDxtColorBlockV51(bytes, cursor + 8, target, width, height, bx, by, alpha, true);
+      cursor += 16;
+    }
+  }
+  return target;
+}
+
+function decodeDxt5AlphaPaletteV51(a0, a1) {
+  const palette = [a0, a1];
+  if (a0 > a1) {
+    palette[2] = Math.round((6 * a0 + a1) / 7);
+    palette[3] = Math.round((5 * a0 + 2 * a1) / 7);
+    palette[4] = Math.round((4 * a0 + 3 * a1) / 7);
+    palette[5] = Math.round((3 * a0 + 4 * a1) / 7);
+    palette[6] = Math.round((2 * a0 + 5 * a1) / 7);
+    palette[7] = Math.round((a0 + 6 * a1) / 7);
+  } else {
+    palette[2] = Math.round((4 * a0 + a1) / 5);
+    palette[3] = Math.round((3 * a0 + 2 * a1) / 5);
+    palette[4] = Math.round((2 * a0 + 3 * a1) / 5);
+    palette[5] = Math.round((a0 + 4 * a1) / 5);
+    palette[6] = 0;
+    palette[7] = 255;
+  }
+  return palette;
+}
+
+function decodeDxt5V51(bytes, offset, width, height) {
+  const target = new Uint8Array(width * height * 4);
+  const blocksWide = Math.ceil(width / 4);
+  const blocksHigh = Math.ceil(height / 4);
+  let cursor = offset;
+  for (let by = 0; by < blocksHigh; by += 1) {
+    for (let bx = 0; bx < blocksWide; bx += 1) {
+      const a0 = bytes[cursor];
+      const a1 = bytes[cursor + 1];
+      const alphaPalette = decodeDxt5AlphaPaletteV51(a0, a1);
+      let alphaBits = 0n;
+      for (let i = 0; i < 6; i += 1) alphaBits |= BigInt(bytes[cursor + 2 + i]) << BigInt(8 * i);
+      const alpha = new Array(16);
+      for (let i = 0; i < 16; i += 1) {
+        const alphaIndex = Number((alphaBits >> BigInt(3 * i)) & 7n);
+        alpha[i] = alphaPalette[alphaIndex];
+      }
+      decodeDxtColorBlockV51(bytes, cursor + 8, target, width, height, bx, by, alpha, true);
+      cursor += 16;
+    }
+  }
+  return target;
+}
+
+function countMaskShiftV51(mask) {
+  let shift = 0;
+  let value = mask >>> 0;
+  if (!value) return 0;
+  while ((value & 1) === 0) {
+    shift += 1;
+    value >>>= 1;
+  }
+  return shift;
+}
+
+function countMaskBitsV51(mask) {
+  let bits = 0;
+  let value = mask >>> 0;
+  while (value) {
+    bits += value & 1;
+    value >>>= 1;
+  }
+  return bits;
+}
+
+function extractMaskedByteV51(pixel, mask, fallback = 0) {
+  mask >>>= 0;
+  if (!mask) return fallback;
+  const shift = countMaskShiftV51(mask);
+  const bits = countMaskBitsV51(mask);
+  const max = (1 << bits) - 1;
+  const value = (pixel & mask) >>> shift;
+  return Math.round(value * 255 / max);
+}
+
+function decodeUncompressedDdsV51(bytes, offset, width, height, bitCount, masks, pitch = 0) {
+  const bytesPerPixel = Math.ceil(bitCount / 8);
+  const rowPitch = pitch > 0 ? pitch : width * bytesPerPixel;
+  const target = new Uint8Array(width * height * 4);
+  for (let y = 0; y < height; y += 1) {
+    const rowOffset = offset + y * rowPitch;
+    for (let x = 0; x < width; x += 1) {
+      const pixelOffset = rowOffset + x * bytesPerPixel;
+      let pixel = 0;
+      for (let i = 0; i < bytesPerPixel; i += 1) pixel |= (bytes[pixelOffset + i] || 0) << (8 * i);
+      const rgba = [
+        extractMaskedByteV51(pixel, masks.r, bytes[pixelOffset] || 0),
+        extractMaskedByteV51(pixel, masks.g, bytes[pixelOffset + 1] || 0),
+        extractMaskedByteV51(pixel, masks.b, bytes[pixelOffset + 2] || 0),
+        masks.a ? extractMaskedByteV51(pixel, masks.a, 255) : 255
+      ];
+      writePixelV51(target, width, height, x, y, rgba);
+    }
+  }
+  return target;
+}
+
+function pngDataUrlFromRgbaV51(width, height, rgba) {
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  const imageData = new ImageData(new Uint8ClampedArray(rgba), width, height);
+  ctx.putImageData(imageData, 0, 0);
+  return canvas.toDataURL('image/png');
+}
+
+function convertDdsArrayBufferToPngDataUrlV51(buffer) {
+  const view = new DataView(buffer);
+  const bytes = new Uint8Array(buffer);
+  if (buffer.byteLength < 128 || fourCcFromViewV51(view, 0) !== 'DDS ') {
+    throw new Error('Файл не похож на DDS');
+  }
+  const height = view.getUint32(12, true);
+  const width = view.getUint32(16, true);
+  const pitchOrLinearSize = view.getUint32(20, true);
+  const pfFlags = view.getUint32(80, true);
+  const fourCC = fourCcFromViewV51(view, 84);
+  const bitCount = view.getUint32(88, true);
+  const masks = {
+    r: view.getUint32(92, true),
+    g: view.getUint32(96, true),
+    b: view.getUint32(100, true),
+    a: view.getUint32(104, true)
+  };
+  if (!width || !height) throw new Error('DDS содержит некорректный размер');
+
+  let format = fourCC;
+  let dataOffset = 128;
+  if (fourCC === 'DX10') {
+    if (buffer.byteLength < 148) throw new Error('Некорректный DDS DX10');
+    const dxgiFormat = view.getUint32(128, true);
+    dataOffset = 148;
+    if (dxgiFormat === 71 || dxgiFormat === 72) format = 'DXT1';
+    else if (dxgiFormat === 74 || dxgiFormat === 75) format = 'DXT3';
+    else if (dxgiFormat === 77 || dxgiFormat === 78) format = 'DXT5';
+    else if (dxgiFormat === 28) format = 'RGBA32';
+    else if (dxgiFormat === 87) format = 'BGRA32';
+    else throw new Error(`DDS DX10 format ${dxgiFormat} пока не поддерживается`);
+  }
+
+  let rgba = null;
+  if (format === 'DXT1') rgba = decodeDxt1V51(bytes, dataOffset, width, height);
+  else if (format === 'DXT3') rgba = decodeDxt3V51(bytes, dataOffset, width, height);
+  else if (format === 'DXT5') rgba = decodeDxt5V51(bytes, dataOffset, width, height);
+  else if (format === 'RGBA32') rgba = decodeUncompressedDdsV51(bytes, dataOffset, width, height, 32, { r: 0x000000ff, g: 0x0000ff00, b: 0x00ff0000, a: 0xff000000 }, width * 4);
+  else if (format === 'BGRA32') rgba = decodeUncompressedDdsV51(bytes, dataOffset, width, height, 32, { r: 0x00ff0000, g: 0x0000ff00, b: 0x000000ff, a: 0xff000000 }, width * 4);
+  else if ((pfFlags & 0x40) && (bitCount === 32 || bitCount === 24 || bitCount === 16)) rgba = decodeUncompressedDdsV51(bytes, dataOffset, width, height, bitCount, masks, pitchOrLinearSize);
+  else throw new Error(`DDS формат ${format || 'без FourCC'} пока не поддерживается`);
+
+  return pngDataUrlFromRgbaV51(width, height, rgba);
+}
+
+async function readImageFileAsRenderableDataUrlV51(file) {
+  if (!isDdsFileV51(file)) return readFileAsDataUrlV51(file);
+  const buffer = await readFileAsArrayBufferV51(file);
+  return convertDdsArrayBufferToPngDataUrlV51(buffer);
 }
 
 function bindImageInputs(root) {
@@ -2927,17 +3216,15 @@ function bindImageInputs(root) {
     fileInput?.addEventListener('change', async event => {
       const file = event.target.files?.[0];
       if (!file) return;
-      const reader = new FileReader();
       const token = `${Date.now()}_${Math.random().toString(36).slice(2)}`;
       field.dataset.imageToken = token;
       field.dataset.imagePending = '1';
-      reader.onload = async () => {
-        try {
-          const dataUrl = String(reader.result || '');
-          hidden.value = dataUrl;
-          field.dataset.pendingImageValue = dataUrl;
-          renderPreview();
-          const saveTask = (async () => {
+      try {
+        const dataUrl = await readImageFileAsRenderableDataUrlV51(file);
+        hidden.value = dataUrl;
+        field.dataset.pendingImageValue = dataUrl;
+        renderPreview();
+        const saveTask = (async () => {
             if (window.electronAPI?.saveWorldImage) {
               const stem = [root.dataset.entityType || 'entity', root.querySelector('[name="id"]')?.value || '', entityNameInput?.value || file.name].filter(Boolean).join('_');
               const result = await window.electronAPI.saveWorldImage({ dataUrl, preferredStem: stem });
@@ -2955,18 +3242,16 @@ function bindImageInputs(root) {
               return result;
             }
             return { ok: true, url: dataUrl };
-          })();
-          field._imageTask = saveTask.finally(() => {
-            if (field.dataset.imageToken === token) delete field.dataset.imagePending;
-          });
-          root._imagePendingTasks.push(field._imageTask);
-          await field._imageTask;
-        } catch (error) {
-          delete field.dataset.imagePending;
-          Toast.show(`Не удалось обработать изображение: ${error.message}`, 'err');
-        }
-      };
-      reader.readAsDataURL(file);
+        })();
+        field._imageTask = saveTask.finally(() => {
+          if (field.dataset.imageToken === token) delete field.dataset.imagePending;
+        });
+        root._imagePendingTasks.push(field._imageTask);
+        await field._imageTask;
+      } catch (error) {
+        delete field.dataset.imagePending;
+        Toast.show(`Не удалось обработать изображение: ${error.message}`, 'err');
+      }
     });
 
     clearBtn?.addEventListener('click', () => {
@@ -9518,32 +9803,28 @@ const Combat = {
     return new Promise(resolve => {
       const input = document.createElement('input');
       input.type = 'file';
-      input.accept = 'image/*';
+      input.accept = 'image/*,.dds,image/vnd.ms-dds,application/octet-stream';
       input.addEventListener('change', async event => {
         const file = event.target.files?.[0];
         if (!file) {
           resolve(null);
           return;
         }
-        const reader = new FileReader();
-        reader.onload = async () => {
-          try {
-            const dataUrl = String(reader.result || '');
-            if (window.electronAPI?.saveWorldImage) {
-              const result = await window.electronAPI.saveWorldImage({ dataUrl, preferredStem });
-              if (result?.ok && result?.url) {
-                if (result?.warning) Toast.show(`Изображение сохранено локально, но cloud upload не удался: ${result.warning}`, 'info');
-                resolve(result.url || result.localUrl || dataUrl);
-                return;
-              }
+        try {
+          const dataUrl = await readImageFileAsRenderableDataUrlV51(file);
+          if (window.electronAPI?.saveWorldImage) {
+            const result = await window.electronAPI.saveWorldImage({ dataUrl, preferredStem });
+            if (result?.ok && result?.url) {
+              if (result?.warning) Toast.show(`Изображение сохранено локально, но cloud upload не удался: ${result.warning}`, 'info');
+              resolve(result.url || result.localUrl || dataUrl);
+              return;
             }
-            resolve(dataUrl);
-          } catch (error) {
-            Toast.show(`Не удалось обработать изображение: ${error?.message || error}`, 'err');
-            resolve(null);
           }
-        };
-        reader.readAsDataURL(file);
+          resolve(dataUrl);
+        } catch (error) {
+          Toast.show(`Не удалось обработать изображение: ${error?.message || error}`, 'err');
+          resolve(null);
+        }
       }, { once: true });
       input.click();
     });
@@ -15494,8 +15775,12 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
   const __applyWorldData_org_v48 = applyWorldData;
   applyWorldData = function(payload = {}) {
     __applyWorldData_org_v48(payload);
-    ORGANIZATIONS = normalizeOrganizationsRecordV48(payload.organizations?.ORGANIZATIONS || {}, payload.organizations?.ORGANIZATION_LIST || []);
+    const section = payload.organizations && typeof payload.organizations === 'object' ? payload.organizations : {};
+    ORGANIZATIONS = normalizeOrganizationsRecordV48(section.ORGANIZATIONS || {}, section.ORGANIZATION_LIST || []);
     ORGANIZATION_LIST = Object.values(ORGANIZATIONS);
+    if (worldData && typeof worldData === 'object') {
+      worldData.organizations = serializeWorldSection('organizations', ORGANIZATIONS);
+    }
     Data.organizations = ORGANIZATIONS;
   };
 
@@ -15580,13 +15865,26 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
 
   const __configInsertEntity_org_v48 = Configurator.insertEntity.bind(Configurator);
   Configurator.insertEntity = function(type, entity) {
-    if (type === 'organizations') { const org = normalizeOrganizationV48(entity); ORGANIZATIONS[org.id] = org; Data.organizations = ORGANIZATIONS; return; }
+    if (type === 'organizations') {
+      const org = normalizeOrganizationV48(entity);
+      ORGANIZATIONS[org.id] = org;
+      ORGANIZATION_LIST = Object.values(ORGANIZATIONS);
+      if (worldData && typeof worldData === 'object') worldData.organizations = serializeWorldSection('organizations', ORGANIZATIONS);
+      Data.organizations = ORGANIZATIONS;
+      return;
+    }
     return __configInsertEntity_org_v48(type, entity);
   };
 
   const __configRemoveEntity_org_v48 = Configurator.removeEntity.bind(Configurator);
   Configurator.removeEntity = function(type, id) {
-    if (type === 'organizations') { delete ORGANIZATIONS[id]; ORGANIZATION_LIST = Object.values(ORGANIZATIONS); Data.organizations = ORGANIZATIONS; return; }
+    if (type === 'organizations') {
+      delete ORGANIZATIONS[id];
+      ORGANIZATION_LIST = Object.values(ORGANIZATIONS);
+      if (worldData && typeof worldData === 'object') worldData.organizations = serializeWorldSection('organizations', ORGANIZATIONS);
+      Data.organizations = ORGANIZATIONS;
+      return;
+    }
     return __configRemoveEntity_org_v48(type, id);
   };
 
@@ -15758,4 +16056,1058 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
     bootstrapUpdaterUi();
     setTimeout(renderUpdaterPanel, 0);
   });
+})();
+
+/* v50 profile reputation + skills + world organizations */
+(function(){
+  if (window.__profileReputationSkillsV50) return;
+  window.__profileReputationSkillsV50 = true;
+
+  const ABILITY_MODEL_V50 = [
+    { key: 'strength', label: 'Сила', short: 'СИЛ', legacy: ['str'] },
+    { key: 'dexterity', label: 'Ловкость', short: 'ЛОВ', legacy: ['dex'] },
+    { key: 'intelligence', label: 'Интеллект', short: 'ИНТ', legacy: ['int'] },
+    { key: 'endurance', label: 'Выносливость', short: 'ВЫН', legacy: ['con'] },
+    { key: 'will', label: 'Воля', short: 'ВОЛ', legacy: ['wis'] },
+    { key: 'glory', label: 'Слава', short: 'СЛА', legacy: ['cha'] }
+  ];
+  const ABILITY_BY_KEY_V50 = Object.fromEntries(ABILITY_MODEL_V50.map(item => [item.key, item]));
+  let FACTIONS_V50 = {};
+  let FACTION_LIST_V50 = [];
+  let SKILLS_V50 = {};
+  let SKILL_LIST_V50 = [];
+
+  WORLD_SECTIONS.organizations = { ...(WORLD_SECTIONS.organizations || { mapKey: 'ORGANIZATIONS', listKey: 'ORGANIZATION_LIST' }), label: 'Кампании' };
+  WORLD_SECTIONS.factions = { label: 'Организации', mapKey: 'FACTIONS', listKey: 'FACTION_LIST' };
+  WORLD_SECTIONS.skills = { label: 'Навыки', mapKey: 'SKILLS', listKey: 'SKILL_LIST' };
+
+  function numberOrFallbackV50(value, fallback = 0) {
+    const num = Number(value);
+    return Number.isFinite(num) ? num : fallback;
+  }
+
+  function normalizeAbilitiesV50(source = {}) {
+    const raw = source && typeof source === 'object' ? source : {};
+    const out = {};
+    for (const item of ABILITY_MODEL_V50) {
+      let value = raw[item.key];
+      if (value === undefined) {
+        const legacyKey = item.legacy.find(key => raw[key] !== undefined);
+        if (legacyKey) value = raw[legacyKey];
+      }
+      out[item.key] = numberOrFallbackV50(value, 10);
+    }
+    return out;
+  }
+
+  function abilityLabelV50(key) {
+    return ABILITY_BY_KEY_V50[key]?.label || key || 'Характеристика';
+  }
+
+  function normalizeSkillIdArrayV50(value) {
+    if (!Array.isArray(value)) return [];
+    return Array.from(new Set(value.map(entry => {
+      if (typeof entry === 'string') return entry;
+      if (entry && typeof entry === 'object') return entry.id || entry.skillId || entry.key || '';
+      return '';
+    }).map(String).map(v => v.trim()).filter(Boolean)));
+  }
+
+  function normalizeReputationRowsV50(value, legacyOrgs = []) {
+    const rows = [];
+    const push = entry => {
+      if (!entry) return;
+      if (typeof entry === 'string') {
+        const text = entry.trim();
+        if (text) rows.push({ orgId: '', name: text, value: 0, status: text, note: '' });
+        return;
+      }
+      if (typeof entry !== 'object') return;
+      const orgId = String(entry.orgId || entry.factionId || entry.id || '').trim();
+      const name = String(entry.name || entry.organization || entry.faction || '').trim();
+      const value = numberOrFallbackV50(entry.value ?? entry.score ?? entry.reputation, 0);
+      const status = String(entry.status || entry.rank || '').trim();
+      const note = String(entry.note || entry.notes || entry.description || '').trim();
+      if (orgId || name || status || note || value) rows.push({ orgId, name, value, status, note });
+    };
+    if (Array.isArray(value)) value.forEach(push);
+    else if (value && typeof value === 'object') Object.entries(value).forEach(([orgId, entry]) => push({ ...(entry && typeof entry === 'object' ? entry : { value: entry }), orgId }));
+    if (!rows.length && Array.isArray(legacyOrgs)) legacyOrgs.forEach(push);
+    const seen = new Set();
+    return rows.filter(row => {
+      const key = row.orgId || `name:${row.name}`;
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+
+  function normalizeAbilityRequirementsV52(value, legacyAbility = '', legacyValue = 0) {
+    const rows = [];
+    const push = entry => {
+      if (!entry) return;
+      if (typeof entry === 'string') {
+        const key = entry.trim();
+        if (ABILITY_BY_KEY_V50[key]) rows.push({ key, value: 1 });
+        return;
+      }
+      if (Array.isArray(entry)) {
+        const [key, rawValue] = entry;
+        if (ABILITY_BY_KEY_V50[key]) rows.push({ key, value: Math.max(0, numberOrFallbackV50(rawValue, 0)) });
+        return;
+      }
+      if (typeof entry !== 'object') return;
+      const key = String(entry.key || entry.ability || entry.requiredAbility || entry.id || '').trim();
+      if (!ABILITY_BY_KEY_V50[key]) return;
+      const value = Math.max(0, numberOrFallbackV50(entry.value ?? entry.min ?? entry.minimum ?? entry.requiredAbilityValue ?? entry.abilityMin, 0));
+      if (value > 0) rows.push({ key, value });
+    };
+    if (Array.isArray(value)) value.forEach(push);
+    else if (value && typeof value === 'object') Object.entries(value).forEach(([key, raw]) => {
+      if (raw && typeof raw === 'object') push({ ...raw, key: raw.key || raw.ability || key });
+      else push({ key, value: raw });
+    });
+    const legacyKey = String(legacyAbility || '').trim();
+    const legacyMin = Math.max(0, numberOrFallbackV50(legacyValue, 0));
+    if (ABILITY_BY_KEY_V50[legacyKey] && legacyMin > 0) rows.push({ key: legacyKey, value: legacyMin });
+    const merged = new Map();
+    rows.forEach(row => {
+      const key = String(row.key || '').trim();
+      if (!ABILITY_BY_KEY_V50[key]) return;
+      const value = Math.max(0, numberOrFallbackV50(row.value, 0));
+      if (value <= 0) return;
+      merged.set(key, Math.max(value, merged.get(key) || 0));
+    });
+    return ABILITY_MODEL_V50.map(item => merged.has(item.key) ? { key: item.key, value: merged.get(item.key) } : null).filter(Boolean);
+  }
+
+  function abilityRequirementsMapV52(skill = {}) {
+    return Object.fromEntries(normalizeAbilityRequirementsV52(skill.requiredAbilities || skill.abilityRequirements || {}, skill.requiredAbility, skill.requiredAbilityValue).map(row => [row.key, row.value]));
+  }
+
+  const __normalizePlayerProfileV50 = normalizePlayerProfileV2;
+  normalizePlayerProfileV2 = function(user = {}) {
+    const next = __normalizePlayerProfileV50(user);
+    next.abilities = normalizeAbilitiesV50(user.abilities || next.abilities || {});
+    next.skillPoints = Math.max(0, numberOrFallbackV50(user.skillPoints ?? user.upgradePoints ?? user.improvementPoints, 0));
+    next.skills = normalizeSkillIdArrayV50(user.skills || user.skillIds || []);
+    next.social = {
+      ...(next.social || {}),
+      npcIds: Array.isArray(next.social?.npcIds) ? next.social.npcIds : [],
+      orgs: Array.isArray(next.social?.orgs) ? next.social.orgs : [],
+      reputation: normalizeReputationRowsV50(user.social?.reputation || next.social?.reputation, user.social?.orgs || next.social?.orgs || [])
+    };
+    return next;
+  };
+
+  function normalizeFactionV50(entity = {}) {
+    const id = slugifyId(entity.id || entity.name || entity.title || '', 'org');
+    return {
+      id,
+      name: String(entity.name || entity.title || 'Новая организация').trim(),
+      type: String(entity.type || entity.category || '').trim(),
+      influence: String(entity.influence || entity.scale || '').trim(),
+      reputationScale: String(entity.reputationScale || '').trim(),
+      description: String(entity.description || entity.summary || entity.body || '').trim(),
+      color: String(entity.color || '#7df9ff').trim() || '#7df9ff',
+      image: String(entity.image || '').trim(),
+      imageLocal: String(entity.imageLocal || '').trim(),
+      imageStoragePath: String(entity.imageStoragePath || '').trim(),
+      relatedArticleIds: Array.isArray(entity.relatedArticleIds) ? entity.relatedArticleIds.map(String).filter(Boolean) : [],
+      visibility: entity.visibility && typeof entity.visibility === 'object' ? { playerIds: Array.isArray(entity.visibility.playerIds) ? entity.visibility.playerIds.map(String) : [] } : { playerIds: [] }
+    };
+  }
+
+  function normalizeSkillV50(entity = {}) {
+    const id = slugifyId(entity.id || entity.name || entity.title || '', 'skill');
+    const requiredAbilities = normalizeAbilityRequirementsV52(entity.requiredAbilities || entity.abilityRequirements || entity.requiredAbilityMap, entity.requiredAbility || entity.ability || '', entity.requiredAbilityValue ?? entity.abilityMin ?? 0);
+    const firstAbilityReq = requiredAbilities[0] || { key: '', value: 0 };
+    return {
+      id,
+      name: String(entity.name || entity.title || 'Новый навык').trim(),
+      category: String(entity.category || 'Общее').trim() || 'Общее',
+      description: String(entity.description || entity.summary || entity.body || '').trim(),
+      cost: Math.max(0, numberOrFallbackV50(entity.cost ?? entity.pointCost, 1)),
+      requiredAbilities,
+      requiredAbility: firstAbilityReq.key,
+      requiredAbilityValue: firstAbilityReq.value,
+      requiredSkillIds: normalizeSkillIdArrayV50(entity.requiredSkillIds || entity.prerequisites || []),
+      color: String(entity.color || '#7df9ff').trim() || '#7df9ff',
+      image: String(entity.image || '').trim(),
+      imageLocal: String(entity.imageLocal || '').trim(),
+      imageStoragePath: String(entity.imageStoragePath || '').trim(),
+      relatedArticleIds: Array.isArray(entity.relatedArticleIds) ? entity.relatedArticleIds.map(String).filter(Boolean) : [],
+      visibility: entity.visibility && typeof entity.visibility === 'object' ? { playerIds: Array.isArray(entity.visibility.playerIds) ? entity.visibility.playerIds.map(String) : [] } : { playerIds: [] }
+    };
+  }
+
+  function normalizeRecordFromSectionV50(section = {}, mapKey, listKey, normalizeFn) {
+    const source = section && typeof section === 'object' ? section : {};
+    const record = source[mapKey] && typeof source[mapKey] === 'object' ? source[mapKey] : {};
+    const list = Array.isArray(source[listKey]) ? source[listKey] : [];
+    const out = {};
+    Object.entries(record).forEach(([fallbackId, entry]) => {
+      const normalized = normalizeFn({ ...(entry && typeof entry === 'object' ? entry : {}), id: entry?.id || fallbackId });
+      if (normalized.id) out[normalized.id] = normalized;
+    });
+    list.forEach(entry => {
+      const normalized = normalizeFn(entry);
+      if (normalized.id && !out[normalized.id]) out[normalized.id] = normalized;
+    });
+    return out;
+  }
+
+  function syncFactionsWorldDataV50() {
+    FACTION_LIST_V50 = sortEntitiesForList(Object.values(FACTIONS_V50));
+    if (worldData && typeof worldData === 'object') worldData.factions = serializeWorldSection('factions', FACTIONS_V50);
+    Data.factions = FACTIONS_V50;
+  }
+
+  function syncSkillsWorldDataV50() {
+    SKILL_LIST_V50 = sortEntitiesForList(Object.values(SKILLS_V50));
+    if (worldData && typeof worldData === 'object') worldData.skills = serializeWorldSection('skills', SKILLS_V50);
+    Data.skills = SKILLS_V50;
+  }
+
+  Data.factions = FACTIONS_V50;
+  Data.skills = SKILLS_V50;
+  Data.getFaction = function(id) { return this.factions?.[id] || null; };
+  Data.getSkill = function(id) { return this.skills?.[id] || null; };
+
+  const __applyWorldDataV50 = applyWorldData;
+  applyWorldData = function(payload = {}) {
+    __applyWorldDataV50(payload);
+    FACTIONS_V50 = normalizeRecordFromSectionV50(payload.factions || {}, 'FACTIONS', 'FACTION_LIST', normalizeFactionV50);
+    SKILLS_V50 = normalizeRecordFromSectionV50(payload.skills || {}, 'SKILLS', 'SKILL_LIST', normalizeSkillV50);
+    syncFactionsWorldDataV50();
+    syncSkillsWorldDataV50();
+    PLAYER_TEMPLATES = Object.fromEntries(Object.entries(PLAYER_TEMPLATES || {}).map(([id, player]) => [id, normalizePlayerProfileV2(player)]));
+    PLAYER_LIST = sortEntitiesForList(Object.values(PLAYER_TEMPLATES));
+    if (App?.state?.users) {
+      App.state.users = Object.fromEntries(Object.entries(App.state.users || {}).map(([id, player]) => [id, normalizePlayerProfileV2(player)]));
+    }
+  };
+
+  const __buildWorldSnapshotV50 = buildWorldSnapshot;
+  buildWorldSnapshot = function() {
+    const snap = __buildWorldSnapshotV50();
+    snap.factions = serializeWorldSection('factions', FACTIONS_V50);
+    snap.skills = serializeWorldSection('skills', SKILLS_V50);
+    return snap;
+  };
+
+  const __createBlankEntityV50 = createBlankEntity;
+  createBlankEntity = function(type) {
+    const stamp = Date.now().toString().slice(-6);
+    if (type === 'factions') return normalizeFactionV50({ id: `org_${stamp}`, name: 'Новая организация', type: 'Фракция', influence: 'Локальное влияние', color: '#7df9ff' });
+    if (type === 'skills') return normalizeSkillV50({ id: `skill_${stamp}`, name: 'Новый навык', category: 'Общее', cost: 1, description: '' });
+    const entity = __createBlankEntityV50(type);
+    if (type === 'players') return normalizePlayerProfileV2({ ...entity, skillPoints: 0, skills: [], abilities: normalizeAbilitiesV50(entity.abilities || {}) });
+    return entity;
+  };
+
+  const __entityByTypeV50 = entityByType;
+  entityByType = function(type, id) {
+    if (type === 'faction' || type === 'organization') return Data.getFaction(id);
+    if (type === 'skill') return Data.getSkill(id);
+    return __entityByTypeV50(type, id);
+  };
+
+  const __titleForEntityV50 = titleForEntity;
+  titleForEntity = function(type, entity) {
+    if (type === 'faction' || type === 'organization') return entity?.name || entity?.id || 'Организация';
+    if (type === 'skill') return entity?.name || entity?.id || 'Навык';
+    return __titleForEntityV50(type, entity);
+  };
+
+  function getVisibleFactionsV50(user = App.currentUser) {
+    return sortEntitiesForList(Object.values(FACTIONS_V50 || {}).filter(item => isEntityVisible(item, user)));
+  }
+
+  function getVisibleSkillsV50(user = App.currentUser) {
+    return sortEntitiesForList(Object.values(SKILLS_V50 || {}).filter(item => isEntityVisible(item, user)));
+  }
+
+  function abilityTilesMarkupV50(user) {
+    const abilities = normalizeAbilitiesV50(user?.abilities || {});
+    return ABILITY_MODEL_V50.map(item => `<div class="ability profile-ability-compact" title="${esc(item.label)}"><span>${esc(item.label)}</span><b>${esc(abilities[item.key])}</b></div>`).join('');
+  }
+
+  function reputationForFactionV50(user, faction) {
+    const rows = normalizeReputationRowsV50(user?.social?.reputation || [], user?.social?.orgs || []);
+    return rows.find(row => row.orgId && row.orgId === faction.id) || rows.find(row => row.name && row.name.toLowerCase() === String(faction.name || '').toLowerCase()) || null;
+  }
+
+  function skillStatusV50(user, skill) {
+    user = normalizePlayerProfileV2(user);
+    skill = normalizeSkillV50(skill);
+    const owned = new Set(user.skills || []);
+    if (owned.has(skill.id)) return { state: 'owned', ok: false, reasons: ['Навык уже изучен'] };
+    const reasons = [];
+    if (Number(user.skillPoints || 0) < Number(skill.cost || 0)) reasons.push(`Нужно очков улучшения: ${skill.cost}`);
+    for (const req of skill.requiredAbilities || []) {
+      const current = Number(user.abilities?.[req.key] || 0);
+      if (current < Number(req.value || 0)) reasons.push(`${abilityLabelV50(req.key)} ${current}/${req.value}`);
+    }
+    for (const reqId of skill.requiredSkillIds || []) {
+      if (!owned.has(reqId)) reasons.push(`Нужен навык: ${Data.getSkill(reqId)?.name || reqId}`);
+    }
+    return { state: reasons.length ? 'locked' : 'available', ok: !reasons.length, reasons };
+  }
+
+  function skillSortBucketV50(user, skill) {
+    const status = skillStatusV50(user, skill).state;
+    if (status === 'available') return 0;
+    if (status === 'owned') return 1;
+    return 2;
+  }
+
+  function ensureProfileModalV50() {
+    let modal = document.getElementById('profile-extra-modal-v50');
+    if (modal) return modal;
+    modal = document.createElement('div');
+    modal.id = 'profile-extra-modal-v50';
+    modal.className = 'modal profile-extra-modal-v50';
+    modal.innerHTML = `
+      <div class="login-box card profile-extra-modal-box-v50">
+        <div class="row" style="justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:14px">
+          <div><div class="section-title" id="profile-extra-modal-kicker-v50">Профиль</div><h2 id="profile-extra-modal-title-v50" style="margin:0">Окно профиля</h2></div>
+          <button class="ghost" type="button" id="profile-extra-modal-close-v50">ЗАКРЫТЬ</button>
+        </div>
+        <div id="profile-extra-modal-body-v50"></div>
+      </div>`;
+    document.body.appendChild(modal);
+    modal.addEventListener('click', event => { if (event.target === modal) modal.classList.remove('open'); });
+    modal.querySelector('#profile-extra-modal-close-v50')?.addEventListener('click', () => modal.classList.remove('open'));
+    return modal;
+  }
+
+  function openProfileModalV50(title, kicker, html) {
+    const modal = ensureProfileModalV50();
+    modal.querySelector('#profile-extra-modal-title-v50').textContent = title;
+    modal.querySelector('#profile-extra-modal-kicker-v50').textContent = kicker;
+    modal.querySelector('#profile-extra-modal-body-v50').innerHTML = html;
+    modal.classList.add('open');
+    return modal;
+  }
+
+  function reputationModalMarkupV50(user) {
+    user = normalizePlayerProfileV2(user);
+    const factions = getVisibleFactionsV50(user);
+    const legacyRows = normalizeReputationRowsV50(user.social?.reputation || [], user.social?.orgs || []).filter(row => !row.orgId && row.name);
+    const cards = factions.map(faction => {
+      const rep = reputationForFactionV50(user, faction);
+      const value = rep ? numberOrFallbackV50(rep.value, 0) : 0;
+      const status = rep?.status || (rep ? 'Контакт установлен' : 'Нет данных');
+      const note = rep?.note || faction.description || '';
+      return `<div class="profile-rep-card-v50">
+        ${renderThumb(faction, { size: 'md', type: 'organization', glyph: initials(faction.name, 'ORG') })}
+        <div>
+          <div class="row" style="justify-content:space-between;gap:10px;align-items:flex-start"><b>${esc(faction.name)}</b><span class="chip">${esc(value > 0 ? `+${value}` : value)}</span></div>
+          <div class="small-note">${esc([faction.type, faction.influence].filter(Boolean).join(' · ') || 'Организация мира')}</div>
+          <div class="small-note" style="margin-top:6px">${esc(status)}</div>
+          ${note ? `<div style="margin-top:8px">${esc(note)}</div>` : ''}
+        </div>
+      </div>`;
+    }).join('');
+    const legacy = legacyRows.length ? `<div class="section-title" style="margin-top:16px">Старые записи</div><div class="tags">${legacyRows.map(row => `<span class="tag">${esc(row.status || row.name)}</span>`).join('')}</div>` : '';
+    return `<div class="small-note" style="margin-bottom:12px">Репутация берётся из профиля персонажа, а список организаций задаётся в World Config → Организации.</div><div class="result-stack">${cards || '<div class="small-note">В World Config пока нет организаций.</div>'}</div>${legacy}`;
+  }
+
+  function treeNodeIdV51(type, id) {
+    return `${type}:${String(id || '').trim()}`;
+  }
+
+  function skillTreeDepthV51(skill, memo = {}, stack = new Set()) {
+    skill = normalizeSkillV50(skill);
+    if (!skill.id) return 1;
+    if (memo[skill.id]) return memo[skill.id];
+    if (stack.has(skill.id)) return 1;
+    stack.add(skill.id);
+    let depth = 1;
+    for (const reqId of skill.requiredSkillIds || []) {
+      const reqSkill = Data.getSkill(reqId);
+      if (reqSkill) depth = Math.max(depth, skillTreeDepthV51(reqSkill, memo, stack) + 1);
+    }
+    stack.delete(skill.id);
+    memo[skill.id] = depth;
+    return depth;
+  }
+
+  function skillRootColumnsV51(skill, memo = {}, stack = new Set()) {
+    skill = normalizeSkillV50(skill);
+    if (!skill.id) return [];
+    if (memo[skill.id]) return memo[skill.id];
+    if (stack.has(skill.id)) return [];
+    stack.add(skill.id);
+    const roots = [];
+    for (const req of skill.requiredAbilities || []) {
+      if (ABILITY_BY_KEY_V50[req.key]) roots.push(ABILITY_MODEL_V50.findIndex(item => item.key === req.key));
+    }
+    for (const reqId of skill.requiredSkillIds || []) {
+      const reqSkill = Data.getSkill(reqId);
+      if (reqSkill) roots.push(...skillRootColumnsV51(reqSkill, memo, stack));
+    }
+    stack.delete(skill.id);
+    const clean = Array.from(new Set(roots.filter(index => Number.isFinite(index) && index >= 0)));
+    memo[skill.id] = clean;
+    return clean;
+  }
+
+  function fallbackSkillColumnV51(skill, index = 0) {
+    const seed = String(skill.category || skill.name || skill.id || '') + String(index);
+    let hash = 0;
+    for (let i = 0; i < seed.length; i += 1) hash = ((hash << 5) - hash + seed.charCodeAt(i)) | 0;
+    return Math.abs(hash) % ABILITY_MODEL_V50.length;
+  }
+
+  function buildSkillTreeLayoutV51(user) {
+    user = normalizePlayerProfileV2(user);
+    const depthMemo = {};
+    const rootMemo = {};
+    const skills = getVisibleSkillsV50(user).map(skill => normalizeSkillV50(skill)).sort((a, b) => {
+      const da = skillTreeDepthV51(a, depthMemo);
+      const db = skillTreeDepthV51(b, depthMemo);
+      if (da !== db) return da - db;
+      const ca = String(a.category || '').localeCompare(String(b.category || ''), 'ru');
+      if (ca) return ca;
+      return String(a.name || '').localeCompare(String(b.name || ''), 'ru');
+    });
+    const rows = new Map();
+    skills.forEach((skill, index) => {
+      const row = Math.max(1, skillTreeDepthV51(skill, depthMemo));
+      const rootColumns = skillRootColumnsV51(skill, rootMemo);
+      const preferredCol = rootColumns.length ? Math.round(rootColumns.reduce((sum, value) => sum + value, 0) / rootColumns.length) : fallbackSkillColumnV51(skill, index);
+      if (!rows.has(row)) rows.set(row, Array.from({ length: ABILITY_MODEL_V50.length }, () => []));
+      const columns = rows.get(row);
+      const baseCol = Math.max(0, Math.min(ABILITY_MODEL_V50.length - 1, preferredCol));
+      let col = baseCol;
+      for (let step = 0; step < ABILITY_MODEL_V50.length; step += 1) {
+        const left = baseCol - step;
+        const right = baseCol + step;
+        if (left >= 0 && !columns[left].length) { col = left; break; }
+        if (right < ABILITY_MODEL_V50.length && !columns[right].length) { col = right; break; }
+      }
+      columns[col].push(skill);
+    });
+    for (const columns of rows.values()) {
+      columns.forEach(list => list.sort((a, b) => {
+        const bucket = skillSortBucketV50(user, a) - skillSortBucketV50(user, b);
+        if (bucket) return bucket;
+        const cat = String(a.category || '').localeCompare(String(b.category || ''), 'ru');
+        if (cat) return cat;
+        return String(a.name || '').localeCompare(String(b.name || ''), 'ru');
+      }));
+    }
+    return { rows: Array.from(rows.entries()).sort((a, b) => a[0] - b[0]), skills };
+  }
+
+  function skillRequirementTextV51(skill) {
+    skill = normalizeSkillV50(skill);
+    const reqs = [];
+    for (const req of skill.requiredAbilities || []) reqs.push(`${abilityLabelV50(req.key)} ≥ ${req.value}`);
+    if ((skill.requiredSkillIds || []).length) reqs.push(...(skill.requiredSkillIds || []).map(id => Data.getSkill(id)?.name || id));
+    return reqs.join(' · ');
+  }
+
+  function abilityTreeNodeMarkupV51(user, item) {
+    const abilities = normalizeAbilitiesV50(user?.abilities || {});
+    const value = Math.max(0, Number(abilities[item.key] || 0));
+    const points = Number(user?.skillPoints || 0);
+    const state = value >= 20 ? 'maxed' : points > 0 ? 'available' : 'locked';
+    const canUpgrade = state === 'available';
+    return `<div class="profile-skill-node-v51 profile-ability-node-v51 ${esc(state)}" data-tree-node-id="${esc(treeNodeIdV51('ability', item.key))}" data-tree-row="0" data-tree-col="${ABILITY_MODEL_V50.findIndex(entry => entry.key === item.key)}">
+      <div class="profile-skill-node-head-v51"><span>${esc(item.short)}</span><b>${esc(item.label)}</b></div>
+      <div class="profile-skill-node-value-v51">${Number(value)}</div>
+      ${canUpgrade ? `<button class="secondary profile-upgrade-ability-btn-v51" type="button" data-ability-key="${esc(item.key)}">+1</button>` : `<button class="secondary profile-upgrade-ability-btn-v51" type="button" disabled>${value >= 20 ? '20' : 'НЕТ ОЧКОВ'}</button>`}
+    </div>`;
+  }
+
+  function skillTreeNodeMarkupV51(user, skill, row, col) {
+    const status = skillStatusV50(user, skill);
+    const actionLabel = status.state === 'owned' ? 'ИЗУЧЕНО' : Number(user?.skillPoints || 0) < Number(skill.cost || 0) ? 'НЕТ ОЧКОВ' : 'ТРЕБОВАНИЯ';
+    return `<div class="profile-skill-node-v51 profile-skill-card-v50 ${esc(status.state)}" data-tree-node-id="${esc(treeNodeIdV51('skill', skill.id))}" data-tree-row="${Number(row)}" data-tree-col="${Number(col)}" data-skill-card-id="${esc(skill.id)}">
+      <div class="profile-skill-node-thumb-v51">${renderThumb(skill, { size: 'sm', type: 'skill', glyph: initials(skill.name, 'SK') })}</div>
+      <div class="profile-skill-node-main-v51">
+        <div class="profile-skill-node-title-v51"><b>${esc(skill.name)}</b></div>
+        <div class="profile-skill-node-actions-v52">
+          <button class="ghost profile-skill-info-btn-v52" type="button" data-skill-id="${esc(skill.id)}" title="Описание и требования">i</button>
+          ${status.state === 'available' ? `<button class="primary profile-learn-skill-btn-v50" type="button" data-skill-id="${esc(skill.id)}">ПРОКАЧАТЬ</button>` : `<button class="secondary profile-learn-skill-btn-v50" type="button" disabled>${esc(actionLabel)}</button>`}
+        </div>
+      </div>
+    </div>`;
+  }
+
+  function skillTreeEdgesV51(skills) {
+    const edges = [];
+    skills.forEach(skill => {
+      skill = normalizeSkillV50(skill);
+      for (const req of skill.requiredAbilities || []) {
+        if (req.key) edges.push({ from: treeNodeIdV51('ability', req.key), to: treeNodeIdV51('skill', skill.id), kind: 'ability' });
+      }
+      (skill.requiredSkillIds || []).forEach(reqId => {
+        if (Data.getSkill(reqId)) edges.push({ from: treeNodeIdV51('skill', reqId), to: treeNodeIdV51('skill', skill.id), kind: 'skill' });
+      });
+    });
+    return edges;
+  }
+
+  function skillsModalMarkupV50(user) {
+    user = normalizePlayerProfileV2(user);
+    const layout = buildSkillTreeLayoutV51(user);
+    const edges = skillTreeEdgesV51(layout.skills);
+    const abilityRow = ABILITY_MODEL_V50.map(item => `<div class="profile-skill-column-v51">${abilityTreeNodeMarkupV51(user, item)}</div>`).join('');
+    const skillRows = layout.rows.map(([row, columns]) => `<div class="profile-skill-row-v51" data-skill-tree-row="${Number(row)}">${columns.map((list, col) => `<div class="profile-skill-column-v51">${list.map(skill => skillTreeNodeMarkupV51(user, skill, row, col)).join('')}</div>`).join('')}</div>`).join('');
+    return `<div class="profile-skill-tree-toolbar-v51">
+      <div class="chip">ОЧКИ УЛУЧШЕНИЯ: ${Number(user.skillPoints || 0)}</div>
+    </div>
+    <div class="profile-skill-tree-scroll-v51">
+      <div class="profile-skill-tree-canvas-v51" data-skill-tree="1" data-skill-tree-edges="${esc(JSON.stringify(edges))}">
+        <svg class="profile-skill-lines-v51" aria-hidden="true"></svg>
+        <div class="profile-skill-row-v51 profile-skill-ability-row-v51" data-skill-tree-row="0">${abilityRow}</div>
+        ${skillRows || '<div class="small-note" style="padding:24px">В World Config пока нет навыков.</div>'}
+      </div>
+    </div>`;
+  }
+
+  function skillDetailsMarkupV52(user, skillId) {
+    user = normalizePlayerProfileV2(user);
+    const skill = normalizeSkillV50(Data.getSkill(skillId) || {});
+    if (!skill.id) return '<div class="small-note">Навык не найден.</div>';
+    const status = skillStatusV50(user, skill);
+    const abilityReqs = (skill.requiredAbilities || []).map(req => `<li>${esc(abilityLabelV50(req.key))}: ${Number(user.abilities?.[req.key] || 0)} / ${Number(req.value || 0)}</li>`).join('');
+    const skillReqs = (skill.requiredSkillIds || []).map(id => `<li>${esc(Data.getSkill(id)?.name || id)}${(user.skills || []).includes(id) ? ' ✓' : ''}</li>`).join('');
+    const missing = status.reasons.length ? `<div class="profile-skill-detail-warning-v52">${esc(status.reasons.join(' · '))}</div>` : '';
+    return `<div class="profile-skill-detail-v52">
+      <div class="profile-skill-detail-head-v52">
+        ${renderThumb(skill, { size: 'md', type: 'skill', glyph: initials(skill.name, 'SK') })}
+        <div><b>${esc(skill.name)}</b><div class="small-note">${esc(skill.category || 'Общее')} · ${Number(skill.cost || 0)} ОУ</div></div>
+      </div>
+      ${skill.description ? `<div class="profile-skill-detail-description-v52">${esc(skill.description)}</div>` : '<div class="small-note">Описание не задано.</div>'}
+      <div class="section-title">Требования</div>
+      ${abilityReqs || skillReqs ? `<ul class="profile-skill-detail-reqs-v52">${abilityReqs}${skillReqs}</ul>` : '<div class="small-note">Нет требований.</div>'}
+      ${missing}
+    </div>`;
+  }
+
+  function ensureSkillInfoModalV52() {
+    let modal = document.getElementById('profile-skill-info-modal-v52');
+    if (modal) return modal;
+    modal = document.createElement('div');
+    modal.id = 'profile-skill-info-modal-v52';
+    modal.className = 'modal profile-skill-info-modal-v52';
+    modal.innerHTML = `<div class="login-box card profile-skill-info-box-v52">
+      <div class="row" style="justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:14px">
+        <div><div class="section-title">Навык</div><h2 id="profile-skill-info-title-v52" style="margin:0">Описание</h2></div>
+        <button class="ghost" type="button" id="profile-skill-info-close-v52">ЗАКРЫТЬ</button>
+      </div>
+      <div id="profile-skill-info-body-v52"></div>
+    </div>`;
+    document.body.appendChild(modal);
+    modal.addEventListener('click', event => { if (event.target === modal) modal.classList.remove('open'); });
+    modal.querySelector('#profile-skill-info-close-v52')?.addEventListener('click', () => modal.classList.remove('open'));
+    return modal;
+  }
+
+  function openSkillDetailsV52(skillId) {
+    const skill = normalizeSkillV50(Data.getSkill(skillId) || {});
+    const modal = ensureSkillInfoModalV52();
+    modal.querySelector('#profile-skill-info-title-v52').textContent = skill.name || 'Описание';
+    modal.querySelector('#profile-skill-info-body-v52').innerHTML = skillDetailsMarkupV52(App.state.users[App.currentUserId] || App.currentUser || {}, skillId);
+    modal.classList.add('open');
+  }
+
+  async function learnSkillV50(skillId) {
+    const current = normalizePlayerProfileV2(App.state.users[App.currentUserId] || App.currentUser || {});
+    const skill = Data.getSkill(skillId);
+    if (!current?.id || !skill) return;
+    const status = skillStatusV50(current, skill);
+    if (!status.ok) {
+      Toast.show(status.reasons.join(' · ') || 'Навык недоступен', 'err');
+      return;
+    }
+    if (!window.confirm(`Вы уверены что хотите взять «${skill.name}»?`)) return;
+    current.skills = normalizeSkillIdArrayV50([...(current.skills || []), skill.id]);
+    current.skillPoints = Math.max(0, Number(current.skillPoints || 0) - Number(skill.cost || 0));
+    App.state.users[current.id] = normalizePlayerProfileV2(current);
+    PLAYER_TEMPLATES[current.id] = deep(App.state.users[current.id]);
+    await App.writeLocalMirrors();
+    const patch = { skills: App.state.users[current.id].skills, skillPoints: App.state.users[current.id].skillPoints };
+    const syncRes = await PlayerSync.pushPlayerPatch(current.id, patch, { notice: `Навык изучен: ${skill.name}`, rerender: true });
+    if (!syncRes?.ok && syncRes?.status !== 'disabled') Toast.show(`Навык сохранён локально, но облако не обновилось: ${syncRes?.message || 'unknown error'}`, 'info');
+    const modal = ensureProfileModalV50();
+    modal.querySelector('#profile-extra-modal-body-v50').innerHTML = skillsModalMarkupV50(App.state.users[current.id]);
+    bindProfileModalActionsV50(modal);
+    UI.renderProfile();
+  }
+
+  function offsetFromIndexV51(index, total, step = 8) {
+    if (total <= 1) return 0;
+    return (index - (total - 1) / 2) * step;
+  }
+
+  function rectIntersectsVerticalV52(rect, x, y1, y2) {
+    return x > rect.left && x < rect.right && Math.max(y1, rect.top) < Math.min(y2, rect.bottom);
+  }
+
+  function findClearVerticalLaneX_V52(x, y1, y2, obstacles, preferredDirection = 1, minX = 0, maxX = 1) {
+    let laneX = x;
+    const dir = preferredDirection >= 0 ? 1 : -1;
+    for (let step = 0; step < 42; step += 1) {
+      const hit = obstacles.find(rect => rectIntersectsVerticalV52(rect, laneX, y1, y2));
+      if (!hit) return Math.max(minX, Math.min(maxX, laneX));
+      const out = dir > 0 ? hit.right + 10 : hit.left - 10;
+      laneX = Math.max(minX, Math.min(maxX, out + offsetFromIndexV51(step % 3, 3, 6)));
+      if (laneX <= minX + 1 || laneX >= maxX - 1) laneX = x + (step + 1) * 18 * dir;
+    }
+    return Math.max(minX, Math.min(maxX, laneX));
+  }
+
+  function drawSkillTreeLinesV51(root = document) {
+    const trees = Array.from(root.querySelectorAll?.('[data-skill-tree="1"]') || []);
+    trees.forEach(tree => {
+      const svg = tree.querySelector('.profile-skill-lines-v51');
+      if (!svg) return;
+      let edges = [];
+      try { edges = JSON.parse(tree.dataset.skillTreeEdges || '[]'); } catch { edges = []; }
+      const treeRect = tree.getBoundingClientRect();
+      if (!treeRect.width || !treeRect.height) return;
+      const nodes = new Map(Array.from(tree.querySelectorAll('[data-tree-node-id]')).map(node => [node.dataset.treeNodeId, node]));
+      const obstaclePadding = 9;
+      const obstacles = Array.from(nodes.values()).map(node => {
+        const rect = node.getBoundingClientRect();
+        return {
+          left: rect.left - treeRect.left - obstaclePadding,
+          right: rect.right - treeRect.left + obstaclePadding,
+          top: rect.top - treeRect.top - obstaclePadding,
+          bottom: rect.bottom - treeRect.top + obstaclePadding
+        };
+      });
+      const drawable = edges.map((edge, index) => {
+        const fromNode = nodes.get(edge.from);
+        const toNode = nodes.get(edge.to);
+        if (!fromNode || !toNode) return null;
+        const fromRectAbs = fromNode.getBoundingClientRect();
+        const toRectAbs = toNode.getBoundingClientRect();
+        const fromRect = {
+          left: fromRectAbs.left - treeRect.left,
+          right: fromRectAbs.right - treeRect.left,
+          top: fromRectAbs.top - treeRect.top,
+          bottom: fromRectAbs.bottom - treeRect.top,
+          width: fromRectAbs.width,
+          height: fromRectAbs.height
+        };
+        const toRect = {
+          left: toRectAbs.left - treeRect.left,
+          right: toRectAbs.right - treeRect.left,
+          top: toRectAbs.top - treeRect.top,
+          bottom: toRectAbs.bottom - treeRect.top,
+          width: toRectAbs.width,
+          height: toRectAbs.height
+        };
+        const fromRow = Number(fromNode.dataset.treeRow || 0);
+        const toRow = Number(toNode.dataset.treeRow || 0);
+        return { edge, index, fromNode, toNode, fromRect, toRect, fromRow, toRow };
+      }).filter(Boolean);
+      const sourceGroups = new Map();
+      const targetGroups = new Map();
+      const bandGroups = new Map();
+      drawable.forEach(item => {
+        if (!sourceGroups.has(item.edge.from)) sourceGroups.set(item.edge.from, []);
+        if (!targetGroups.has(item.edge.to)) targetGroups.set(item.edge.to, []);
+        const band = `${item.fromRow}:${item.toRow}`;
+        if (!bandGroups.has(band)) bandGroups.set(band, []);
+        sourceGroups.get(item.edge.from).push(item);
+        targetGroups.get(item.edge.to).push(item);
+        bandGroups.get(band).push(item);
+      });
+      const sourceIndex = new Map();
+      const targetIndex = new Map();
+      const bandIndex = new Map();
+      for (const list of sourceGroups.values()) list.sort((a, b) => (a.toRect.left + a.toRect.width / 2) - (b.toRect.left + b.toRect.width / 2)).forEach((item, i) => sourceIndex.set(item.index, { i, total: list.length }));
+      for (const list of targetGroups.values()) list.sort((a, b) => (a.fromRect.left + a.fromRect.width / 2) - (b.fromRect.left + b.fromRect.width / 2)).forEach((item, i) => targetIndex.set(item.index, { i, total: list.length }));
+      for (const list of bandGroups.values()) list.sort((a, b) => ((a.fromRect.left + a.toRect.left) / 2) - ((b.fromRect.left + b.toRect.left) / 2)).forEach((item, i) => bandIndex.set(item.index, { i, total: list.length }));
+      const paths = [];
+      const maxX = Math.max(1, tree.scrollWidth);
+      drawable.forEach(item => {
+        const src = sourceIndex.get(item.index) || { i: 0, total: 1 };
+        const dst = targetIndex.get(item.index) || { i: 0, total: 1 };
+        const band = bandIndex.get(item.index) || { i: 0, total: 1 };
+        const fromCx = item.fromRect.left + item.fromRect.width / 2;
+        const toCx = item.toRect.left + item.toRect.width / 2;
+        const direction = toCx >= fromCx ? 1 : -1;
+        const sx = fromCx + offsetFromIndexV51(src.i, src.total, 5);
+        const sy = item.fromRect.bottom;
+        const tx = toCx + offsetFromIndexV51(dst.i, dst.total, 5);
+        const ty = item.toRect.top;
+        const startGapY = sy + 8 + offsetFromIndexV51(src.i, src.total, 3);
+        const endGapY = Math.max(startGapY + 12, ty - 8 + offsetFromIndexV51(dst.i, dst.total, 3));
+        let laneX = (sx + tx) / 2 + offsetFromIndexV51(band.i, band.total, 14);
+        if (Math.abs(tx - sx) < 34) laneX = sx + direction * (34 + Math.abs(offsetFromIndexV51(band.i, band.total, 10)));
+        laneX = findClearVerticalLaneX_V52(laneX, startGapY, endGapY, obstacles, direction, 8, Math.max(8, maxX - 8));
+        const d = `M ${sx.toFixed(1)} ${sy.toFixed(1)} L ${sx.toFixed(1)} ${startGapY.toFixed(1)} L ${laneX.toFixed(1)} ${startGapY.toFixed(1)} L ${laneX.toFixed(1)} ${endGapY.toFixed(1)} L ${tx.toFixed(1)} ${endGapY.toFixed(1)} L ${tx.toFixed(1)} ${ty.toFixed(1)}`;
+        paths.push(`<path class="profile-skill-edge-v51 ${esc(item.edge.kind || 'skill')}" d="${d}"/>`);
+      });
+      svg.setAttribute('viewBox', `0 0 ${Math.max(1, tree.scrollWidth)} ${Math.max(1, tree.scrollHeight)}`);
+      svg.setAttribute('width', String(Math.max(1, tree.scrollWidth)));
+      svg.setAttribute('height', String(Math.max(1, tree.scrollHeight)));
+      svg.innerHTML = paths.join('');
+    });
+  }
+
+  let skillTreeRafV51 = 0;
+  function scheduleSkillTreeLinesV51(root = document) {
+    if (skillTreeRafV51) cancelAnimationFrame(skillTreeRafV51);
+    skillTreeRafV51 = requestAnimationFrame(() => {
+      skillTreeRafV51 = requestAnimationFrame(() => {
+        skillTreeRafV51 = 0;
+        drawSkillTreeLinesV51(root);
+      });
+    });
+  }
+
+  async function upgradeAbilityV51(abilityKey) {
+    const ability = ABILITY_BY_KEY_V50[abilityKey];
+    const current = normalizePlayerProfileV2(App.state.users[App.currentUserId] || App.currentUser || {});
+    if (!current?.id || !ability) return;
+    const abilities = normalizeAbilitiesV50(current.abilities || {});
+    const value = Number(abilities[abilityKey] || 0);
+    if (value >= 20) {
+      Toast.show(`${ability.label} уже на максимуме 20`, 'info');
+      return;
+    }
+    if (Number(current.skillPoints || 0) < 1) {
+      Toast.show('Не хватает очков улучшения', 'err');
+      return;
+    }
+    if (!window.confirm(`Улучшить «${ability.label}» до ${Math.min(20, value + 1)} за 1 очко улучшения?`)) return;
+    abilities[abilityKey] = Math.min(20, value + 1);
+    current.abilities = abilities;
+    current.skillPoints = Math.max(0, Number(current.skillPoints || 0) - 1);
+    App.state.users[current.id] = normalizePlayerProfileV2(current);
+    PLAYER_TEMPLATES[current.id] = deep(App.state.users[current.id]);
+    await App.writeLocalMirrors();
+    const patch = { abilities: App.state.users[current.id].abilities, skillPoints: App.state.users[current.id].skillPoints };
+    const syncRes = await PlayerSync.pushPlayerPatch(current.id, patch, { notice: `${ability.label} улучшена`, rerender: true });
+    if (!syncRes?.ok && syncRes?.status !== 'disabled') Toast.show(`Характеристика сохранена локально, но облако не обновилось: ${syncRes?.message || 'unknown error'}`, 'info');
+    const modal = ensureProfileModalV50();
+    modal.querySelector('#profile-extra-modal-body-v50').innerHTML = skillsModalMarkupV50(App.state.users[current.id]);
+    bindProfileModalActionsV50(modal);
+    UI.renderProfile();
+  }
+
+  function bindProfileModalActionsV50(root = document) {
+    root.querySelectorAll('.profile-learn-skill-btn-v50').forEach(button => {
+      if (button.dataset.boundV50 === '1') return;
+      button.dataset.boundV50 = '1';
+      button.addEventListener('click', () => learnSkillV50(button.dataset.skillId));
+    });
+    root.querySelectorAll('.profile-upgrade-ability-btn-v51').forEach(button => {
+      if (button.dataset.boundV51 === '1') return;
+      button.dataset.boundV51 = '1';
+      button.addEventListener('click', () => upgradeAbilityV51(button.dataset.abilityKey));
+    });
+    root.querySelectorAll('.profile-skill-info-btn-v52').forEach(button => {
+      if (button.dataset.boundV52 === '1') return;
+      button.dataset.boundV52 = '1';
+      button.addEventListener('click', () => openSkillDetailsV52(button.dataset.skillId));
+    });
+    scheduleSkillTreeLinesV51(root);
+  }
+
+  function enhanceRenderedProfileV50() {
+    const root = document.getElementById('profile-content');
+    const user = normalizePlayerProfileV2(App.currentUser);
+    if (!root || !user) return;
+    const abilitiesCard = Array.from(root.querySelectorAll('.profile-card')).find(card => Array.from(card.querySelectorAll('.section-title')).some(title => title.textContent.trim() === 'Характеристики'));
+    const abilitiesNode = abilitiesCard?.querySelector('.abilities');
+    if (abilitiesNode) {
+      abilitiesNode.classList.add('profile-abilities-grid-v50');
+      abilitiesNode.innerHTML = abilityTilesMarkupV50(user);
+    }
+    const socialCard = Array.from(root.querySelectorAll('.profile-card')).find(card => Array.from(card.querySelectorAll('.section-title')).some(title => title.textContent.trim() === 'Социальные связи'));
+    if (socialCard && !socialCard.querySelector('.profile-social-actions-v50')) {
+      const titles = Array.from(socialCard.querySelectorAll('.section-title'));
+      const orgTitle = titles.find(title => title.textContent.trim() === 'Организации');
+      if (orgTitle) {
+        const next = orgTitle.nextElementSibling;
+        orgTitle.remove();
+        if (next) next.remove();
+      }
+      socialCard.insertAdjacentHTML('beforeend', `<div class="profile-social-actions-v50"><button class="secondary" type="button" id="open-reputation-v50">РЕПУТАЦИЯ</button><button class="secondary" type="button" id="open-skills-v50">НАВЫКИ</button></div>`);
+      socialCard.querySelector('#open-reputation-v50')?.addEventListener('click', () => {
+        openProfileModalV50('Репутация', user.displayName || 'Профиль', reputationModalMarkupV50(normalizePlayerProfileV2(App.currentUser)));
+      });
+      socialCard.querySelector('#open-skills-v50')?.addEventListener('click', () => {
+        const modal = openProfileModalV50('Навыки', user.displayName || 'Профиль', skillsModalMarkupV50(normalizePlayerProfileV2(App.currentUser)));
+        bindProfileModalActionsV50(modal);
+      });
+    }
+  }
+
+  const __renderProfileV50 = UI.renderProfile.bind(UI);
+  UI.renderProfile = function() {
+    const result = __renderProfileV50();
+    enhanceRenderedProfileV50();
+    return result;
+  };
+
+  function renderAbilityInputsV50(user) {
+    const abilities = normalizeAbilitiesV50(user.abilities || {});
+    return `<div class="cols3">${ABILITY_MODEL_V50.map(item => `<div class="field"><label>${esc(item.label)}</label><input class="input" type="number" name="ability_${esc(item.key)}" value="${Number(abilities[item.key] || 0)}" /></div>`).join('')}</div>`;
+  }
+
+  function renderReputationRowsEditorV50(rows = []) {
+    const normalizedRows = normalizeReputationRowsV50(rows);
+    const options = getVisibleFactionsV50({ role: 'gm' });
+    const rowMarkup = row => `<div class="reputation-editor-row-v50">
+      <select class="select" name="rep_orgId"><option value="">Свободная запись</option>${options.map(org => `<option value="${esc(org.id)}" ${org.id === row.orgId ? 'selected' : ''}>${esc(org.name)}</option>`).join('')}</select>
+      <input class="input" name="rep_name" value="${esc(row.name || '')}" placeholder="Название, если нет в списке" />
+      <input class="input" type="number" name="rep_value" value="${Number(row.value || 0)}" placeholder="Репутация" />
+      <input class="input" name="rep_status" value="${esc(row.status || '')}" placeholder="Статус / ранг" />
+      <input class="input" name="rep_note" value="${esc(row.note || '')}" placeholder="Заметка" />
+      <button class="ghost" type="button" data-remove-rep-row-v50>×</button>
+    </div>`;
+    return `<div class="reputation-editor-v50" data-reputation-editor-v50>${(normalizedRows.length ? normalizedRows : [{ orgId: '', name: '', value: 0, status: '', note: '' }]).map(rowMarkup).join('')}</div><button class="secondary" type="button" data-add-rep-row-v50>ADD_REPUTATION</button>`;
+  }
+
+  function readReputationRowsEditorV50(formEl) {
+    return Array.from(formEl.querySelectorAll('.reputation-editor-row-v50')).map(row => ({
+      orgId: String(row.querySelector('[name="rep_orgId"]')?.value || '').trim(),
+      name: String(row.querySelector('[name="rep_name"]')?.value || '').trim(),
+      value: numberOrFallbackV50(row.querySelector('[name="rep_value"]')?.value, 0),
+      status: String(row.querySelector('[name="rep_status"]')?.value || '').trim(),
+      note: String(row.querySelector('[name="rep_note"]')?.value || '').trim()
+    })).filter(row => row.orgId || row.name || row.value || row.status || row.note);
+  }
+
+  function bindReputationRowsEditorV50(root = document) {
+    root.querySelectorAll('[data-add-rep-row-v50]').forEach(button => {
+      if (button.dataset.boundV50 === '1') return;
+      button.dataset.boundV50 = '1';
+      button.addEventListener('click', () => {
+        const editor = button.previousElementSibling;
+        if (!editor?.matches('[data-reputation-editor-v50]')) return;
+        editor.insertAdjacentHTML('beforeend', renderReputationRowsEditorV50([{ orgId: '', name: '', value: 0, status: '', note: '' }]).match(/<div class="reputation-editor-v50"[^>]*>([\s\S]*)<\/div><button/)?.[1] || '');
+        bindReputationRowsEditorV50(root);
+      });
+    });
+    root.querySelectorAll('[data-remove-rep-row-v50]').forEach(button => {
+      if (button.dataset.boundV50 === '1') return;
+      button.dataset.boundV50 = '1';
+      button.addEventListener('click', () => button.closest('.reputation-editor-row-v50')?.remove());
+    });
+  }
+
+  function renderAbilityRequirementsEditorV52(skill) {
+    const values = abilityRequirementsMapV52(skill);
+    return `<div class="skill-ability-req-grid-v52">${ABILITY_MODEL_V50.map(item => `<div class="field"><label>${esc(item.label)}</label><input class="input" type="number" min="0" name="requiredAbility_${esc(item.key)}" value="${Number(values[item.key] || 0)}" placeholder="0" /></div>`).join('')}</div>`;
+  }
+
+  function renderSkillSelectorV50(selected = []) {
+    return renderCheckboxSelector('skillIds', getVisibleSkillsV50({ role: 'gm' }), normalizeSkillIdArrayV50(selected), 'skill', 'Нет навыков');
+  }
+
+  Configurator.renderFactionEditor = function(entity) {
+    const faction = normalizeFactionV50(entity);
+    return `<form id="config-editor-form" class="form" data-entity-type="factions">
+      ${this.renderHeader(faction, 'Организация мира: фракция, институт, клан, культ, корпорация или другая сила для репутации персонажей.')}
+      ${imageFieldMarkup(faction, 'Эмблема / изображение организации')}
+      <div class="cols3"><div class="field"><label>ID</label><input class="input" name="id" value="${esc(faction.id)}" /></div><div class="field"><label>Название</label><input class="input" name="name" value="${esc(faction.name)}" /></div><div class="field"><label>Тип</label><input class="input" name="type" value="${esc(faction.type)}" placeholder="Фракция / Дом / Культ" /></div></div>
+      <div class="cols3"><div class="field"><label>Влияние</label><input class="input" name="influence" value="${esc(faction.influence)}" placeholder="Локальное / Системное / Секторальное" /></div><div class="field"><label>Шкала репутации</label><input class="input" name="reputationScale" value="${esc(faction.reputationScale)}" placeholder="-100..100 / ранги / статусы" /></div><div class="field"><label>Цвет</label><input class="input" name="color" value="${esc(faction.color)}" /></div></div>
+      ${this.renderVisibilityField(faction)}
+      <div class="field"><label>Описание</label><textarea class="area" name="description">${esc(faction.description)}</textarea>${typeof __htmlHint !== 'undefined' ? __htmlHint : ''}</div>
+      <div class="field"><label>Связанные статьи</label>${renderRelatedArticlesEditor(faction.relatedArticleIds || [])}</div>
+      <button class="primary" type="submit">SAVE_ORGANIZATION</button>
+    </form>`;
+  };
+
+  Configurator.renderSkillEditor = function(entity) {
+    const skill = normalizeSkillV50(entity);
+    return `<form id="config-editor-form" class="form" data-entity-type="skills">
+      ${this.renderHeader(skill, 'Навык, который игрок может изучить за очки улучшения при выполнении условий. Ведущий может выдать навык вручную в профиле игрока.')}
+      ${imageFieldMarkup(skill, 'Иконка навыка')}
+      <div class="cols3"><div class="field"><label>ID</label><input class="input" name="id" value="${esc(skill.id)}" /></div><div class="field"><label>Название</label><input class="input" name="name" value="${esc(skill.name)}" /></div><div class="field"><label>Категория</label><input class="input" name="category" value="${esc(skill.category)}" /></div></div>
+      <div class="cols2"><div class="field"><label>Стоимость в очках улучшения</label><input class="input" type="number" min="0" name="cost" value="${Number(skill.cost || 0)}" /></div><div class="field"><label>Цвет</label><input class="input" name="color" value="${esc(skill.color)}" /></div></div>
+      <div class="field"><label>Условия: характеристики</label>${renderAbilityRequirementsEditorV52(skill)}<div class="small-note">0 означает, что требования по этой характеристике нет.</div></div>
+      <div class="field"><label>Условие: уже изученные навыки</label>${renderCheckboxSelector('requiredSkillIds', getVisibleSkillsV50({ role: 'gm' }).filter(item => item.id !== skill.id), skill.requiredSkillIds || [], 'skill', 'Нет навыков')}</div>
+      ${this.renderVisibilityField(skill)}
+      <div class="field"><label>Описание</label><textarea class="area" name="description">${esc(skill.description)}</textarea>${typeof __htmlHint !== 'undefined' ? __htmlHint : ''}</div>
+      <div class="field"><label>Связанные статьи</label>${renderRelatedArticlesEditor(skill.relatedArticleIds || [])}</div>
+      <button class="primary" type="submit">SAVE_SKILL</button>
+    </form>`;
+  };
+
+  const __renderPlayerEditorV50 = Configurator.renderPlayerEditor.bind(Configurator);
+  Configurator.renderPlayerEditor = function(user) {
+    user = normalizePlayerProfileV2(user);
+    const primaryOptions = typeof getWeaponOptionsBySlotV2 === 'function' ? getWeaponOptionsBySlotV2('primary') : WEAPON_OPTIONS;
+    const secondaryOptions = typeof getWeaponOptionsBySlotV2 === 'function' ? getWeaponOptionsBySlotV2('secondary') : WEAPON_OPTIONS;
+    const armorOptions = typeof getArmorOptionsV2 === 'function' ? getArmorOptionsV2() : ARMOR_OPTIONS;
+    return `<form id="config-editor-form" class="form" data-entity-type="players">
+      ${this.renderHeader(user, 'Шаблон персонажа: здоровье, экипировка, характеристики, репутация, очки улучшения и навыки.')}
+      ${imageFieldMarkup(user, 'Портрет персонажа')}
+      <div class="cols3"><div class="field"><label>ID</label><input class="input" name="id" value="${esc(user.id)}" /></div><div class="field"><label>Короткое имя</label><input class="input" name="shortName" value="${esc(user.shortName || '')}" /></div><div class="field"><label>Роль</label><select class="select" name="role"><option value="player" ${user.role === 'player' ? 'selected' : ''}>player</option><option value="gm" ${user.role === 'gm' ? 'selected' : ''}>gm</option></select></div></div>
+      <div class="cols3"><div class="field"><label>Отображаемое имя</label><input class="input" name="displayName" value="${esc(user.displayName)}" /></div><div class="field"><label>Ранг</label><input class="input" name="rank" value="${esc(user.rank || '')}" /></div><div class="field"><label>Глиф</label><input class="input" name="avatarGlyph" value="${esc(user.avatarGlyph || '')}" /></div></div>
+      <div class="cols3"><div class="field"><label>Пароль</label><input class="input" name="pass" value="${esc(user.pass || '')}" /></div><div class="field"><label>Кредиты</label><input class="input" type="number" name="credits" value="${Number(user.credits || 0)}" /></div><div class="field"><label>Текущая планета</label><select class="select" name="currentPlanetId"><option value="">Не задана</option>${Object.values(PLANETS).map(option => `<option value="${option.id}" ${option.id === (user.currentPlanetId || '') ? 'selected' : ''}>${esc(option.name)}</option>`).join('')}</select></div></div>
+      <div class="cols3"><div class="field"><label>Текущее здоровье</label><input class="input" type="number" name="hpCurrent" value="${Number(user.stats.hpCurrent || 0)}" /></div><div class="field"><label>Макс. здоровье</label><input class="input" type="number" name="hpMax" value="${Number(user.stats.hpMax || 0)}" /></div><div class="field"><label>Энергия (текущая)</label><input class="input" type="number" name="energyCurrent" value="${Number(user.stats.energyCurrent || 0)}" /></div></div>
+      <div class="cols3"><div class="field"><label>Текущий щит</label><input class="input" type="number" name="shieldCurrent" value="${Number(user.stats.shieldCurrent || 0)}" /></div><div class="field"><label>Макс. щит</label><input class="input" type="number" name="shieldMax" value="${Number(user.stats.shieldMax || 0)}" /></div><div class="field"><label>Энергия (базовый максимум)</label><input class="input" type="number" name="energyMax" value="${Number(user.stats.energyMax || 1)}" /></div></div>
+      <div class="section-title">Характеристики</div>${renderAbilityInputsV50(user)}
+      <div class="cols3"><div class="field"><label>Основное оружие</label><select class="select" name="primaryWeapon"><option value="">—</option>${primaryOptions.map(option => `<option value="${option.id}" ${option.id === (user.equipmentSlots?.primaryWeapon || '') ? 'selected' : ''}>${esc(option.name)}</option>`).join('')}</select></div><div class="field"><label>Вторичное оружие</label><select class="select" name="secondaryWeapon"><option value="">—</option>${secondaryOptions.map(option => `<option value="${option.id}" ${option.id === (user.equipmentSlots?.secondaryWeapon || '') ? 'selected' : ''}>${esc(option.name)}</option>`).join('')}</select></div><div class="field"><label>Броня</label><select class="select" name="armor"><option value="">—</option>${armorOptions.map(option => `<option value="${option.id}" ${option.id === (user.equipmentSlots?.armor || '') ? 'selected' : ''}>${esc(option.name)}</option>`).join('')}</select></div></div>
+      <div class="field"><label>Лор</label><textarea class="area" name="lore">${esc(user.lore || '')}</textarea>${typeof __htmlHint !== 'undefined' ? __htmlHint : ''}</div>
+      <div class="field"><label>Заметки</label><textarea class="area" name="notes">${esc(user.notes || '')}</textarea>${typeof __htmlHint !== 'undefined' ? __htmlHint : ''}</div>
+      <div class="field"><label>Инвентарь</label>${renderInventoryRowsEditor(user.inventory || [])}</div>
+      <div class="field"><label>Импланты (name|energyCost|description)</label><textarea class="area inv-editor" name="implants">${esc(typeof implantsAdvancedTextV2 === 'function' ? implantsAdvancedTextV2(user.implants) : implantsText(user.implants))}</textarea></div>
+      <div class="field"><label>NPC-связи</label>${renderCheckboxSelector('npcIds', Object.values(NPCS), user.social?.npcIds || [], 'npc', 'Нет NPC')}</div>
+      <div class="field"><label>Репутация</label>${renderReputationRowsEditorV50(user.social?.reputation || [])}<div class="small-note">Выдаётся ведущим. Формирует окно «Репутация» в профиле.</div></div>
+      <div class="cols2"><div class="field"><label>Очки улучшения</label><input class="input" type="number" min="0" name="skillPoints" value="${Number(user.skillPoints || 0)}" /></div><div class="field"><label>Навыки персонажа</label>${renderSkillSelectorV50(user.skills || [])}<div class="small-note">Ведущий может выдать любой навык, даже если условия не соблюдены.</div></div></div>
+      <div class="field"><label>Связанные статьи</label>${renderRelatedArticlesEditor(user.relatedArticleIds || [])}</div>
+      <button class="primary" type="submit">SAVE_PLAYER</button>
+    </form>`;
+  };
+
+  const __configGetItemsV50 = Configurator.getItems.bind(Configurator);
+  Configurator.getItems = function(type) {
+    if (type === 'factions') return sortEntitiesForList(Object.values(FACTIONS_V50 || {}));
+    if (type === 'skills') return sortEntitiesForList(Object.values(SKILLS_V50 || {}));
+    return __configGetItemsV50(type);
+  };
+
+  const __configRenderEditorV50 = Configurator.renderEditor.bind(Configurator);
+  Configurator.renderEditor = function(entity) {
+    if (this.selectedType === 'factions') return this.renderFactionEditor(entity);
+    if (this.selectedType === 'skills') return this.renderSkillEditor(entity);
+    return __configRenderEditorV50(entity);
+  };
+
+  const __configInsertEntityV50 = Configurator.insertEntity.bind(Configurator);
+  Configurator.insertEntity = function(type, entity) {
+    if (type === 'factions') { const item = normalizeFactionV50(entity); FACTIONS_V50[item.id] = item; syncFactionsWorldDataV50(); return; }
+    if (type === 'skills') { const item = normalizeSkillV50(entity); SKILLS_V50[item.id] = item; syncSkillsWorldDataV50(); return; }
+    return __configInsertEntityV50(type, entity);
+  };
+
+  const __configRemoveEntityV50 = Configurator.removeEntity.bind(Configurator);
+  Configurator.removeEntity = function(type, id) {
+    if (type === 'factions') { delete FACTIONS_V50[id]; for (const player of Object.values(PLAYER_TEMPLATES || {})) { if (player.social?.reputation) player.social.reputation = normalizeReputationRowsV50(player.social.reputation).filter(row => row.orgId !== id); } syncFactionsWorldDataV50(); return; }
+    if (type === 'skills') { delete SKILLS_V50[id]; for (const player of Object.values(PLAYER_TEMPLATES || {})) { player.skills = normalizeSkillIdArrayV50(player.skills).filter(skillId => skillId !== id); } Object.values(SKILLS_V50).forEach(skill => { skill.requiredSkillIds = normalizeSkillIdArrayV50(skill.requiredSkillIds).filter(skillId => skillId !== id); }); syncSkillsWorldDataV50(); return; }
+    return __configRemoveEntityV50(type, id);
+  };
+
+  const __configBuildPayloadV50 = Configurator.buildPayload.bind(Configurator);
+  Configurator.buildPayload = function(type) {
+    if (type === 'factions') return serializeWorldSection('factions', FACTIONS_V50);
+    if (type === 'skills') return serializeWorldSection('skills', SKILLS_V50);
+    return __configBuildPayloadV50(type);
+  };
+
+  const __configCollectEntityV50 = Configurator.collectEntity.bind(Configurator);
+  Configurator.collectEntity = function(type, formEl, formData = new FormData(formEl)) {
+    const mediaField = formEl.querySelector('.media-field');
+    const image = String(formEl.querySelector('input[name="imageData"]')?.value || formData.get('imageData') || mediaField?.dataset?.savedImageValue || mediaField?.dataset?.pendingImageValue || '').trim();
+    if (type === 'factions') {
+      return normalizeFactionV50({
+        id: slugifyId(formData.get('id') || formData.get('name') || '', 'org'),
+        name: String(formData.get('name') || '').trim(),
+        type: String(formData.get('type') || '').trim(),
+        influence: String(formData.get('influence') || '').trim(),
+        reputationScale: String(formData.get('reputationScale') || '').trim(),
+        color: String(formData.get('color') || '#7df9ff').trim() || '#7df9ff',
+        description: String(formData.get('description') || '').trim(),
+        image,
+        relatedArticleIds: getCheckedValues(formEl, 'relatedArticleIds'),
+        visibility: { playerIds: getCheckedValues(formEl, 'visibilityPlayerIds') }
+      });
+    }
+    if (type === 'skills') {
+      return normalizeSkillV50({
+        id: slugifyId(formData.get('id') || formData.get('name') || '', 'skill'),
+        name: String(formData.get('name') || '').trim(),
+        category: String(formData.get('category') || '').trim(),
+        cost: Number(formData.get('cost') || 0),
+        requiredAbilities: ABILITY_MODEL_V50.map(item => ({ key: item.key, value: Number(formData.get(`requiredAbility_${item.key}`) || 0) })).filter(row => row.value > 0),
+        requiredSkillIds: getCheckedValues(formEl, 'requiredSkillIds'),
+        color: String(formData.get('color') || '#7df9ff').trim() || '#7df9ff',
+        description: String(formData.get('description') || '').trim(),
+        image,
+        relatedArticleIds: getCheckedValues(formEl, 'relatedArticleIds'),
+        visibility: { playerIds: getCheckedValues(formEl, 'visibilityPlayerIds') }
+      });
+    }
+    if (type === 'players') {
+      return normalizePlayerProfileV2({
+        id: slugifyId(formData.get('id') || formData.get('displayName') || '', 'player'),
+        role: String(formData.get('role') || 'player'),
+        pass: String(formData.get('pass') || '0000').trim(),
+        shortName: String(formData.get('shortName') || '').trim(),
+        displayName: String(formData.get('displayName') || '').trim(),
+        rank: String(formData.get('rank') || '').trim(),
+        avatarGlyph: String(formData.get('avatarGlyph') || '').trim(),
+        credits: Number(formData.get('credits') || 0),
+        lore: String(formData.get('lore') || '').trim(),
+        notes: String(formData.get('notes') || '').trim(),
+        stats: {
+          hpCurrent: Number(formData.get('hpCurrent') || 0),
+          hpMax: Number(formData.get('hpMax') || 0),
+          shieldCurrent: Number(formData.get('shieldCurrent') || 0),
+          shieldMax: Number(formData.get('shieldMax') || 0),
+          energyCurrent: Number(formData.get('energyCurrent') || 0),
+          energyMax: Number(formData.get('energyMax') || 1)
+        },
+        abilities: Object.fromEntries(ABILITY_MODEL_V50.map(item => [item.key, Number(formData.get(`ability_${item.key}`) || 0)])),
+        equipmentSlots: {
+          primaryWeapon: String(formData.get('primaryWeapon') || ''),
+          secondaryWeapon: String(formData.get('secondaryWeapon') || ''),
+          armor: String(formData.get('armor') || '')
+        },
+        inventory: readInventoryRows(formEl),
+        implants: typeof parseImplantsAdvancedEditorV2 === 'function' ? parseImplantsAdvancedEditorV2(formData.get('implants') || '') : parseImplantsEditor(formData.get('implants') || ''),
+        social: { npcIds: getCheckedValues(formEl, 'npcIds'), orgs: [], reputation: readReputationRowsEditorV50(formEl) },
+        skillPoints: Number(formData.get('skillPoints') || 0),
+        skills: getCheckedValues(formEl, 'skillIds'),
+        currentPlanetId: String(formData.get('currentPlanetId') || '').trim(),
+        relatedArticleIds: getCheckedValues(formEl, 'relatedArticleIds'),
+        image
+      });
+    }
+    return __configCollectEntityV50(type, formEl, formData);
+  };
+
+  const __configRemapReferencesV50 = Configurator.remapReferences.bind(Configurator);
+  Configurator.remapReferences = function(type, oldId, newId) {
+    if (type === 'factions') {
+      if (oldId !== newId && FACTIONS_V50[oldId]) { FACTIONS_V50[newId] = { ...FACTIONS_V50[oldId], id: newId }; delete FACTIONS_V50[oldId]; }
+      for (const player of Object.values(PLAYER_TEMPLATES || {})) {
+        if (Array.isArray(player.social?.reputation)) player.social.reputation = player.social.reputation.map(row => row.orgId === oldId ? { ...row, orgId: newId } : row);
+      }
+      return;
+    }
+    if (type === 'skills') {
+      if (oldId !== newId && SKILLS_V50[oldId]) { SKILLS_V50[newId] = { ...SKILLS_V50[oldId], id: newId }; delete SKILLS_V50[oldId]; }
+      for (const player of Object.values(PLAYER_TEMPLATES || {})) player.skills = normalizeSkillIdArrayV50(player.skills).map(id => id === oldId ? newId : id);
+      for (const skill of Object.values(SKILLS_V50 || {})) skill.requiredSkillIds = normalizeSkillIdArrayV50(skill.requiredSkillIds).map(id => id === oldId ? newId : id);
+      return;
+    }
+    return __configRemapReferencesV50(type, oldId, newId);
+  };
+
+  const __configRenderV50 = Configurator.render.bind(Configurator);
+  Configurator.render = function() {
+    const result = __configRenderV50();
+    const root = document.getElementById('config-content');
+    bindReputationRowsEditorV50(root);
+    return result;
+  };
+
+  const __appRenderLoginPreviewV50 = App.renderLoginPreview.bind(App);
+  App.renderLoginPreview = function() {
+    try {
+      if (this.state?.users) {
+        this.state.users = Object.fromEntries(Object.entries(this.state.users || {}).map(([id, player]) => [id, normalizePlayerProfileV2(player)]));
+      }
+    } catch {}
+    return __appRenderLoginPreviewV50();
+  };
+
+  window.addEventListener('resize', () => scheduleSkillTreeLinesV51(document));
 })();
