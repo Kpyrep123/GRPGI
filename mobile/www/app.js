@@ -1,10 +1,16 @@
 (() => {
   const DEFAULTS = {
+    backend: 'pocketbase',
+    url: 'https://sync.grpg-sync.ru',
+    appUsersCollection: 'app_users',
+    appUserEmail: '',
+    appUserPassword: '',
     tableName: 'campaign_snapshots',
     playerTableName: 'campaign_players',
     chatTableName: 'campaign_messages',
     combatRuntimeTableName: 'campaign_combat_runtime',
     storageBucket: 'campaign-assets',
+    assetsCollection: 'campaign_assets',
     snapshotPollMs: 30000,
     livePollMs: 5000
   };
@@ -17,6 +23,7 @@
 
   const App = {
     config: null,
+    auth: { token: '', expiresAt: 0 },
     cache: { snapshot: null, players: [], chat: [], combatRuntime: null, fetchedAt: null },
     session: null,
     data: {
@@ -35,7 +42,11 @@
       combatScenes: [],
       combatRuntime: null,
       combatRuntimeByScene: new Map(),
-      chatRows: []
+      chatRows: [],
+      campaigns: new Map(),
+      skills: new Map(),
+      factions: new Map(),
+      organizations: new Map()
     },
     ui: {
       boot: 'setup',
@@ -45,6 +56,7 @@
       selectedArchiveType: 'article',
       selectedThreadKey: '',
       selectedCombatSceneId: '',
+      selectedCampaignId: 'all',
       focusedSystemId: '',
       archiveQuery: '',
       combatFullscreen: false,
@@ -86,6 +98,27 @@
     return Math.min(max, Math.max(min, value));
   }
 
+  function privacyConsentChecked(scope = 'setup') {
+    const id = scope === 'login' ? '#login-privacy-consent' : '#setup-privacy-consent';
+    return Boolean(document.querySelector(id)?.checked);
+  }
+
+  function requirePrivacyConsent(scope = 'setup') {
+    if (privacyConsentChecked(scope)) return true;
+    const target = document.querySelector(scope === 'login' ? '#login-privacy-consent' : '#setup-privacy-consent');
+    const message = 'Нужно подтвердить согласие с политикой обработки персональных данных.';
+    if (scope === 'login') {
+      const status = document.querySelector('#login-status');
+      if (status) status.textContent = message;
+    } else {
+      const status = document.querySelector('#setup-status');
+      if (status) status.textContent = message;
+    }
+    target?.focus();
+    notify(message, 'warn');
+    return false;
+  }
+
   function notify(text, tone = 'ok') {
     const stack = $('#toast-stack');
     if (!stack) return;
@@ -119,24 +152,42 @@
     return String(value || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
   }
 
+  function normalizeBackend(value) {
+    const raw = String(value || '').trim().toLowerCase();
+    return raw === 'supabase' ? 'supabase' : 'pocketbase';
+  }
+
   function normalizeConfig(payload = {}) {
+    const backend = normalizeBackend(payload.backend || payload.provider || payload.syncProvider || DEFAULTS.backend);
     return {
-      url: String(payload.url || '').trim(),
+      backend,
+      provider: backend,
+      url: String(payload.url || (backend === 'pocketbase' ? DEFAULTS.url : '')).trim(),
       anonKey: String(payload.anonKey || '').trim(),
-      campaignId: String(payload.campaignId || '').trim(),
+      appUserEmail: String(payload.appUserEmail || payload.pocketbaseEmail || payload.pbEmail || '').trim(),
+      appUserPassword: String(payload.appUserPassword || payload.pocketbasePassword || payload.pbPassword || '').trim(),
+      appUsersCollection: String(payload.appUsersCollection || payload.pocketbaseUsersCollection || DEFAULTS.appUsersCollection).trim() || DEFAULTS.appUsersCollection,
+      campaignId: String(payload.campaignId || DEFAULTS.campaignId || 'main').trim() || 'main',
       deviceLabel: String(payload.deviceLabel || '').trim(),
       tableName: String(payload.tableName || DEFAULTS.tableName).trim() || DEFAULTS.tableName,
       playerTableName: String(payload.playerTableName || DEFAULTS.playerTableName).trim() || DEFAULTS.playerTableName,
       chatTableName: String(payload.chatTableName || DEFAULTS.chatTableName).trim() || DEFAULTS.chatTableName,
       combatRuntimeTableName: String(payload.combatRuntimeTableName || DEFAULTS.combatRuntimeTableName).trim() || DEFAULTS.combatRuntimeTableName,
       storageBucket: String(payload.storageBucket || DEFAULTS.storageBucket).trim() || DEFAULTS.storageBucket,
+      assetsCollection: String(payload.assetsCollection || payload.pocketbaseAssetsCollection || DEFAULTS.assetsCollection).trim() || DEFAULTS.assetsCollection,
       snapshotPollMs: Math.max(10000, Number(payload.snapshotPollMs || DEFAULTS.snapshotPollMs)),
       livePollMs: Math.max(2500, Number(payload.livePollMs || DEFAULTS.livePollMs))
     };
   }
 
+  function isPocketBaseConfig(config = App.config) {
+    return normalizeBackend(config?.backend || config?.provider) === 'pocketbase';
+  }
+
   function hasConfig(config = App.config) {
-    return Boolean(config?.url && config?.anonKey && config?.campaignId);
+    if (!config?.url || !config?.campaignId) return false;
+    if (isPocketBaseConfig(config)) return Boolean(config.appUserEmail && config.appUserPassword);
+    return Boolean(config.anonKey);
   }
 
 
@@ -148,6 +199,10 @@
     const base = String(App.config?.url || '').replace(/\/+$/, '');
     const cleanPath = String(storagePath || '').replace(/^\/+/, '');
     if (!base || !cleanPath) return '';
+    if (isPocketBaseConfig()) {
+      if (/^https?:/i.test(cleanPath)) return cleanPath;
+      return '';
+    }
     return `${base}/storage/v1/object/public/${encodeURIComponent(bucket)}/${encodeStoragePath(cleanPath)}`;
   }
 
@@ -276,6 +331,40 @@
     markers.articles = markers.articles && typeof markers.articles === 'object' ? markers.articles : {};
     markers.articles[key] = new Date().toISOString();
     saveMobileReadMarkers(markers);
+  }
+
+
+  function archiveCategoryLabel(item) {
+    return String(item?.category || item?.type || item?.section || 'Без категории').trim() || 'Без категории';
+  }
+
+  function groupedArchiveMarkup(items = [], entity = null) {
+    if (!items.length) return '<div class="placeholder">Ничего не найдено.</div>';
+    const groups = new Map();
+    items.forEach(item => {
+      const key = item?._type === 'article' ? archiveCategoryLabel(item) : '';
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(item);
+    });
+    const ordered = Array.from(groups.entries()).sort((a, b) => {
+      if (!a[0] && b[0]) return -1;
+      if (a[0] && !b[0]) return 1;
+      return a[0].localeCompare(b[0], 'ru');
+    });
+    return ordered.map(([category, group]) => `
+      ${category ? `<div class="archive-category-title">${esc(category)}</div>` : ''}
+      ${group.map(item => {
+        const unread = item._type === 'article' && !isArchiveArticleRead(item.id);
+        return `
+          <article class="archive-tile ${item.id === entity?.id ? 'active' : ''} ${unread ? 'unread' : ''}">
+            ${renderEntityThumb(item)}
+            <button class="archive-tile-btn" type="button" data-action="select-archive" data-type="${esc(item._type)}" data-id="${esc(item.id)}">
+              <span>${unread ? '<b class="new-badge">NEW</b> ' : ''}${esc(archiveItemLabel(item))}</span>
+            </button>
+          </article>
+        `;
+      }).join('')}
+    `).join('');
   }
 
   function sortArchiveItemsForMobile(items = [], tab = '') {
@@ -568,6 +657,92 @@
     };
   }
 
+  function pbBaseUrl(config = App.config) {
+    return String(config?.url || '').trim().replace(/\/+$/, '');
+  }
+
+  function pbCollection(config, key) {
+    if (key === 'users') return config.appUsersCollection || DEFAULTS.appUsersCollection;
+    if (key === 'snapshot') return config.tableName || DEFAULTS.tableName;
+    if (key === 'players') return config.playerTableName || DEFAULTS.playerTableName;
+    if (key === 'chat') return config.chatTableName || DEFAULTS.chatTableName;
+    if (key === 'combat') return config.combatRuntimeTableName || DEFAULTS.combatRuntimeTableName;
+    if (key === 'assets') return config.assetsCollection || DEFAULTS.assetsCollection;
+    return key;
+  }
+
+  function pbFilterValue(value = '') {
+    return String(value ?? '').replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  }
+
+  function pbEq(field, value) {
+    return `${field}="${pbFilterValue(value)}"`;
+  }
+
+  function pbAnd(...parts) {
+    return parts.filter(Boolean).join(' && ');
+  }
+
+  async function pbAuthToken(config = App.config, force = false) {
+    const now = Date.now();
+    if (!force && App.auth?.token && Number(App.auth.expiresAt || 0) > now + 15000) return App.auth.token;
+    const base = pbBaseUrl(config);
+    const collection = encodeURIComponent(pbCollection(config, 'users'));
+    const response = await fetch(`${base}/api/collections/${collection}/auth-with-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ identity: config.appUserEmail, password: config.appUserPassword })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload?.token) throw new Error(payload?.message || `PocketBase auth failed: HTTP ${response.status}`);
+    App.auth = { token: payload.token, expiresAt: now + 1000 * 60 * 60 * 6 };
+    return payload.token;
+  }
+
+  async function pbFetch(config, pathname, options = {}) {
+    const base = pbBaseUrl(config);
+    const url = new URL(pathname, `${base}/`);
+    Object.entries(options.query || {}).forEach(([key, value]) => {
+      if (value == null || value === '') return;
+      url.searchParams.set(key, String(value));
+    });
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const headers = { ...(options.headers || {}) };
+      if (options.auth !== false) headers.Authorization = `Bearer ${await pbAuthToken(config, attempt > 0)}`;
+      let body = options.body;
+      if (options.json !== undefined) {
+        headers['Content-Type'] = 'application/json';
+        body = JSON.stringify(options.json ?? {});
+      }
+      const response = await fetch(url.toString(), { method: options.method || 'GET', headers, body });
+      const text = await response.text().catch(() => '');
+      const payload = text ? (() => { try { return JSON.parse(text); } catch { return { text }; } })() : null;
+      if (response.status === 401 && attempt === 0) {
+        App.auth = { token: '', expiresAt: 0 };
+        continue;
+      }
+      if (!response.ok) {
+        const detail = payload?.data ? ` // ${JSON.stringify(payload.data)}` : '';
+        throw new Error(`${payload?.message || text || 'PocketBase request failed'}: HTTP ${response.status}${detail}`);
+      }
+      return payload;
+    }
+    throw new Error('PocketBase request failed');
+  }
+
+  async function pbList(config, key, options = {}) {
+    const collection = encodeURIComponent(pbCollection(config, key));
+    const payload = await pbFetch(config, `/api/collections/${collection}/records`, {
+      query: { page: options.page || 1, perPage: options.perPage || options.limit || 500, filter: options.filter || '', sort: options.sort || '' }
+    });
+    return Array.isArray(payload?.items) ? payload.items : [];
+  }
+
+  async function pbFirst(config, key, filter = '') {
+    const rows = await pbList(config, key, { filter, perPage: 1 });
+    return rows[0] || null;
+  }
+
   async function rest(config, table, query = '', options = {}) {
     const base = String(config.url || '').replace(/\/+$/, '');
     const url = `${base}/rest/v1/${table}${query ? (query.startsWith('?') ? query : `?${query}`) : ''}`;
@@ -595,11 +770,111 @@
   }
 
   async function apiPing(config) {
+    if (isPocketBaseConfig(config)) await pbAuthToken(config, true);
     await apiPullSnapshot(config, false);
     return true;
   }
 
+  function normalizeSnapshotRow(record = {}) {
+    if (!record) return null;
+    return {
+      id: record.id,
+      campaign_id: record.campaign_id || record.campaignId,
+      revision: Number(record.revision || 0),
+      updated_at: record.updated_at || record.updated || record.updatedAt || null,
+      updated_by: record.updated_by || record.updatedBy || null,
+      client_updated_at: record.client_updated_at || record.clientUpdatedAt || null,
+      world_json: record.world_json || record.worldJson || record.world || {},
+      state_json: record.state_json || record.stateJson || record.state || {}
+    };
+  }
+
+  function composePlayerJsonFromSegments(row = {}) {
+    return {
+      ...(row.profile_json || {}),
+      ...(row.private_state_json || {}),
+      inventory: Array.isArray(row.inventory_json) ? deep(row.inventory_json) : []
+    };
+  }
+
+  function normalizePlayerRow(record = {}) {
+    if (!record) return null;
+    if (record.playerJson || record.playerId || record.campaignId) {
+      const player = record.playerJson || {};
+      const inventory = Array.isArray(player.inventory) ? deep(player.inventory) : [];
+      const profile = deep(player);
+      delete profile.inventory;
+      const privateState = {};
+      if (profile.currentPlanetId != null) privateState.currentPlanetId = profile.currentPlanetId;
+      return {
+        id: record.id,
+        campaign_id: record.campaignId,
+        player_id: record.playerId || player.id,
+        version: Number(record.version || 0),
+        updated_at: record.updated || record.updatedAt || null,
+        updated_by: record.updatedBy || null,
+        client_updated_at: record.clientUpdatedAt || null,
+        deleted_at: record.deletedAt || null,
+        profile_json: profile,
+        inventory_json: inventory,
+        private_state_json: privateState
+      };
+    }
+    return record;
+  }
+
+  function normalizeChatRow(record = {}) {
+    if (!record) return null;
+    if (record.messageId || record.campaignId) {
+      return {
+        id: record.id,
+        campaign_id: record.campaignId,
+        message_id: record.messageId,
+        kind: record.kind || 'direct',
+        thread_key: record.threadKey || '',
+        sender_type: record.senderType || 'player',
+        sender_id: record.senderId || null,
+        recipient_player_id: record.recipientPlayerId || null,
+        npc_id: record.npcId || null,
+        direct_a: record.directA || null,
+        direct_b: record.directB || null,
+        author_label: record.authorLabel || null,
+        body_html: record.bodyHtml || '',
+        created_at: record.clientCreatedAt || record.created || record.updated || null,
+        edited_at: record.editedAt || null,
+        deleted_at: record.deletedAt || null,
+        updated_at: record.updated || record.clientUpdatedAt || null,
+        client_updated_at: record.clientUpdatedAt || record.updated || null
+      };
+    }
+    return record;
+  }
+
+  function normalizeCombatRow(record = {}) {
+    if (!record) return null;
+    if (record.activeSceneId || record.campaignId) {
+      return {
+        id: record.id,
+        campaign_id: record.campaignId,
+        revision: Number(record.revision || 0),
+        updated_at: record.updated || record.updatedAt || null,
+        updated_by: record.updatedBy || null,
+        client_updated_at: record.clientUpdatedAt || null,
+        active_scene_id: record.activeSceneId || '',
+        scene_json: record.sceneJson || {},
+        runtime_json: record.runtimeJson || {}
+      };
+    }
+    return record;
+  }
+
   async function apiPullSnapshot(config, includePayload = true) {
+    if (isPocketBaseConfig(config)) {
+      const record = await pbFirst(config, 'snapshot', pbEq('campaignId', config.campaignId));
+      const row = normalizeSnapshotRow(record);
+      if (row && includePayload === false) { row.world_json = null; row.state_json = null; }
+      return row;
+    }
     const select = includePayload
       ? 'campaign_id,revision,updated_at,updated_by,client_updated_at,world_json,state_json'
       : 'campaign_id,revision,updated_at';
@@ -613,6 +888,10 @@
   }
 
   async function apiPullPlayers(config) {
+    if (isPocketBaseConfig(config)) {
+      const rows = await pbList(config, 'players', { filter: pbEq('campaignId', config.campaignId), sort: 'updated,playerId', perPage: 1000 });
+      return rows.map(normalizePlayerRow).filter(Boolean);
+    }
     const rows = await rest(config, config.playerTableName, qs({
       campaign_id: `eq.${config.campaignId}`,
       select: 'campaign_id,player_id,version,updated_at,updated_by,client_updated_at,profile_json,inventory_json,private_state_json',
@@ -622,6 +901,10 @@
   }
 
   async function apiPullPlayer(config, playerId) {
+    if (isPocketBaseConfig(config)) {
+      const record = await pbFirst(config, 'players', pbAnd(pbEq('campaignId', config.campaignId), pbEq('playerId', playerId)));
+      return normalizePlayerRow(record);
+    }
     const rows = await rest(config, config.playerTableName, qs({
       campaign_id: `eq.${config.campaignId}`,
       player_id: `eq.${playerId}`,
@@ -633,6 +916,22 @@
 
   async function apiUpsertPlayer(config, payload) {
     const now = new Date().toISOString();
+    if (isPocketBaseConfig(config)) {
+      const existing = await pbFirst(config, 'players', pbAnd(pbEq('campaignId', config.campaignId), pbEq('playerId', payload.player_id)));
+      const body = {
+        campaignId: config.campaignId,
+        playerId: payload.player_id,
+        version: Number(payload.version || existing?.version || 0) || 1,
+        updatedBy: payload.updated_by || config.deviceLabel || 'mobile-player',
+        clientUpdatedAt: payload.client_updated_at || now,
+        playerJson: composePlayerJsonFromSegments(payload)
+      };
+      const collection = encodeURIComponent(pbCollection(config, 'players'));
+      const record = existing?.id
+        ? await pbFetch(config, `/api/collections/${collection}/records/${encodeURIComponent(existing.id)}`, { method: 'PATCH', json: body })
+        : await pbFetch(config, `/api/collections/${collection}/records`, { method: 'POST', json: body });
+      return normalizePlayerRow(record);
+    }
     const body = {
       campaign_id: config.campaignId,
       player_id: payload.player_id,
@@ -654,6 +953,21 @@
 
   async function apiPatchPlayerWithVersion(config, playerId, expectedVersion, payload) {
     const now = new Date().toISOString();
+    if (isPocketBaseConfig(config)) {
+      const existing = await pbFirst(config, 'players', pbAnd(pbEq('campaignId', config.campaignId), pbEq('playerId', playerId)));
+      if (!existing || Number(existing.version || 0) !== Number(expectedVersion || 0)) return null;
+      const collection = encodeURIComponent(pbCollection(config, 'players'));
+      const record = await pbFetch(config, `/api/collections/${collection}/records/${encodeURIComponent(existing.id)}`, {
+        method: 'PATCH',
+        json: {
+          version: Number(expectedVersion || 0) + 1,
+          updatedBy: payload.updated_by || config.deviceLabel || 'mobile-player',
+          clientUpdatedAt: payload.client_updated_at || now,
+          playerJson: composePlayerJsonFromSegments(payload)
+        }
+      });
+      return normalizePlayerRow(record);
+    }
     const query = qs({
       campaign_id: `eq.${config.campaignId}`,
       player_id: `eq.${playerId}`,
@@ -677,6 +991,12 @@
   }
 
   async function apiPullChat(config, since = null) {
+    if (isPocketBaseConfig(config)) {
+      const filters = [pbEq('campaignId', config.campaignId)];
+      if (since) filters.push(`updated>="${pbFilterValue(since)}"`);
+      const rows = await pbList(config, 'chat', { filter: pbAnd(...filters), sort: 'updated,messageId', perPage: 1000 });
+      return rows.map(normalizeChatRow).filter(Boolean);
+    }
     const params = {
       campaign_id: `eq.${config.campaignId}`,
       select: 'campaign_id,message_id,kind,thread_key,sender_type,sender_id,recipient_player_id,npc_id,direct_a,direct_b,author_label,body_html,created_at,edited_at,deleted_at,updated_at,client_updated_at',
@@ -689,6 +1009,32 @@
 
   async function apiUpsertChat(config, row) {
     const now = new Date().toISOString();
+    if (isPocketBaseConfig(config)) {
+      const body = {
+        campaignId: config.campaignId,
+        messageId: row.message_id,
+        kind: row.kind || 'direct',
+        threadKey: row.thread_key,
+        senderType: row.sender_type || 'player',
+        senderId: row.sender_id || null,
+        recipientPlayerId: row.recipient_player_id || null,
+        npcId: row.npc_id || null,
+        directA: row.direct_a || null,
+        directB: row.direct_b || null,
+        authorLabel: row.author_label || null,
+        bodyHtml: row.body_html || '',
+        clientCreatedAt: row.created_at || now,
+        editedAt: row.edited_at || null,
+        deletedAt: row.deleted_at || null,
+        clientUpdatedAt: row.client_updated_at || now
+      };
+      const existing = await pbFirst(config, 'chat', pbAnd(pbEq('campaignId', config.campaignId), pbEq('messageId', body.messageId)));
+      const collection = encodeURIComponent(pbCollection(config, 'chat'));
+      const record = existing?.id
+        ? await pbFetch(config, `/api/collections/${collection}/records/${encodeURIComponent(existing.id)}`, { method: 'PATCH', json: body })
+        : await pbFetch(config, `/api/collections/${collection}/records`, { method: 'POST', json: body });
+      return normalizeChatRow(record);
+    }
     const body = {
       campaign_id: config.campaignId,
       message_id: row.message_id,
@@ -717,6 +1063,10 @@
   }
 
   async function apiPullCombatRuntime(config) {
+    if (isPocketBaseConfig(config)) {
+      const record = await pbFirst(config, 'combat', pbEq('campaignId', config.campaignId));
+      return normalizeCombatRow(record);
+    }
     const rows = await rest(config, config.combatRuntimeTableName, qs({
       campaign_id: `eq.${config.campaignId}`,
       select: 'campaign_id,revision,updated_at,updated_by,client_updated_at,active_scene_id,scene_json,runtime_json',
@@ -725,10 +1075,28 @@
     return Array.isArray(rows) ? rows[0] || null : null;
   }
 
+  const GUEST_ID = '__guest__';
+
+  function isGuestSession() {
+    return String(App.session?.role || '') === 'guest' || String(App.session?.userId || '') === GUEST_ID;
+  }
+
+  function visibilityIds(entity) {
+    return Array.isArray(entity?.visibility?.playerIds) ? entity.visibility.playerIds.map(String) : [];
+  }
+
   function visibleForPlayer(entity, playerId) {
-    const ids = entity?.visibility?.playerIds;
-    if (!Array.isArray(ids) || !ids.length) return true;
-    return ids.includes(playerId);
+    if (!entity) return false;
+    if (!entity.visibility || typeof entity.visibility !== 'object') return true;
+    const ids = visibilityIds(entity);
+    if (!ids.length) return false;
+    const pid = String(playerId || '');
+    if (ids.includes(pid)) return true;
+    return isGuestSession() && (ids.includes(GUEST_ID) || ids.includes('guest'));
+  }
+
+  function npcAllowsPlayerChat(npc = {}) {
+    return npc && npc.allowPlayerChat !== false && npc.chatEnabled !== false && npc.disablePlayerChat !== true;
   }
 
   function buildPlayerMap(snapshot, playerRows) {
@@ -809,6 +1177,11 @@
     App.data.tasksList = Array.isArray(world.tasks?.TASK_LIST) ? deep(world.tasks.TASK_LIST) : Object.values(world.tasks?.TASKS || {});
     App.data.npcs = new Map(Object.entries(world.npcs?.NPCS || {}).map(([id, value]) => [id, deep(value)]));
     App.data.items = new Map(Object.entries(world.equipment?.EQUIPMENT || {}).map(([id, value]) => [id, deep(value)]));
+    App.data.campaigns = new Map(Object.entries(world.campaigns?.CAMPAIGNS || {}).map(([id, value]) => [id, deep(value)]));
+    if (!App.data.campaigns.size) App.data.campaigns.set('main', { id: 'main', name: 'Основная кампания' });
+    App.data.skills = new Map(Object.entries(world.skills?.SKILLS || {}).map(([id, value]) => [id, deep(value)]));
+    App.data.factions = new Map(Object.entries(world.factions?.FACTIONS || {}).map(([id, value]) => [id, deep(value)]));
+    App.data.organizations = new Map(Object.entries(world.organizations?.ORGANIZATIONS || {}).map(([id, value]) => [id, deep(value)]));
     App.data.combatScenes = Object.values(world.combatScenes?.COMBAT_SCENES || {}).map(scene => deep(scene));
     App.data.chatRows = Array.isArray(chatRows) ? deep(chatRows) : [];
     const runtimeCache = App.data.combatRuntimeByScene instanceof Map ? new Map(App.data.combatRuntimeByScene) : new Map();
@@ -877,7 +1250,7 @@
   }
 
   async function pullEverything({ silent = false, render = true } = {}) {
-    if (!hasConfig()) throw new Error('Supabase ещё не настроен');
+    if (!hasConfig()) throw new Error('Синхронизация ещё не настроена');
     const [snapshot, players, chatRows, combatRuntime] = await Promise.all([
       apiPullSnapshot(App.config, true),
       apiPullPlayers(App.config),
@@ -916,12 +1289,63 @@
     return Array.from(map.values()).sort((a, b) => new Date(a.updated_at || a.created_at || 0) - new Date(b.updated_at || b.created_at || 0));
   }
 
+  function campaignIdsForPlayer(player = {}) {
+    const ids = new Set();
+    const source = Array.isArray(player.campaignIds) ? player.campaignIds : (Array.isArray(player.campaigns) ? player.campaigns : []);
+    source.forEach(entry => {
+      const id = String(entry?.id || entry?.campaignId || entry || '').trim();
+      if (id) ids.add(id);
+    });
+    if (player.campaignId) ids.add(String(player.campaignId).trim());
+    if (!ids.size) ids.add('main');
+    return Array.from(ids);
+  }
+
+  function selectedLoginCampaignId() {
+    return String($('#login-campaign')?.value || App.ui.selectedCampaignId || 'all');
+  }
+
+  function campaignOptionsMarkup() {
+    const rows = Array.from(App.data.campaigns.values()).sort((a, b) => slugText(a.name || a.id).localeCompare(slugText(b.name || b.id), 'ru'));
+    return `<option value="all">Все кампании</option>${rows.map(row => `<option value="${esc(row.id)}">${esc(row.name || row.id)}</option>`).join('')}`;
+  }
+
+  function guestProfile() {
+    return {
+      id: GUEST_ID,
+      role: 'guest',
+      displayName: 'Гость',
+      shortName: 'Guest',
+      avatarGlyph: 'GS',
+      rank: 'Гостевой доступ',
+      credits: 0,
+      stats: {},
+      abilities: {},
+      skills: [],
+      specializations: {},
+      skillPoints: 0,
+      inventory: [],
+      implants: [],
+      social: { npcIds: [], reputation: [] },
+      campaignIds: ['guest']
+    };
+  }
+
   function renderLogin() {
+    const campaignSelect = $('#login-campaign');
+    if (campaignSelect) {
+      campaignSelect.innerHTML = campaignOptionsMarkup();
+      campaignSelect.value = App.ui.selectedCampaignId || 'all';
+    }
     const select = $('#login-player');
-    const players = Array.from(App.data.players.values()).sort((a, b) => slugText(a.displayName || a.id).localeCompare(slugText(b.displayName || b.id), 'ru'));
+    const selectedCampaign = selectedLoginCampaignId();
+    const players = Array.from(App.data.players.values())
+      .filter(player => String(player.role || '') !== 'guest')
+      .filter(player => selectedCampaign === 'all' || campaignIdsForPlayer(player).includes(selectedCampaign))
+      .sort((a, b) => slugText(a.displayName || a.id).localeCompare(slugText(b.displayName || b.id), 'ru'));
     if (!players.length) {
       select.innerHTML = '<option value="">Нет доступных профилей</option>';
-      $('#login-preview').innerHTML = '<div class="muted">В кампании пока нет доступных персонажей.</div>';
+      $('#login-preview').innerHTML = '<div class="muted">В выбранной кампании пока нет доступных персонажей. Можно войти гостем, если ДМ открыл гостевые материалы.</div>';
       return;
     }
     const current = App.session?.userId && App.data.players.has(App.session.userId) ? App.session.userId : players[0].id;
@@ -1133,13 +1557,13 @@
 
   function renderArchive() {
     if (App.ui.archiveTab === 'systems') App.ui.archiveTab = 'articles';
-    setTopbar('Архив', 'Сначала выбранная статья или карточка, ниже список и связанные материалы');
+    setTopbar('Архив', 'Список статей расположен рядом с материалом и разделён по категориям');
     const root = $('#screen-archive');
     const collections = archiveCollections();
     const rawList = sortArchiveItemsForMobile(collections[App.ui.archiveTab] || [], App.ui.archiveTab);
     const query = slugText(App.ui.archiveQuery || '');
     const activeList = query
-      ? rawList.filter(item => slugText([archiveItemLabel(item), item.summary, item.subtitle, item.location?.system, item.markerLabel].filter(Boolean).join(' ')).includes(query))
+      ? rawList.filter(item => slugText([archiveItemLabel(item), item.category, item.summary, item.subtitle, item.location?.system, item.markerLabel].filter(Boolean).join(' ')).includes(query))
       : rawList;
     let entity = activeList.find(item => item.id === App.ui.selectedArchiveId) || null;
     if (!entity && activeList[0]) {
@@ -1158,22 +1582,14 @@
       <div class="archive-search-row" style="margin-top:14px;">
         <input class="input" id="archive-search-input" placeholder="Поиск по текущему разделу" value="${esc(App.ui.archiveQuery || '')}" />
       </div>
-      <div class="archive-detail-top" style="margin-top:14px;">
-        ${renderEntityBody(entity)}
-      </div>
-      <div class="archive-list-title"><div class="eyebrow">Список</div><div class="small-note">Непрочитанные статьи показываются первыми. Системы убраны из архива.</div></div>
-      <div class="archive-catalog archive-catalog-bottom">
-        ${activeList.map(item => {
-          const unread = item._type === 'article' && !isArchiveArticleRead(item.id);
-          return `
-            <article class="archive-tile ${item.id === entity?.id ? 'active' : ''} ${unread ? 'unread' : ''}">
-              ${renderEntityThumb(item)}
-              <button class="archive-tile-btn" type="button" data-action="select-archive" data-type="${esc(item._type)}" data-id="${esc(item.id)}">
-                <span>${unread ? '<b class="new-badge">NEW</b> ' : ''}${esc(archiveItemLabel(item))}</span>
-              </button>
-            </article>
-          `;
-        }).join('') || '<div class="placeholder">Ничего не найдено.</div>'}
+      <div class="archive-split">
+        <aside class="archive-sidebar">
+          <div class="archive-list-title"><div class="eyebrow">Список</div><div class="small-note">Категории берутся из поля статьи «Категория».</div></div>
+          <div class="archive-catalog archive-catalog-side">${groupedArchiveMarkup(activeList, entity)}</div>
+        </aside>
+        <div class="archive-detail-top archive-detail-pane">
+          ${renderEntityBody(entity)}
+        </div>
       </div>
     `;
     if (isSelectedUnreadArticle) markArchiveArticleRead(entity.id);
@@ -1228,7 +1644,7 @@
     if (!player) return [];
     const threads = [];
     Array.from(App.data.players.values())
-      .filter(other => other.id !== player.id)
+      .filter(other => other.id !== player.id && String(other.role || '') !== 'guest' && !isGuestSession())
       .sort((a, b) => slugText(a.displayName || a.id).localeCompare(slugText(b.displayName || b.id), 'ru'))
       .forEach(other => {
         const threadKey = [player.id, other.id].sort().join('__');
@@ -1237,7 +1653,7 @@
     const npcPool = new Set([...(Array.isArray(currentPlanet()?.npcIds) ? currentPlanet().npcIds : []), ...(Array.isArray(player?.social?.npcIds) ? player.social.npcIds : [])]);
     Array.from(npcPool).forEach(npcId => {
       const npc = App.data.npcs.get(npcId);
-      if (!npc) return;
+      if (!npc || !npcAllowsPlayerChat(npc) || !visibleForPlayer(npc, player.id)) return;
       const threadKey = `${npc.id}__${player.id}`;
       threads.push({ key: threadKey, label: npc.name, type: 'npc', npcId: npc.id, subtitle: npc.role || 'NPC', entity: npc });
     });
@@ -1416,6 +1832,132 @@
     requestAnimationFrame(initCombatViewports);
   }
 
+  const ABILITY_LABELS = { strength: 'Сила', dexterity: 'Ловкость', intelligence: 'Интеллект', endurance: 'Выносливость', will: 'Воля', glory: 'Слава' };
+
+  function skillIdArray(value) {
+    return Array.from(new Set((Array.isArray(value) ? value : []).map(entry => String(entry?.id || entry || '').trim()).filter(Boolean)));
+  }
+
+  function isSpecialization(skill = {}) {
+    return String(skill.skillType || skill.type || '').toLowerCase() === 'specialization';
+  }
+
+  function visibleSkills() {
+    return Array.from(App.data.skills.values()).filter(skill => visibleForPlayer(skill, App.session?.userId));
+  }
+
+  function playerOwnsSkill(player, skill) {
+    if (!player || !skill?.id) return false;
+    if (isSpecialization(skill)) return Number(player.specializations?.[skill.id] || 0) > 0;
+    return skillIdArray(player.skills).includes(String(skill.id));
+  }
+
+  function skillDependsOnGloryV58(skill, stack = new Set()) {
+    if (!skill) return false;
+    if ((Array.isArray(skill.requiredAbilities) ? skill.requiredAbilities : []).some(req => String(req.key || req.ability || '') === 'glory')) return true;
+    const id = String(skill.id || '');
+    if (id && stack.has(id)) return false;
+    if (id) stack.add(id);
+    for (const reqId of skillIdArray(skill.requiredSkillIds || skill.requiredSkills)) {
+      const reqSkill = App.data.skills.get(reqId);
+      if (reqSkill && skillDependsOnGloryV58(reqSkill, stack)) return true;
+    }
+    return false;
+  }
+
+  function skillRequirementReasons(player, skill) {
+    const reasons = [];
+    if (!player || !skill) return ['Профиль не выбран'];
+    if (playerOwnsSkill(player, skill)) return [];
+    if (skillDependsOnGloryV58(skill)) return ['Выдаёт ДМ: ветка Славы'];
+    const cost = Math.max(0, Number(skill.cost || 1));
+    if (Number(player.skillPoints || 0) < cost) reasons.push(`Нужно очков: ${cost}`);
+    const reqAbilities = Array.isArray(skill.requiredAbilities) ? skill.requiredAbilities : [];
+    reqAbilities.forEach(req => {
+      const key = String(req.key || '').trim();
+      const need = Number(req.value || 0);
+      if (key && need > 0 && Number(player.abilities?.[key] || 0) < need) reasons.push(`${ABILITY_LABELS[key] || key} ≥ ${need}`);
+    });
+    skillIdArray(skill.requiredSkillIds || skill.requiredSkills).forEach(reqId => {
+      const reqSkill = App.data.skills.get(reqId);
+      if (reqSkill && isSpecialization(reqSkill)) {
+        if (Number(player.specializations?.[reqId] || 0) <= 0) reasons.push(reqSkill.name || reqId);
+      } else if (!skillIdArray(player.skills).includes(reqId)) reasons.push(reqSkill?.name || reqId);
+    });
+    return reasons;
+  }
+
+  function applySkillSpecializationIncreases(values = {}, skill = {}) {
+    const next = { ...(values || {}) };
+    skillIdArray(skill.specializationIncreases || skill.increaseSpecializationIds || []).forEach(id => {
+      next[id] = Number(next[id] || 0) + 1;
+    });
+    return next;
+  }
+
+  async function upgradeSkill(skillId) {
+    const skill = App.data.skills.get(skillId);
+    if (!skill) return notify('Навык не найден', 'err');
+    const player = currentPlayer();
+    if (isGuestSession()) return notify('Гость не может менять профиль', 'warn');
+    const reasons = skillRequirementReasons(player, skill);
+    if (reasons.length) return notify(`Требования не выполнены: ${reasons.join(', ')}`, 'warn');
+    const cost = Math.max(0, Number(skill.cost || 1));
+    if (!confirm(`Вы уверены что хотите взять «${skill.name || skill.id}» за ${cost} очк.?`)) return;
+    await commitPlayerMutation(next => {
+      next.skillPoints = Math.max(0, Number(next.skillPoints || 0) - cost);
+      next.skills = skillIdArray(next.skills);
+      next.specializations = { ...(next.specializations || {}) };
+      if (isSpecialization(skill)) next.specializations[skill.id] = Math.max(1, Number(next.specializations[skill.id] || 0) + 1);
+      else if (!next.skills.includes(skill.id)) next.skills.push(skill.id);
+      next.specializations = applySkillSpecializationIncreases(next.specializations, skill);
+    }, 'Навык обновлён');
+  }
+
+  function renderMobileSkills(player) {
+    const rows = visibleSkills();
+    if (!rows.length) return '';
+    const owned = rows.filter(skill => playerOwnsSkill(player, skill));
+    const available = rows.filter(skill => !playerOwnsSkill(player, skill) && !skillRequirementReasons(player, skill).length);
+    const locked = rows.filter(skill => !playerOwnsSkill(player, skill) && skillRequirementReasons(player, skill).length);
+    const card = skill => {
+      const ownedSkill = playerOwnsSkill(player, skill);
+      const reasons = skillRequirementReasons(player, skill);
+      const specValue = isSpecialization(skill) ? Number(player.specializations?.[skill.id] || 0) : null;
+      return `<article class="entity-card skill-mobile-card ${ownedSkill ? 'owned' : reasons.length ? 'locked' : 'available'}">
+        ${renderEntityThumb(skill)}
+        <div class="eyebrow">${isSpecialization(skill) ? 'Специализация' : 'Навык'}${specValue ? ` · ${specValue}` : ''}</div>
+        <h3>${esc(skill.name || skill.id)}</h3>
+        <div class="small-note">${esc(skill.description || skill.category || '')}</div>
+        <div class="pill-row" style="margin-top:10px;"><div class="pill">Стоимость: ${Number(skill.cost || 1)}</div>${ownedSkill ? '<div class="pill">Изучено</div>' : reasons.length ? `<div class="pill">${esc(reasons.join(', '))}</div>` : '<div class="pill">Доступно</div>'}</div>
+        ${!ownedSkill && !reasons.length ? `<div class="entity-actions"><button class="primary" type="button" data-action="upgrade-skill" data-skill-id="${esc(skill.id)}">Прокачать</button></div>` : ''}
+      </article>`;
+    };
+    return `<div class="section-head" style="margin-top:18px"><div class="section-title">Навыки</div><div class="pill">Очки: ${Number(player.skillPoints || 0)}</div></div>
+      <div class="segmented skill-sections"><button class="chip-btn" type="button">Доступные: ${available.length}</button><button class="chip-btn" type="button">Изучено: ${owned.length}</button><button class="chip-btn" type="button">Закрыто: ${locked.length}</button></div>
+      <div class="card-list">${[...available, ...owned, ...locked].map(card).join('')}</div>`;
+  }
+
+  function reputationRows(player) {
+    const currentRows = Array.isArray(player?.social?.reputation) ? player.social.reputation : [];
+    const legacy = Array.isArray(player?.social?.orgs) ? player.social.orgs : [];
+    const byId = new Map();
+    currentRows.forEach(row => { if (row?.orgId || row?.id) byId.set(String(row.orgId || row.id), row); });
+    legacy.forEach(row => { if (row?.orgId || row?.id) byId.set(String(row.orgId || row.id), row); });
+    return Array.from(App.data.factions.values()).filter(faction => visibleForPlayer(faction, App.session?.userId)).map(faction => {
+      const row = byId.get(String(faction.id)) || {};
+      return { faction, value: Number(row.value ?? row.score ?? row.reputation ?? 0), label: row.label || row.status || '' };
+    });
+  }
+
+  function renderMobileReputation(player) {
+    const rows = reputationRows(player);
+    if (!rows.length) return '';
+    return `<div class="section-head" style="margin-top:18px"><div class="section-title">Репутация</div></div><div class="card-list reputation-mobile-list">${rows.map(({ faction, value, label }) => `<article class="entity-card">
+      ${renderEntityThumb(faction)}<div class="eyebrow">${esc(faction.type || 'Организация')}</div><h3>${esc(faction.name || faction.id)}</h3><div class="small-note">${esc(faction.description || faction.influence || '')}</div><div class="pill-row" style="margin-top:10px"><div class="pill">Репутация: ${value}</div>${label ? `<div class="pill">${esc(label)}</div>` : ''}</div>
+    </article>`).join('')}</div>`;
+  }
+
   function renderProfile() {
     setTopbar('Профиль', 'Личные данные игрока, экипировка, импланты и состояние синхронизации');
     const root = $('#screen-profile');
@@ -1499,9 +2041,17 @@
       ${(player.abilities && Object.keys(player.abilities).length) ? `
         <div class="section-head" style="margin-top:18px"><div class="section-title">Характеристики</div></div>
         <div class="stat-grid">
-          ${Object.entries(player.abilities).map(([key, value]) => `<div class="stat"><div class="data-label">${esc(key)}</div><div class="data-value">${esc(value)}</div></div>`).join('')}
+          ${Object.entries(player.abilities).map(([key, value]) => `<div class="stat"><div class="data-label">${esc(ABILITY_LABELS[key] || key)}</div><div class="data-value">${esc(value)}</div></div>`).join('')}
         </div>
       ` : ''}
+      ${(player.specializations && Object.keys(player.specializations).length) ? `
+        <div class="section-head" style="margin-top:18px"><div class="section-title">Специализации</div></div>
+        <div class="stat-grid spec-grid-mobile">
+          ${Object.entries(player.specializations).filter(([, value]) => Number(value || 0) > 0).map(([key, value]) => `<div class="stat"><div class="data-label">${esc(App.data.skills.get(key)?.name || key)}</div><div class="data-value">${Number(value || 0)}</div></div>`).join('')}
+        </div>
+      ` : ''}
+      ${renderMobileReputation(player)}
+      ${renderMobileSkills(player)}
     `;
   }
 
@@ -1599,10 +2149,11 @@
       } catch (error) {
         console.warn('realtime refresh failed', error);
       }
-    }, 140);
+    }, 180);
   }
 
   function handleRealtimePayload(message) {
+    if (isPocketBaseConfig()) return handlePocketBaseRealtimePayload(message);
     const topic = String(message?.topic || '');
     const event = String(message?.event || '');
     if (event !== 'postgres_changes') return;
@@ -1617,6 +2168,21 @@
     if (topic.endsWith(App.config.chatTableName)) scheduleRealtimeRefresh({ chat: true });
     else if (topic.endsWith(App.config.combatRuntimeTableName)) scheduleRealtimeRefresh({ combat: true });
     else if (topic.endsWith(App.config.playerTableName)) scheduleRealtimeRefresh({ players: true });
+    else scheduleRealtimeRefresh({ snapshot: true });
+  }
+
+  function handlePocketBaseRealtimePayload(frame) {
+    const event = String(frame?.event || '').trim();
+    const record = frame?.data?.record || frame?.record || frame?.data || null;
+    if (!record || String(record.campaignId || '') !== String(App.config.campaignId || '')) return;
+    const collection = String(frame?.data?.collectionName || frame?.data?.collectionId || frame?.collectionName || '');
+    const key = `${event}:${record.id || ''}:${record.updated || record.clientUpdatedAt || ''}`;
+    if (App.realtime.eventKeys.has(key)) return;
+    App.realtime.eventKeys.add(key);
+    if (App.realtime.eventKeys.size > 200) App.realtime.eventKeys.delete(App.realtime.eventKeys.values().next().value);
+    if (collection === App.config.chatTableName || record.messageId) scheduleRealtimeRefresh({ chat: true });
+    else if (collection === App.config.combatRuntimeTableName || Object.prototype.hasOwnProperty.call(record, 'runtimeJson')) scheduleRealtimeRefresh({ combat: true });
+    else if (collection === App.config.playerTableName || record.playerId) scheduleRealtimeRefresh({ players: true });
     else scheduleRealtimeRefresh({ snapshot: true });
   }
 
@@ -1637,42 +2203,86 @@
     }));
   }
 
+  async function startPocketBaseRealtime() {
+    const controller = new AbortController();
+    App.realtime.abortController = controller;
+    try {
+      const token = await pbAuthToken(App.config);
+      const response = await fetch(`${pbBaseUrl(App.config)}/api/realtime`, { headers: { Authorization: `Bearer ${token}` }, signal: controller.signal });
+      if (!response.ok || !response.body) throw new Error(`PocketBase realtime HTTP ${response.status}`);
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      const subscribe = async clientId => {
+        await pbFetch(App.config, '/api/realtime', {
+          method: 'POST',
+          json: { clientId, subscriptions: [
+            `${App.config.tableName}/*`, `${App.config.playerTableName}/*`, `${App.config.chatTableName}/*`, `${App.config.combatRuntimeTableName}/*`
+          ] }
+        });
+      };
+      const parseFrame = text => {
+        const lines = String(text || '').split(/\r?\n/);
+        let event = 'message';
+        const dataLines = [];
+        lines.forEach(line => {
+          if (line.startsWith('event:')) event = line.slice(6).trim();
+          if (line.startsWith('data:')) dataLines.push(line.slice(5).trim());
+        });
+        const raw = dataLines.join('\n');
+        if (!raw) return;
+        let payload = null;
+        try { payload = JSON.parse(raw); } catch { payload = { raw }; }
+        if (event === 'PB_CONNECT') subscribe(payload.clientId).catch(error => console.warn('pb realtime subscribe failed', error));
+        else handlePocketBaseRealtimePayload({ event, data: payload });
+      };
+      while (!controller.signal.aborted) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const frames = buffer.split(/\n\n/);
+        buffer = frames.pop() || '';
+        frames.forEach(parseFrame);
+      }
+    } catch (error) {
+      if (!controller.signal.aborted) {
+        console.warn('pocketbase realtime failed', error);
+        if (App.session?.userId) App.realtime.reconnectTimer = setTimeout(() => startRealtime(), 2500);
+      }
+    }
+  }
+
+  function startSupabaseRealtime() {
+    const socket = new WebSocket(realtimeWsUrl(App.config));
+    App.realtime.socket = socket;
+    socket.addEventListener('open', () => {
+      joinRealtimeTopic(App.config.chatTableName);
+      joinRealtimeTopic(App.config.combatRuntimeTableName);
+      joinRealtimeTopic(App.config.playerTableName);
+      App.realtime.heartbeat = setInterval(() => {
+        if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ topic: 'phoenix', event: 'heartbeat', payload: {}, ref: nextRealtimeRef() }));
+      }, 25000);
+    });
+    socket.addEventListener('message', event => {
+      try { handleRealtimePayload(JSON.parse(event.data)); } catch (error) { console.warn('realtime parse failed', error); }
+    });
+    socket.addEventListener('close', () => {
+      const shouldReconnect = App.session?.userId && !App.realtime.suppressClose;
+      if (App.realtime.heartbeat) clearInterval(App.realtime.heartbeat);
+      App.realtime.heartbeat = null;
+      App.realtime.socket = null;
+      App.realtime.suppressClose = false;
+      if (shouldReconnect) App.realtime.reconnectTimer = setTimeout(() => startRealtime(), 2200);
+    });
+    socket.addEventListener('error', () => { try { socket.close(); } catch {} });
+  }
+
   function startRealtime() {
     stopRealtime();
     if (!hasConfig() || !App.session?.userId) return;
     try {
-      const socket = new WebSocket(realtimeWsUrl(App.config));
-      App.realtime.socket = socket;
-      socket.addEventListener('open', () => {
-        joinRealtimeTopic(App.config.chatTableName);
-        joinRealtimeTopic(App.config.combatRuntimeTableName);
-        joinRealtimeTopic(App.config.playerTableName);
-        App.realtime.heartbeat = setInterval(() => {
-          if (socket.readyState === WebSocket.OPEN) {
-            socket.send(JSON.stringify({ topic: 'phoenix', event: 'heartbeat', payload: {}, ref: nextRealtimeRef() }));
-          }
-        }, 25000);
-      });
-      socket.addEventListener('message', event => {
-        try {
-          handleRealtimePayload(JSON.parse(event.data));
-        } catch (error) {
-          console.warn('realtime parse failed', error);
-        }
-      });
-      socket.addEventListener('close', () => {
-        const shouldReconnect = App.session?.userId && !App.realtime.suppressClose;
-        if (App.realtime.heartbeat) clearInterval(App.realtime.heartbeat);
-        App.realtime.heartbeat = null;
-        App.realtime.socket = null;
-        App.realtime.suppressClose = false;
-        if (shouldReconnect) {
-          App.realtime.reconnectTimer = setTimeout(() => startRealtime(), 2200);
-        }
-      });
-      socket.addEventListener('error', () => {
-        try { socket.close(); } catch {}
-      });
+      if (isPocketBaseConfig()) startPocketBaseRealtime();
+      else startSupabaseRealtime();
     } catch (error) {
       console.warn('realtime init failed', error);
     }
@@ -1686,6 +2296,8 @@
     if (App.realtime.reconnectTimer) clearTimeout(App.realtime.reconnectTimer);
     App.realtime.reconnectTimer = null;
     App.realtime.suppressClose = true;
+    try { App.realtime.abortController?.abort(); } catch {}
+    App.realtime.abortController = null;
     try { App.realtime.socket?.close(); } catch {}
     App.realtime.socket = null;
   }
@@ -1712,14 +2324,26 @@
   async function login(playerId, pass) {
     const player = App.data.players.get(playerId);
     if (!player) throw new Error('Персонаж не найден');
-    if (String(player.pass || '') !== String(pass || '')) throw new Error('Неверный пароль персонажа');
-    App.session = { userId: playerId, loggedInAt: new Date().toISOString() };
+    if (String(player.role || '') !== 'guest' && String(player.pass || '') !== String(pass || '')) throw new Error('Неверный пароль персонажа');
+    App.session = { userId: playerId, role: player.role || 'player', loggedInAt: new Date().toISOString() };
     await storageSet(KEYS.session, App.session);
     openBoot('app');
     App.ui.screen = 'home';
     renderCurrentScreen();
     startPolling();
     notify(`Вход выполнен: ${player.displayName || player.id}`, 'ok');
+  }
+
+  async function loginGuest() {
+    const guest = guestProfile();
+    App.data.players.set(GUEST_ID, guest);
+    App.session = { userId: GUEST_ID, role: 'guest', loggedInAt: new Date().toISOString() };
+    await storageSet(KEYS.session, App.session);
+    openBoot('app');
+    App.ui.screen = 'home';
+    renderCurrentScreen();
+    startPolling();
+    notify('Гостевой вход выполнен', 'ok');
   }
 
   async function logout() {
@@ -1859,6 +2483,9 @@
         App.ui.combatFullscreen = !App.ui.combatFullscreen;
         renderCombat();
       }
+      if (action === 'upgrade-skill') {
+        upgradeSkill(button.dataset.skillId).catch(error => notify(error.message, 'err'));
+      }
       if (action === 'profile-refresh') {
         safeRefresh({ deferRender: false }).catch(error => notify(error.message, 'err'));
       }
@@ -1872,6 +2499,7 @@
       if (!(form instanceof HTMLFormElement)) return;
       if (form.id === 'setup-form') {
         event.preventDefault();
+        if (!requirePrivacyConsent('setup')) return;
         handleSetupSave(form).catch(error => {
           $('#setup-status').textContent = error.message;
           notify(`Не удалось подключиться: ${error.message}`, 'err');
@@ -1879,6 +2507,7 @@
       }
       if (form.id === 'login-form') {
         event.preventDefault();
+        if (!requirePrivacyConsent('login')) return;
         login($('#login-player').value, $('#login-pass').value).catch(error => {
           $('#login-status').textContent = error.message;
           notify(error.message, 'err');
@@ -1891,6 +2520,7 @@
     });
 
     document.body.addEventListener('change', event => {
+      if (event.target.id === 'login-campaign') { App.ui.selectedCampaignId = event.target.value || 'all'; renderLogin(); }
       if (event.target.id === 'login-player') renderLoginPreview();
     });
 
@@ -1919,6 +2549,11 @@
       renderCurrentScreen();
     }));
 
+    $('#login-guest-btn')?.addEventListener('click', () => {
+      if (!requirePrivacyConsent('login')) return;
+      loginGuest().catch(error => notify(error.message, 'err'));
+    });
+
     $('#login-back-btn').addEventListener('click', () => {
       openBoot('setup');
       fillSetupForm();
@@ -1946,8 +2581,12 @@
     const form = $('#setup-form');
     if (!form) return;
     const config = normalizeConfig(App.config || {});
-    form.url.value = config.url || '';
-    form.anonKey.value = config.anonKey || '';
+    if (form.backend) form.backend.value = config.backend || DEFAULTS.backend;
+    form.url.value = config.url || (config.backend === 'pocketbase' ? DEFAULTS.url : '');
+    if (form.anonKey) form.anonKey.value = config.anonKey || '';
+    if (form.appUserEmail) form.appUserEmail.value = config.appUserEmail || '';
+    if (form.appUserPassword) form.appUserPassword.value = config.appUserPassword || '';
+    if (form.appUsersCollection) form.appUsersCollection.value = config.appUsersCollection || DEFAULTS.appUsersCollection;
     form.campaignId.value = config.campaignId || '';
     form.deviceLabel.value = config.deviceLabel || '';
     form.tableName.value = config.tableName || DEFAULTS.tableName;
@@ -1955,6 +2594,7 @@
     form.chatTableName.value = config.chatTableName || DEFAULTS.chatTableName;
     form.combatRuntimeTableName.value = config.combatRuntimeTableName || DEFAULTS.combatRuntimeTableName;
     if (form.storageBucket) form.storageBucket.value = config.storageBucket || DEFAULTS.storageBucket;
+    if (form.assetsCollection) form.assetsCollection.value = config.assetsCollection || DEFAULTS.assetsCollection;
     form.snapshotPollMs.value = config.snapshotPollMs || DEFAULTS.snapshotPollMs;
     form.livePollMs.value = config.livePollMs || DEFAULTS.livePollMs;
   }

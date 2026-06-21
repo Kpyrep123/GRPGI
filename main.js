@@ -11,12 +11,14 @@ try {
   updaterLoadError = error;
 }
 
-const WORLD_FILE_NAMES = ['players','systems','planets','npcs','equipment','flora','fauna','articles','news','tasks','organizations','factions','skills','combatScenes','ui'];
+const WORLD_FILE_NAMES = ['players','systems','planets','npcs','equipment','flora','fauna','articles','news','tasks','organizations','factions','skills','campaigns','combatScenes','ui'];
 const DEFAULT_SYNC_TABLE = 'campaign_snapshots';
 const DEFAULT_CHAT_TABLE = 'campaign_messages';
 const DEFAULT_PLAYER_TABLE = 'campaign_players';
 const DEFAULT_COMBAT_RUNTIME_TABLE = 'campaign_combat_runtime';
 const DEFAULT_STORAGE_BUCKET = 'campaign-assets';
+const DEFAULT_POCKETBASE_USERS_COLLECTION = 'app_users';
+const DEFAULT_POCKETBASE_ASSETS_COLLECTION = 'campaign_assets';
 
 function debugLog(label, payload) {
   const stamp = new Date().toISOString();
@@ -160,6 +162,10 @@ function getWorldSectionItemCount(sectionName, payload) {
     if (payload.SKILLS && typeof payload.SKILLS === 'object') return Object.keys(payload.SKILLS).length;
     return Array.isArray(payload.SKILL_LIST) ? payload.SKILL_LIST.length : 0;
   }
+  if (sectionName === 'campaigns') {
+    if (payload.CAMPAIGNS && typeof payload.CAMPAIGNS === 'object') return Object.keys(payload.CAMPAIGNS).length;
+    return Array.isArray(payload.CAMPAIGN_LIST) ? payload.CAMPAIGN_LIST.length : 0;
+  }
   if (sectionName === 'combatScenes') return payload.COMBAT_SCENES && typeof payload.COMBAT_SCENES === 'object' ? Object.keys(payload.COMBAT_SCENES).length : 0;
   if (sectionName === 'ui') return Array.isArray(payload.galaxyLegend) ? payload.galaxyLegend.length : 0;
   return 0;
@@ -206,6 +212,13 @@ async function backupWorldSectionFile(sectionName, file) {
 function defaultSyncConfig() {
   return {
     enabled: false,
+    provider: 'pocketbase',
+    serverUrl: '',
+    accessToken: '',
+    pocketbaseEmail: '',
+    pocketbasePassword: '',
+    pocketbaseUsersCollection: DEFAULT_POCKETBASE_USERS_COLLECTION,
+    pocketbaseAssetsCollection: DEFAULT_POCKETBASE_ASSETS_COLLECTION,
     url: '',
     anonKey: '',
     campaignId: '',
@@ -222,12 +235,30 @@ function defaultSyncConfig() {
 
 function normalizeSyncConfig(payload = {}) {
   const base = defaultSyncConfig();
+  const providerRaw = String(payload?.provider || payload?.syncProvider || '').trim().toLowerCase();
+  let provider = providerRaw === 'supabase' || providerRaw === 'pocketbase' || providerRaw === 'selfhost' ? providerRaw : '';
+  if (!provider) {
+    if (payload?.pocketbaseEmail || payload?.pocketbasePassword) provider = 'pocketbase';
+    else if (payload?.serverUrl || payload?.accessToken) provider = 'selfhost';
+    else if (payload?.url && payload?.anonKey) provider = 'supabase';
+    else provider = 'pocketbase';
+  }
+  const serverUrl = String(payload?.serverUrl || (provider === 'selfhost' ? payload?.url : '') || base.serverUrl).trim().replace(/\/+$/, '');
+  const accessToken = String(payload?.accessToken || (provider === 'selfhost' ? payload?.anonKey : '') || base.accessToken).trim();
+  const url = String(provider === 'selfhost' ? (payload?.url || serverUrl || base.url) : (payload?.url || base.url)).trim().replace(/\/+$/, '');
   return {
     ...base,
     ...payload,
     enabled: Boolean(payload?.enabled),
-    url: String(payload?.url || base.url).trim(),
-    anonKey: String(payload?.anonKey || base.anonKey).trim(),
+    provider,
+    serverUrl,
+    accessToken,
+    pocketbaseEmail: String(payload?.pocketbaseEmail || payload?.pbEmail || '').trim(),
+    pocketbasePassword: String(payload?.pocketbasePassword || payload?.pbPassword || '').trim(),
+    pocketbaseUsersCollection: String(payload?.pocketbaseUsersCollection || DEFAULT_POCKETBASE_USERS_COLLECTION).trim() || DEFAULT_POCKETBASE_USERS_COLLECTION,
+    pocketbaseAssetsCollection: String(payload?.pocketbaseAssetsCollection || DEFAULT_POCKETBASE_ASSETS_COLLECTION).trim() || DEFAULT_POCKETBASE_ASSETS_COLLECTION,
+    url,
+    anonKey: String(provider === 'supabase' ? (payload?.anonKey || base.anonKey) : (payload?.anonKey || accessToken || base.anonKey)).trim(),
     campaignId: String(payload?.campaignId || base.campaignId).trim(),
     deviceLabel: String(payload?.deviceLabel || base.deviceLabel).trim(),
     tableName: String(payload?.tableName || base.tableName || DEFAULT_SYNC_TABLE).trim() || DEFAULT_SYNC_TABLE,
@@ -235,7 +266,7 @@ function normalizeSyncConfig(payload = {}) {
     playerTableName: String(payload?.playerTableName || base.playerTableName || DEFAULT_PLAYER_TABLE).trim() || DEFAULT_PLAYER_TABLE,
     combatRuntimeTableName: String(payload?.combatRuntimeTableName || base.combatRuntimeTableName || DEFAULT_COMBAT_RUNTIME_TABLE).trim() || DEFAULT_COMBAT_RUNTIME_TABLE,
     storageBucket: String(payload?.storageBucket || base.storageBucket || DEFAULT_STORAGE_BUCKET).trim() || DEFAULT_STORAGE_BUCKET,
-    pollIntervalMs: Math.max(10000, Number(payload?.pollIntervalMs || base.pollIntervalMs || 45000)),
+    pollIntervalMs: Math.max(3000, Number(payload?.pollIntervalMs || base.pollIntervalMs || 45000)),
     connectTimeoutMs: Math.max(3000, Number(payload?.connectTimeoutMs || base.connectTimeoutMs || 8000))
   };
 }
@@ -371,6 +402,8 @@ function getPublicImageUrl(config = {}, storagePath = '') {
 }
 
 async function uploadImageSourceToSupabase(config = {}, source = '', options = {}) {
+  if (isSelfhostSyncConfig(config)) return uploadImageSourceToSelfhost(config, source, options);
+  if (isPocketBaseSyncConfig(config)) return uploadImageSourceToPocketBase(config, source, options);
   if (!source) return { ok: false, message: 'Empty image source' };
   if (!config.enabled) return { ok: false, message: 'Sync disabled' };
   const kind = imageSourceKind(source);
@@ -495,6 +528,10 @@ function normalizeSkillsSectionForSync(section = {}) {
   return normalizeMapListSectionForSync(section, 'SKILLS', 'SKILL_LIST', ['id', 'name', 'title']);
 }
 
+function normalizeCampaignsSectionForSync(section = {}) {
+  return normalizeMapListSectionForSync(section, 'CAMPAIGNS', 'CAMPAIGN_LIST', ['id', 'name', 'title']);
+}
+
 async function normalizeSnapshotImagesForCloud(config = {}, snapshot = {}) {
   const clone = JSON.parse(JSON.stringify(snapshot || {}));
   const playersMap = clone?.world?.players?.PLAYER_TEMPLATES || {};
@@ -564,6 +601,14 @@ async function normalizeSnapshotImagesForCloud(config = {}, snapshot = {}) {
       await ensureEntityImageOnSupabase(config, entry, { section: 'skills' });
     }
     clone.world.skills.SKILL_LIST = Object.values(skills).sort((a, b) => String(a.category || '').localeCompare(String(b.category || ''), 'ru') || String(a.name || a.id || '').localeCompare(String(b.name || b.id || ''), 'ru'));
+  }
+  if (clone?.world?.campaigns) {
+    clone.world.campaigns = normalizeCampaignsSectionForSync(clone.world.campaigns);
+    const campaigns = clone.world.campaigns.CAMPAIGNS || {};
+    for (const entry of Object.values(campaigns)) {
+      await ensureEntityImageOnSupabase(config, entry, { section: 'campaigns' });
+    }
+    clone.world.campaigns.CAMPAIGN_LIST = Object.values(campaigns).sort((a, b) => String(a.name || a.id || '').localeCompare(String(b.name || b.id || ''), 'ru'));
   }
   const stateUsers = clone?.state?.users || {};
   for (const player of Object.values(stateUsers)) {
@@ -770,6 +815,12 @@ function isWorldSectionUsable(name, payload) {
       Array.isArray(payload.SKILL_LIST)
     );
   }
+  if (name === 'campaigns') {
+    return Boolean(
+      (payload.CAMPAIGNS && typeof payload.CAMPAIGNS === 'object') ||
+      Array.isArray(payload.CAMPAIGN_LIST)
+    );
+  }
   return true;
 }
 
@@ -870,8 +921,28 @@ async function resetWorldDataDir() {
   return targetDir;
 }
 
+function isSelfhostSyncConfig(config = {}) {
+  return String(config?.provider || '').toLowerCase() === 'selfhost';
+}
+
+function isPocketBaseSyncConfig(config = {}) {
+  return String(config?.provider || '').toLowerCase() === 'pocketbase';
+}
+
 function validateSyncConfig(config = {}) {
   const issues = [];
+  if (isSelfhostSyncConfig(config)) {
+    if (!config.serverUrl && !config.url) issues.push('SERVER_URL пустой');
+    if (!config.campaignId) issues.push('CAMPAIGN_ID пустой');
+    return issues;
+  }
+  if (isPocketBaseSyncConfig(config)) {
+    if (!config.url) issues.push('POCKETBASE_URL пустой');
+    if (!config.pocketbaseEmail) issues.push('POCKETBASE_EMAIL пустой');
+    if (!config.pocketbasePassword) issues.push('POCKETBASE_PASSWORD пустой');
+    if (!config.campaignId) issues.push('CAMPAIGN_ID пустой');
+    return issues;
+  }
   if (!config.url) issues.push('SUPABASE_URL пустой');
   if (!config.anonKey) issues.push('SUPABASE_KEY пустой');
   if (!config.campaignId) issues.push('CAMPAIGN_ID пустой');
@@ -909,6 +980,725 @@ function getSupabaseClient(config = {}) {
 function formatSupabaseError(error) {
   if (!error) return 'unknown supabase error';
   return [error.message, error.details, error.hint].filter(Boolean).join(' // ') || JSON.stringify(error);
+}
+
+
+function getSelfhostBaseUrl(config = {}) {
+  return String(config.serverUrl || config.url || '').trim().replace(/\/+$/, '');
+}
+
+function getSelfhostToken(config = {}) {
+  return String(config.accessToken || config.anonKey || '').trim();
+}
+
+function encodePathPart(value = '') {
+  return encodeURIComponent(String(value || '').trim());
+}
+
+async function selfhostFetch(config = {}, pathname = '/', options = {}) {
+  const issues = validateSyncConfig(config);
+  if (issues.length) throw new Error(issues.join('; '));
+  const base = getSelfhostBaseUrl(config);
+  const url = new URL(pathname, `${base}/`);
+  const query = options.query || {};
+  for (const [key, value] of Object.entries(query)) {
+    if (value === undefined || value === null || value === '') continue;
+    url.searchParams.set(key, String(value));
+  }
+  const headers = { ...(options.headers || {}) };
+  const token = getSelfhostToken(config);
+  if (token) headers.Authorization = `Bearer ${token}`;
+  let body = options.body;
+  if (options.json !== undefined) {
+    headers['content-type'] = 'application/json';
+    body = JSON.stringify(options.json ?? {});
+  }
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), Math.max(3000, Number(config.connectTimeoutMs || 8000)));
+  try {
+    const res = await fetch(url, {
+      method: options.method || 'GET',
+      headers,
+      body,
+      signal: controller.signal
+    });
+    const contentType = String(res.headers.get('content-type') || '').toLowerCase();
+    const payload = contentType.includes('application/json') ? await res.json() : { ok: res.ok, text: await res.text() };
+    if (!res.ok && payload?.ok !== false) payload.ok = false;
+    return payload;
+  } catch (error) {
+    if (error?.name === 'AbortError') throw new Error(`Self-host sync timeout: ${url.origin}`);
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function selfhostSnapshotPath(config = {}) {
+  return `/api/snapshots/${encodePathPart(config.campaignId)}`;
+}
+
+function selfhostPlayersPath(config = {}, playerId = '') {
+  const base = `/api/players/${encodePathPart(config.campaignId)}`;
+  return playerId ? `${base}/${encodePathPart(playerId)}` : base;
+}
+
+function selfhostChatPath(config = {}, suffix = '') {
+  const base = `/api/chat/${encodePathPart(config.campaignId)}`;
+  return suffix ? `${base}/${suffix}` : base;
+}
+
+function selfhostCombatPath(config = {}) {
+  return `/api/combat/${encodePathPart(config.campaignId)}`;
+}
+
+function selfhostAssetPath(config = {}) {
+  return `/api/assets/${encodePathPart(config.campaignId)}`;
+}
+
+async function uploadImageSourceToSelfhost(config = {}, source = '', options = {}) {
+  if (!source) return { ok: false, message: 'Empty image source' };
+  if (!config.enabled) return { ok: false, message: 'Sync disabled' };
+  const kind = imageSourceKind(source);
+  if (kind === 'http-url') return { ok: true, url: source, publicUrl: source, storagePath: options.storagePath || null, skipped: true };
+  const contentType = inferImageContentType(source);
+  const ext = extensionFromContentType(contentType) || extensionFromPathLike(source);
+  const storagePath = options.storagePath || buildStorageImagePath(config, { ...options, ext });
+  const buffer = await imageSourceToBuffer(source);
+  const result = await selfhostFetch(config, selfhostAssetPath(config), {
+    method: 'POST',
+    query: { path: storagePath },
+    headers: { 'content-type': contentType },
+    body: buffer
+  });
+  if (!result?.ok) throw new Error(result?.message || 'Self-host asset upload failed');
+  return {
+    ok: true,
+    bucket: 'selfhost-assets',
+    storagePath: result.storagePath || storagePath,
+    publicUrl: result.publicUrl || result.url || '',
+    url: result.publicUrl || result.url || source,
+    contentType: result.contentType || contentType
+  };
+}
+
+let selfhostRealtime = null;
+
+async function teardownSelfhostRealtime() {
+  if (!selfhostRealtime) return;
+  try { selfhostRealtime.abortController?.abort(); } catch {}
+  selfhostRealtime = null;
+}
+
+function broadcastPlayerRealtimeEvent(payload = {}) {
+  for (const win of BrowserWindow.getAllWindows()) {
+    try {
+      if (!win?.isDestroyed()) win.webContents.send('players:remote:event', payload);
+    } catch {}
+  }
+}
+
+async function setupSelfhostRealtime(config = {}) {
+  await teardownSelfhostRealtime();
+  if (!config?.enabled || !config?.campaignId || !isSelfhostSyncConfig(config)) return;
+  const base = getSelfhostBaseUrl(config);
+  if (!base) return;
+  const url = new URL(`/api/events/${encodePathPart(config.campaignId)}`, `${base}/`);
+  const controller = new AbortController();
+  selfhostRealtime = { abortController: controller, campaignId: config.campaignId, url: String(url) };
+  (async () => {
+    let retryDelay = 1000;
+    while (!controller.signal.aborted) {
+      try {
+        const headers = {};
+        const token = getSelfhostToken(config);
+        if (token) headers.Authorization = `Bearer ${token}`;
+        const res = await fetch(url, { headers, signal: controller.signal });
+        if (!res.ok || !res.body) throw new Error(`SSE failed: HTTP ${res.status}`);
+        debugLog('SELFHOST_REALTIME_CONNECTED', { campaignId: config.campaignId, url: String(url) });
+        retryDelay = 1000;
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        while (!controller.signal.aborted) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          let idx;
+          while ((idx = buffer.indexOf('\n\n')) >= 0) {
+            const frame = buffer.slice(0, idx);
+            buffer = buffer.slice(idx + 2);
+            const dataLine = frame.split('\n').find(line => line.startsWith('data:'));
+            if (!dataLine) continue;
+            const payload = JSON.parse(dataLine.slice(5).trim());
+            if (payload.channel === 'snapshot') broadcastWorldSnapshotRealtimeEvent({ eventType: payload.eventType, remote: payload.remote });
+            else if (payload.channel === 'chat') broadcastChatRealtimeEvent({ eventType: payload.eventType, row: payload.row });
+            else if (payload.channel === 'players') broadcastPlayerRealtimeEvent({ eventType: payload.eventType, row: payload.row });
+            else if (payload.channel === 'combat') broadcastCombatRuntimeEvent({ eventType: payload.eventType, row: payload.row });
+          }
+        }
+      } catch (error) {
+        if (controller.signal.aborted) break;
+        debugLog('SELFHOST_REALTIME_ERROR', { campaignId: config.campaignId, message: error?.message || String(error) });
+      }
+      if (controller.signal.aborted) break;
+      await new Promise(resolve => setTimeout(resolve, retryDelay));
+      retryDelay = Math.min(15000, Math.round(retryDelay * 1.5));
+    }
+  })();
+}
+
+
+let pocketbaseRealtime = null;
+
+async function teardownPocketBaseRealtime() {
+  if (!pocketbaseRealtime) return;
+  try { pocketbaseRealtime.abortController?.abort(); } catch {}
+  pocketbaseRealtime = null;
+}
+
+function parseSseFrame(frame = '') {
+  const out = { event: 'message', data: '', id: '' };
+  const data = [];
+  for (const rawLine of String(frame || '').split(/\r?\n/)) {
+    const line = rawLine.trimEnd();
+    if (!line || line.startsWith(':')) continue;
+    if (line.startsWith('event:')) out.event = line.slice(6).trim();
+    else if (line.startsWith('data:')) data.push(line.slice(5).trimStart());
+    else if (line.startsWith('id:')) out.id = line.slice(3).trim();
+  }
+  out.data = data.join('\n');
+  return out;
+}
+
+function pocketbaseRealtimeCollectionName(eventName = '', record = {}) {
+  const explicit = String(record.collectionName || record.collection || '').trim();
+  if (explicit) return explicit;
+  const clean = String(eventName || '').split('?')[0].trim();
+  if (!clean || clean === 'message') return '';
+  return clean.split('/')[0] || clean;
+}
+
+function pocketbaseRealtimeEventType(action = '') {
+  const normalized = String(action || '').trim().toUpperCase();
+  if (normalized === 'CREATE') return 'INSERT';
+  if (normalized === 'UPDATE') return 'UPDATE';
+  if (normalized === 'DELETE') return 'DELETE';
+  return normalized || 'UPDATE';
+}
+
+function pocketbaseRealtimeCampaignMatches(config = {}, record = {}) {
+  const recordCampaign = String(record?.campaignId || '').trim();
+  return !recordCampaign || recordCampaign === String(config.campaignId || '').trim();
+}
+
+function handlePocketBaseRealtimeRecord(config = {}, eventName = '', payload = {}) {
+  const record = payload?.record || payload?.data?.record || null;
+  if (!record || typeof record !== 'object') return;
+  if (!pocketbaseRealtimeCampaignMatches(config, record)) return;
+
+  const collection = pocketbaseRealtimeCollectionName(eventName, record);
+  const action = pocketbaseRealtimeEventType(payload?.action || payload?.event || eventName);
+  const snapshotCollection = pocketbaseCollection(config, 'snapshot');
+  const playersCollection = pocketbaseCollection(config, 'players');
+  const chatCollection = pocketbaseCollection(config, 'chat');
+  const combatCollection = pocketbaseCollection(config, 'combat');
+
+  if (collection === snapshotCollection) {
+    const remote = normalizePocketBaseSnapshotRecord(record);
+    if (remote) {
+      remote.world = null;
+      remote.state = null;
+      broadcastWorldSnapshotRealtimeEvent({ eventType: action, remote, provider: 'pocketbase' });
+    }
+    return;
+  }
+
+  if (collection === playersCollection) {
+    const row = normalizePocketBasePlayerRecord(record);
+    if (row) broadcastPlayerRealtimeEvent({ eventType: action, row, provider: 'pocketbase' });
+    return;
+  }
+
+  if (collection === chatCollection) {
+    const row = normalizePocketBaseChatRecord(record);
+    if (row) broadcastChatRealtimeEvent({ eventType: action, row, provider: 'pocketbase' });
+    return;
+  }
+
+  if (collection === combatCollection) {
+    const row = normalizePocketBaseCombatRecord(record);
+    if (row) broadcastCombatRuntimeEvent({ eventType: action, row, provider: 'pocketbase' });
+  }
+}
+
+async function pocketbaseSetRealtimeSubscriptions(config = {}, clientId = '') {
+  const subscriptions = [
+    `${pocketbaseCollection(config, 'snapshot')}/*`,
+    `${pocketbaseCollection(config, 'players')}/*`,
+    `${pocketbaseCollection(config, 'chat')}/*`,
+    `${pocketbaseCollection(config, 'combat')}/*`
+  ];
+  await pocketbaseFetch(config, '/api/realtime', {
+    method: 'POST',
+    json: { clientId, subscriptions }
+  });
+  debugLog('POCKETBASE_REALTIME_SUBSCRIBED', { campaignId: config.campaignId, subscriptions });
+}
+
+async function setupPocketBaseRealtime(config = {}) {
+  await teardownPocketBaseRealtime();
+  if (!config?.enabled || !config?.campaignId || !isPocketBaseSyncConfig(config)) return;
+  const base = getPocketBaseBaseUrl(config);
+  if (!base) return;
+  const url = new URL('/api/realtime', `${base}/`);
+  const controller = new AbortController();
+  pocketbaseRealtime = { abortController: controller, campaignId: config.campaignId, url: String(url) };
+
+  (async () => {
+    let retryDelay = 1000;
+    while (!controller.signal.aborted) {
+      try {
+        const res = await fetch(url, {
+          headers: { accept: 'text/event-stream' },
+          signal: controller.signal
+        });
+        if (!res.ok || !res.body) throw new Error(`PocketBase SSE failed: HTTP ${res.status}`);
+        debugLog('POCKETBASE_REALTIME_CONNECTED', { campaignId: config.campaignId, url: String(url) });
+        retryDelay = 1000;
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let subscribedClientId = '';
+        while (!controller.signal.aborted) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          let idx;
+          while ((idx = buffer.indexOf('\n\n')) >= 0) {
+            const rawFrame = buffer.slice(0, idx);
+            buffer = buffer.slice(idx + 2);
+            const frame = parseSseFrame(rawFrame);
+            if (!frame.data) continue;
+            let payload = null;
+            try { payload = JSON.parse(frame.data); } catch { payload = null; }
+            if (frame.event === 'PB_CONNECT') {
+              const clientId = String(payload?.clientId || frame.id || '').trim();
+              if (clientId && clientId !== subscribedClientId) {
+                subscribedClientId = clientId;
+                await pocketbaseSetRealtimeSubscriptions(config, clientId);
+              }
+              continue;
+            }
+            if (payload) handlePocketBaseRealtimeRecord(config, frame.event, payload);
+          }
+        }
+      } catch (error) {
+        if (controller.signal.aborted) break;
+        debugLog('POCKETBASE_REALTIME_ERROR', { campaignId: config.campaignId, message: error?.message || String(error) });
+      }
+      if (controller.signal.aborted) break;
+      await new Promise(resolve => setTimeout(resolve, retryDelay));
+      retryDelay = Math.min(15000, Math.round(retryDelay * 1.5));
+    }
+  })();
+}
+
+
+const pocketbaseAuthCache = new Map();
+
+function getPocketBaseBaseUrl(config = {}) {
+  return String(config.url || config.serverUrl || '').trim().replace(/\/+$/, '');
+}
+
+function pocketbaseCollection(config = {}, key = 'snapshot') {
+  if (key === 'users') return String(config.pocketbaseUsersCollection || DEFAULT_POCKETBASE_USERS_COLLECTION).trim() || DEFAULT_POCKETBASE_USERS_COLLECTION;
+  if (key === 'assets') return String(config.pocketbaseAssetsCollection || DEFAULT_POCKETBASE_ASSETS_COLLECTION).trim() || DEFAULT_POCKETBASE_ASSETS_COLLECTION;
+  if (key === 'snapshot') return String(config.tableName || DEFAULT_SYNC_TABLE).trim() || DEFAULT_SYNC_TABLE;
+  if (key === 'players') return String(config.playerTableName || DEFAULT_PLAYER_TABLE).trim() || DEFAULT_PLAYER_TABLE;
+  if (key === 'chat') return String(config.chatTableName || DEFAULT_CHAT_TABLE).trim() || DEFAULT_CHAT_TABLE;
+  if (key === 'combat') return String(config.combatRuntimeTableName || DEFAULT_COMBAT_RUNTIME_TABLE).trim() || DEFAULT_COMBAT_RUNTIME_TABLE;
+  return String(key || '').trim();
+}
+
+function pocketbaseAuthCacheKey(config = {}) {
+  return [getPocketBaseBaseUrl(config), pocketbaseCollection(config, 'users'), config.pocketbaseEmail || ''].join('|');
+}
+
+function pocketbaseFilterValue(value = '') {
+  return String(value ?? '').replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
+function pocketbaseEq(field, value) {
+  return `${field}="${pocketbaseFilterValue(value)}"`;
+}
+
+function pocketbaseAnd(...parts) {
+  return parts.filter(Boolean).join(' && ');
+}
+
+async function pocketbaseAuthToken(config = {}, options = {}) {
+  const issues = validateSyncConfig(config);
+  if (issues.length) throw new Error(issues.join('; '));
+  const cacheKey = pocketbaseAuthCacheKey(config);
+  if (!options.forceRefresh && pocketbaseAuthCache.has(cacheKey)) return pocketbaseAuthCache.get(cacheKey);
+  const base = getPocketBaseBaseUrl(config);
+  const collection = encodePathPart(pocketbaseCollection(config, 'users'));
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), Math.max(3000, Number(config.connectTimeoutMs || 8000)));
+  try {
+    const res = await fetch(`${base}/api/collections/${collection}/auth-with-password`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ identity: String(config.pocketbaseEmail || ''), password: String(config.pocketbasePassword || '') }),
+      signal: controller.signal
+    });
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok || !payload?.token) {
+      throw new Error(payload?.message || `PocketBase auth failed: HTTP ${res.status}`);
+    }
+    pocketbaseAuthCache.set(cacheKey, payload.token);
+    return payload.token;
+  } catch (error) {
+    if (error?.name === 'AbortError') throw new Error(`PocketBase auth timeout: ${base}`);
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function pocketbaseFetch(config = {}, pathname = '/', options = {}) {
+  const base = getPocketBaseBaseUrl(config);
+  if (!base) throw new Error('POCKETBASE_URL пустой');
+  const url = new URL(pathname, `${base}/`);
+  const query = options.query || {};
+  for (const [key, value] of Object.entries(query)) {
+    if (value === undefined || value === null || value === '') continue;
+    url.searchParams.set(key, String(value));
+  }
+  let lastPayload = null;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const headers = { ...(options.headers || {}) };
+    if (options.auth !== false) headers.Authorization = `Bearer ${await pocketbaseAuthToken(config, { forceRefresh: attempt > 0 })}`;
+    let body = options.body;
+    if (options.json !== undefined) {
+      headers['content-type'] = 'application/json';
+      body = JSON.stringify(options.json ?? {});
+    }
+    if (options.form) body = options.form;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), Math.max(3000, Number(config.connectTimeoutMs || 8000)));
+    try {
+      const res = await fetch(url, { method: options.method || 'GET', headers, body, signal: controller.signal });
+      const contentType = String(res.headers.get('content-type') || '').toLowerCase();
+      const payload = contentType.includes('application/json') ? await res.json().catch(() => ({})) : { text: await res.text().catch(() => '') };
+      lastPayload = payload;
+      if (res.status === 401 && attempt === 0) {
+        pocketbaseAuthCache.delete(pocketbaseAuthCacheKey(config));
+        continue;
+      }
+      if (!res.ok) {
+        const detail = payload?.data && typeof payload.data === 'object' ? ` // ${JSON.stringify(payload.data)}` : '';
+        throw new Error(`${payload?.message || 'PocketBase request failed'}: HTTP ${res.status}${detail}`);
+      }
+      return payload;
+    } catch (error) {
+      if (error?.name === 'AbortError') throw new Error(`PocketBase timeout: ${url.origin}`);
+      throw error;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+  throw new Error(lastPayload?.message || 'PocketBase request failed');
+}
+
+async function pocketbaseList(config = {}, collectionKey = '', options = {}) {
+  const collection = encodePathPart(pocketbaseCollection(config, collectionKey));
+  const query = {
+    page: options.page || 1,
+    perPage: options.perPage || options.limit || 500,
+    filter: options.filter || '',
+    sort: options.sort || ''
+  };
+  const payload = await pocketbaseFetch(config, `/api/collections/${collection}/records`, { query });
+  return Array.isArray(payload?.items) ? payload.items : [];
+}
+
+async function pocketbaseFirst(config = {}, collectionKey = '', filter = '') {
+  const rows = await pocketbaseList(config, collectionKey, { filter, perPage: 1 });
+  return rows[0] || null;
+}
+
+function normalizePocketBaseSnapshotRecord(record = {}) {
+  if (!record) return null;
+  return {
+    _id: record.id,
+    campaignId: record.campaignId,
+    revision: Number(record.revision || 0),
+    updatedAt: record.updated || null,
+    updatedBy: record.updatedBy || null,
+    clientUpdatedAt: record.clientUpdatedAt || null,
+    world: record.worldJson || null,
+    state: record.stateJson || null
+  };
+}
+
+async function fetchPocketBaseSnapshot(config = {}, options = {}) {
+  const record = await pocketbaseFirst(config, 'snapshot', pocketbaseEq('campaignId', config.campaignId));
+  const remote = normalizePocketBaseSnapshotRecord(record);
+  if (!remote) return { ok: true, exists: false, remote: null };
+  if (options.includePayload === false) {
+    remote.world = null;
+    remote.state = null;
+  }
+  return { ok: true, exists: true, remote };
+}
+
+async function pushPocketBaseSnapshot(config = {}, payload = {}) {
+  const now = new Date().toISOString();
+  const actor = String(payload.updatedBy || config.deviceLabel || 'unknown-device').trim() || 'unknown-device';
+  const expectedRevision = Number.isFinite(Number(payload.baseRevision)) ? Number(payload.baseRevision) : 0;
+  const remoteInfo = await fetchPocketBaseSnapshot(config, { includePayload: false });
+  const collection = encodePathPart(pocketbaseCollection(config, 'snapshot'));
+  if (!remoteInfo.exists) {
+    // A clean PocketBase backend is a valid migration target.
+    // Local metadata may still contain a Supabase/self-host revision from the previous backend,
+    // so an empty PocketBase snapshot must be seeded instead of treated as a conflict.
+    const record = await pocketbaseFetch(config, `/api/collections/${collection}/records`, {
+      method: 'POST',
+      json: {
+        campaignId: config.campaignId,
+        revision: 1,
+        updatedBy: actor,
+        clientUpdatedAt: payload.clientUpdatedAt || now,
+        worldJson: payload.world || {},
+        stateJson: payload.state || {}
+      }
+    });
+    return { ok: true, status: expectedRevision > 0 ? 'seeded' : 'inserted', remote: normalizePocketBaseSnapshotRecord(record) };
+  }
+  if (Number(remoteInfo.remote?.revision || 0) !== expectedRevision) {
+    return { ok: false, status: 'conflict', message: 'В PocketBase есть более новая ревизия данных', remote: remoteInfo.remote };
+  }
+  const nextRevision = expectedRevision + 1;
+  const record = await pocketbaseFetch(config, `/api/collections/${collection}/records/${encodePathPart(remoteInfo.remote._id)}`, {
+    method: 'PATCH',
+    json: {
+      revision: nextRevision,
+      updatedBy: actor,
+      clientUpdatedAt: payload.clientUpdatedAt || now,
+      worldJson: payload.world || {},
+      stateJson: payload.state || {}
+    }
+  });
+  return { ok: true, status: 'updated', remote: normalizePocketBaseSnapshotRecord(record) };
+}
+
+function normalizePocketBasePlayerRecord(record = {}) {
+  if (!record) return null;
+  const player = sanitizePlayerObject(record.playerJson || {});
+  const deletedAt = record.deletedAt || (player.__deleted ? record.updated || null : null);
+  const segments = splitPlayerState(player, { privateState: player.private_state_json || {}, deleted: Boolean(deletedAt) });
+  return {
+    _id: record.id,
+    campaignId: record.campaignId,
+    playerId: record.playerId,
+    player_id: record.playerId,
+    version: Number(record.version || 0),
+    updatedAt: record.updated || null,
+    updatedBy: record.updatedBy || null,
+    clientUpdatedAt: record.clientUpdatedAt || null,
+    deletedAt,
+    player,
+    profile_json: segments.profile_json,
+    inventory_json: segments.inventory_json,
+    private_state_json: segments.private_state_json
+  };
+}
+
+async function fetchPocketBasePlayerRows(config = {}, options = {}) {
+  const filters = [pocketbaseEq('campaignId', config.campaignId)];
+  if (options.playerId) filters.push(pocketbaseEq('playerId', options.playerId));
+  if (options.since) filters.push(`updated>="${pocketbaseFilterValue(options.since)}"`);
+  const rows = await pocketbaseList(config, 'players', { filter: pocketbaseAnd(...filters), sort: 'updated,playerId', perPage: Math.max(1, Math.min(5000, Number(options.limit || 500))) });
+  return rows.map(normalizePocketBasePlayerRecord).filter(Boolean);
+}
+
+async function fetchPocketBasePlayerRow(config = {}, playerId = '') {
+  const rows = await fetchPocketBasePlayerRows(config, { playerId, limit: 1 });
+  return rows[0] || null;
+}
+
+function mergePocketBasePlayerPatch(remotePlayer = {}, patchPlayer = {}) {
+  const remote = sanitizePlayerObject(remotePlayer);
+  const patch = sanitizePlayerObject(patchPlayer);
+  const merged = { ...remote, ...patch };
+  if (!Object.prototype.hasOwnProperty.call(patch, 'inventory') && Object.prototype.hasOwnProperty.call(remote, 'inventory')) merged.inventory = remote.inventory;
+  return merged;
+}
+
+async function writePocketBasePlayerRow(config = {}, payload = {}, options = {}) {
+  const row = normalizePlayerRowPayload(payload);
+  const now = new Date().toISOString();
+  const actor = String(row.updatedBy || config.deviceLabel || 'unknown-device').trim() || 'unknown-device';
+  const expectedVersion = Number.isFinite(Number(row.baseVersion)) ? Number(row.baseVersion) : 0;
+  const remote = await fetchPocketBasePlayerRow(config, row.player_id);
+  const collection = encodePathPart(pocketbaseCollection(config, 'players'));
+  if (!remote) {
+    if (expectedVersion !== 0) return { ok: false, status: 'conflict', message: 'Игрок уже изменён другим клиентом', remote: null };
+    const player = options.deleted ? { ...row.player, __deleted: true } : row.player;
+    const record = await pocketbaseFetch(config, `/api/collections/${collection}/records`, {
+      method: 'POST',
+      json: { campaignId: config.campaignId, playerId: row.player_id, version: 1, updatedBy: actor, clientUpdatedAt: row.clientUpdatedAt || now, deletedAt: options.deleted ? now : null, playerJson: player }
+    });
+    return { ok: true, status: options.deleted ? 'deleted' : 'inserted', row: normalizePocketBasePlayerRecord(record) };
+  }
+  if (Number(remote.version || 0) !== expectedVersion) return { ok: false, status: 'conflict', message: 'У игрока уже есть более новая версия в PocketBase', remote };
+  let nextPlayer = options.patchOnly ? mergePocketBasePlayerPatch(remote.player || {}, row.player || {}) : row.player;
+  if (options.deleted) nextPlayer = { ...(remote.player || {}), ...nextPlayer, __deleted: true };
+  const record = await pocketbaseFetch(config, `/api/collections/${collection}/records/${encodePathPart(remote._id)}`, {
+    method: 'PATCH',
+    json: { version: expectedVersion + 1, updatedBy: actor, clientUpdatedAt: row.clientUpdatedAt || now, deletedAt: options.deleted ? now : (row.deletedAt || remote.deletedAt || null), playerJson: nextPlayer }
+  });
+  return { ok: true, status: options.deleted ? 'deleted' : 'updated', row: normalizePocketBasePlayerRecord(record) };
+}
+
+function pocketBaseMessageFromChatRow(row = {}, config = {}) {
+  const normalized = normalizeChatRowInput(row);
+  return {
+    campaignId: config.campaignId,
+    messageId: normalized.message_id,
+    kind: normalized.kind,
+    threadKey: normalized.thread_key,
+    senderType: normalized.sender_type,
+    senderId: normalized.sender_id,
+    recipientPlayerId: normalized.recipient_player_id,
+    npcId: normalized.npc_id,
+    directA: normalized.direct_a,
+    directB: normalized.direct_b,
+    authorLabel: normalized.author_label,
+    bodyHtml: normalized.body_html,
+    clientCreatedAt: normalized.created_at,
+    editedAt: normalized.edited_at,
+    deletedAt: normalized.deleted_at,
+    clientUpdatedAt: normalized.client_updated_at || normalized.updated_at
+  };
+}
+
+function normalizePocketBaseChatRecord(record = {}) {
+  if (!record) return null;
+  return {
+    id: record.id,
+    campaign_id: record.campaignId,
+    message_id: record.messageId,
+    kind: record.kind || 'direct',
+    thread_key: record.threadKey || '',
+    sender_type: record.senderType || 'player',
+    sender_id: record.senderId || null,
+    recipient_player_id: record.recipientPlayerId || null,
+    npc_id: record.npcId || null,
+    direct_a: record.directA || null,
+    direct_b: record.directB || null,
+    author_label: record.authorLabel || null,
+    body_html: record.bodyHtml || '',
+    created_at: record.clientCreatedAt || record.created || record.updated || null,
+    edited_at: record.editedAt || null,
+    deleted_at: record.deletedAt || null,
+    updated_at: record.updated || record.clientUpdatedAt || null,
+    client_updated_at: record.clientUpdatedAt || record.updated || null
+  };
+}
+
+async function fetchPocketBaseChatRows(config = {}, options = {}) {
+  const filters = [pocketbaseEq('campaignId', config.campaignId)];
+  if (options.threadKey) filters.push(pocketbaseEq('threadKey', options.threadKey));
+  if (options.since) filters.push(`updated>="${pocketbaseFilterValue(options.since)}"`);
+  const rows = await pocketbaseList(config, 'chat', { filter: pocketbaseAnd(...filters), sort: 'updated,messageId', perPage: Math.max(1, Math.min(10000, Number(options.limit || 1000))) });
+  return rows.map(normalizePocketBaseChatRecord).filter(Boolean);
+}
+
+async function upsertPocketBaseChatRow(config = {}, payload = {}) {
+  const row = pocketBaseMessageFromChatRow(payload, config);
+  const collection = encodePathPart(pocketbaseCollection(config, 'chat'));
+  const existing = await pocketbaseFirst(config, 'chat', pocketbaseAnd(pocketbaseEq('campaignId', config.campaignId), pocketbaseEq('messageId', row.messageId)));
+  const method = existing?.id ? 'PATCH' : 'POST';
+  const path = existing?.id ? `/api/collections/${collection}/records/${encodePathPart(existing.id)}` : `/api/collections/${collection}/records`;
+  const record = await pocketbaseFetch(config, path, { method, json: row });
+  return normalizePocketBaseChatRecord(record);
+}
+
+async function upsertPocketBaseChatRows(config = {}, rows = []) {
+  const result = [];
+  for (const row of rows) result.push(await upsertPocketBaseChatRow(config, row));
+  return result.filter(Boolean);
+}
+
+function normalizePocketBaseCombatRecord(record = {}) {
+  if (!record) return null;
+  return {
+    _id: record.id,
+    campaignId: record.campaignId,
+    revision: Number(record.revision || 0),
+    updatedAt: record.updated || null,
+    updatedBy: record.updatedBy || null,
+    clientUpdatedAt: record.clientUpdatedAt || null,
+    activeSceneId: String(record.activeSceneId || '').trim(),
+    scene: record.sceneJson || {},
+    runtime: record.runtimeJson || {}
+  };
+}
+
+async function fetchPocketBaseCombatRuntime(config = {}) {
+  const record = await pocketbaseFirst(config, 'combat', pocketbaseEq('campaignId', config.campaignId));
+  return normalizePocketBaseCombatRecord(record);
+}
+
+async function pushPocketBaseCombatRuntime(config = {}, payload = {}) {
+  const normalized = await normalizeCombatPublishPayloadImages(config, payload);
+  const now = new Date().toISOString();
+  const actor = String(normalized.updatedBy || config.deviceLabel || 'unknown-device').trim() || 'unknown-device';
+  const expectedRevision = Number.isFinite(Number(normalized.baseRevision)) ? Number(normalized.baseRevision) : 0;
+  const current = await fetchPocketBaseCombatRuntime(config);
+  const collection = encodePathPart(pocketbaseCollection(config, 'combat'));
+  const writeRow = {
+    campaignId: config.campaignId,
+    updatedBy: actor,
+    clientUpdatedAt: normalized.clientUpdatedAt || now,
+    activeSceneId: String(normalized.active_scene_id || normalized.activeSceneId || normalized.scene_json?.id || '').trim(),
+    sceneJson: normalized.scene_json || normalized.scene || {},
+    runtimeJson: normalized.runtime_json || normalized.runtime || {}
+  };
+  if (!current) {
+    if (expectedRevision !== 0) return { ok: false, status: 'conflict', message: 'Combat runtime already changed remotely', remote: null };
+    const record = await pocketbaseFetch(config, `/api/collections/${collection}/records`, { method: 'POST', json: { ...writeRow, revision: 1 } });
+    return { ok: true, status: 'inserted', row: normalizePocketBaseCombatRecord(record) };
+  }
+  if (current.revision !== expectedRevision) return { ok: false, status: 'conflict', message: 'Combat runtime has newer remote version', remote: current };
+  const record = await pocketbaseFetch(config, `/api/collections/${collection}/records/${encodePathPart(current._id)}`, { method: 'PATCH', json: { ...writeRow, revision: expectedRevision + 1 } });
+  return { ok: true, status: 'updated', row: normalizePocketBaseCombatRecord(record) };
+}
+
+async function uploadImageSourceToPocketBase(config = {}, source = '', options = {}) {
+  if (!source) return { ok: false, message: 'Empty image source' };
+  if (!config.enabled) return { ok: false, message: 'Sync disabled' };
+  const kind = imageSourceKind(source);
+  if (kind === 'http-url') return { ok: true, url: source, publicUrl: source, storagePath: options.storagePath || null, skipped: true };
+  const contentType = inferImageContentType(source);
+  const ext = extensionFromContentType(contentType) || extensionFromPathLike(source);
+  const storagePath = options.storagePath || buildStorageImagePath(config, { ...options, ext });
+  const buffer = await imageSourceToBuffer(source);
+  const collection = pocketbaseCollection(config, 'assets');
+  const form = new FormData();
+  form.append('campaignId', config.campaignId);
+  form.append('section', String(options.section || 'misc'));
+  form.append('entityId', String(options.entityId || options.preferredStem || 'asset'));
+  form.append('assetPath', storagePath);
+  form.append('clientUpdatedAt', new Date().toISOString());
+  form.append('file', new Blob([buffer], { type: contentType }), path.basename(storagePath));
+  const record = await pocketbaseFetch(config, `/api/collections/${encodePathPart(collection)}/records`, { method: 'POST', form });
+  const fileName = record?.file || path.basename(storagePath);
+  const publicUrl = `${getPocketBaseBaseUrl(config)}/api/files/${encodePathPart(collection)}/${encodePathPart(record.id)}/${encodeURIComponent(fileName)}`;
+  return { ok: true, bucket: collection, storagePath, publicUrl, url: publicUrl || source, contentType };
 }
 
 
@@ -1019,6 +1809,7 @@ async function downloadUpdateSafe() {
 }
 let combatRuntimeRealtime = null;
 let chatRealtime = null;
+let worldSnapshotRealtime = null;
 let mainWindow = null;
 let playerDisplayWindow = null;
 let playerDisplayMirrorState = { activeSceneId: '', cameraByScene: {}, updatedAt: null };
@@ -1103,12 +1894,71 @@ async function setupChatRealtime(config = {}) {
   chatRealtime = { client, channel, campaignId: config.campaignId, tableName };
 }
 
+function broadcastWorldSnapshotRealtimeEvent(payload = {}) {
+  for (const win of BrowserWindow.getAllWindows()) {
+    try {
+      if (!win?.isDestroyed()) win.webContents.send('sync:snapshot:event', payload);
+    } catch {}
+  }
+}
+
+async function teardownWorldSnapshotRealtime() {
+  if (!worldSnapshotRealtime) return;
+  try {
+    await worldSnapshotRealtime.client.removeChannel(worldSnapshotRealtime.channel);
+  } catch {}
+  worldSnapshotRealtime = null;
+}
+
+function normalizeSnapshotRealtimeRow(row = {}) {
+  if (!row || typeof row !== 'object') return null;
+  return {
+    campaignId: row.campaign_id || null,
+    revision: Number(row.revision || 0),
+    updatedAt: row.updated_at || null,
+    updatedBy: row.updated_by || null,
+    clientUpdatedAt: row.client_updated_at || null
+  };
+}
+
+async function setupWorldSnapshotRealtime(config = {}) {
+  await teardownWorldSnapshotRealtime();
+  if (!config?.enabled || !config?.campaignId) return;
+  const client = getSupabaseClient(config);
+  const tableName = config.tableName || DEFAULT_SYNC_TABLE;
+  const channel = client
+    .channel(`world-snapshot-${config.campaignId}`)
+    .on('postgres_changes', {
+      event: '*',
+      schema: 'public',
+      table: tableName,
+      filter: `campaign_id=eq.${config.campaignId}`
+    }, payload => {
+      const row = normalizeSnapshotRealtimeRow(payload.new || payload.old || {});
+      if (!row) return;
+      broadcastWorldSnapshotRealtimeEvent({ eventType: payload.eventType, remote: row });
+    })
+    .subscribe(status => {
+      debugLog('WORLD_SNAPSHOT_REALTIME_STATUS', { status, campaignId: config.campaignId, tableName });
+    });
+  worldSnapshotRealtime = { client, channel, campaignId: config.campaignId, tableName };
+}
+
 async function setupNetworkRealtime(config = {}) {
-  await Promise.allSettled([setupCombatRuntimeRealtime(config), setupChatRealtime(config)]);
+  if (isSelfhostSyncConfig(config)) {
+    await Promise.allSettled([teardownCombatRuntimeRealtime(), teardownChatRealtime(), teardownWorldSnapshotRealtime(), setupSelfhostRealtime(config)]);
+    return;
+  }
+  if (isPocketBaseSyncConfig(config)) {
+    await Promise.allSettled([teardownCombatRuntimeRealtime(), teardownChatRealtime(), teardownWorldSnapshotRealtime(), teardownSelfhostRealtime(), setupPocketBaseRealtime(config)]);
+    return;
+  }
+  await teardownSelfhostRealtime();
+  await Promise.allSettled([setupCombatRuntimeRealtime(config), setupChatRealtime(config), setupWorldSnapshotRealtime(config)]);
 }
 
 async function teardownNetworkRealtime() {
-  await Promise.allSettled([teardownCombatRuntimeRealtime(), teardownChatRealtime()]);
+  await Promise.allSettled([teardownCombatRuntimeRealtime(), teardownChatRealtime(), teardownWorldSnapshotRealtime(), teardownSelfhostRealtime(), teardownPocketBaseRealtime()]);
 }
 
 function selectPlayerColumns(config = {}) {
@@ -1196,6 +2046,12 @@ function normalizePlayerRemoteRow(row = {}) {
 }
 
 async function fetchRemotePlayerRows(config = {}, options = {}) {
+  if (isPocketBaseSyncConfig(config)) return fetchPocketBasePlayerRows(config, options);
+  if (isSelfhostSyncConfig(config)) {
+    const result = await selfhostFetch(config, selfhostPlayersPath(config), { query: { since: options.since || '', limit: options.limit || 500, playerId: options.playerId || '' } });
+    if (!result?.ok) throw new Error(result?.message || 'Self-host players pull failed');
+    return Array.isArray(result.rows) ? result.rows : [];
+  }
   const client = getSupabaseClient(config);
   let query = client
     .from(config.playerTableName || DEFAULT_PLAYER_TABLE)
@@ -1273,6 +2129,22 @@ async function updatePlayerSegments(client, config, row, remote, actor, updatedA
 }
 
 async function pushRemotePlayerRow(config = {}, payload = {}) {
+  if (isPocketBaseSyncConfig(config)) return writePocketBasePlayerRow(config, payload, { patchOnly: false, deleted: false });
+  if (isSelfhostSyncConfig(config)) {
+    const row = normalizePlayerRowPayload(payload);
+    const result = await selfhostFetch(config, selfhostPlayersPath(config, row.player_id), {
+      method: 'PUT',
+      json: {
+        playerId: row.player_id,
+        baseVersion: row.baseVersion,
+        player: row.player,
+        private_state_json: row.private_state_json,
+        updatedBy: row.updatedBy || config.deviceLabel || 'unknown-device',
+        clientUpdatedAt: row.clientUpdatedAt || new Date().toISOString()
+      }
+    });
+    return result;
+  }
   const client = getSupabaseClient(config);
   const row = normalizePlayerRowPayload(payload);
   const updatedAt = new Date().toISOString();
@@ -1309,6 +2181,24 @@ async function pushRemotePlayerRow(config = {}, payload = {}) {
 }
 
 async function patchRemotePlayerRow(config = {}, payload = {}) {
+  if (isPocketBaseSyncConfig(config)) return writePocketBasePlayerRow(config, payload, { patchOnly: true, deleted: false });
+  if (isSelfhostSyncConfig(config)) {
+    const playerId = String(payload.player_id || payload.playerId || payload.id || '').trim();
+    if (!playerId) throw new Error('player_id is required');
+    const baseVersion = Number.isFinite(Number(payload.baseVersion)) ? Number(payload.baseVersion) : (Number.isFinite(Number(payload.version)) ? Number(payload.version) : 0);
+    const result = await selfhostFetch(config, selfhostPlayersPath(config, playerId), {
+      method: 'PATCH',
+      json: {
+        playerId,
+        baseVersion,
+        player: payload.player || payload.player_json || payload.data || payload.entity || {},
+        private_state_json: payload.private_state_json || payload.privateState || {},
+        updatedBy: payload.updatedBy || payload.updated_by || config.deviceLabel || 'unknown-device',
+        clientUpdatedAt: payload.clientUpdatedAt || payload.client_updated_at || new Date().toISOString()
+      }
+    });
+    return result;
+  }
   const client = getSupabaseClient(config);
   const row = normalizePlayerRowPayload(payload);
   const updatedAt = new Date().toISOString();
@@ -1345,6 +2235,20 @@ async function patchRemotePlayerRow(config = {}, payload = {}) {
 }
 
 async function deleteRemotePlayerRow(config = {}, payload = {}) {
+  if (isPocketBaseSyncConfig(config)) return writePocketBasePlayerRow(config, { ...payload, player_json: { id: payload?.player_id || payload?.playerId || payload?.id || '', __deleted: true } }, { patchOnly: true, deleted: true });
+  if (isSelfhostSyncConfig(config)) {
+    const row = normalizePlayerRowPayload(payload);
+    const result = await selfhostFetch(config, selfhostPlayersPath(config, row.player_id), {
+      method: 'DELETE',
+      json: {
+        playerId: row.player_id,
+        baseVersion: row.baseVersion,
+        updatedBy: row.updatedBy || config.deviceLabel || 'unknown-device',
+        clientUpdatedAt: row.clientUpdatedAt || new Date().toISOString()
+      }
+    });
+    return result;
+  }
   const client = getSupabaseClient(config);
   const row = normalizePlayerRowPayload(payload);
   const updatedAt = new Date().toISOString();
@@ -1418,6 +2322,12 @@ function selectChatColumns(config = {}) {
 }
 
 async function fetchRemoteChatRows(config = {}, options = {}) {
+  if (isPocketBaseSyncConfig(config)) return fetchPocketBaseChatRows(config, options);
+  if (isSelfhostSyncConfig(config)) {
+    const result = await selfhostFetch(config, selfhostChatPath(config), { query: { since: options.since || '', limit: options.limit || 1000, threadKey: options.threadKey || '' } });
+    if (!result?.ok) throw new Error(result?.message || 'Self-host chat pull failed');
+    return Array.isArray(result.rows) ? result.rows : [];
+  }
   const client = getSupabaseClient(config);
   let query = client
     .from(config.chatTableName || DEFAULT_CHAT_TABLE)
@@ -1437,6 +2347,12 @@ async function fetchRemoteChatRows(config = {}, options = {}) {
 }
 
 async function upsertRemoteChatRow(config = {}, payload = {}) {
+  if (isPocketBaseSyncConfig(config)) return upsertPocketBaseChatRow(config, payload);
+  if (isSelfhostSyncConfig(config)) {
+    const result = await selfhostFetch(config, selfhostChatPath(config), { method: 'POST', json: payload });
+    if (!result?.ok) throw new Error(result?.message || 'Self-host chat upsert failed');
+    return result.row || payload;
+  }
   const client = getSupabaseClient(config);
   const row = normalizeChatRowInput(payload);
   const now = new Date().toISOString();
@@ -1457,6 +2373,12 @@ async function upsertRemoteChatRow(config = {}, payload = {}) {
 
 async function upsertRemoteChatRows(config = {}, rows = []) {
   if (!Array.isArray(rows) || !rows.length) return [];
+  if (isPocketBaseSyncConfig(config)) return upsertPocketBaseChatRows(config, rows);
+  if (isSelfhostSyncConfig(config)) {
+    const result = await selfhostFetch(config, selfhostChatPath(config, 'batch'), { method: 'POST', json: { rows } });
+    if (!result?.ok) throw new Error(result?.message || 'Self-host chat batch upsert failed');
+    return Array.isArray(result.rows) ? result.rows : rows;
+  }
   const client = getSupabaseClient(config);
   const payload = rows.map(row => {
     const normalized = normalizeChatRowInput(row);
@@ -1477,6 +2399,10 @@ async function upsertRemoteChatRows(config = {}, rows = []) {
 }
 
 async function fetchRemoteSnapshot(config = {}, options = {}) {
+  if (isPocketBaseSyncConfig(config)) return fetchPocketBaseSnapshot(config, options);
+  if (isSelfhostSyncConfig(config)) {
+    return selfhostFetch(config, selfhostSnapshotPath(config), { query: { includePayload: options.includePayload === false ? '0' : '1' } });
+  }
   const client = getSupabaseClient(config);
   const columns = options.includePayload !== false
     ? 'campaign_id, revision, updated_at, updated_by, client_updated_at, world_json, state_json'
@@ -1513,6 +2439,19 @@ async function fetchRemoteSnapshot(config = {}, options = {}) {
 }
 
 async function pushRemoteSnapshot(config = {}, payload = {}) {
+  if (isPocketBaseSyncConfig(config)) return pushPocketBaseSnapshot(config, payload);
+  if (isSelfhostSyncConfig(config)) {
+    return selfhostFetch(config, selfhostSnapshotPath(config), {
+      method: 'POST',
+      json: {
+        world: payload.world || {},
+        state: payload.state || {},
+        baseRevision: payload.baseRevision,
+        updatedBy: payload.updatedBy || config.deviceLabel || 'unknown-device',
+        clientUpdatedAt: payload.clientUpdatedAt || new Date().toISOString()
+      }
+    });
+  }
   const client = getSupabaseClient(config);
   const updatedAt = new Date().toISOString();
   const actor = String(payload.updatedBy || config.deviceLabel || 'unknown-device').trim() || 'unknown-device';
@@ -1634,6 +2573,12 @@ function normalizeCombatRuntimeRow(row = {}) {
 }
 
 async function fetchRemoteCombatRuntime(config = {}) {
+  if (isPocketBaseSyncConfig(config)) return fetchPocketBaseCombatRuntime(config);
+  if (isSelfhostSyncConfig(config)) {
+    const result = await selfhostFetch(config, selfhostCombatPath(config));
+    if (!result?.ok) throw new Error(result?.message || 'Self-host combat pull failed');
+    return result.row || null;
+  }
   const client = getSupabaseClient(config);
   const { data, error } = await client
     .from(config.combatRuntimeTableName || DEFAULT_COMBAT_RUNTIME_TABLE)
@@ -1645,6 +2590,19 @@ async function fetchRemoteCombatRuntime(config = {}) {
 }
 
 async function pushRemoteCombatRuntime(config = {}, payload = {}) {
+  if (isPocketBaseSyncConfig(config)) return pushPocketBaseCombatRuntime(config, payload);
+  if (isSelfhostSyncConfig(config)) {
+    const normalized = await normalizeCombatPublishPayloadImages(config, payload);
+    const result = await selfhostFetch(config, selfhostCombatPath(config), {
+      method: 'PUT',
+      json: {
+        ...normalized,
+        updatedBy: normalized.updatedBy || config.deviceLabel || 'unknown-device',
+        clientUpdatedAt: normalized.clientUpdatedAt || new Date().toISOString()
+      }
+    });
+    return result;
+  }
   const client = getSupabaseClient(config);
   const normalized = await normalizeCombatPublishPayloadImages(config, payload);
   const now = new Date().toISOString();
@@ -2040,7 +2998,7 @@ ipcMain.handle('sync:pull', async (_event, payload) => {
     const force = Boolean(payload?.force);
     const remote = await fetchRemoteSnapshot(config, { includePayload: true });
     if (!remote.exists) {
-      return { ok: true, enabled: true, connected: true, status: 'empty', message: 'В Supabase ещё нет снапшота кампании', remote: null, config };
+      return { ok: true, enabled: true, connected: true, status: 'empty', message: `В ${isPocketBaseSyncConfig(config) ? 'PocketBase' : (isSelfhostSyncConfig(config) ? 'self-host' : 'Supabase')} ещё нет снапшота кампании`, remote: null, config };
     }
     const remoteRevision = Number(remote.remote?.revision || 0);
     const newer = force || remoteRevision > localRevision;

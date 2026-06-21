@@ -1,0 +1,8 @@
+sync.grpg-sync.ru {
+    reverse_proxy 127.0.0.1:8090
+}
+
+app.grpg-sync.ru {
+    root * /var/www/grpg-app
+    file_server
+}

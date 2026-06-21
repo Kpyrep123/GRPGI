@@ -1,0 +1,17 @@
+services:
+  galactic-rpg-sync:
+    build: .
+    container_name: galactic-rpg-sync
+    restart: unless-stopped
+    environment:
+      PORT: 8787
+      HOST: 0.0.0.0
+      DATA_DIR: /data
+      # Задай токен перед запуском: export SYNC_TOKEN="long-random-string"
+      SYNC_TOKEN: ${SYNC_TOKEN:-}
+      # Для Tailscale можно указать http://<tailscale-ip>:8787 или http://<magicdns-name>:8787
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-}
+    ports:
+      - "8787:8787"
+    volumes:
+      - ./data:/data

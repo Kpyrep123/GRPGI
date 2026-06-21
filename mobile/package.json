@@ -1,7 +1,7 @@
 {
   "name": "galactic-rpg-mobile",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.5",
   "description": "Mobile player client for Galactic RPG Interface",
   "scripts": {
     "android:init": "npx cap add android",

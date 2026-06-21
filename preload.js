@@ -25,6 +25,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   pingSync: () => ipcRenderer.invoke('sync:ping'),
   pullSync: payload => ipcRenderer.invoke('sync:pull', payload),
   pushSync: payload => ipcRenderer.invoke('sync:push', payload),
+  onSyncSnapshotEvent: callback => {
+    if (typeof callback !== 'function') return () => {};
+    const handler = (_event, payload) => callback(payload);
+    ipcRenderer.on('sync:snapshot:event', handler);
+    return () => ipcRenderer.removeListener('sync:snapshot:event', handler);
+  },
   pullPlayers: payload => ipcRenderer.invoke('players:pull', payload),
   pushPlayer: payload => ipcRenderer.invoke('players:push', payload),
   patchPlayer: payload => ipcRenderer.invoke('players:patch', payload),
@@ -51,6 +57,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     const handler = (_event, payload) => callback(payload);
     ipcRenderer.on('chat:remote:event', handler);
     return () => ipcRenderer.removeListener('chat:remote:event', handler);
+  },
+  onPlayerEvent: callback => {
+    if (typeof callback !== 'function') return () => {};
+    const handler = (_event, payload) => callback(payload);
+    ipcRenderer.on('players:remote:event', handler);
+    return () => ipcRenderer.removeListener('players:remote:event', handler);
   },
   openPlayerDisplay: () => ipcRenderer.invoke('display:player:open'),
   closePlayerDisplay: () => ipcRenderer.invoke('display:player:close'),

@@ -30,3 +30,13 @@ npm start
 - Шепард — `1234`
 - V — `0000`
 - Ведущий — `admin`
+
+## v1.0.21: мобильная публикация
+
+Добавлена подготовка мобильного клиента к работе через PocketBase и домен `grpg-sync.ru`.
+
+- `sync.grpg-sync.ru` используется для PocketBase/API/realtime.
+- `app.grpg-sync.ru` предназначен для страницы загрузки ПК и Android-версий.
+- Инструкция публикации находится в `MOBILE_DOMAIN_DEPLOYMENT.md`.
+- Статический сайт находится в `deploy/site`.
+- Пример Caddy-конфига находится в `deploy/caddy/Caddyfile.app.example`.

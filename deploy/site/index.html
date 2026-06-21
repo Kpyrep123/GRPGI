@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>GRPGI · клиент кампании</title>
+  <link rel="stylesheet" href="./styles.css" />
+  <script defer src="./privacy-consent.js"></script>
+</head>
+<body>
+  <main class="shell">
+    <section class="hero">
+      <div class="eyebrow">Galactic RPG Interface</div>
+      <h1>Клиент кампании</h1>
+      <p>Здесь размещаются три варианта доступа: полная ПК-версия Electron-приложения, браузерная web-версия с внешним видом ПК-клиента и Android-версия для телефонов.</p>
+      <div class="status">Сервер синхронизации: <code>https://sync.grpg-sync.ru</code></div>
+    </section>
+
+    <section class="grid three">
+      <article class="card">
+        <div class="tag">Windows / ПК</div>
+        <h2>Полное приложение</h2>
+        <p>Полная Electron-версия: режим ДМа, World Config, глобальная карта, второй экран, редакторы, боевые сцены, архив, чат, профиль и PocketBase-синхронизация.</p>
+        <a class="button consent-gated" href="./downloads/GRPGI-Setup-latest.exe">Скачать ПК-версию</a>
+        <p class="note">После сборки переименуй установщик в <code>GRPGI-Setup-latest.exe</code> и положи в <code>downloads</code>.</p>
+      </article>
+
+      <article class="card featured">
+        <div class="tag">Web / ПК и телефон</div>
+        <h2>Открыть в браузере</h2>
+        <p>Player-only web-клиент с визуальным стилем ПК-приложения. Данных в постоянный локальный кеш не пишет: подключается к PocketBase, читает облако и отправляет изменения обратно.</p>
+        <a class="button consent-gated" href="./app/">Открыть web-версию</a>
+        <p class="note">Нет режима ДМа, World Config и тяжёлых боевых сцен. Для управления миром используй ПК-приложение.</p>
+      </article>
+
+      <article class="card">
+        <div class="tag">Android / телефон</div>
+        <h2>Мобильная версия</h2>
+        <p>Игровой клиент без режима ДМа. Вместо галактической карты используется лёгкая навигация по системам и планетам.</p>
+        <a class="button consent-gated" href="./downloads/GRPGI-Mobile-latest.apk">Скачать APK</a>
+        <p class="note">После сборки APK переименуй его в <code>GRPGI-Mobile-latest.apk</code> и положи в <code>downloads</code>.</p>
+      </article>
+    </section>
+
+    <section class="card wide consent-panel">
+      <h2>Согласие и конфиденциальность</h2>
+      <label class="consent-check">
+        <input type="checkbox" id="site-privacy-consent" />
+        <span>Я ознакомлен(а) с <a href="./privacy.html" target="_blank" rel="noopener">политикой обработки персональных данных</a> и согласен(на) на обработку технических и игровых данных для подключения к кампании.</span>
+      </label>
+      <p class="note">Без согласия ссылки на web-клиент и загрузку приложений остаются заблокированными.</p>
+    </section>
+
+    <section class="card wide">
+      <h2>Параметры подключения</h2>
+      <dl>
+        <dt>Backend</dt><dd>PocketBase</dd>
+        <dt>Server URL</dt><dd><code>https://sync.grpg-sync.ru</code></dd>
+        <dt>Campaign ID</dt><dd><code>main</code></dd>
+      </dl>
+      <p class="note">Логин и пароль <code>app_users</code> не публикуются на этой странице. Их нужно выдавать игрокам отдельно.</p>
+    </section>
+      <footer class="site-footer"><a href="./privacy.html">Политика обработки персональных данных</a></footer>
+  </main>
+</body>
+</html>

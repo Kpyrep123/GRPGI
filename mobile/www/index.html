@@ -11,20 +11,37 @@
       <div class="boot-card">
         <div class="eyebrow">PLAYER CLIENT</div>
         <h1>Подключение к кампании</h1>
-        <p class="muted">На телефоне приложение не пишет в общий снапшот мира. Оно читает кампанию из облака и изменяет только разрешённые данные игрока: личный профиль, покупки в терминале и отправленные сообщения.</p>
+        <p class="muted">Мобильная версия работает без режима ДМа и без тяжёлой галактической карты. Она подключается к серверу кампании, показывает навигацию, архив, терминал, чат, бой и профиль игрока.</p>
         <form id="setup-form" class="form stack-lg">
           <label class="field">
-            <span>SUPABASE_URL</span>
-            <input class="input" name="url" placeholder="https://project.supabase.co" autocomplete="off" />
+            <span>Backend</span>
+            <select class="input" name="backend">
+              <option value="pocketbase" selected>PocketBase</option>
+              <option value="supabase">Supabase legacy</option>
+            </select>
           </label>
           <label class="field">
-            <span>PUBLISHABLE / ANON KEY</span>
-            <textarea class="textarea monospace" name="anonKey" rows="4" placeholder="sb_publishable_... или anon key"></textarea>
+            <span>SERVER_URL</span>
+            <input class="input" name="url" placeholder="https://sync.grpg-sync.ru" autocomplete="off" />
+          </label>
+          <div class="grid-2">
+            <label class="field">
+              <span>APP_USER_EMAIL</span>
+              <input class="input" name="appUserEmail" placeholder="dm@grpg-sync.local" autocomplete="off" />
+            </label>
+            <label class="field">
+              <span>APP_USER_PASSWORD</span>
+              <input class="input" name="appUserPassword" type="password" placeholder="Пароль app_users" autocomplete="off" />
+            </label>
+          </div>
+          <label class="field">
+            <span>SUPABASE ANON KEY, только для legacy Supabase</span>
+            <textarea class="textarea monospace" name="anonKey" rows="3" placeholder="Можно оставить пустым для PocketBase"></textarea>
           </label>
           <div class="grid-2">
             <label class="field">
               <span>CAMPAIGN_ID</span>
-              <input class="input" name="campaignId" placeholder="campaign-alpha" autocomplete="off" />
+              <input class="input" name="campaignId" placeholder="main" autocomplete="off" />
             </label>
             <label class="field">
               <span>DEVICE_LABEL</span>
@@ -56,8 +73,18 @@
               </div>
               <div class="grid-2">
                 <label class="field">
-                  <span>STORAGE_BUCKET</span>
+                  <span>STORAGE_BUCKET, Supabase</span>
                   <input class="input" name="storageBucket" value="campaign-assets" />
+                </label>
+                <label class="field">
+                  <span>PB_ASSETS</span>
+                  <input class="input" name="assetsCollection" value="campaign_assets" />
+                </label>
+              </div>
+              <div class="grid-2">
+                <label class="field">
+                  <span>PB_USERS</span>
+                  <input class="input" name="appUsersCollection" value="app_users" />
                 </label>
                 <div></div>
               </div>
@@ -73,11 +100,16 @@
               </div>
             </div>
           </details>
+
+          <label class="consent-line">
+            <input type="checkbox" id="setup-privacy-consent" />
+            <span>Я ознакомлен(а) с политикой обработки персональных данных и согласен(на) на обработку технических и игровых данных кампании.</span>
+          </label>
           <div class="button-row">
             <button class="primary" type="submit">Сохранить и подключить</button>
             <button class="secondary" type="button" id="setup-clear-btn">Сбросить</button>
           </div>
-          <div id="setup-status" class="status-line muted">После сохранения приложение проверит облако и откроет выбор персонажа.</div>
+          <div id="setup-status" class="status-line muted">После сохранения приложение проверит сервер и откроет выбор кампании/персонажа.</div>
         </form>
       </div>
     </div>
@@ -86,8 +118,12 @@
       <div class="boot-card">
         <div class="eyebrow">CAMPAIGN LINKED</div>
         <h1>Вход в профиль</h1>
-        <p class="muted">Конфигурация Supabase сохранена на устройстве. Сначала приложение подтягивает актуальный снапшот кампании, затем даёт выбрать персонажа.</p>
+        <p class="muted">Конфигурация сервера сохранена на устройстве. Сначала выбери кампанию, затем персонажа. Гостевой вход показывает только материалы, открытые ДМом для гостя.</p>
         <form id="login-form" class="form stack-lg">
+          <label class="field">
+            <span>Кампания</span>
+            <select class="input" id="login-campaign"></select>
+          </label>
           <label class="field">
             <span>Персонаж</span>
             <select class="input" id="login-player"></select>
@@ -97,8 +133,13 @@
             <input class="input" id="login-pass" type="password" placeholder="Пароль персонажа" autocomplete="off" />
           </label>
           <div id="login-preview" class="preview-card"></div>
+          <label class="consent-line">
+            <input type="checkbox" id="login-privacy-consent" />
+            <span>Я ознакомлен(а) с политикой обработки персональных данных и согласен(на) на обработку технических и игровых данных кампании.</span>
+          </label>
           <div class="button-row">
             <button class="primary" type="submit">Войти</button>
+            <button class="secondary" type="button" id="login-guest-btn">Гостевой вход</button>
             <button class="secondary" type="button" id="login-back-btn">Изменить подключение</button>
           </div>
           <div id="login-status" class="status-line muted"></div>

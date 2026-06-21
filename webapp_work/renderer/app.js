@@ -1,0 +1,18245 @@
+let worldData = {};
+let PLAYER_TEMPLATES = {};
+let PLAYER_LIST = [];
+let SYSTEMS = [];
+let PLANETS = {};
+let PLANET_LIST = [];
+let NPCS = {};
+let NPC_LIST = [];
+let EQUIPMENT = {};
+let EQUIPMENT_LIST = [];
+let WEAPON_OPTIONS = [];
+let ARMOR_OPTIONS = [];
+let FLORA = {};
+let FLORA_LIST = [];
+let FAUNA = {};
+let FAUNA_LIST = [];
+let ARTICLES = {};
+let ARTICLE_LIST = [];
+
+
+const $ = s => document.querySelector(s);
+const $$ = s => Array.from(document.querySelectorAll(s));
+const deep = value => JSON.parse(JSON.stringify(value));
+const lerp = (a,b,t) => a + (b-a) * t;
+const clamp = (v,min,max) => Math.min(Math.max(v,min), max);
+const now = () => performance.now();
+const esc = value => String(value ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#39;');
+
+const Debug = {
+  log(label, payload) {
+    try { console.log(`[DEBUG] ${label}`, payload ?? ''); } catch {}
+    try { window.electronAPI?.debugLog?.(label, payload ?? null); } catch {}
+  },
+  error(label, payload) {
+    try { console.error(`[DEBUG:${label}]`, payload ?? ''); } catch {}
+    try { window.electronAPI?.debugLog?.(`ERROR:${label}`, payload ?? null); } catch {}
+  }
+};
+
+
+
+const Toast = {
+  _timer: null,
+  show(message, kind = 'info') {
+    const el = document.querySelector('#toast');
+    const safeKind = ['ok', 'err', 'info'].includes(kind) ? kind : 'info';
+    if (!el) {
+      try { console.log(`[TOAST:${safeKind}] ${message}`); } catch {}
+      return;
+    }
+    if (this._timer) {
+      clearTimeout(this._timer);
+      this._timer = null;
+    }
+    el.textContent = String(message ?? '');
+    el.className = `toast ${safeKind} show`;
+    this._timer = setTimeout(() => {
+      el.className = `toast ${safeKind}`;
+      this._timer = null;
+    }, 2600);
+  }
+};
+
+
+const SOUND_CONFIG = {
+  // Положи свои файлы в renderer/assets/audio/ и при необходимости поменяй пути ниже.
+  uiClick: './assets/audio/ui_click.mp3',
+  moduleOpen: './assets/audio/module_open.mp3',
+  systemJump: './assets/audio/system_jump.mp3',
+  planetFocus: './assets/audio/planet_focus.mp3',
+  marketBuy: './assets/audio/market_buy.mp3',
+  success: './assets/audio/action_success.mp3',
+  fail: './assets/audio/action_fail.mp3',
+  ambient: './assets/audio/ambient_space.mp3'
+};
+
+const SYSTEM_MARKER_STYLES = [
+  { id: 'orbital', label: 'Орбитальная метка' },
+  { id: 'node', label: 'Узел' },
+  { id: 'blackhole', label: 'Чёрная дыра' },
+  { id: 'ship', label: 'Корабль' },
+  { id: 'diamond', label: 'Ромб' },
+  { id: 'square', label: 'Квадрат' },
+  { id: 'credits', label: 'Мешок денег' }
+];
+
+const GALAXY_MARKER_LEGEND = [
+  { id: 'ship', label: 'Корабль', glyph: '▲' },
+  { id: 'node', label: 'Узел', glyph: '⊕' },
+  { id: 'blackhole', label: 'Чёрная дыра', glyph: '◉' },
+  { id: 'diamond', label: 'Ромб — запретная зона', glyph: '◆' },
+  { id: 'square', label: 'Квадрат — другое', glyph: '■' },
+  { id: 'credits', label: 'Мешок денег — крупный рынок', glyph: '¤' },
+  { id: 'orbital', label: 'Орбитальная метка — звёздная система', glyph: '◎' }
+];
+
+const AudioManager = {
+  enabled: true,
+  ambientStarted: false,
+  ambientNode: null,
+  masterVolume: 0.8,
+  resolve(key) {
+    return SOUND_CONFIG[key] || '';
+  },
+  play(key, options = {}) {
+    if (!this.enabled) return;
+    const src = this.resolve(key);
+    if (!src) return;
+    try {
+      const audio = new Audio(src);
+      audio.preload = 'auto';
+      audio.volume = clamp(Number(options.volume ?? 0.9) * this.masterVolume, 0, 1);
+      audio.currentTime = 0;
+      audio.play().catch(() => {});
+    } catch {}
+  },
+  ensureAmbient() {
+    if (!this.enabled || this.ambientNode) return this.ambientNode;
+    const src = this.resolve('ambient');
+    if (!src) return null;
+    try {
+      const audio = new Audio(src);
+      audio.preload = 'auto';
+      audio.loop = true;
+      audio.volume = 0.22 * this.masterVolume;
+      this.ambientNode = audio;
+      return audio;
+    } catch {
+      return null;
+    }
+  },
+  onUserGesture() {
+    if (this.ambientStarted) return;
+    const ambient = this.ensureAmbient();
+    if (!ambient) return;
+    this.ambientStarted = true;
+    ambient.play().catch(() => { this.ambientStarted = false; });
+  },
+  stopAmbient() {
+    if (!this.ambientNode) return;
+    try {
+      this.ambientNode.pause();
+      this.ambientNode.currentTime = 0;
+    } catch {}
+    this.ambientStarted = false;
+  }
+};
+
+const SESSION_KEY = 'galactic-session-v4';
+const FALLBACK_STATE_KEY = 'galactic-fileless-state-v4';
+
+const WORLD_SECTIONS = {
+  players: { label: 'Персонажи', mapKey: 'PLAYER_TEMPLATES', listKey: 'PLAYER_LIST' },
+  systems: { label: 'Системы', arrayKey: 'SYSTEMS' },
+  planets: { label: 'Планеты', mapKey: 'PLANETS', listKey: 'PLANET_LIST' },
+  npcs: { label: 'NPC', mapKey: 'NPCS', listKey: 'NPC_LIST' },
+  equipment: { label: 'Снаряжение', mapKey: 'EQUIPMENT', listKey: 'EQUIPMENT_LIST' },
+  flora: { label: 'Флора', mapKey: 'FLORA', listKey: 'FLORA_LIST' },
+  fauna: { label: 'Фауна', mapKey: 'FAUNA', listKey: 'FAUNA_LIST' },
+  articles: { label: 'Статьи архива', mapKey: 'ARTICLES', listKey: 'ARTICLE_LIST' }
+};
+
+function slugifyId(value, fallback = 'entity') {
+  const slug = String(value || '')
+    .toLowerCase()
+    .trim()
+    .normalize('NFKD')
+    .replace(/[^a-z0-9а-яё]+/gi, '_')
+    .replace(/^_+|_+$/g, '')
+    .replace(/_+/g, '_');
+  return slug || `${fallback}_${Date.now()}`;
+}
+
+function listText(value) {
+  return Array.isArray(value) ? value.join('\n') : '';
+}
+
+function parseListEditor(text) {
+  return String(text || '').split('\n').map(v => v.trim()).filter(Boolean);
+}
+
+function parseInventoryEditor(text) {
+  return String(text)
+    .split('\n')
+    .map(line => line.trim())
+    .filter(Boolean)
+    .map(line => {
+      const [itemId, qtyRaw] = line.split(':').map(v => v.trim());
+      const qty = Math.max(1, Number(qtyRaw || 1));
+      return { itemId, qty };
+    });
+}
+
+function inventoryText(value) {
+  return Array.isArray(value) ? value.map(entry => `${entry.itemId}:${entry.qty}`).join('\n') : '';
+}
+
+function formatCredits(value) {
+  const amount = Math.max(0, Math.trunc(Number(value) || 0));
+  const parts = String(amount).split('');
+  let out = '';
+  while (parts.length > 3) {
+    out = '.' + parts.splice(parts.length - 3, 3).join('') + out;
+  }
+  out = parts.join('') + out;
+  return `${out || '0'} ₹`;
+}
+
+function parseImplantsEditor(text) {
+  return String(text || '')
+    .split('\n')
+    .map(line => line.trim())
+    .filter(Boolean)
+    .map(line => {
+      const [name, status] = line.split('|').map(v => v.trim());
+      return { name: name || 'Имплант', status: status || 'Active' };
+    });
+}
+
+function implantsText(value) {
+  return Array.isArray(value) ? value.map(entry => `${entry.name}|${entry.status}`).join('\n') : '';
+}
+
+function parseMarketEditor(text) {
+  return String(text || '')
+    .split('\n')
+    .map(line => line.trim())
+    .filter(Boolean)
+    .map(line => {
+      const [itemId, priceRaw] = line.split(':').map(v => v.trim());
+      const price = Math.max(0, Number(priceRaw || 0));
+      return { itemId, price };
+    });
+}
+
+function marketText(value) {
+  return Array.isArray(value) ? value.map(entry => `${entry.itemId}:${entry.price}`).join('\n') : '';
+}
+
+function sortEntitiesForList(items) {
+  return items.slice().sort((a, b) => {
+    const av = (a.name || a.displayName || a.id || '').toLowerCase();
+    const bv = (b.name || b.displayName || b.id || '').toLowerCase();
+    return av.localeCompare(bv, 'ru');
+  });
+}
+
+function serializeWorldSection(sectionName, source) {
+  const meta = WORLD_SECTIONS[sectionName];
+  if (!meta) throw new Error(`Unknown section: ${sectionName}`);
+  if (meta.arrayKey) {
+    return { [meta.arrayKey]: sortEntitiesForList(Array.isArray(source) ? source : []) };
+  }
+  const record = source || {};
+  return {
+    [meta.mapKey]: record,
+    [meta.listKey]: sortEntitiesForList(Object.values(record))
+  };
+}
+
+function createBlankEntity(type) {
+  const stamp = Date.now().toString().slice(-6);
+  if (type === 'players') {
+    return {
+      id: `player_${stamp}`,
+      role: 'player',
+      pass: '0000',
+      shortName: `Agent${stamp.slice(-3)}`,
+      displayName: 'Новый персонаж',
+      rank: 'Operative',
+      avatarGlyph: 'PX',
+      credits: 0,
+      lore: '',
+      notes: '',
+      stats: { hp: 100, shield: 50, bio: 20 },
+      abilities: { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 },
+      equipmentSlots: { weapon: WEAPON_OPTIONS[0]?.id || '', armor: ARMOR_OPTIONS[0]?.id || '' },
+      inventory: [],
+      implants: [],
+      social: { npcIds: [], orgs: [] },
+      currentPlanetId: '',
+      image: '',
+      relatedArticleIds: []
+    };
+  }
+  if (type === 'systems') {
+    return {
+      id: `system_${stamp}`,
+      name: 'Новая система',
+      markerLabel: 'Точка интереса',
+      markerStyle: 'orbital',
+      color: '#7df9ff',
+      pos: { x: 0.5, y: 0.5 },
+      planetIds: [],
+      routes: [],
+      image: '',
+      relatedArticleIds: [],
+      visibility: { playerIds: [] }
+    };
+  }
+  if (type === 'planets') {
+    return {
+      id: `planet_${stamp}`,
+      name: 'Новая планета',
+      code: `P-${stamp}`,
+      color: '#7df9ff',
+      dist: 24,
+      speed: 0.0006,
+      size: 8,
+      location: { arm: '', node: '', system: '', obj: '' },
+      physics: { type: '', mass: '', radius: '', gravity: '', climate: '', temp: '', atm: '' },
+      socio: { pop: '', capital: '', gov: '', law: '' },
+      pilot: { reference: '', info: '', warning: '' },
+      npcIds: [], floraIds: [], faunaIds: [], market: [],
+      image: '',
+      relatedArticleIds: [],
+      visibility: { playerIds: [] }
+    };
+  }
+  if (type === 'npcs') {
+    return { id: `npc_${stamp}`, name: 'Новый NPC', role: '', location: '', summary: '', traits: [], image: '', relatedArticleIds: [], visibility: { playerIds: [] } };
+  }
+  if (type === 'equipment') {
+    return { id: `item_${stamp}`, type: 'misc', name: 'Новый предмет', desc: '', rarity: 'обычный', tags: [], image: '', relatedArticleIds: [], visibility: { playerIds: [] }, mechanicType: '', decryptorMode: 'decryptor', mechanicTitle: '', decryptorDefaultCipher: 'caesar', mechanicHint: '', mechanicTimeLimit: 20, mechanicCodeLength: 5, mechanicSlots: 3 };
+  }
+  if (type === 'flora') {
+    return { id: `flora_${stamp}`, name: 'Новая флора', habitat: '', summary: '', danger: 'Низкая', use: '', image: '', relatedArticleIds: [], visibility: { playerIds: [] } };
+  }
+  if (type === 'fauna') {
+    return { id: `fauna_${stamp}`, name: 'Новая фауна', habitat: '', summary: '', danger: 'Низкая', behavior: '', image: '', relatedArticleIds: [], visibility: { playerIds: [] } };
+  }
+  if (type === 'articles') {
+    return {
+      id: `article_${stamp}`,
+      name: 'Новая статья',
+      category: 'Архив',
+      summary: '',
+      body: '',
+      image: '',
+      relatedPlanetIds: [], relatedNpcIds: [], relatedItemIds: [], relatedFloraIds: [], relatedFaunaIds: [], relatedArticleIds: [],
+      visibility: { playerIds: [] }
+    };
+  }
+  return { id: `entity_${stamp}`, name: 'Новая сущность' };
+}
+
+function applyWorldData(payload = {}) {
+  worldData = payload || {};
+  PLAYER_TEMPLATES = worldData.players?.PLAYER_TEMPLATES || {};
+  PLAYER_LIST = worldData.players?.PLAYER_LIST || Object.values(PLAYER_TEMPLATES);
+  SYSTEMS = worldData.systems?.SYSTEMS || [];
+  PLANETS = worldData.planets?.PLANETS || {};
+  PLANET_LIST = worldData.planets?.PLANET_LIST || Object.values(PLANETS);
+  NPCS = worldData.npcs?.NPCS || {};
+  NPC_LIST = worldData.npcs?.NPC_LIST || Object.values(NPCS);
+  EQUIPMENT = worldData.equipment?.EQUIPMENT || {};
+  EQUIPMENT_LIST = worldData.equipment?.EQUIPMENT_LIST || Object.values(EQUIPMENT);
+  WEAPON_OPTIONS = worldData.equipment?.WEAPON_OPTIONS || EQUIPMENT_LIST.filter(item => item.type === 'weapon');
+  ARMOR_OPTIONS = worldData.equipment?.ARMOR_OPTIONS || EQUIPMENT_LIST.filter(item => item.type === 'armor');
+  FLORA = worldData.flora?.FLORA || {};
+  FLORA_LIST = worldData.flora?.FLORA_LIST || Object.values(FLORA);
+  FAUNA = worldData.fauna?.FAUNA || {};
+  FAUNA_LIST = worldData.fauna?.FAUNA_LIST || Object.values(FAUNA);
+  ARTICLES = worldData.articles?.ARTICLES || {};
+  ARTICLE_LIST = worldData.articles?.ARTICLE_LIST || Object.values(ARTICLES);
+
+  Object.values(PLAYER_TEMPLATES).forEach(player => {
+    if (typeof player.currentPlanetId !== 'string') player.currentPlanetId = '';
+  });
+  SYSTEMS = (SYSTEMS || []).map(system => {
+    const markerStyle = String(system?.markerStyle || 'orbital').trim();
+    const validMarkerStyle = SYSTEM_MARKER_STYLES.some(style => style.id === markerStyle) ? markerStyle : 'orbital';
+    return ({
+      color: '#7df9ff',
+      markerLabel: system?.markerLabel || system?.name || '',
+      markerStyle: validMarkerStyle,
+      routes: Array.isArray(system?.routes) ? system.routes.filter(Boolean).map(route => ({
+        toId: String(route?.toId || '').trim(),
+        color: String(route?.color || '#7df9ff').trim() || '#7df9ff',
+        width: Math.max(1, Number(route?.width || 2)),
+        label: String(route?.label || '').trim()
+      })).filter(route => route.toId) : [],
+      ...system,
+      markerStyle: validMarkerStyle
+    });
+  });
+  PLANETS = Object.fromEntries(Object.entries(PLANETS || {}).map(([id, planet]) => [id, normalizePlanetPilot(planet)]));
+  PLANET_LIST = sortEntitiesForList(Object.values(PLANETS));
+
+  Data.systems = SYSTEMS;
+  Data.planets = PLANETS;
+  Data.npcs = NPCS;
+  Data.equipment = EQUIPMENT;
+  Data.flora = FLORA;
+  Data.fauna = FAUNA;
+  Data.articles = ARTICLES;
+  try {
+    const legend = Array.isArray(worldData?.ui?.galaxyLegend) ? worldData.ui.galaxyLegend : [];
+    if (typeof App !== 'undefined' && App?.state && (!Array.isArray(App.state.galaxyLegend) || !App.state.galaxyLegend.length) && legend.length) {
+      App.state.galaxyLegend = deep(legend);
+    }
+  } catch {}
+}
+
+function normalizePlanetPilot(planet = {}) {
+  const pilot = planet?.pilot || {};
+  const reference = typeof pilot.reference === 'string' ? pilot.reference : (typeof pilot.history === 'string' ? pilot.history : '');
+  const info = typeof pilot.info === 'string' ? pilot.info : (typeof pilot.economy === 'string' ? pilot.economy : '');
+  const warning = typeof pilot.warning === 'string' ? pilot.warning : '';
+  return { ...planet, pilot: { ...pilot, reference, info, warning } };
+}
+
+function getPlanetReference(planet = {}) {
+  return normalizePlanetPilot(planet).pilot.reference || '';
+}
+
+function getPlanetInfo(planet = {}) {
+  return normalizePlanetPilot(planet).pilot.info || '';
+}
+
+function getPlayersSourceRecord(state = App?.state) {
+  const stateUsers = state?.users && Object.keys(state.users).length ? state.users : null;
+  return stateUsers ? deep(stateUsers) : deep(PLAYER_TEMPLATES);
+}
+
+function mirrorPlayersIntoWorld(state = App?.state) {
+  const livePlayers = getPlayersSourceRecord(state);
+  PLAYER_TEMPLATES = livePlayers;
+  PLAYER_LIST = sortEntitiesForList(Object.values(PLAYER_TEMPLATES));
+  worldData.players = serializeWorldSection('players', PLAYER_TEMPLATES);
+  return PLAYER_TEMPLATES;
+}
+
+async function persistPlayerWorldMirror(state = App?.state) {
+  if (!window.electronAPI?.saveWorldData) return { ok: false, message: 'Electron API unavailable' };
+  mirrorPlayersIntoWorld(state);
+  const result = await window.electronAPI.saveWorldData(buildWorldSnapshot());
+  if (result?.ok && result.world) {
+    applyWorldData(result.world);
+  }
+  return result;
+}
+
+function buildWorldSnapshot() {
+  mirrorPlayersIntoWorld(App?.state);
+  return {
+    players: serializeWorldSection('players', PLAYER_TEMPLATES),
+    systems: serializeWorldSection('systems', SYSTEMS),
+    planets: serializeWorldSection('planets', PLANETS),
+    npcs: serializeWorldSection('npcs', NPCS),
+    equipment: serializeWorldSection('equipment', EQUIPMENT),
+    flora: serializeWorldSection('flora', FLORA),
+    fauna: serializeWorldSection('fauna', FAUNA),
+    articles: serializeWorldSection('articles', ARTICLES)
+  };
+}
+
+function defaultSyncMeta() {
+  return {
+    enabled: false,
+    configured: false,
+    localDirty: false,
+    remoteRevision: 0,
+    remoteUpdatedAt: null,
+    lastPulledAt: null,
+    lastPushedAt: null,
+    lastCheckedAt: null,
+    lastStatus: 'LOCAL_ONLY',
+    lastError: null,
+    campaignId: '',
+    deviceLabel: ''
+  };
+}
+
+function defaultPlayerSyncMeta() {
+  return {
+    enabled: false,
+    lastPulledAt: null,
+    lastPushedAt: null,
+    lastStatus: 'LOCAL_ONLY',
+    lastError: null,
+    records: {}
+  };
+}
+
+function normalizePlayerSyncMeta(meta = {}) {
+  return {
+    ...defaultPlayerSyncMeta(),
+    ...(meta || {}),
+    enabled: Boolean(meta?.enabled),
+    records: meta?.records && typeof meta.records === 'object' ? deep(meta.records) : {}
+  };
+}
+
+function ensurePlayerSyncMeta(state = App?.state) {
+  if (!state?.meta) return normalizePlayerSyncMeta();
+  state.meta.playerSync = normalizePlayerSyncMeta(state.meta.playerSync || {});
+  return state.meta.playerSync;
+}
+
+function getPlayerRemoteMeta(playerId, state = App?.state) {
+  const meta = ensurePlayerSyncMeta(state);
+  return meta.records?.[playerId] || { version: 0, updatedAt: null, updatedBy: null, clientUpdatedAt: null, deletedAt: null };
+}
+
+function setPlayerRemoteMeta(playerId, remote = {}, state = App?.state) {
+  if (!playerId || !state?.meta) return null;
+  const meta = ensurePlayerSyncMeta(state);
+  meta.records[playerId] = {
+    version: Number(remote?.version || 0),
+    updatedAt: remote?.updatedAt || null,
+    updatedBy: remote?.updatedBy || null,
+    clientUpdatedAt: remote?.clientUpdatedAt || null,
+    deletedAt: remote?.deletedAt || null
+  };
+  return meta.records[playerId];
+}
+
+function dropPlayerRemoteMeta(playerId, state = App?.state) {
+  if (!playerId || !state?.meta?.playerSync?.records) return;
+  delete state.meta.playerSync.records[playerId];
+}
+
+function activeSyncActorLabel() {
+  return String(Sync?.config?.deviceLabel || App?.currentUser?.displayName || App?.currentUserId || 'unknown-device').trim() || 'unknown-device';
+}
+
+function shallowDiffObject(base = {}, next = {}, keys = []) {
+  const diff = {};
+  for (const key of keys) {
+    const prev = base?.[key];
+    const value = next?.[key];
+    if (JSON.stringify(prev) !== JSON.stringify(value)) diff[key] = value;
+  }
+  return diff;
+}
+
+function buildSharedStateSnapshot(state = App?.state || makeDefaultState()) {
+  const syncMeta = state?.meta?.sync || defaultSyncMeta();
+  return {
+    meta: {
+      version: Number(state?.meta?.version || 7),
+      lastUpdatedAt: state?.meta?.lastUpdatedAt || null,
+      sync: {
+        remoteRevision: Number(syncMeta.remoteRevision || 0),
+        remoteUpdatedAt: syncMeta.remoteUpdatedAt || null
+      }
+    },
+    users: deep(state?.users || {}),
+    npcChats: deep(state?.npcChats || {}),
+    gmReports: deep(state?.gmReports || { items: [] }),
+    toolState: deep(state?.toolState || {})
+  };
+}
+
+async function persistPlayersTemplateOnly() {
+  return persistPlayerWorldMirror(App?.state);
+}
+
+function makeDefaultState() {
+  return {
+    meta: {
+      version: 7,
+      syncMode: 'LOCAL_FILE_CACHE',
+      lastUpdatedAt: null,
+      sync: defaultSyncMeta(),
+      playerSync: defaultPlayerSyncMeta()
+    },
+    users: deep(PLAYER_TEMPLATES),
+    npcChats: {},
+    gmReports: { items: [] },
+    toolState: {}
+  };
+}
+
+const Data = {
+  systems: SYSTEMS,
+  planets: PLANETS,
+  npcs: NPCS,
+  equipment: EQUIPMENT,
+  flora: FLORA,
+  fauna: FAUNA,
+  articles: ARTICLES,
+  getSystem(id) {
+    return this.systems.find(system => system.id === id) || null;
+  },
+  getPlanet(id) {
+    return this.planets[id] || null;
+  },
+  getNpc(id) {
+    return this.npcs[id] || null;
+  },
+  getItem(id) {
+    return this.equipment[id] || null;
+  },
+  getFlora(id) {
+    return this.flora[id] || null;
+  },
+  getFauna(id) {
+    return this.fauna[id] || null;
+  },
+  getArticle(id) {
+    return this.articles[id] || null;
+  },
+  getSystemForPlanet(planetId) {
+    return this.systems.find(system => (system.planetIds || []).includes(planetId)) || null;
+  }
+};
+
+
+function getPlayerCurrentLocation(player = App.currentUser) {
+  if (!player?.currentPlanetId) return { planet: null, system: null };
+  const planet = Data.getPlanet(player.currentPlanetId) || null;
+  const system = planet ? Data.getSystemForPlanet(planet.id) : null;
+  return { planet, system };
+}
+
+
+function getMarketAccessState(player = App.currentUser, planetId = UI?.selectedPlanetId) {
+  const currentPlanetId = String(player?.currentPlanetId || '').trim();
+  const currentPlanet = currentPlanetId ? Data.getPlanet(currentPlanetId) : null;
+  if (!planetId) {
+    return { canBuy: false, reason: 'Не выбрана планета торгового терминала.', currentPlanet };
+  }
+  if (!player) {
+    return { canBuy: false, reason: 'Сначала войдите в профиль персонажа.', currentPlanet };
+  }
+  if (!currentPlanetId) {
+    return {
+      canBuy: false,
+      reason: 'Покупка доступна только если в профиле персонажа указана текущая планета.',
+      currentPlanet
+    };
+  }
+  if (currentPlanetId !== planetId) {
+    return {
+      canBuy: false,
+      reason: `Покупка доступна только на текущей планете персонажа: ${currentPlanet?.name || currentPlanetId}.`,
+      currentPlanet
+    };
+  }
+  return { canBuy: true, reason: '', currentPlanet };
+}
+
+function getPlayerDisplayName(playerId) {
+  const player = App?.state?.users?.[playerId] || PLAYER_TEMPLATES[playerId] || null;
+  return player?.displayName || player?.shortName || playerId || 'Игрок';
+}
+
+function ensureNpcChatState() {
+  if (!App.state.npcChats || typeof App.state.npcChats !== 'object') App.state.npcChats = {};
+  return App.state.npcChats;
+}
+
+function getNpcChatThread(npcId, playerId) {
+  const chats = ensureNpcChatState();
+  if (!chats[npcId] || typeof chats[npcId] !== 'object') chats[npcId] = {};
+  if (!Array.isArray(chats[npcId][playerId])) chats[npcId][playerId] = [];
+  return chats[npcId][playerId];
+}
+
+function listNpcChatPlayerIds(npcId) {
+  return Object.keys(ensureNpcChatState()[npcId] || {}).sort((a, b) => getPlayerDisplayName(a).localeCompare(getPlayerDisplayName(b), 'ru'));
+}
+
+function appendNpcChatMessage(npcId, playerId, payload = {}) {
+  const thread = getNpcChatThread(npcId, playerId);
+  const text = String(payload.text || '').trim();
+  if (!text) return null;
+  const message = {
+    id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    sender: payload.sender || 'player',
+    playerId,
+    npcId,
+    text,
+    createdAt: new Date().toISOString(),
+    authorLabel: payload.authorLabel || (payload.sender === 'npc' ? (Data.getNpc(npcId)?.name || 'NPC') : getPlayerDisplayName(playerId))
+  };
+  thread.push(message);
+  return message;
+}
+
+function ensureGmReportsState() {
+  if (!App.state.gmReports || typeof App.state.gmReports !== 'object') App.state.gmReports = { items: [] };
+  if (!Array.isArray(App.state.gmReports.items)) App.state.gmReports.items = [];
+  return App.state.gmReports.items;
+}
+
+function appendGmReport(payload = {}) {
+  const items = ensureGmReportsState();
+  const report = {
+    id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    createdAt: new Date().toISOString(),
+    playerId: payload.playerId || App.currentUserId || 'unknown',
+    playerName: payload.playerName || getPlayerDisplayName(payload.playerId || App.currentUserId),
+    itemId: payload.itemId || '',
+    itemName: payload.itemName || (payload.itemId ? (Data.getItem(payload.itemId)?.name || payload.itemId) : ''),
+    category: payload.category || 'tool',
+    title: payload.title || 'Системный отчёт',
+    text: payload.text || '',
+    success: payload.success === true,
+    details: payload.details || ''
+  };
+  items.unshift(report);
+  if (items.length > 200) items.length = 200;
+  return report;
+}
+
+function consumeInventoryItem(userId, itemId, qty = 1) {
+  const user = App.state?.users?.[userId];
+  if (!user || !Array.isArray(user.inventory)) return false;
+  const entry = user.inventory.find(item => item.itemId === itemId);
+  if (!entry || Number(entry.qty || 0) < qty) return false;
+  entry.qty = Number(entry.qty || 0) - qty;
+  if (entry.qty <= 0) user.inventory = user.inventory.filter(item => item !== entry);
+  return true;
+}
+
+function itemMechanicType(item) {
+  return String(item?.mechanicType || item?.mechanic?.type || '').trim();
+}
+
+function itemRuntimeMechanic(item) {
+  const base = itemMechanicType(item);
+  if (base === 'decryptor') {
+    const mode = String(item?.decryptorMode || item?.mechanicMode || 'decryptor').trim();
+    return ['decryptor', 'codebreaker', 'doorhack'].includes(mode) ? mode : 'decryptor';
+  }
+  return ['codebreaker', 'doorhack'].includes(base) ? base : base;
+}
+
+function itemHasUsableMechanic(item) {
+  return ['decryptor', 'codebreaker', 'doorhack'].includes(itemRuntimeMechanic(item));
+}
+
+function entityExtraDataset(type, entity, opts = {}) {
+  const attrs = [];
+  if (opts.action) attrs.push(`data-action="${esc(opts.action)}"`);
+  if (type === 'item' && opts.preferUse && itemHasUsableMechanic(entity)) attrs.push('data-action="use-item"');
+  return attrs.join(' ');
+}
+
+function shiftAlphaChar(char, shift) {
+  const code = char.charCodeAt(0);
+  const isUpper = code >= 65 && code <= 90;
+  const isLower = code >= 97 && code <= 122;
+  const isUpperRu = code >= 1040 && code <= 1071;
+  const isLowerRu = code >= 1072 && code <= 1103;
+  if (isUpper || isLower) {
+    const start = isUpper ? 65 : 97;
+    return String.fromCharCode(start + ((((code - start) + shift) % 26) + 26) % 26);
+  }
+  if (isUpperRu || isLowerRu) {
+    const start = isUpperRu ? 1040 : 1072;
+    return String.fromCharCode(start + ((((code - start) + shift) % 32) + 32) % 32);
+  }
+  return char;
+}
+
+function caesarTransform(text, key, direction = 1) {
+  const shift = Number(key || 0) * direction;
+  return String(text || '').split('').map(ch => shiftAlphaChar(ch, shift)).join('');
+}
+
+function atbashTransform(text) {
+  return String(text || '').split('').map(ch => {
+    const code = ch.charCodeAt(0);
+    if (code >= 65 && code <= 90) return String.fromCharCode(90 - (code - 65));
+    if (code >= 97 && code <= 122) return String.fromCharCode(122 - (code - 97));
+    if (code >= 1040 && code <= 1071) return String.fromCharCode(1071 - (code - 1040));
+    if (code >= 1072 && code <= 1103) return String.fromCharCode(1103 - (code - 1072));
+    return ch;
+  }).join('');
+}
+
+function vigenereTransform(text, key, decode = false) {
+  const cleanKey = String(key || '').replace(/[^A-Za-zА-Яа-яЁё]/g, '');
+  if (!cleanKey) return String(text || '');
+  let keyIndex = 0;
+  return String(text || '').split('').map(ch => {
+    const k = cleanKey[keyIndex % cleanKey.length];
+    const shiftBase = /[A-Za-z]/.test(k) ? ((k.toLowerCase().charCodeAt(0) - 97) % 26) : ((k.toLowerCase().charCodeAt(0) - 1072) % 32);
+    const next = shiftAlphaChar(ch, decode ? -shiftBase : shiftBase);
+    if (next !== ch) keyIndex += 1;
+    return next;
+  }).join('');
+}
+
+function xorBase64Transform(text, key) {
+  const src = String(text || '');
+  const keyStr = String(key || '');
+  if (!keyStr) return src;
+  try {
+    const decoded = atob(src);
+    const out = decoded.split('').map((ch, index) => String.fromCharCode(ch.charCodeAt(0) ^ keyStr.charCodeAt(index % keyStr.length))).join('');
+    return out;
+  } catch {
+    const out = src.split('').map((ch, index) => String.fromCharCode(ch.charCodeAt(0) ^ keyStr.charCodeAt(index % keyStr.length))).join('');
+    return btoa(out);
+  }
+}
+
+function runDecryptor(text, key, cipher, mode) {
+  const selected = String(cipher || 'caesar');
+  if (selected === 'caesar') return caesarTransform(text, key, mode === 'decode' ? -1 : 1);
+  if (selected === 'vigenere') return vigenereTransform(text, key, mode === 'decode');
+  if (selected === 'atbash') return atbashTransform(text);
+  if (selected === 'xor') return xorBase64Transform(text, key);
+  return String(text || '');
+}
+
+
+function randomFrom(list) {
+  return list[Math.floor(Math.random() * list.length)];
+}
+
+function createHackRaceChallenge(item) {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const length = clamp(Number(item?.mechanicCodeLength || 5), 3, 8);
+  let code = '';
+  for (let i = 0; i < length; i += 1) code += alphabet[Math.floor(Math.random() * alphabet.length)];
+  return {
+    kind: 'codebreaker',
+    startedAt: Date.now(),
+    timeLimitMs: clamp(Number(item?.mechanicTimeLimit || 18), 5, 120) * 1000,
+    targetCode: code,
+    attempt: '',
+    resolved: false,
+    success: false,
+    consumed: false,
+    resultText: ''
+  };
+}
+
+function createDoorHackChallenge(item) {
+  const symbols = ['◴', '◷', '◶', '◵', '◆', '◈'];
+  const slots = clamp(Number(item?.mechanicSlots || 3), 3, 5);
+  const target = Array.from({ length: slots }, () => Math.floor(Math.random() * symbols.length));
+  const current = Array.from({ length: slots }, (_, index) => (target[index] + 1 + Math.floor(Math.random() * (symbols.length - 1))) % symbols.length);
+  return {
+    kind: 'doorhack',
+    startedAt: Date.now(),
+    timeLimitMs: clamp(Number(item?.mechanicTimeLimit || 22), 5, 120) * 1000,
+    symbols,
+    target,
+    current,
+    resolved: false,
+    success: false,
+    consumed: false,
+    resultText: ''
+  };
+}
+
+const Tooling = {
+  activeItemId: null,
+  tickTimer: null,
+  getDraft(itemId = this.activeItemId) {
+    if (!App.state.toolState || typeof App.state.toolState !== 'object') App.state.toolState = {};
+    const item = Data.getItem(itemId);
+    const mechanic = itemRuntimeMechanic(item);
+    if (!App.state.toolState[itemId]) {
+      App.state.toolState[itemId] = { kind: mechanic || 'decryptor', text: '', key: '', cipher: item?.decryptorDefaultCipher || 'caesar', mode: 'decode', output: '' };
+    }
+    const draft = App.state.toolState[itemId];
+    if (mechanic === 'decryptor') {
+      if (!draft.kind) draft.kind = 'decryptor';
+      if (!draft.cipher) draft.cipher = item?.decryptorDefaultCipher || 'caesar';
+      if (!('text' in draft)) draft.text = '';
+      if (!('key' in draft)) draft.key = '';
+      if (!('output' in draft)) draft.output = '';
+      if (!('mode' in draft)) draft.mode = 'decode';
+    }
+    return draft;
+  },
+  getRemainingMs(draft) {
+    const timeLimit = Number(draft?.timeLimitMs || 0);
+    const startedAt = Number(draft?.startedAt || 0);
+    if (!timeLimit || !startedAt || draft?.resolved) return timeLimit || 0;
+    return Math.max(0, timeLimit - (Date.now() - startedAt));
+  },
+  formatRemaining(ms) {
+    const whole = Math.max(0, Math.ceil(ms / 1000));
+    return `${whole}s`;
+  },
+  ensureMiniGameDraft(item) {
+    const draft = this.getDraft(item.id);
+    if (itemRuntimeMechanic(item) === 'codebreaker') {
+      if (draft.kind !== 'codebreaker' || !draft.targetCode) App.state.toolState[item.id] = createHackRaceChallenge(item);
+      return App.state.toolState[item.id];
+    }
+    if (itemRuntimeMechanic(item) === 'doorhack') {
+      if (draft.kind !== 'doorhack' || !Array.isArray(draft.target)) App.state.toolState[item.id] = createDoorHackChallenge(item);
+      return App.state.toolState[item.id];
+    }
+    return draft;
+  },
+  openForItem(itemId) {
+    const item = Data.getItem(itemId);
+    if (!item) return;
+    if (!itemHasUsableMechanic(item)) {
+      Wiki.showEntity('item', itemId, true);
+      return;
+    }
+    this.activeItemId = itemId;
+    const draft = this.getDraft(itemId);
+    if (itemRuntimeMechanic(item) === 'decryptor' && !draft.cipher) draft.cipher = item.decryptorDefaultCipher || 'caesar';
+    if (['codebreaker', 'doorhack'].includes(itemRuntimeMechanic(item))) this.ensureMiniGameDraft(item);
+    this.render();
+    UI.openModule('tool');
+  },
+  updateOutput() {
+    const item = Data.getItem(this.activeItemId);
+    const draft = this.getDraft(this.activeItemId);
+    draft.output = runDecryptor(draft.text, draft.key, draft.cipher || item?.decryptorDefaultCipher || 'caesar', draft.mode || 'decode');
+    return draft.output;
+  },
+  stopTicker() {
+    if (this.tickTimer) {
+      clearInterval(this.tickTimer);
+      this.tickTimer = null;
+    }
+  },
+  startTicker() {
+    this.stopTicker();
+    const item = Data.getItem(this.activeItemId);
+    if (!item || !['codebreaker', 'doorhack'].includes(itemRuntimeMechanic(item))) return;
+    const draft = this.getDraft(this.activeItemId);
+    if (!draft?.startedAt || draft?.resolved) return;
+    this.tickTimer = setInterval(() => {
+      const next = this.getDraft(this.activeItemId);
+      if (!next || next.resolved) {
+        this.stopTicker();
+        return;
+      }
+      const remaining = this.getRemainingMs(next);
+      const counter = document.querySelector('[data-tool-timer]');
+      if (counter) counter.textContent = this.formatRemaining(remaining);
+      if (remaining <= 0) {
+        this.resolveChallenge(false, 'Время истекло. Инструмент сгорел при попытке.');
+      }
+    }, 250);
+  },
+  async resolveChallenge(success, resultText) {
+    const item = Data.getItem(this.activeItemId);
+    const draft = this.getDraft(this.activeItemId);
+    if (!item || !draft || draft.resolved) return;
+    draft.resolved = true;
+    draft.success = Boolean(success);
+    draft.resultText = String(resultText || '');
+    this.stopTicker();
+    const consumed = consumeInventoryItem(App.currentUserId, item.id, 1);
+    draft.consumed = consumed;
+    appendGmReport({
+      playerId: App.currentUserId,
+      itemId: item.id,
+      category: draft.kind || itemRuntimeMechanic(item),
+      title: success ? 'Успешная мини-игра' : 'Провал мини-игры',
+      text: `${getPlayerDisplayName(App.currentUserId)} использовал предмет «${item.name}». ${resultText}`,
+      success,
+      details: draft.kind === 'codebreaker' ? `Код: ${draft.targetCode || 'n/a'}` : `Слоты: ${(draft.target || []).join(',')}`
+    });
+    AudioManager.play(success ? 'success' : 'fail', { volume: success ? 0.95 : 0.9 });
+    await App.saveState(success ? `Инструмент применён: ${item.name}` : `Попытка завершена: ${item.name}`);
+    this.render();
+  },
+  renderDecryptor(item, draft) {
+    this.updateOutput();
+    return `
+      <div class="tool-layout">
+        <div class="card pad18">
+          <div class="analysis-hero compact-tool-hero">
+            ${renderThumb(item, { size: 'lg', type: 'item', glyph: initials(item.name, '▣') })}
+            <div>
+              <div class="section-title">${esc(item.mechanicTitle || 'Дешифратор')}</div>
+              <h2 class="mono accent">${esc(item.name)}</h2>
+              <div class="small-note">${esc(item.mechanicHint || item.desc || 'Используй модуль для расшифровки или кодирования текстов.')}</div>
+            </div>
+          </div>
+          <form id="tool-form" class="form">
+            <div class="cols3">
+              <div class="field"><label>Режим</label><select class="select" name="mode"><option value="decode" ${draft.mode === 'decode' ? 'selected' : ''}>Декодировать</option><option value="encode" ${draft.mode === 'encode' ? 'selected' : ''}>Кодировать</option></select></div>
+              <div class="field"><label>Тип шифра</label><select class="select" name="cipher"><option value="caesar" ${draft.cipher === 'caesar' ? 'selected' : ''}>Caesar</option><option value="vigenere" ${draft.cipher === 'vigenere' ? 'selected' : ''}>Vigenere</option><option value="atbash" ${draft.cipher === 'atbash' ? 'selected' : ''}>Atbash</option><option value="xor" ${draft.cipher === 'xor' ? 'selected' : ''}>XOR/Base64</option></select></div>
+              <div class="field"><label>Ключ</label><input class="input" name="key" value="${esc(draft.key || '')}" placeholder="3 / ORION / ..." /></div>
+            </div>
+            <div class="field"><label>Входной текст</label><textarea class="area tool-textarea" name="text">${esc(draft.text || '')}</textarea></div>
+            <div class="row"><button class="primary" type="submit">ПРИМЕНИТЬ</button><button class="secondary" type="button" id="tool-copy-output">КОПИРОВАТЬ РЕЗУЛЬТАТ</button><button class="ghost" type="button" id="tool-clear">ОЧИСТИТЬ</button></div>
+          </form>
+        </div>
+        <div class="card pad18">
+          <div class="section-title">Результат</div>
+          <pre class="tool-output">${esc(draft.output || 'Здесь появится результат дешифрации')}</pre>
+          <div class="small-note" style="margin-top:12px">Механики предметов настраиваются в WORLD_CONFIG у карточки предмета.</div>
+        </div>
+      </div>
+    `;
+  },
+  renderCodebreaker(item, draft) {
+    const remaining = this.formatRemaining(this.getRemainingMs(draft));
+    return `
+      <div class="tool-layout two-col-tight">
+        <div class="card pad18">
+          <div class="analysis-hero compact-tool-hero">
+            ${renderThumb(item, { size: 'lg', type: 'item', glyph: initials(item.name, '▣') })}
+            <div>
+              <div class="section-title">${esc(item.mechanicTitle || 'Набор взломщика')}</div>
+              <h2 class="mono accent">${esc(item.name)}</h2>
+              <div class="small-note">${esc(item.mechanicHint || 'Нужно быстро перепечатать код до окончания таймера. После попытки предмет сгорает и результат отправляется ведущему.')}</div>
+            </div>
+          </div>
+          <div class="mini-badge-row">
+            <div class="chip">ТАЙМЕР: <span data-tool-timer>${esc(remaining)}</span></div>
+            <div class="chip">КОД: ${esc(draft.targetCode || '----')}</div>
+          </div>
+          <form id="tool-codebreaker-form" class="form">
+            <div class="field"><label>Введите код без ошибок</label><input class="input codebreaker-input" name="attempt" value="${esc(draft.attempt || '')}" placeholder="${esc(draft.targetCode || '----')}" ${draft.resolved ? 'disabled' : ''} /></div>
+            <div class="row"><button class="primary" type="submit" ${draft.resolved ? 'disabled' : ''}>ПОДТВЕРДИТЬ ВЗЛОМ</button><button class="secondary" type="button" id="tool-reset-run">НОВЫЙ КОД</button></div>
+          </form>
+        </div>
+        <div class="card pad18">
+          <div class="section-title">Статус попытки</div>
+          <pre class="tool-output">${esc(draft.resultText || (draft.resolved ? 'Попытка завершена.' : 'Ожидание ввода кода...'))}</pre>
+          <div class="small-note" style="margin-top:12px">Успех или провал будут сохранены в мастерском журнале сообщений.</div>
+        </div>
+      </div>
+    `;
+  },
+  renderDoorhack(item, draft) {
+    const remaining = this.formatRemaining(this.getRemainingMs(draft));
+    return `
+      <div class="tool-layout two-col-tight">
+        <div class="card pad18">
+          <div class="analysis-hero compact-tool-hero">
+            ${renderThumb(item, { size: 'lg', type: 'item', glyph: initials(item.name, '▣') })}
+            <div>
+              <div class="section-title">${esc(item.mechanicTitle || 'Взлом дверей')}</div>
+              <h2 class="mono accent">${esc(item.name)}</h2>
+              <div class="small-note">${esc(item.mechanicHint || 'Собери правильную комбинацию символов, как в быстрых дверных взломах. После попытки предмет расходуется и ведущий получает отчёт.')}</div>
+            </div>
+          </div>
+          <div class="mini-badge-row"><div class="chip">ТАЙМЕР: <span data-tool-timer>${esc(remaining)}</span></div></div>
+          <div class="doorhack-grid">
+            ${(draft.current || []).map((value, index) => `
+              <div class="doorhack-slot">
+                <div class="small-note">Цель: ${(draft.symbols || [])[draft.target[index]] || '•'}</div>
+                <button class="secondary" type="button" data-door-step="-1" data-slot="${index}" ${draft.resolved ? 'disabled' : ''}>◀</button>
+                <div class="doorhack-symbol">${(draft.symbols || [])[value] || '•'}</div>
+                <button class="secondary" type="button" data-door-step="1" data-slot="${index}" ${draft.resolved ? 'disabled' : ''}>▶</button>
+              </div>
+            `).join('')}
+          </div>
+          <div class="row"><button class="primary" type="button" id="tool-door-confirm" ${draft.resolved ? 'disabled' : ''}>ПОДАТЬ ИМПУЛЬС</button><button class="secondary" type="button" id="tool-reset-run">СБРОСИТЬ СХЕМУ</button></div>
+        </div>
+        <div class="card pad18">
+          <div class="section-title">Статус попытки</div>
+          <pre class="tool-output">${esc(draft.resultText || (draft.resolved ? 'Попытка завершена.' : 'Синхронизируй символы с целевой схемой.'))}</pre>
+        </div>
+      </div>
+    `;
+  },
+  renderBootstrap() {
+    const root = $('#login-sync-bootstrap');
+    if (!root) return;
+    const config = this.config || { enabled: false, url: '', anonKey: '', campaignId: '', deviceLabel: '', tableName: 'campaign_snapshots', storageBucket: 'campaign-assets', pollIntervalMs: 45000 };
+    root.innerHTML = `
+      <div class="boot-sync-card">
+        <div class="section-title">Подключение к кампании</div>
+        
+        <form id="bootstrap-sync-form" class="form">
+          <div class="field"><label>SUPABASE_URL</label><input class="input" name="url" value="${esc(config.url || '')}" placeholder="https://project.supabase.co" /></div>
+          <div class="field"><label>PUBLISHABLE / ANON KEY</label><input class="input" name="anonKey" value="${esc(config.anonKey || '')}" placeholder="sb_publishable_... или anon key" /></div>
+          <div class="cols2">
+            <div class="field"><label>CAMPAIGN_ID</label><input class="input" name="campaignId" value="${esc(config.campaignId || '')}" placeholder="campaign-alpha" /></div>
+            <div class="field"><label>DEVICE_LABEL</label><input class="input" name="deviceLabel" value="${esc(config.deviceLabel || '')}" placeholder="player-laptop / gm-main-pc" /></div>
+          </div>
+          <div class="cols2">
+            <div class="field"><label>STORAGE_BUCKET</label><input class="input" name="storageBucket" value="${esc(config.storageBucket || 'campaign-assets')}" placeholder="campaign-assets" /></div>
+            <div class="field"><label>TABLE_NAME</label><input class="input" name="tableName" value="${esc(config.tableName || 'campaign_snapshots')}" /></div>
+          </div>
+          <input type="hidden" name="enabled" value="1" />
+          <input type="hidden" name="pollIntervalMs" value="${Number(config.pollIntervalMs || 45000)}" />
+          <div class="boot-sync-actions">
+            <button type="submit" class="primary">СОХРАНИТЬ И ПОДКЛЮЧИТЬ</button>
+            <button type="button" id="bootstrap-open-advanced" class="secondary">РАСШИРЕННЫЕ НАСТРОЙКИ</button>
+          </div>
+          <div class="boot-status">После сохранения данные кампании будут проверены автоматически.</div>
+        </form>
+      </div>
+    `;
+    $('#bootstrap-sync-form')?.addEventListener('submit', async event => {
+      event.preventDefault();
+      const res = await this.saveConfigFromForm(event.currentTarget, { forceEnable: true, silentToast: true });
+      if (!res?.ok) return;
+      await this.ping();
+      await this.checkForRemoteUpdates('bootstrap-save', { applyIfNewer: true, force: true, silent: true });
+      await PlayerSync.pullUpdates('bootstrap-save', { forceFull: true, silent: true, rerender: false });
+      App.state = await Persistence.load();
+      mirrorPlayersIntoWorld(App.state);
+      App.fillLoginSelect();
+      App.updateBootView();
+      $('#login-error').textContent = '';
+      Toast.show('Синхронизация подключена. Теперь можно войти.', 'ok');
+    });
+    $('#bootstrap-open-advanced')?.addEventListener('click', () => UI.openModule('sync', { overLogin: true }));
+  },
+
+  render() {
+    const root = document.querySelector('#tool-content');
+    if (!root) return;
+    const item = Data.getItem(this.activeItemId);
+    if (!item) {
+      this.stopTicker();
+      root.innerHTML = '<div class="card pad18 small-note">Выбери предмет с активной механикой из инвентаря.</div>';
+      return;
+    }
+    const mechanic = itemRuntimeMechanic(item);
+    const draft = mechanic === 'decryptor' ? this.getDraft(this.activeItemId) : this.ensureMiniGameDraft(item);
+    if (mechanic === 'decryptor') root.innerHTML = this.renderDecryptor(item, draft);
+    else if (mechanic === 'codebreaker') root.innerHTML = this.renderCodebreaker(item, draft);
+    else if (mechanic === 'doorhack') root.innerHTML = this.renderDoorhack(item, draft);
+    else root.innerHTML = '<div class="card pad18 small-note">У этого предмета пока нет активной мини-игры.</div>';
+
+    if (mechanic === 'decryptor') {
+      root.querySelector('#tool-form')?.addEventListener('submit', async event => {
+        event.preventDefault();
+        const fd = new FormData(event.currentTarget);
+        draft.mode = String(fd.get('mode') || 'decode');
+        draft.cipher = String(fd.get('cipher') || item.decryptorDefaultCipher || 'caesar');
+        draft.key = String(fd.get('key') || '');
+        draft.text = String(fd.get('text') || '');
+        this.updateOutput();
+        this.render();
+        await Persistence.save(App.state);
+      });
+      root.querySelector('#tool-copy-output')?.addEventListener('click', async () => {
+        try { await navigator.clipboard.writeText(draft.output || ''); Toast.show('Результат скопирован', 'ok'); } catch { Toast.show('Не удалось скопировать результат', 'err'); }
+      });
+      root.querySelector('#tool-clear')?.addEventListener('click', async () => {
+        App.state.toolState[this.activeItemId] = { kind: 'decryptor', text: '', key: '', cipher: item.decryptorDefaultCipher || 'caesar', mode: 'decode', output: '' };
+        this.render();
+        await Persistence.save(App.state);
+      });
+      this.stopTicker();
+      return;
+    }
+
+    this.startTicker();
+    root.querySelector('#tool-reset-run')?.addEventListener('click', async () => {
+      App.state.toolState[this.activeItemId] = mechanic === 'codebreaker' ? createHackRaceChallenge(item) : createDoorHackChallenge(item);
+      this.render();
+      await Persistence.save(App.state);
+    });
+
+    if (mechanic === 'codebreaker') {
+      root.querySelector('#tool-codebreaker-form')?.addEventListener('submit', async event => {
+        event.preventDefault();
+        const fd = new FormData(event.currentTarget);
+        draft.attempt = String(fd.get('attempt') || '').trim().toUpperCase();
+        if (draft.resolved) return;
+        if (this.getRemainingMs(draft) <= 0) {
+          await this.resolveChallenge(false, 'Время истекло раньше подтверждения.');
+          return;
+        }
+        if (draft.attempt === String(draft.targetCode || '').toUpperCase()) {
+          await this.resolveChallenge(true, `Код ${draft.targetCode} введён без ошибок.`);
+        } else {
+          await this.resolveChallenge(false, `Вместо кода ${draft.targetCode} был введён ${draft.attempt || 'пустой ввод'}.`);
+        }
+      });
+      return;
+    }
+
+    root.querySelectorAll('[data-door-step]').forEach(button => {
+      button.addEventListener('click', () => {
+        if (draft.resolved) return;
+        const slot = Number(button.dataset.slot || 0);
+        const step = Number(button.dataset.doorStep || 1);
+        const length = (draft.symbols || []).length || 1;
+        draft.current[slot] = ((((draft.current[slot] || 0) + step) % length) + length) % length;
+        this.render();
+      });
+    });
+    root.querySelector('#tool-door-confirm')?.addEventListener('click', async () => {
+      if (draft.resolved) return;
+      const ok = Array.isArray(draft.current) && Array.isArray(draft.target) && draft.current.every((value, index) => value === draft.target[index]);
+      if (ok) await this.resolveChallenge(true, 'Схема замка синхронизирована. Дверь открыта.');
+      else await this.resolveChallenge(false, 'Схема не совпала с целевой последовательностью.');
+    });
+  }
+};
+
+const ChatUI = {
+  renderNpcThreadForPlayer(npc) {
+    const playerId = App.currentUserId;
+    const thread = getNpcChatThread(npc.id, playerId);
+    return `
+      <div class="chat-panel card pad18">
+        <div class="section-title">Канал связи</div>
+        <div class="small-note">Сообщения хранятся локально и синхронизируются через выбранный backend вместе с общим снапшотом кампании.</div>
+        <div class="chat-thread" data-chat-thread>
+          ${thread.map(message => this.messageMarkup(message, npc.id)).join('') || '<div class="small-note">Диалог ещё не начат.</div>'}
+        </div>
+        <form class="form npc-chat-form" data-npc-id="${esc(npc.id)}" data-player-id="${esc(playerId)}" data-role="player">
+          <div class="field"><label>Сообщение для ${esc(npc.name)}</label><textarea class="area chat-input" name="message" placeholder="Отправить сообщение..."></textarea></div>
+          <button class="primary" type="submit">ОТПРАВИТЬ</button>
+        </form>
+      </div>
+    `;
+  },
+  renderNpcThreadsForGm(npc) {
+    const playerIds = listNpcChatPlayerIds(npc.id);
+    if (!playerIds.length) {
+      return '<div class="chat-panel card pad18"><div class="section-title">Канал связи</div><div class="small-note">Игроки ещё не писали этому NPC.</div></div>';
+    }
+    return `
+      <div class="chat-gm-stack">
+        ${playerIds.map(playerId => {
+          const thread = getNpcChatThread(npc.id, playerId);
+          return `
+            <div class="chat-panel card pad18">
+              <div class="data-row"><span class="data-label">Игрок</span><span class="data-value">${esc(getPlayerDisplayName(playerId))}</span></div>
+              <div class="chat-thread" data-chat-thread>
+                ${thread.map(message => this.messageMarkup(message, npc.id)).join('')}
+              </div>
+              <form class="form npc-chat-form" data-npc-id="${esc(npc.id)}" data-player-id="${esc(playerId)}" data-role="npc">
+                <div class="field"><label>Ответ от имени ${esc(npc.name)}</label><textarea class="area chat-input" name="message" placeholder="Ответить игроку..."></textarea></div>
+                <button class="primary" type="submit">ОТПРАВИТЬ ОТВЕТ</button>
+              </form>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    `;
+  },
+  messageMarkup(message, npcId) {
+    const own = message.sender === 'npc';
+    const label = own ? (Data.getNpc(npcId)?.name || 'NPC') : getPlayerDisplayName(message.playerId);
+    return `<div class="chat-bubble ${own ? 'npc' : 'player'}"><div class="chat-meta">${esc(label)} · ${esc(new Date(message.createdAt || Date.now()).toLocaleString('ru-RU'))}</div><div>${esc(message.text)}</div></div>`;
+  },
+  bindWithin(root) {
+    root?.querySelectorAll('.npc-chat-form').forEach(form => {
+      if (form.dataset.bound === '1') return;
+      form.dataset.bound = '1';
+      form.addEventListener('submit', async event => {
+        event.preventDefault();
+        const fd = new FormData(form);
+        const npcId = form.dataset.npcId;
+        const playerId = form.dataset.playerId;
+        const role = form.dataset.role || 'player';
+        const text = String(fd.get('message') || '').trim();
+        if (!text) {
+          Toast.show('Сообщение пустое', 'err');
+          return;
+        }
+        appendNpcChatMessage(npcId, playerId, { sender: role === 'npc' ? 'npc' : 'player', text, authorLabel: role === 'npc' ? (Data.getNpc(npcId)?.name || 'NPC') : getPlayerDisplayName(playerId) });
+        await App.saveState(role === 'npc' ? 'Ответ отправлен игроку' : 'Сообщение отправлено ДМу');
+        Wiki.showEntity('npc', npcId, UI.activeModuleId === 'wiki');
+      });
+    });
+  }
+};
+
+
+const Persistence = {
+  async load() {
+    if (window.electronAPI?.loadState) {
+      const fileState = await window.electronAPI.loadState();
+      if (fileState && !fileState.__error) return this.normalize(fileState);
+    }
+    const raw = localStorage.getItem(FALLBACK_STATE_KEY);
+    if (raw) {
+      try { return this.normalize(JSON.parse(raw)); } catch (error) {}
+    }
+    return this.normalize(makeDefaultState());
+  },
+  async save(state) {
+    state.meta.lastUpdatedAt = new Date().toISOString();
+    if (window.electronAPI?.saveState) {
+      const res = await window.electronAPI.saveState(state);
+      if (!res?.ok) {
+        localStorage.setItem(FALLBACK_STATE_KEY, JSON.stringify(state));
+        return { ok: true, fallback: true };
+      }
+      return res;
+    }
+    localStorage.setItem(FALLBACK_STATE_KEY, JSON.stringify(state));
+    return { ok: true, fallback: true };
+  },
+  normalize(candidate) {
+    const state = makeDefaultState();
+    if (candidate?.meta) state.meta = { ...state.meta, ...candidate.meta, version: Number(candidate?.meta?.version || state.meta.version || 7), sync: { ...defaultSyncMeta(), ...(candidate?.meta?.sync || {}) }, playerSync: normalizePlayerSyncMeta(candidate?.meta?.playerSync || {}) };
+    state.npcChats = deep(candidate?.npcChats || {});
+    state.gmReports = deep(candidate?.gmReports || { items: [] });
+    if (!Array.isArray(state.gmReports.items)) state.gmReports.items = [];
+    state.toolState = deep(candidate?.toolState || {});
+    for (const [id, template] of Object.entries(PLAYER_TEMPLATES)) {
+      const incoming = candidate?.users?.[id] || {};
+      state.users[id] = {
+        ...deep(template),
+        credits: Number.isFinite(Number(incoming.credits)) ? Number(incoming.credits) : Number(template.credits || 0),
+        stats: { ...template.stats, ...(incoming.stats || {}) },
+        abilities: { ...template.abilities, ...(incoming.abilities || {}) },
+        equipmentSlots: { ...template.equipmentSlots, ...(incoming.equipmentSlots || {}) },
+        inventory: Array.isArray(incoming.inventory) ? incoming.inventory : deep(template.inventory),
+        implants: Array.isArray(incoming.implants) ? incoming.implants : deep(template.implants),
+        social: {
+          npcIds: Array.isArray(incoming.social?.npcIds) ? incoming.social.npcIds : deep(template.social?.npcIds || []),
+          orgs: Array.isArray(incoming.social?.orgs) ? incoming.social.orgs : deep(template.social?.orgs || [])
+        },
+        currentPlanetId: typeof incoming.currentPlanetId === 'string' ? incoming.currentPlanetId : (typeof template.currentPlanetId === 'string' ? template.currentPlanetId : '')
+      };
+    }
+    return state;
+  },
+  clearSession() {
+    localStorage.removeItem(SESSION_KEY);
+  },
+  saveSession(userId) {
+    localStorage.setItem(SESSION_KEY, JSON.stringify({ userId }));
+  },
+  loadSession() {
+    try {
+      const raw = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null');
+      if (raw?.userId && PLAYER_TEMPLATES[raw.userId]) return raw;
+    } catch (error) {}
+    return null;
+  },
+  async resetAll() {
+    localStorage.removeItem(FALLBACK_STATE_KEY);
+    await this.save(makeDefaultState());
+    this.clearSession();
+  }
+};
+
+
+const Sync = {
+  config: null,
+  status: { enabled: false, connected: false, message: 'Локальный режим', remote: null },
+  pollTimer: null,
+  provider(config = this.config) {
+    const value = String(config?.provider || '').toLowerCase();
+    return value === 'pocketbase' || value === 'selfhost' || value === 'supabase' ? value : 'supabase';
+  },
+  cloudName(config = this.config) {
+    const provider = this.provider(config);
+    if (provider === 'pocketbase') return 'PocketBase';
+    if (provider === 'selfhost') return 'Self-host';
+    return 'Supabase';
+  },
+  isConfiguredConfig(config = this.config) {
+    const provider = this.provider(config);
+    if (provider === 'pocketbase') return Boolean(config?.enabled && config?.url && config?.pocketbaseEmail && config?.pocketbasePassword && config?.campaignId);
+    if (provider === 'selfhost') return Boolean(config?.enabled && (config?.serverUrl || config?.url) && config?.campaignId);
+    return Boolean(config?.enabled && config?.url && config?.anonKey && config?.campaignId);
+  },
+  isConfigured() {
+    return this.isConfiguredConfig(this.config);
+  },
+  needsBootstrap() {
+    return !this.isConfigured();
+  },
+  async init() {
+    await this.loadConfig();
+    this.refreshChip();
+    this.render();
+    if (this.config?.enabled) {
+      this.startPolling();
+    }
+  },
+  async loadConfig() {
+    if (!window.electronAPI?.loadSyncConfig) {
+      this.config = { enabled: false, campaignId: '', deviceLabel: '', storageBucket: 'campaign-assets', pollIntervalMs: 45000 };
+      return this.config;
+    }
+    const res = await window.electronAPI.loadSyncConfig();
+    this.config = res?.config || { enabled: false, campaignId: '', deviceLabel: '', storageBucket: 'campaign-assets', pollIntervalMs: 45000 };
+    const current = App?.state?.meta?.sync || defaultSyncMeta();
+    current.enabled = Boolean(this.config.enabled);
+    current.configured = this.isConfiguredConfig(this.config);
+    current.campaignId = this.config.campaignId || '';
+    current.deviceLabel = this.config.deviceLabel || '';
+    if (App?.state?.meta) {
+      App.state.meta.sync = { ...defaultSyncMeta(), ...current };
+      App.state.meta.syncMode = this.config.enabled ? `${this.cloudName(this.config).toUpperCase()}_MIRROR` : 'LOCAL_FILE_CACHE';
+    }
+    return this.config;
+  },
+  markLocalDirty(reason = 'local-change') {
+    if (!App?.state?.meta) return;
+    App.state.meta.sync = { ...defaultSyncMeta(), ...(App.state.meta.sync || {}) };
+    App.state.meta.sync.localDirty = true;
+    App.state.meta.sync.lastStatus = reason;
+    App.state.meta.sync.enabled = Boolean(this.config?.enabled);
+    App.state.meta.sync.configured = this.isConfiguredConfig(this.config);
+    App.state.meta.sync.campaignId = this.config?.campaignId || '';
+    App.state.meta.sync.deviceLabel = this.config?.deviceLabel || '';
+    App.state.meta.syncMode = this.config?.enabled ? `${this.cloudName(this.config).toUpperCase()}_MIRROR` : 'LOCAL_FILE_CACHE';
+    this.refreshChip();
+  },
+  buildSnapshot() {
+    return {
+      world: buildWorldSnapshot(),
+      state: buildSharedStateSnapshot(App.state)
+    };
+  },
+  async applyRemoteSnapshot(payload, remoteMeta = {}, options = {}) {
+    if (!payload?.world || !payload?.state) {
+      return { ok: false, message: 'Remote payload пустой' };
+    }
+    Debug.log('SYNC_APPLY_REMOTE_START', { revision: remoteMeta?.revision || 0, updatedAt: remoteMeta?.updatedAt || null, force: Boolean(options.force) });
+    const worldSave = await window.electronAPI?.saveWorldData?.(payload.world);
+    if (!worldSave?.ok) {
+      throw new Error(`Не удалось сохранить world snapshot: ${worldSave?.message || 'unknown error'}`);
+    }
+    await App.loadWorldData();
+    const normalizedState = Persistence.normalize(payload.state);
+    if (PlayerSync.shouldIsolateUsersFromSnapshot()) {
+      normalizedState.users = deep(App.state?.users || normalizedState.users || {});
+      normalizedState.meta.playerSync = normalizePlayerSyncMeta(App.state?.meta?.playerSync || normalizedState.meta?.playerSync || {});
+    }
+    normalizedState.meta.sync = {
+      ...defaultSyncMeta(),
+      ...(App.state?.meta?.sync || {}),
+      enabled: Boolean(this.config?.enabled),
+      configured: this.isConfiguredConfig(this.config),
+      campaignId: this.config?.campaignId || '',
+      deviceLabel: this.config?.deviceLabel || '',
+      localDirty: false,
+      remoteRevision: Number(remoteMeta?.revision || 0),
+      remoteUpdatedAt: remoteMeta?.updatedAt || null,
+      lastPulledAt: new Date().toISOString(),
+      lastCheckedAt: new Date().toISOString(),
+      lastStatus: 'REMOTE_APPLIED',
+      lastError: null
+    };
+    normalizedState.meta.syncMode = this.config?.enabled ? `${this.cloudName(this.config).toUpperCase()}_MIRROR` : 'LOCAL_FILE_CACHE';
+    await Persistence.save(normalizedState);
+    App.state = await Persistence.load();
+    mirrorPlayersIntoWorld(App.state);
+    App.fillLoginSelect();
+    App.renderLive();
+    this.status = { enabled: true, connected: true, message: 'REMOTE_APPLIED', remote: remoteMeta };
+    this.refreshChip();
+    this.render();
+    Debug.log('SYNC_APPLY_REMOTE_DONE', { revision: remoteMeta?.revision || 0, updatedAt: remoteMeta?.updatedAt || null });
+    return { ok: true };
+  },
+  async ping() {
+    if (!window.electronAPI?.pingSync) return { ok: false, enabled: false, connected: false, message: 'Electron sync API unavailable' };
+    const res = await window.electronAPI.pingSync();
+    this.status = {
+      enabled: Boolean(res?.enabled),
+      connected: Boolean(res?.connected),
+      message: res?.message || (res?.connected ? 'ONLINE' : 'OFFLINE'),
+      remote: res?.remote || null
+    };
+    if (App?.state?.meta?.sync) {
+      App.state.meta.sync.lastCheckedAt = new Date().toISOString();
+      App.state.meta.sync.lastStatus = this.status.message;
+      App.state.meta.sync.lastError = res?.ok ? null : (res?.message || null);
+      if (res?.remote) {
+        App.state.meta.sync.remoteRevision = Number(res.remote.revision || App.state.meta.sync.remoteRevision || 0);
+        App.state.meta.sync.remoteUpdatedAt = res.remote.updatedAt || App.state.meta.sync.remoteUpdatedAt || null;
+      }
+    }
+    this.refreshChip();
+    this.render();
+    return res;
+  },
+  async checkForRemoteUpdates(reason = 'manual-check', options = {}) {
+    await this.loadConfig();
+    if (!this.config?.enabled || !window.electronAPI?.pullSync) {
+      this.refreshChip();
+      return { ok: true, status: 'disabled' };
+    }
+    const localSync = App.state?.meta?.sync || defaultSyncMeta();
+    const localRevision = Number(localSync.remoteRevision || 0);
+    const res = await window.electronAPI.pullSync({ localRevision, force: Boolean(options.force) });
+    Debug.log('SYNC_PULL_RESULT', { reason, localRevision, ok: res?.ok, status: res?.status, newer: res?.newer, remoteRevision: res?.remote?.revision || null });
+    if (!res?.ok) {
+      this.status = { enabled: true, connected: false, message: res?.message || 'SYNC_PULL_FAILED', remote: null };
+      App.state.meta.sync.lastCheckedAt = new Date().toISOString();
+      App.state.meta.sync.lastStatus = 'PULL_FAILED';
+      App.state.meta.sync.lastError = res?.message || 'SYNC_PULL_FAILED';
+      this.refreshChip();
+      this.render();
+      if (!options.silent) Toast.show(`${this.cloudName()} недоступен: ${res?.message || 'unknown error'}`, 'info');
+      return res;
+    }
+
+    App.state.meta.sync.lastCheckedAt = new Date().toISOString();
+    App.state.meta.sync.lastError = null;
+    if (res?.remote) {
+      App.state.meta.sync.remoteRevision = Number(res.remote.revision || App.state.meta.sync.remoteRevision || 0);
+      App.state.meta.sync.remoteUpdatedAt = res.remote.updatedAt || App.state.meta.sync.remoteUpdatedAt || null;
+    }
+
+    if (res.status === 'newer' && res.payload) {
+      if (localSync.localDirty && !options.force) {
+        App.state.meta.sync.lastStatus = 'REMOTE_NEWER_LOCAL_DIRTY';
+        this.status = { enabled: true, connected: true, message: 'CONFLICT_REMOTE_NEWER', remote: res.remote || null };
+        this.refreshChip();
+        this.render();
+        if (!options.silent) Toast.show(`В ${this.cloudName()} есть более новые данные. Локальные изменения не перезаписаны автоматически.`, 'info');
+        await Persistence.save(App.state);
+        return { ...res, skipped: true };
+      }
+      if (options.applyIfNewer === false) {
+        App.state.meta.sync.lastStatus = 'REMOTE_NEWER_AVAILABLE';
+        this.status = { enabled: true, connected: true, message: 'REMOTE_NEWER_AVAILABLE', remote: res.remote || null };
+        this.refreshChip();
+        this.render();
+        await Persistence.save(App.state);
+        if (!options.silent) Toast.show('В облаке есть более свежий снимок мира. Он не был применён автоматически.', 'info');
+        return { ...res, skipped: true };
+      }
+      await this.applyRemoteSnapshot(res.payload, res.remote, options);
+      if (!options.silent) Toast.show(`Загружены более свежие данные из ${this.cloudName()}`, 'ok');
+      return res;
+    }
+
+    App.state.meta.sync.lastStatus = res.status === 'empty' ? 'REMOTE_EMPTY' : 'UP_TO_DATE';
+    App.state.meta.sync.lastError = null;
+    this.status = { enabled: true, connected: true, message: res.status === 'empty' ? 'REMOTE_EMPTY' : 'UP_TO_DATE', remote: res.remote || null };
+    this.refreshChip();
+    this.render();
+    await Persistence.save(App.state);
+    return res;
+  },
+  async pushCurrentSnapshot(reason = 'manual-push', options = {}) {
+    await this.loadConfig();
+    if (!this.config?.enabled || !window.electronAPI?.pushSync) {
+      this.refreshChip();
+      return { ok: true, status: 'disabled' };
+    }
+    const syncMeta = App.state?.meta?.sync || defaultSyncMeta();
+    const baseRevision = Number(syncMeta.remoteRevision || 0);
+    const payload = {
+      snapshot: this.buildSnapshot(),
+      baseRevision,
+      updatedBy: this.config.deviceLabel || App.currentUser?.displayName || 'unknown-device',
+      clientUpdatedAt: App.state?.meta?.lastUpdatedAt || new Date().toISOString()
+    };
+    Debug.log('SYNC_PUSH_START', { reason, baseRevision, localDirty: Boolean(syncMeta.localDirty), campaignId: this.config.campaignId || '' });
+    const res = await window.electronAPI.pushSync(payload);
+    Debug.log('SYNC_PUSH_FINISH', { reason, ok: res?.ok, status: res?.status, remoteRevision: res?.remote?.revision || null, message: res?.message || null });
+
+    App.state.meta.sync.lastCheckedAt = new Date().toISOString();
+    if (!res?.ok) {
+      App.state.meta.sync.lastStatus = res?.status === 'conflict' ? 'CONFLICT' : 'PUSH_FAILED';
+      App.state.meta.sync.lastError = res?.message || 'SYNC_PUSH_FAILED';
+      if (res?.remote) {
+        App.state.meta.sync.remoteRevision = Number(res.remote.revision || App.state.meta.sync.remoteRevision || 0);
+        App.state.meta.sync.remoteUpdatedAt = res.remote.updatedAt || App.state.meta.sync.remoteUpdatedAt || null;
+      }
+      this.status = { enabled: true, connected: Boolean(res?.connected), message: App.state.meta.sync.lastStatus, remote: res?.remote || null };
+      this.refreshChip();
+      this.render();
+      await Persistence.save(App.state);
+      if (!options.silent) {
+        const msg = res?.status === 'conflict'
+          ? `Сохранено локально, но в ${this.cloudName()} уже есть более новая ревизия. Сначала подтяни облако.`
+          : `Сохранено локально, но ${this.cloudName()} недоступен: ${res?.message || 'unknown error'}`;
+        Toast.show(msg, 'info');
+      }
+      return res;
+    }
+
+    if (res?.snapshot?.world && window.electronAPI?.saveWorldData) {
+      const worldSave = await window.electronAPI.saveWorldData(res.snapshot.world);
+      if (!worldSave?.ok) {
+        Debug.error('SYNC_POST_PUSH_WORLD_SAVE_FAILED', { message: worldSave?.message || 'unknown error' });
+      } else {
+        await App.loadWorldData();
+      }
+    }
+    if (res?.snapshot?.state?.users) {
+      App.state.users = deep(res.snapshot.state.users || App.state.users);
+      mirrorPlayersIntoWorld(App.state);
+    }
+
+    App.state.meta.sync = {
+      ...defaultSyncMeta(),
+      ...(App.state.meta.sync || {}),
+      enabled: true,
+      configured: true,
+      campaignId: this.config.campaignId || '',
+      deviceLabel: this.config.deviceLabel || '',
+      localDirty: false,
+      remoteRevision: Number(res.remote?.revision || baseRevision),
+      remoteUpdatedAt: res.remote?.updatedAt || new Date().toISOString(),
+      lastPushedAt: new Date().toISOString(),
+      lastCheckedAt: new Date().toISOString(),
+      lastStatus: 'SYNCED',
+      lastError: null
+    };
+    App.state.meta.syncMode = `${this.cloudName(this.config).toUpperCase()}_MIRROR`;
+    this.status = { enabled: true, connected: true, message: 'SYNCED', remote: res.remote || null };
+    this.refreshChip();
+    this.render();
+    await Persistence.save(App.state);
+    if (!options.silent) Toast.show(`Локальные данные отправлены в ${this.cloudName()}`, 'ok');
+    return res;
+  },
+  refreshChip() {
+    const chip = $('#sync-chip');
+    if (!chip) return;
+    const syncMeta = App?.state?.meta?.sync || defaultSyncMeta();
+    let label = 'LOCAL_FILE_CACHE';
+    if (this.config?.enabled) {
+      const prefix = this.cloudName(this.config).toUpperCase().replace(/[^A-Z0-9]+/g, '_');
+      if (syncMeta.lastStatus === 'SYNCED') label = `${prefix}_SYNCED r${syncMeta.remoteRevision || 0}`;
+      else if (syncMeta.lastStatus === 'CONFLICT' || syncMeta.lastStatus === 'REMOTE_NEWER_LOCAL_DIRTY') label = `${prefix}_CONFLICT`;
+      else if (this.status?.connected === false && this.status?.message && this.status?.message !== 'Локальный режим') label = `${prefix}_OFFLINE`;
+      else if (syncMeta.localDirty) label = `${prefix}_DIRTY`;
+      else label = `${prefix}_READY`;
+    }
+    chip.textContent = `SYNC_MODE: ${label}`;
+    chip.title = this.describeStatus();
+  },
+  describeStatus() {
+    const syncMeta = App?.state?.meta?.sync || defaultSyncMeta();
+    const playerMeta = App?.state?.meta?.playerSync || defaultPlayerSyncMeta();
+    const parts = [
+      `campaign=${syncMeta.campaignId || this.config?.campaignId || '—'}`,
+      `device=${syncMeta.deviceLabel || this.config?.deviceLabel || '—'}`,
+      `bucket=${this.config?.storageBucket || 'campaign-assets'}`,
+      `remoteRevision=${syncMeta.remoteRevision || 0}`,
+      `localDirty=${syncMeta.localDirty ? 'yes' : 'no'}`,
+      `status=${syncMeta.lastStatus || 'LOCAL_ONLY'}`,
+      `playerSync=${playerMeta.lastStatus || 'LOCAL_ONLY'}`
+    ];
+    if (syncMeta.remoteUpdatedAt) parts.push(`remoteUpdatedAt=${syncMeta.remoteUpdatedAt}`);
+    if (syncMeta.lastError) parts.push(`error=${syncMeta.lastError}`);
+    return parts.join(' // ');
+  },
+  startPolling() {
+    this.stopPolling();
+    const every = Math.max(10000, Number(this.config?.pollIntervalMs || 45000));
+    this.pollTimer = setInterval(() => {
+      (async () => {
+        const canApplyWorld = !UiSyncGuard.isEditingCriticalForm() && !App?.state?.meta?.sync?.localDirty;
+        await this.checkForRemoteUpdates('poll', { applyIfNewer: canApplyWorld, silent: true });
+        await PlayerSync.pullUpdates('poll', { silent: true, rerender: !UiSyncGuard.isEditingCriticalForm() });
+        UiSyncGuard.flushIfIdle();
+      })().catch(error => {
+        Debug.error('SYNC_POLL_FAILED', { message: error?.message || String(error), stack: error?.stack || null });
+      });
+    }, every);
+  },
+  stopPolling() {
+    if (this.pollTimer) {
+      clearInterval(this.pollTimer);
+      this.pollTimer = null;
+    }
+  },
+  async saveConfigFromForm(formEl, options = {}) {
+    const formData = new FormData(formEl);
+    const payload = {
+      enabled: options.forceEnable ? true : Boolean(formData.get('enabled')),
+      provider: String(formData.get('provider') || this.config?.provider || 'supabase').trim().toLowerCase(),
+      url: String(formData.get('url') || '').trim(),
+      serverUrl: String(formData.get('serverUrl') || '').trim(),
+      accessToken: String(formData.get('accessToken') || '').trim(),
+      anonKey: String(formData.get('anonKey') || '').trim(),
+      pocketbaseEmail: String(formData.get('pocketbaseEmail') || '').trim(),
+      pocketbasePassword: String(formData.get('pocketbasePassword') || '').trim(),
+      pocketbaseUsersCollection: String(formData.get('pocketbaseUsersCollection') || 'app_users').trim() || 'app_users',
+      pocketbaseAssetsCollection: String(formData.get('pocketbaseAssetsCollection') || 'campaign_assets').trim() || 'campaign_assets',
+      campaignId: String(formData.get('campaignId') || '').trim(),
+      deviceLabel: String(formData.get('deviceLabel') || '').trim(),
+      tableName: String(formData.get('tableName') || 'campaign_snapshots').trim() || 'campaign_snapshots',
+      chatTableName: String(formData.get('chatTableName') || 'campaign_messages').trim() || 'campaign_messages',
+      playerTableName: String(formData.get('playerTableName') || 'campaign_players').trim() || 'campaign_players',
+      combatRuntimeTableName: String(formData.get('combatRuntimeTableName') || 'campaign_combat_runtime').trim() || 'campaign_combat_runtime',
+      storageBucket: String(formData.get('storageBucket') || 'campaign-assets').trim() || 'campaign-assets',
+      pollIntervalMs: Number(formData.get('pollIntervalMs') || 45000)
+    };
+    const res = await window.electronAPI?.saveSyncConfig?.(payload);
+    if (!res?.ok) {
+      Toast.show(`Не удалось сохранить sync config: ${res?.message || 'unknown error'}`, 'err');
+      return res;
+    }
+    const previousSyncConfig = this.config || {};
+    this.config = res.config;
+    const previousIdentity = [
+      this.provider(previousSyncConfig),
+      previousSyncConfig.url || previousSyncConfig.serverUrl || '',
+      previousSyncConfig.campaignId || '',
+      previousSyncConfig.tableName || ''
+    ].join('|');
+    const nextIdentity = [
+      this.provider(this.config),
+      this.config.url || this.config.serverUrl || '',
+      this.config.campaignId || '',
+      this.config.tableName || ''
+    ].join('|');
+    const keepRemoteMeta = previousIdentity === nextIdentity;
+    App.state.meta.sync = {
+      ...defaultSyncMeta(),
+      ...(keepRemoteMeta ? (App.state.meta.sync || {}) : {}),
+      enabled: Boolean(this.config.enabled),
+      configured: this.isConfiguredConfig(this.config),
+      localDirty: Boolean(App.state?.meta?.sync?.localDirty),
+      campaignId: this.config.campaignId || '',
+      deviceLabel: this.config.deviceLabel || '',
+      lastStatus: keepRemoteMeta ? (App.state?.meta?.sync?.lastStatus || 'LOCAL_ONLY') : 'BACKEND_CHANGED',
+      lastError: null
+    };
+    App.state.meta.syncMode = this.config.enabled ? `${this.cloudName(this.config).toUpperCase()}_MIRROR` : 'LOCAL_FILE_CACHE';
+    await Persistence.save(App.state);
+    if (this.config.enabled) this.startPolling(); else this.stopPolling();
+    this.refreshChip();
+    this.render();
+    App.updateBootView?.();
+    if (!options.silentToast) Toast.show(`Параметры ${this.cloudName(this.config)} сохранены локально`, 'ok');
+    return res;
+  },
+  renderBootstrap() {
+    const root = $('#login-sync-bootstrap');
+    if (!root) return;
+    const config = this.config || { enabled: false, provider: 'pocketbase', url: 'https://sync.grpg-sync.ru', pocketbaseEmail: '', pocketbasePassword: '', campaignId: 'main', deviceLabel: '', tableName: 'campaign_snapshots', storageBucket: 'campaign-assets', pollIntervalMs: 45000 };
+    root.innerHTML = `
+      <div class="boot-sync-card">
+        <div class="section-title">Подключение к кампании</div>
+        <form id="bootstrap-sync-form" class="form">
+          <input type="hidden" name="provider" value="${esc(config.provider || 'pocketbase')}" />
+          <div class="field"><label>POCKETBASE_URL</label><input class="input" name="url" value="${esc(config.url || 'https://sync.grpg-sync.ru')}" placeholder="https://sync.grpg-sync.ru" /></div>
+          <div class="cols2">
+            <div class="field"><label>APP_USER_EMAIL</label><input class="input" name="pocketbaseEmail" value="${esc(config.pocketbaseEmail || '')}" placeholder="dm@grpg-sync.local" /></div>
+            <div class="field"><label>APP_USER_PASSWORD</label><input class="input" type="password" name="pocketbasePassword" value="${esc(config.pocketbasePassword || '')}" /></div>
+          </div>
+          <div class="cols2">
+            <div class="field"><label>CAMPAIGN_ID</label><input class="input" name="campaignId" value="${esc(config.campaignId || 'main')}" placeholder="main" /></div>
+            <div class="field"><label>DEVICE_LABEL</label><input class="input" name="deviceLabel" value="${esc(config.deviceLabel || '')}" placeholder="player-laptop / gm-main-pc" /></div>
+          </div>
+          <input type="hidden" name="tableName" value="${esc(config.tableName || 'campaign_snapshots')}" />
+          <input type="hidden" name="chatTableName" value="${esc(config.chatTableName || 'campaign_messages')}" />
+          <input type="hidden" name="playerTableName" value="${esc(config.playerTableName || 'campaign_players')}" />
+          <input type="hidden" name="combatRuntimeTableName" value="${esc(config.combatRuntimeTableName || 'campaign_combat_runtime')}" />
+          <input type="hidden" name="pocketbaseUsersCollection" value="${esc(config.pocketbaseUsersCollection || 'app_users')}" />
+          <input type="hidden" name="pocketbaseAssetsCollection" value="${esc(config.pocketbaseAssetsCollection || 'campaign_assets')}" />
+          <input type="hidden" name="enabled" value="1" />
+          <input type="hidden" name="pollIntervalMs" value="${Number(config.pollIntervalMs || 45000)}" />
+          <div class="boot-sync-actions">
+            <button type="submit" class="primary">СОХРАНИТЬ И ПОДКЛЮЧИТЬ</button>
+            <button type="button" id="bootstrap-open-advanced" class="secondary">РАСШИРЕННЫЕ НАСТРОЙКИ</button>
+          </div>
+          <div class="boot-status">По умолчанию используется PocketBase на sync.grpg-sync.ru. После сохранения данные кампании будут проверены автоматически.</div>
+        </form>
+      </div>
+    `;
+    $('#bootstrap-sync-form')?.addEventListener('submit', async event => {
+      event.preventDefault();
+      const res = await this.saveConfigFromForm(event.currentTarget, { forceEnable: true, silentToast: true });
+      if (!res?.ok) return;
+      await this.ping();
+      await this.checkForRemoteUpdates('bootstrap-save', { applyIfNewer: true, force: true, silent: true });
+      await PlayerSync.pullUpdates('bootstrap-save', { forceFull: true, silent: true, rerender: false });
+      App.state = await Persistence.load();
+      mirrorPlayersIntoWorld(App.state);
+      App.fillLoginSelect();
+      App.updateBootView();
+      $('#login-error').textContent = '';
+      Toast.show('Синхронизация подключена. Теперь можно войти.', 'ok');
+    });
+    $('#bootstrap-open-advanced')?.addEventListener('click', () => UI.openModule('sync', { overLogin: true }));
+  },
+
+  render() {
+    const root = $('#sync-content');
+    if (!root) return;
+    const config = this.config || { enabled: false, provider: 'pocketbase', url: 'https://sync.grpg-sync.ru', campaignId: 'main', deviceLabel: '', tableName: 'campaign_snapshots', storageBucket: 'campaign-assets', pollIntervalMs: 45000 };
+    const provider = this.provider(config);
+    const syncMeta = App?.state?.meta?.sync || defaultSyncMeta();
+    root.innerHTML = `
+      <div class="module-wrap">
+        <div class="card pad18 form">
+          <div class="section-title">Параметры синхронизации</div>
+          <form id="sync-config-form" class="form">
+            <label class="selector-option"><input type="checkbox" name="enabled" ${config.enabled ? 'checked' : ''} /><div><b>Включить синхронизацию</b><span class="selector-sub subtle">Если выключено, приложение работает только через локальные файлы.</span></div></label>
+            <div class="field">
+              <label>BACKEND</label>
+              <select class="select" name="provider">
+                <option value="pocketbase" ${provider === 'pocketbase' ? 'selected' : ''}>PocketBase</option>
+                <option value="supabase" ${provider === 'supabase' ? 'selected' : ''}>Supabase</option>
+                <option value="selfhost" ${provider === 'selfhost' ? 'selected' : ''}>Custom self-host</option>
+              </select>
+            </div>
+            <div class="cols2">
+              <div class="field"><label>URL</label><input class="input" name="url" value="${esc(config.url || (provider === 'pocketbase' ? 'https://sync.grpg-sync.ru' : ''))}" placeholder="https://sync.grpg-sync.ru" /></div>
+              <div class="field"><label>CAMPAIGN_ID</label><input class="input" name="campaignId" value="${esc(config.campaignId || 'main')}" placeholder="main" /></div>
+            </div>
+            <div class="cols2 sync-provider-pocketbase" style="display:${provider === 'pocketbase' ? 'grid' : 'none'}">
+              <div class="field"><label>APP_USER_EMAIL</label><input class="input" name="pocketbaseEmail" value="${esc(config.pocketbaseEmail || '')}" placeholder="dm@grpg-sync.local" /></div>
+              <div class="field"><label>APP_USER_PASSWORD</label><input class="input" type="password" name="pocketbasePassword" value="${esc(config.pocketbasePassword || '')}" /></div>
+            </div>
+            <div class="cols2 sync-provider-supabase" style="display:${provider === 'supabase' ? 'grid' : 'none'}">
+              <div class="field"><label>SUPABASE_KEY</label><input class="input" name="anonKey" value="${esc(config.anonKey || '')}" placeholder="sb_publishable_... или anon key" /></div>
+              <div class="field"><label>STORAGE_BUCKET</label><input class="input" name="storageBucket" value="${esc(config.storageBucket || 'campaign-assets')}" placeholder="campaign-assets" /></div>
+            </div>
+            <div class="cols2 sync-provider-selfhost" style="display:${provider === 'selfhost' ? 'grid' : 'none'}">
+              <div class="field"><label>SERVER_URL</label><input class="input" name="serverUrl" value="${esc(config.serverUrl || '')}" placeholder="https://server.example.com" /></div>
+              <div class="field"><label>ACCESS_TOKEN</label><input class="input" name="accessToken" value="${esc(config.accessToken || '')}" /></div>
+            </div>
+            <div class="cols3">
+              <div class="field"><label>DEVICE_LABEL</label><input class="input" name="deviceLabel" value="${esc(config.deviceLabel || '')}" placeholder="dm-main-pc / player-laptop" /></div>
+              <div class="field"><label>POLL_INTERVAL_MS</label><input class="input" type="number" name="pollIntervalMs" value="${Number(config.pollIntervalMs || 45000)}" /></div>
+              <div class="field"><label>REMOTE_REVISION</label><div class="input" style="display:flex;align-items:center">${syncMeta.remoteRevision || 0}</div></div>
+            </div>
+            <details class="card pad12 subtle-card">
+              <summary>Имена коллекций / таблиц</summary>
+              <div class="cols2" style="margin-top:12px">
+                <div class="field"><label>SNAPSHOT</label><input class="input" name="tableName" value="${esc(config.tableName || 'campaign_snapshots')}" /></div>
+                <div class="field"><label>PLAYERS</label><input class="input" name="playerTableName" value="${esc(config.playerTableName || 'campaign_players')}" /></div>
+                <div class="field"><label>CHAT</label><input class="input" name="chatTableName" value="${esc(config.chatTableName || 'campaign_messages')}" /></div>
+                <div class="field"><label>COMBAT_RUNTIME</label><input class="input" name="combatRuntimeTableName" value="${esc(config.combatRuntimeTableName || 'campaign_combat_runtime')}" /></div>
+                <div class="field"><label>PB_USERS</label><input class="input" name="pocketbaseUsersCollection" value="${esc(config.pocketbaseUsersCollection || 'app_users')}" /></div>
+                <div class="field"><label>PB_ASSETS</label><input class="input" name="pocketbaseAssetsCollection" value="${esc(config.pocketbaseAssetsCollection || 'campaign_assets')}" /></div>
+              </div>
+            </details>
+            <div class="cols3">
+              <div class="field"><label>REMOTE_UPDATED_AT</label><div class="input" style="display:flex;align-items:center">${esc(syncMeta.remoteUpdatedAt || '—')}</div></div>
+              <div class="field"><label>BACKEND_MODE</label><div class="input" style="display:flex;align-items:center">${esc(this.cloudName(config))}</div></div>
+              <div class="field"><label>ASSET_SYNC</label><div class="input" style="display:flex;align-items:center">IMAGE_UPLOAD_ON_PUSH</div></div>
+            </div>
+            <div class="row config-actions">
+              <button type="submit" class="primary">СОХРАНИТЬ НАСТРОЙКИ</button>
+              <button type="button" id="sync-test-btn" class="secondary">ПРОВЕРИТЬ СВЯЗЬ</button>
+              <button type="button" id="sync-pull-btn" class="secondary">ПОЛУЧИТЬ ИЗ ОБЛАКА</button>
+              <button type="button" id="sync-push-btn" class="secondary">ОТПРАВИТЬ В ОБЛАКО</button>
+            </div>
+          </form>
+        </div>
+        <div class="card pad18">
+          <div class="section-title">Статус синхронизации</div>
+          <div class="data-row"><span class="data-label">Режим</span><span class="data-value">${esc(App?.state?.meta?.syncMode || 'LOCAL_FILE_CACHE')}</span></div>
+          <div class="data-row"><span class="data-label">Backend</span><span class="data-value">${esc(this.cloudName(config))}</span></div>
+          <div class="data-row"><span class="data-label">Статус</span><span class="data-value">${esc(syncMeta.lastStatus || 'LOCAL_ONLY')}</span></div>
+          <div class="data-row"><span class="data-label">Локальные изменения</span><span class="data-value">${syncMeta.localDirty ? 'YES' : 'NO'}</span></div>
+          <div class="data-row"><span class="data-label">Последняя проверка</span><span class="data-value">${esc(syncMeta.lastCheckedAt || '—')}</span></div>
+          <div class="data-row"><span class="data-label">Последняя отправка</span><span class="data-value">${esc(syncMeta.lastPushedAt || '—')}</span></div>
+          <div class="data-row"><span class="data-label">Последнее получение</span><span class="data-value">${esc(syncMeta.lastPulledAt || '—')}</span></div>
+          <div class="small-note" style="margin-top:12px">${esc(syncMeta.lastError || 'Ошибок нет. При конфликте приложение не перезаписывает облако автоматически.')}</div>
+        </div>
+      </div>
+    `;
+    $('#sync-config-form select[name="provider"]')?.addEventListener('change', event => {
+      const value = String(event.currentTarget.value || 'supabase');
+      $$('.sync-provider-pocketbase').forEach(el => el.style.display = value === 'pocketbase' ? 'grid' : 'none');
+      $$('.sync-provider-supabase').forEach(el => el.style.display = value === 'supabase' ? 'grid' : 'none');
+      $$('.sync-provider-selfhost').forEach(el => el.style.display = value === 'selfhost' ? 'grid' : 'none');
+    });
+    $('#sync-config-form')?.addEventListener('submit', async event => {
+      event.preventDefault();
+      await this.saveConfigFromForm(event.currentTarget);
+    });
+    $('#sync-test-btn')?.addEventListener('click', async () => {
+      const res = await this.ping();
+      if (res?.ok && res?.connected) Toast.show(`Связь с ${this.cloudName()} подтверждена`, 'ok');
+      else Toast.show(`Связь с ${this.cloudName()} не подтверждена: ${res?.message || 'unknown error'}`, 'info');
+    });
+    $('#sync-pull-btn')?.addEventListener('click', async () => {
+      await this.checkForRemoteUpdates('manual-pull', { applyIfNewer: true, force: true, silent: false });
+      await PlayerSync.pullUpdates('manual-pull', { forceFull: true, silent: false, rerender: true });
+    });
+    $('#sync-push-btn')?.addEventListener('click', async () => {
+      await this.pushCurrentSnapshot('manual-push', { silent: false });
+    });
+  }
+};
+
+/* v1.0.15 patch: live world snapshot refresh for skills, tickers and reputation sections */
+(function() {
+  if (window.__worldSnapshotRealtimeV1015) return;
+  window.__worldSnapshotRealtimeV1015 = true;
+
+  function snapshotEventFingerprintV1015(payload = {}) {
+    const remote = payload?.remote || payload || {};
+    return [payload?.eventType || '', remote?.campaignId || '', remote?.revision || 0, remote?.updatedAt || '', remote?.updatedBy || ''].join('|');
+  }
+
+  function shouldApplyWorldSnapshotNowV1015() {
+    if (!Sync?.config?.enabled) return false;
+    if (UiSyncGuard?.isEditingCriticalForm?.()) return false;
+    if (App?.state?.meta?.sync?.localDirty) return false;
+    return true;
+  }
+
+  Sync._seenWorldSnapshotEventsV1015 = Sync._seenWorldSnapshotEventsV1015 || {};
+  Sync._pendingWorldSnapshotPullV1015 = null;
+
+  Sync.scheduleWorldSnapshotPullV1015 = function(reason = 'world-snapshot-event', delayMs = 350) {
+    if (this._pendingWorldSnapshotPullV1015) clearTimeout(this._pendingWorldSnapshotPullV1015);
+    this._pendingWorldSnapshotPullV1015 = setTimeout(() => {
+      this._pendingWorldSnapshotPullV1015 = null;
+      (async () => {
+        await this.loadConfig();
+        if (!this.config?.enabled) return;
+        if (!shouldApplyWorldSnapshotNowV1015()) {
+          if (App?.state?.meta?.sync?.localDirty) {
+            await this.checkForRemoteUpdates(`${reason}:dirty-check`, { applyIfNewer: false, silent: true });
+            return;
+          }
+          this.scheduleWorldSnapshotPullV1015(`${reason}:deferred`, 1200);
+          return;
+        }
+        await this.checkForRemoteUpdates(reason, { applyIfNewer: true, silent: true });
+      })().catch(error => {
+        Debug.error('WORLD_SNAPSHOT_REALTIME_PULL_FAILED', { message: error?.message || String(error), stack: error?.stack || null });
+      });
+    }, Math.max(0, Number(delayMs || 0)));
+  };
+
+  Sync.initWorldSnapshotRealtimeBridgeV1015 = function() {
+    if (this._worldSnapshotRealtimeUnsubV1015 || !window.electronAPI?.onSyncSnapshotEvent) return;
+    this._worldSnapshotRealtimeUnsubV1015 = window.electronAPI.onSyncSnapshotEvent(payload => {
+      const fp = snapshotEventFingerprintV1015(payload);
+      const now = Date.now();
+      const seenAt = Number(this._seenWorldSnapshotEventsV1015[fp] || 0);
+      if (fp && seenAt && now - seenAt < 15000) return;
+      if (fp) this._seenWorldSnapshotEventsV1015[fp] = now;
+
+      const remoteRevision = Number(payload?.remote?.revision || 0);
+      const localRevision = Number(App?.state?.meta?.sync?.remoteRevision || 0);
+      if (remoteRevision && remoteRevision <= localRevision) return;
+      this.scheduleWorldSnapshotPullV1015('world-snapshot-realtime', 350);
+
+      Object.entries(this._seenWorldSnapshotEventsV1015).forEach(([key, stamp]) => {
+        if (now - Number(stamp || 0) > 30000) delete this._seenWorldSnapshotEventsV1015[key];
+      });
+    });
+  };
+
+  const __syncInitV1015 = Sync.init.bind(Sync);
+  Sync.init = async function() {
+    const result = await __syncInitV1015();
+    this.initWorldSnapshotRealtimeBridgeV1015();
+    return result;
+  };
+
+  const __syncSaveConfigFromFormV1015 = Sync.saveConfigFromForm.bind(Sync);
+  Sync.saveConfigFromForm = async function(formEl, options = {}) {
+    const result = await __syncSaveConfigFromFormV1015(formEl, options);
+    this.initWorldSnapshotRealtimeBridgeV1015();
+    if (result?.ok && result?.config?.enabled) this.scheduleWorldSnapshotPullV1015('sync-config-saved', 250);
+    return result;
+  };
+})();
+
+
+const PlayerSync = {
+  shouldIsolateUsersFromSnapshot() {
+    return Boolean(Sync?.config?.enabled && window.electronAPI?.pullPlayers);
+  },
+  async pullUpdates(reason = 'manual', options = {}) {
+    if (!this.shouldIsolateUsersFromSnapshot()) return { ok: true, status: 'disabled', rows: [] };
+    const meta = ensurePlayerSyncMeta(App.state);
+    const since = options.forceFull ? null : (meta.lastPulledAt || null);
+    const res = await window.electronAPI.pullPlayers({ since, limit: options.limit || 500 });
+    if (!res?.ok) {
+      meta.lastStatus = 'PULL_FAILED';
+      meta.lastError = res?.message || 'PLAYER_PULL_FAILED';
+      await Persistence.save(App.state);
+      return res;
+    }
+    const rows = Array.isArray(res.rows) ? res.rows : [];
+    if (!rows.length) {
+      meta.enabled = true;
+      meta.lastStatus = 'UP_TO_DATE';
+      meta.lastError = null;
+      meta.lastPulledAt = meta.lastPulledAt || new Date().toISOString();
+      await Persistence.save(App.state);
+      return { ...res, rows };
+    }
+    for (const row of rows) this.applyRemoteRow(row);
+    meta.enabled = true;
+    meta.lastStatus = 'SYNCED';
+    meta.lastError = null;
+    meta.lastPulledAt = rows.reduce((latest, row) => {
+      const stamp = row?.updatedAt || row?.updated_at || latest || null;
+      if (!latest) return stamp;
+      return new Date(stamp || 0).getTime() > new Date(latest || 0).getTime() ? stamp : latest;
+    }, meta.lastPulledAt || new Date().toISOString());
+    await App.writeLocalMirrors();
+    if (options.rerender !== false) {
+      if (UiSyncGuard.isEditingCriticalForm()) UiSyncGuard.defer(`player-pull:${reason}`);
+      else App.refreshAfterLocalWrite();
+    }
+    return { ...res, rows };
+  },
+  applyRemoteRow(row = {}) {
+    const playerId = String(row.playerId || row.player_id || '').trim();
+    if (!playerId) return;
+    if (row.deletedAt || row.deleted_at) {
+      delete App.state.users[playerId];
+      delete PLAYER_TEMPLATES[playerId];
+      dropPlayerRemoteMeta(playerId, App.state);
+      setPlayerRemoteMeta(playerId, {
+        version: Number(row.version || 0),
+        updatedAt: row.updatedAt || row.updated_at || null,
+        updatedBy: row.updatedBy || row.updated_by || null,
+        clientUpdatedAt: row.clientUpdatedAt || row.client_updated_at || null,
+        deletedAt: row.deletedAt || row.deleted_at || null
+      }, App.state);
+      return;
+    }
+    const source = row.player || row.player_json || {};
+    const normalized = normalizePlayerProfileV2({ ...(PLAYER_TEMPLATES[playerId] || {}), ...(source || {}), id: playerId });
+    App.state.users[playerId] = normalized;
+    PLAYER_TEMPLATES[playerId] = deep(normalized);
+    setPlayerRemoteMeta(playerId, {
+      version: Number(row.version || 0),
+      updatedAt: row.updatedAt || row.updated_at || null,
+      updatedBy: row.updatedBy || row.updated_by || null,
+      clientUpdatedAt: row.clientUpdatedAt || row.client_updated_at || null,
+      deletedAt: row.deletedAt || row.deleted_at || null
+    }, App.state);
+  },
+  async finalizeSuccessfulWrite(row, notice, options = {}) {
+    if (row) this.applyRemoteRow(row);
+    const meta = ensurePlayerSyncMeta(App.state);
+    meta.enabled = true;
+    meta.lastStatus = 'SYNCED';
+    meta.lastError = null;
+    meta.lastPushedAt = new Date().toISOString();
+    await App.writeLocalMirrors();
+    if (options.rerender !== false) App.refreshAfterLocalWrite();
+    if (notice) Toast.show(notice, 'ok');
+    return { ok: true, row };
+  },
+  async pushPlayerPatch(playerId, patch = {}, options = {}) {
+    const cleanPatch = Object.fromEntries(Object.entries(patch || {}).filter(([, value]) => value !== undefined));
+    if (!Object.keys(cleanPatch).length) {
+      if (options.notice) Toast.show(options.notice, 'ok');
+      if (options.rerender !== false) App.refreshAfterLocalWrite();
+      return { ok: true, status: 'noop' };
+    }
+    if (!this.shouldIsolateUsersFromSnapshot() || !window.electronAPI?.patchPlayer) {
+      if (options.rerender !== false) App.refreshAfterLocalWrite();
+      if (options.notice) Toast.show(options.notice, 'ok');
+      return { ok: true, status: 'disabled' };
+    }
+    const baseMeta = getPlayerRemoteMeta(playerId, App.state);
+    let res = await window.electronAPI.patchPlayer({
+      playerId,
+      baseVersion: Number(baseMeta.version || 0),
+      player: cleanPatch,
+      updatedBy: activeSyncActorLabel(),
+      clientUpdatedAt: new Date().toISOString()
+    });
+    if (!res?.ok && res?.status === 'conflict' && res?.remote) {
+      const latestVersion = Number(res.remote.version || 0);
+      res = await window.electronAPI.patchPlayer({
+        playerId,
+        baseVersion: latestVersion,
+        player: cleanPatch,
+        updatedBy: activeSyncActorLabel(),
+        clientUpdatedAt: new Date().toISOString()
+      });
+    }
+    if (!res?.ok) {
+      const meta = ensurePlayerSyncMeta(App.state);
+      meta.lastStatus = 'PUSH_FAILED';
+      meta.lastError = res?.message || 'PLAYER_PUSH_FAILED';
+      await Persistence.save(App.state);
+      return res;
+    }
+    return this.finalizeSuccessfulWrite(res.row || null, options.notice || null, options);
+  },
+  async pushPlayerRecord(playerId, playerRecord, options = {}) {
+    if (!this.shouldIsolateUsersFromSnapshot() || !window.electronAPI?.pushPlayer) {
+      if (options.rerender !== false) App.refreshAfterLocalWrite();
+      if (options.notice) Toast.show(options.notice, 'ok');
+      return { ok: true, status: 'disabled' };
+    }
+    const baseMeta = getPlayerRemoteMeta(playerId, App.state);
+    let res = await window.electronAPI.pushPlayer({
+      playerId,
+      baseVersion: Number(baseMeta.version || 0),
+      player: deep(playerRecord || {}),
+      updatedBy: activeSyncActorLabel(),
+      clientUpdatedAt: new Date().toISOString()
+    });
+    if (!res?.ok && res?.status === 'conflict' && res?.remote) {
+      res = await window.electronAPI.pushPlayer({
+        playerId,
+        baseVersion: Number(res.remote.version || 0),
+        player: deep(playerRecord || {}),
+        updatedBy: activeSyncActorLabel(),
+        clientUpdatedAt: new Date().toISOString()
+      });
+    }
+    if (!res?.ok) {
+      const meta = ensurePlayerSyncMeta(App.state);
+      meta.lastStatus = 'PUSH_FAILED';
+      meta.lastError = res?.message || 'PLAYER_PUSH_FAILED';
+      await Persistence.save(App.state);
+      return res;
+    }
+    if (options.oldId && options.oldId !== playerId) {
+      await this.deletePlayer(options.oldId, { silentToast: true, rerender: false });
+    }
+    return this.finalizeSuccessfulWrite(res.row || null, options.notice || null, options);
+  },
+  async deletePlayer(playerId, options = {}) {
+    if (!this.shouldIsolateUsersFromSnapshot() || !window.electronAPI?.deletePlayer) {
+      if (options.rerender !== false) App.refreshAfterLocalWrite();
+      if (!options.silentToast && options.notice) Toast.show(options.notice, 'ok');
+      return { ok: true, status: 'disabled' };
+    }
+    const baseMeta = getPlayerRemoteMeta(playerId, App.state);
+    const res = await window.electronAPI.deletePlayer({
+      playerId,
+      baseVersion: Number(baseMeta.version || 0),
+      updatedBy: activeSyncActorLabel(),
+      clientUpdatedAt: new Date().toISOString()
+    });
+    if (!res?.ok) {
+      const meta = ensurePlayerSyncMeta(App.state);
+      meta.lastStatus = 'DELETE_FAILED';
+      meta.lastError = res?.message || 'PLAYER_DELETE_FAILED';
+      await Persistence.save(App.state);
+      return res;
+    }
+    return this.finalizeSuccessfulWrite(res.row || null, options.silentToast ? null : (options.notice || null), options);
+  }
+};
+
+const App = {
+  state: { meta: { version: 7, syncMode: 'LOCAL_FILE_CACHE', lastUpdatedAt: null, sync: defaultSyncMeta(), playerSync: defaultPlayerSyncMeta() }, users: {}, npcChats: {}, gmReports: { items: [] }, toolState: {} },
+  worldLoaded: false,
+  currentUserId: null,
+  uiHoverLock: false,
+  async init() {
+    await this.loadWorldData();
+    await bootstrapReadMarkersCache();
+    this.state = await Persistence.load();
+    pruneReadMarkersForState();
+    mirrorPlayersIntoWorld(this.state);
+    this.bindStaticEvents();
+    await Sync.init();
+    if (Sync.isConfigured()) {
+      await Sync.checkForRemoteUpdates('startup', { applyIfNewer: true, silent: true });
+      await PlayerSync.pullUpdates('startup-full', { forceFull: true, silent: true, rerender: false });
+      this.state = await Persistence.load();
+      pruneReadMarkersForState();
+      mirrorPlayersIntoWorld(this.state);
+    }
+    this.fillLoginSelect();
+    this.updateClock();
+    setInterval(() => this.updateClock(), 1000);
+    GalaxyMap.init();
+    await this.fillPathHint();
+    this.updateBootView();
+    const session = Persistence.loadSession();
+    if (session?.userId && this.state.users[session.userId]) {
+      this.currentUserId = session.userId;
+      this.finishLogin();
+    }
+  },
+  async loadWorldData() {
+    if (window.electronAPI?.loadWorldData) {
+      const response = await window.electronAPI.loadWorldData();
+      if (response?.ok && response.world) {
+        applyWorldData(response.world);
+        this.worldLoaded = true;
+        this.worldDataDir = response.dataDir || null;
+        try { renderGalaxyLegendOverlay(); } catch {}
+        return;
+      }
+      console.error('WORLD_LOAD_FAILED', response);
+      $('#login-error').textContent = `Не удалось загрузить файлы мира: ${response?.message || 'unknown error'}`;
+    }
+    applyWorldData(window.GalacticData || {});
+    this.worldLoaded = Object.keys(PLAYER_TEMPLATES).length > 0;
+    if (!this.worldLoaded) {
+      $('#login-error').textContent = 'Файлы мира не найдены или пусты.';
+    }
+  },
+  fillLoginSelect() {
+    const sourcePlayers = sortEntitiesForList(Object.values(this.state?.users || PLAYER_TEMPLATES));
+    if (!sourcePlayers.length) {
+      $('#char-select').innerHTML = '<option value=>Нет доступных профилей</option>';
+      this.renderLoginPreview();
+      return;
+    }
+    $('#char-select').innerHTML = sourcePlayers.map(player => `<option value="${player.id}">${esc(player.displayName)}</option>`).join('');
+    this.renderLoginPreview();
+    this.updateBootView?.();
+  },
+  renderLoginPreview() {
+    const root = $('#login-preview');
+    if (!root) return;
+    const user = this.state.users[$('#char-select')?.value] || Object.values(this.state.users)[0];
+    if (!user) {
+      root.innerHTML = '<div class="small-note">Нет доступных профилей.</div>';
+      return;
+    }
+    const visibleSystemsCount = getVisibleSystems(user).length;
+    root.innerHTML = `
+      <div class="login-preview-inner">
+        ${renderThumb(user, { size: 'lg', type: 'player', glyph: user.avatarGlyph || initials(user.displayName) })}
+        <div>
+          <div><b>${esc(user.displayName)}</b></div>
+          <div class="subtle">${esc(user.rank || '')}</div>
+          <div class="small-note" style="margin-top:6px">Доступно систем: ${visibleSystemsCount} · кредиты: ${formatCredits(user.credits)}</div>
+        </div>
+      </div>
+    `;
+  },
+  updateBootView() {
+    const bootstrap = $('#login-sync-bootstrap');
+    const authPanel = $('#login-auth-panel');
+    const copy = $('#login-copy');
+    const loginBox = $('#login-screen .login-box');
+    const title = $('#login-screen .login-box h2');
+    const needsBootstrap = Sync.needsBootstrap();
+    loginBox?.classList.toggle('bootstrap-mode', needsBootstrap);
+    if (title) title.textContent = needsBootstrap ? 'Подключение к кампании' : 'Вход в профиль';
+    if (copy) {
+      copy.textContent = needsBootstrap
+        ? 'На первом запуске нужно указать параметры синхронизации для этой кампании.'
+        : '';
+    }
+    if (bootstrap) {
+      bootstrap.classList.toggle('open', needsBootstrap);
+      if (needsBootstrap) Sync.renderBootstrap();
+      else bootstrap.innerHTML = '';
+    }
+    authPanel?.classList.toggle('hidden', needsBootstrap);
+    $('#login-sync-btn') && ($('#login-sync-btn').style.display = needsBootstrap ? 'none' : 'inline-flex');
+  },
+
+  bindStaticEvents() {
+    document.addEventListener('click', event => {
+      AudioManager.onUserGesture();
+      if (event.target.closest('button, .dock-item, .player-chip, .entity-card-btn, .market-link')) {
+        AudioManager.play('uiClick', { volume: 0.65 });
+      }
+    }, true);
+    $('#char-select').addEventListener('change', () => this.renderLoginPreview());
+    $('#login-btn').addEventListener('click', () => this.login());
+    $('#sync-open-btn')?.addEventListener('click', () => UI.openModule('sync'));
+    $('#login-sync-btn')?.addEventListener('click', () => UI.openModule('sync', { overLogin: true }));
+    $('#reset-btn').addEventListener('click', async () => {
+      await Persistence.resetAll();
+      this.state = await Persistence.load();
+      pruneReadMarkersForState();
+      mirrorPlayersIntoWorld(this.state);
+      this.fillLoginSelect();
+      $('#pass-input').value = '';
+      $('#login-error').textContent = 'Сохранения сброшены.';
+      Toast.show('Сохранения сброшены', 'info');
+    });
+    $('#logout-btn').addEventListener('click', () => this.logout());
+    $('#open-profile').addEventListener('click', () => UI.openModule('profile'));
+    $('#open-wiki').addEventListener('click', () => UI.openModule('wiki'));
+    $('#open-market-direct').addEventListener('click', () => {
+      if (!UI.selectedPlanetId) {
+        Toast.show('Сначала выбери планету на карте', 'info');
+        return;
+      }
+      UI.openModule('market');
+    });
+    $('#gm-dock-btn').addEventListener('click', () => UI.openModule('config'));
+    $('#back-to-galaxy').addEventListener('click', () => GalaxyMap.exitSystem());
+    $('#return-to-center')?.addEventListener('click', () => GalaxyMap.recenterGalaxy());
+    $('#market-open-btn').addEventListener('click', () => UI.openModule('market'));
+    $('#wiki-search-btn').addEventListener('click', () => Wiki.search($('#wiki-input').value));
+    $('#wiki-input').addEventListener('keydown', event => {
+      if (event.key === 'Enter') Wiki.search($('#wiki-input').value);
+    });
+    $('#export-profile-btn').addEventListener('click', () => UI.exportProfile());
+    $('#restore-data-btn')?.addEventListener('click', () => GM.restoreDefaults());
+    $('#open-world-config-btn')?.addEventListener('click', () => UI.openModule('config'));
+    $('#reset-world-btn')?.addEventListener('click', () => Configurator.resetWorldDefaults());
+    $$('.module-close').forEach(button => button.addEventListener('click', () => UI.closeModule()));
+
+    const hoverTargets = ['#hud-analysis', '#dock', '#mod-profile', '#mod-market', '#mod-wiki', '#mod-gm', '#mod-config', '#mod-sync', '#mod-tool'];
+    hoverTargets.forEach(selector => {
+      const element = $(selector);
+      element?.addEventListener('mouseenter', () => { this.uiHoverLock = true; });
+      element?.addEventListener('mouseleave', () => { this.uiHoverLock = false; });
+    });
+  },
+  async fillPathHint() {
+    if (window.electronAPI?.getPaths) {
+      const paths = await window.electronAPI.getPaths();
+      if (paths?.stateFile) $('#state-path').textContent = `STATE_FILE: ${paths.stateFile} // WORLD_DATA: ${paths.worldDataDir || 'n/a'} // SYNC_CFG: ${paths.syncConfigFile || 'n/a'}`;
+    } else {
+      $('#state-path').textContent = 'STATE_FILE: browser localStorage fallback';
+    }
+  },
+  get currentUser() {
+    return this.state.users[this.currentUserId] || null;
+  },
+  async login() {
+    if (Sync.needsBootstrap()) {
+      this.updateBootView();
+      Toast.show('Сначала подключи синхронизацию для этой кампании', 'info');
+      return;
+    }
+    const requestedUserId = $('#char-select').value;
+    const pass = $('#pass-input').value;
+    await Sync.checkForRemoteUpdates('login', { applyIfNewer: true, silent: true });
+    await PlayerSync.pullUpdates('login', { silent: true, rerender: false });
+    this.state = await Persistence.load();
+    mirrorPlayersIntoWorld(this.state);
+    this.fillLoginSelect();
+    if (requestedUserId && this.state.users[requestedUserId]) {
+      $('#char-select').value = requestedUserId;
+      this.renderLoginPreview();
+    }
+    const userId = $('#char-select').value;
+    const target = this.state.users[userId];
+    if (!target) {
+      $('#login-error').textContent = 'Профиль не найден. Проверь локальные файлы и облачную синхронизацию.';
+      return;
+    }
+    if (target.pass !== pass) {
+      $('#login-error').textContent = 'ERROR: WRONG_PASS';
+      return;
+    }
+    this.currentUserId = userId;
+    Persistence.saveSession(userId);
+    this.finishLogin();
+  },
+  finishLogin() {
+    const user = this.currentUser;
+    Sync.refreshChip();
+    $('#login-screen').classList.remove('open');
+    $('#dock').style.display = 'flex';
+    $('#logout-btn').style.display = 'inline-flex';
+    $('#gm-dock-btn').style.display = user?.role === 'gm' ? 'grid' : 'none';
+    $('#status-line').textContent = `OS_CORE: v6.0 // AUTH: ${user.displayName.toUpperCase()}`;
+    Sync.refreshChip();
+    AudioManager.onUserGesture();
+    UI.renderProfile();
+    Wiki.prime();
+    try { renderGalaxyLegendOverlay(); } catch {}
+    requestAnimationFrame(() => { try { renderGalaxyLegendOverlay(); } catch {} });
+    setTimeout(() => { try { renderGalaxyLegendOverlay(); } catch {} }, 60);
+  },
+  logout() {
+    this.currentUserId = null;
+    Persistence.clearSession();
+    $('#login-screen').classList.add('open');
+    $('#dock').style.display = 'none';
+    $('#logout-btn').style.display = 'none';
+    $('#gm-dock-btn').style.display = 'none';
+    $('#pass-input').value = '';
+    $('#login-error').textContent = '';
+    this.updateBootView();
+    AudioManager.stopAmbient();
+    UI.closeModule();
+  },
+  updateClock() {
+    $('#clock').textContent = new Date().toLocaleTimeString('ru-RU');
+  },
+  async writeLocalMirrors() {
+    mirrorPlayersIntoWorld(this.state);
+    await Persistence.save(this.state);
+    const worldMirrorRes = await persistPlayerWorldMirror(this.state);
+    if (!worldMirrorRes?.ok) {
+      Debug.error('PLAYER_WORLD_MIRROR_FAILED', { message: worldMirrorRes?.message || 'unknown error' });
+    } else {
+      Debug.log('PLAYER_WORLD_MIRROR_DONE', {
+        users: Object.keys(this.state?.users || {}).length,
+        currentUserId: this.currentUserId || null,
+        credits: this.currentUser?.credits ?? null,
+        inventoryCount: Array.isArray(this.currentUser?.inventory) ? this.currentUser.inventory.length : null
+      });
+    }
+    return worldMirrorRes;
+  },
+  refreshAfterLocalWrite() {
+    this.fillLoginSelect();
+    if (this.currentUserId && !this.state.users[this.currentUserId]) {
+      this.logout();
+      return;
+    }
+    this.renderLive();
+    Sync.refreshChip();
+  },
+  async saveState(notice = 'Данные сохранены') {
+    Sync.markLocalDirty('LOCAL_EDIT_PENDING_SYNC');
+    await this.writeLocalMirrors();
+    await Sync.pushCurrentSnapshot('state-save', { silent: true });
+    this.state = await Persistence.load();
+    mirrorPlayersIntoWorld(this.state);
+    this.refreshAfterLocalWrite();
+    Toast.show(notice, 'ok');
+  },
+  async saveStateLocalOnly(notice = 'Данные сохранены', options = {}) {
+    await this.writeLocalMirrors();
+    this.refreshAfterLocalWrite();
+    if (!options.silentToast) Toast.show(notice, 'ok');
+    return { ok: true };
+  },
+  renderLive() {
+    if (this.currentUser) UI.renderProfile();
+    if (UI.activeModuleId === 'market') UI.renderMarket();
+    if (UI.activeModuleId === 'config') Configurator.render();
+    if (UI.activeModuleId === 'sync') Sync.render();
+    if (UI.activeModuleId === 'wiki' && Wiki.currentView) Wiki.showEntity(Wiki.currentView.type, Wiki.currentView.id);
+    if (UI.activeModuleId === 'tool') Tooling.render();
+  }
+};
+
+
+function playerEntities(includeGm = false) {
+  return Object.values(PLAYER_TEMPLATES).filter(player => includeGm || player.role !== 'gm');
+}
+
+function entityVisibilityIds(entity) {
+  return Array.isArray(entity?.visibility?.playerIds) ? entity.visibility.playerIds : [];
+}
+
+function isEntityVisible(entity, user = App.currentUser) {
+  if (!entity) return false;
+  if (!user || user.role === 'gm') return true;
+  const allowed = entityVisibilityIds(entity);
+  return allowed.length === 0 || allowed.includes(user.id);
+}
+
+function getVisibleSystems(user = App.currentUser) {
+  return Data.systems.filter(system => {
+    if (!isEntityVisible(system, user)) return false;
+    const planetIds = Array.isArray(system.planetIds) ? system.planetIds : [];
+    if (!planetIds.length) return true;
+    return planetIds.some(planetId => isEntityVisible(Data.getPlanet(planetId), user));
+  });
+}
+
+function getVisiblePlanetsForSystem(system, user = App.currentUser) {
+  return (system?.planetIds || []).map(id => Data.getPlanet(id)).filter(planet => isEntityVisible(planet, user));
+}
+
+function getSystemLabel(system) {
+  return String(system?.markerLabel || system?.name || system?.id || '').trim();
+}
+
+function drawSystemMarker(ctx, point, size, system, options = {}) {
+  const active = !!options.active;
+  const style = SYSTEM_MARKER_STYLES.some(option => option.id === system?.markerStyle) ? system.markerStyle : 'orbital';
+  const ringColor = active ? '255,245,255' : hexToRgbString(system?.color || '#7df9ff', '118,232,255');
+  const glow = options.glow || 1;
+  const line = (options.lineWidth || 1.6) * (options.dpr || 1);
+
+  ctx.save();
+  ctx.translate(point.sx, point.sy);
+  ctx.lineWidth = line;
+  ctx.strokeStyle = `rgba(${ringColor},0.95)`;
+  ctx.fillStyle = 'rgba(4,10,18,0.92)';
+
+  if (style === 'orbital') {
+    ctx.beginPath();
+    ctx.ellipse(0, 0, size * 1.62, size * 0.92, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.globalAlpha = 0.28 * glow;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, size * 1.95, size * 1.12, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = `rgba(${ringColor},0.98)`;
+    ctx.beginPath();
+    ctx.arc(0, 0, size * 0.28, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(0, -size * 1.4, size * 0.28, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (style === 'node') {
+    ctx.globalAlpha = 0.26 * glow;
+    for (let i = 1; i <= 3; i += 1) {
+      ctx.beginPath();
+      ctx.arc(0, 0, size * (0.75 + i * 0.52), 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    ctx.beginPath();
+    ctx.moveTo(-size * 1.35, 0); ctx.lineTo(size * 1.35, 0);
+    ctx.moveTo(0, -size * 1.35); ctx.lineTo(0, size * 1.35);
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(4,10,18,0.94)';
+    ctx.beginPath();
+    ctx.arc(0, 0, size * 0.68, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = `rgba(${ringColor},0.98)`;
+    ctx.beginPath();
+    ctx.arc(0, 0, size * 0.22, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(0, -size * 1.52, size * 0.22, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (style === 'blackhole') {
+    ctx.globalAlpha = 0.24 * glow;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, size * 2.2, size * 1.25, -0.2, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = 0.16 * glow;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, size * 2.65, size * 1.55, -0.2, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = 'rgba(0,0,0,0.88)';
+    ctx.beginPath();
+    ctx.arc(0, 0, size * 0.92, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = `rgba(${ringColor},0.88)`;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, size * 1.58, size * 0.62, -0.24, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = `rgba(${ringColor},0.92)`;
+    ctx.beginPath();
+    ctx.arc(0, -size * 1.25, size * 0.22, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (style === 'ship') {
+    ctx.fillStyle = 'rgba(4,10,18,0.94)';
+    ctx.beginPath();
+    ctx.moveTo(0, -size * 1.2);
+    ctx.lineTo(size * 1.06, size * 0.86);
+    ctx.lineTo(0, size * 0.42);
+    ctx.lineTo(-size * 1.06, size * 0.86);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = `rgba(${ringColor},0.98)`;
+    ctx.beginPath();
+    ctx.moveTo(0, -size * 0.7);
+    ctx.lineTo(size * 0.44, size * 0.16);
+    ctx.lineTo(0, -size * 0.02);
+    ctx.lineTo(-size * 0.44, size * 0.16);
+    ctx.closePath();
+    ctx.fill();
+    ctx.globalAlpha = 0.34 * glow;
+    ctx.beginPath();
+    ctx.ellipse(0, size * 0.78, size * 0.84, size * 0.34, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  } else if (style === 'diamond') {
+    ctx.beginPath();
+    ctx.moveTo(0, -size * 1.18);
+    ctx.lineTo(size * 1.12, 0);
+    ctx.lineTo(0, size * 1.18);
+    ctx.lineTo(-size * 1.12, 0);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = `rgba(${ringColor},0.98)`;
+    ctx.beginPath();
+    ctx.moveTo(0, -size * 0.44);
+    ctx.lineTo(size * 0.44, 0);
+    ctx.lineTo(0, size * 0.44);
+    ctx.lineTo(-size * 0.44, 0);
+    ctx.closePath();
+    ctx.fill();
+  } else if (style === 'square') {
+    const r = size * 0.38;
+    ctx.beginPath();
+    ctx.roundRect(-size * 1.1, -size * 1.1, size * 2.2, size * 2.2, r);
+    ctx.fill();
+    ctx.stroke();
+    ctx.globalAlpha = 0.22 * glow;
+    ctx.beginPath();
+    ctx.roundRect(-size * 1.45, -size * 1.45, size * 2.9, size * 2.9, r * 1.1);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = `rgba(${ringColor},0.96)`;
+    ctx.fillRect(-size * 0.28, -size * 0.28, size * 0.56, size * 0.56);
+  } else if (style === 'credits') {
+    ctx.beginPath();
+    ctx.moveTo(-size * 0.84, -size * 0.1);
+    ctx.quadraticCurveTo(-size * 0.84, size * 1.04, 0, size * 1.22);
+    ctx.quadraticCurveTo(size * 0.84, size * 1.04, size * 0.84, -size * 0.1);
+    ctx.quadraticCurveTo(size * 0.5, -size * 0.42, 0, -size * 0.56);
+    ctx.quadraticCurveTo(-size * 0.5, -size * 0.42, -size * 0.84, -size * 0.1);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(-size * 0.34, -size * 0.62);
+    ctx.lineTo(0, -size * 1.02);
+    ctx.lineTo(size * 0.34, -size * 0.62);
+    ctx.stroke();
+    ctx.fillStyle = `rgba(${ringColor},0.98)`;
+    ctx.font = `bold ${Math.max(9, size * 1.25)}px Consolas`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('₹', 0, size * 0.26);
+  }
+
+  ctx.restore();
+}
+
+function getVisibleSystemRoutes(user = App.currentUser) {
+  const visibleSystems = getVisibleSystems(user);
+  const byId = new Map(visibleSystems.map(system => [system.id, system]));
+  const routes = [];
+  const seen = new Set();
+  visibleSystems.forEach(system => {
+    (system.routes || []).forEach(route => {
+      const target = byId.get(route.toId);
+      if (!target || target.id === system.id) return;
+      const key = [system.id, target.id].sort().join('::');
+      if (seen.has(key)) return;
+      seen.add(key);
+      routes.push({
+        key,
+        from: system,
+        to: target,
+        color: String(route.color || system.color || '#7df9ff').trim() || '#7df9ff',
+        width: Math.max(1, Number(route.width || 2)),
+        label: String(route.label || '').trim()
+      });
+    });
+  });
+  return routes;
+}
+
+function filterVisibleIds(ids, getter, user = App.currentUser) {
+  return (ids || []).filter(id => isEntityVisible(getter.call(Data, id), user));
+}
+
+function entityByType(type, id) {
+  if (type === 'system') return Data.getSystem(id);
+  if (type === 'planet') return Data.getPlanet(id);
+  if (type === 'npc') return Data.getNpc(id);
+  if (type === 'item') return Data.getItem(id);
+  if (type === 'flora') return Data.getFlora(id);
+  if (type === 'fauna') return Data.getFauna(id);
+  if (type === 'article') return Data.getArticle(id);
+  if (type === 'player') return App.state.users[id] || PLAYER_TEMPLATES[id] || null;
+  return null;
+}
+
+function titleForEntity(type, entity) {
+  if (!entity) return 'Неизвестно';
+  if (type === 'player') return entity.displayName || entity.shortName || entity.id;
+  if (type === 'article') return entity.name || entity.title || entity.id;
+  if (type === 'system') return getSystemLabel(entity) || entity.name || entity.id;
+  return entity.name || entity.displayName || entity.id;
+}
+
+function initials(value, fallback = '•') {
+  const clean = String(value || '').trim();
+  if (!clean) return fallback;
+  const parts = clean.split(/\s+/).filter(Boolean);
+  const chars = parts.slice(0, 2).map(part => part[0]).join('');
+  return (chars || clean.slice(0, 2)).toUpperCase();
+}
+
+function hashHue(value) {
+  const str = String(value || 'entity');
+  let hash = 0;
+  for (let i = 0; i < str.length; i += 1) hash = ((hash << 5) - hash) + str.charCodeAt(i);
+  return Math.abs(hash) % 360;
+}
+
+function hexToRgbString(value, fallback = '125,249,255') {
+  const hex = String(value || '').trim().replace('#', '');
+  if (!/^[0-9a-fA-F]{6}$/.test(hex)) return fallback;
+  const r = parseInt(hex.slice(0, 2), 16);
+  const g = parseInt(hex.slice(2, 4), 16);
+  const b = parseInt(hex.slice(4, 6), 16);
+  return `${r},${g},${b}`;
+}
+
+function renderZoomableThumb(entity, options = {}) {
+  const thumbHtml = renderThumb(entity, options);
+  if (!entity?.image) return thumbHtml;
+  const label = options.label || titleForEntity(options.type || 'entity', entity);
+  return `
+    <button class="zoomable-thumb-btn" type="button" data-zoom-image="${esc(entity.image)}" data-zoom-label="${esc(label)}" aria-label="Увеличить изображение ${esc(label)}">
+      ${thumbHtml}
+      <span class="zoomable-thumb-hint">＋</span>
+    </button>
+  `;
+}
+
+function renderFocusableInputValue(value) {
+  return String(value || '');
+}
+
+function restoreInputSelection(selector, text, selectionStart = null, selectionEnd = null) {
+  const field = typeof selector === 'string' ? $(selector) : selector;
+  if (!field) return;
+  if (typeof text === 'string' && field.value !== text) field.value = text;
+  try {
+    field.focus({ preventScroll: true });
+  } catch {
+    try { field.focus(); } catch {}
+  }
+  if (typeof selectionStart === 'number' && typeof field.setSelectionRange === 'function') {
+    const end = typeof selectionEnd === 'number' ? selectionEnd : selectionStart;
+    try { field.setSelectionRange(selectionStart, end); } catch {}
+  }
+}
+
+function bindTypeaheadFields(root) {
+  root?.querySelectorAll('[data-typeahead-root]').forEach(wrapper => {
+    if (wrapper.dataset.boundTypeahead === '1') return;
+    wrapper.dataset.boundTypeahead = '1';
+    const hidden = wrapper.querySelector('input[type="hidden"]');
+    const input = wrapper.querySelector('[data-typeahead-input]');
+    const list = wrapper.querySelector('[data-typeahead-list]');
+    const options = Array.from(wrapper.querySelectorAll('[data-typeahead-option]'));
+    const syncFromValue = () => {
+      const current = options.find(option => String(option.dataset.value || '') === String(hidden?.value || ''));
+      if (input && current && document.activeElement !== input) input.value = current.dataset.label || '';
+    };
+    const apply = () => {
+      const query = String(input?.value || '').trim().toLowerCase();
+      let visible = 0;
+      options.forEach(option => {
+        const hay = String(option.dataset.searchText || '').toLowerCase();
+        const show = !query || hay.includes(query);
+        option.hidden = !show;
+        if (show) visible += 1;
+      });
+      if (list) list.hidden = visible === 0;
+    };
+    input?.addEventListener('focus', () => { if (list) list.hidden = false; apply(); });
+    input?.addEventListener('input', apply);
+    input?.addEventListener('keydown', event => {
+      if (event.key === 'Escape') { if (list) list.hidden = true; syncFromValue(); }
+    });
+    options.forEach(option => option.addEventListener('click', () => {
+      if (hidden) hidden.value = option.dataset.value || '';
+      if (input) input.value = option.dataset.label || '';
+      if (list) list.hidden = true;
+    }));
+    document.addEventListener('click', event => {
+      if (!wrapper.contains(event.target)) {
+        if (list) list.hidden = true;
+        syncFromValue();
+      }
+    });
+    syncFromValue();
+    if (list) list.hidden = true;
+  });
+}
+
+function bindSearchableSelects(root) {
+  root?.querySelectorAll('select.select').forEach(select => {
+    const options = Array.from(select.options || []).filter(option => option.value);
+    if (options.length < 8 || select.dataset.boundSearchSelect === '1') return;
+    select.dataset.boundSearchSelect = '1';
+    const field = select.closest('.field') || select.parentElement;
+    if (!field || field.querySelector('[data-select-filter]')) return;
+    const input = document.createElement('input');
+    input.className = 'input select-filter-input';
+    input.type = 'text';
+    input.placeholder = 'Поиск по списку...';
+    input.setAttribute('data-select-filter', '1');
+    field.insertBefore(input, select);
+    const sync = () => {
+      const query = String(input.value || '').trim().toLowerCase();
+      Array.from(select.options || []).forEach(option => {
+        if (!option.value) return;
+        const hay = `${option.textContent || ''} ${option.value || ''}`.toLowerCase();
+        option.hidden = Boolean(query) && !hay.includes(query);
+      });
+    };
+    input.addEventListener('input', sync);
+    sync();
+  });
+}
+
+function bindFilterableSelectors(root) {
+  root?.querySelectorAll('[data-selector-panel]').forEach(panel => {
+    if (panel.dataset.boundSelectorSearch === '1') return;
+    panel.dataset.boundSelectorSearch = '1';
+    const input = panel.querySelector('[data-selector-search]');
+    const options = Array.from(panel.querySelectorAll('[data-selector-option]'));
+    const empty = panel.querySelector('[data-selector-empty]');
+    const apply = () => {
+      const query = String(input?.value || '').trim().toLowerCase();
+      let visible = 0;
+      options.forEach(option => {
+        const haystack = String(option.dataset.searchText || '').toLowerCase();
+        const show = !query || haystack.includes(query);
+        option.hidden = !show;
+        if (show) visible += 1;
+      });
+      if (empty) empty.hidden = visible > 0;
+    };
+    input?.addEventListener('input', apply);
+    apply();
+  });
+}
+
+const MediaPreview = {
+  ensure() {
+    let node = document.getElementById('media-preview-modal');
+    if (node) return node;
+    node = document.createElement('div');
+    node.id = 'media-preview-modal';
+    node.className = 'media-preview-modal';
+    node.innerHTML = `
+      <div class="media-preview-backdrop" data-close-media-preview></div>
+      <div class="media-preview-dialog card">
+        <button class="secondary media-preview-close" type="button" data-close-media-preview>CLOSE_X</button>
+        <div class="media-preview-frame">
+          <img class="media-preview-image" alt="" />
+        </div>
+        <div class="media-preview-caption subtle"></div>
+      </div>
+    `;
+    document.body.appendChild(node);
+    node.addEventListener('click', event => {
+      if (event.target.closest('[data-close-media-preview]')) this.close();
+    });
+    return node;
+  },
+  open(src, label = '') {
+    if (!src) return;
+    const node = this.ensure();
+    const image = node.querySelector('.media-preview-image');
+    const caption = node.querySelector('.media-preview-caption');
+    if (image) {
+      image.src = src;
+      image.alt = label || 'preview';
+    }
+    if (caption) caption.textContent = label || '';
+    node.classList.add('open');
+    document.body.classList.add('media-preview-open');
+  },
+  close() {
+    const node = document.getElementById('media-preview-modal');
+    if (!node) return;
+    node.classList.remove('open');
+    document.body.classList.remove('media-preview-open');
+  }
+};
+
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape') MediaPreview.close();
+});
+
+document.addEventListener('click', event => {
+  const trigger = event.target.closest('[data-zoom-image]');
+  if (!trigger) return;
+  event.preventDefault();
+  event.stopPropagation();
+  MediaPreview.open(trigger.dataset.zoomImage, trigger.dataset.zoomLabel || '');
+});
+
+function isMapInteractionBlocked(target = null) {
+  if (document.querySelector('.modal.open')) return true;
+  if (UI?.activeModuleId && UI?.activeElement?.classList?.contains('open')) return true;
+  if (!target) return false;
+  return Boolean(target.closest('.title-bar, #dock, #hud-analysis, #back-to-galaxy, #return-to-center, .fs-module, .fs-header, .modal, #toast, .media-preview-modal'));
+}
+
+function renderThumb(entity, options = {}) {
+  const size = options.size || 'sm';
+  const label = options.label || titleForEntity(options.type || 'entity', entity);
+  const glyph = entity?.avatarGlyph || options.glyph || initials(label, '✦');
+  if (entity?.image) {
+    return `<div class="entity-thumb ${size}"><img src="${esc(entity.image)}" alt="${esc(label)}" loading="lazy" /></div>`;
+  }
+  const hue = hashHue(entity?.id || label);
+  const hue2 = (hue + 45) % 360;
+  return `<div class="entity-thumb ${size} fallback" style="--thumb-a:hsla(${hue},80%,58%,0.82);--thumb-b:hsla(${hue2},88%,70%,0.18)"><span>${esc(glyph)}</span></div>`;
+}
+
+function renderEntityButton(type, entity, opts = {}) {
+  if (!entity) return '';
+  const compact = opts.compact ? ' compact' : '';
+  const subtitle = opts.subtitle ? `<div class="entity-card-sub">${esc(opts.subtitle)}</div>` : '';
+  const qty = opts.qty ? `<span class="entity-card-qty">×${opts.qty}</span>` : '';
+  const extra = entityExtraDataset(type, entity, opts);
+  return `
+    <button class="entity-card-btn${compact}" data-entity="${esc(type)}" data-id="${esc(entity.id)}" ${extra} type="button">
+      ${renderThumb(entity, { size: opts.thumbSize || 'sm', type, glyph: opts.glyph })}
+      <span class="entity-card-meta">
+        <span class="entity-card-title">${esc(titleForEntity(type, entity))}</span>
+        ${subtitle}
+      </span>
+      ${qty}
+    </button>
+  `;
+}
+
+function renderTagList(buttons, emptyText = 'Нет данных') {
+  const html = buttons.filter(Boolean).join('');
+  return html || `<div class="small-note">${esc(emptyText)}</div>`;
+}
+
+function renderRelatedArticlesEditor(ids = []) {
+  return renderCheckboxSelector('relatedArticleIds', Object.values(ARTICLES), ids || [], 'article', 'Нет статей');
+}
+
+function renderRelatedArticlesSection(ids = [], title = 'Связанные статьи') {
+  const articles = filterVisibleIds(ids, Data.getArticle).map(id => Data.getArticle(id)).filter(Boolean);
+  if (!articles.length) return '';
+  return `
+    <div class="section-title" style="margin-top:18px">${esc(title)}</div>
+    <div class="result-stack">${articles.map(article => renderEntityButton('article', article, { subtitle: article.category || article.summary || 'Статья архива', thumbSize: 'sm' })).join('')}</div>
+  `;
+}
+
+function getCheckedValues(form, name) {
+  return Array.from(form.querySelectorAll(`input[name="${name}"]:checked`)).map(node => node.value);
+}
+
+function readInventoryRows(formEl) {
+  return Array.from(formEl.querySelectorAll('.inventory-row')).map(row => ({
+    itemId: row.querySelector('input[type="hidden"][data-role="item"]')?.value || row.querySelector('[data-role="item"]')?.value || '',
+    qty: Math.max(1, Number(row.querySelector('[data-role="qty"]')?.value || 1))
+  })).filter(entry => entry.itemId);
+}
+
+function readMarketRows(formEl) {
+  return Array.from(formEl.querySelectorAll('.market-row-editor')).map(row => ({
+    itemId: row.querySelector('input[type="hidden"][data-role="item"]')?.value || row.querySelector('[data-role="item"]')?.value || '',
+    price: Math.max(0, Number(row.querySelector('[data-role="price"]')?.value || 0))
+  })).filter(entry => entry.itemId);
+}
+
+function readSystemRouteRows(formEl) {
+  return Array.from(formEl.querySelectorAll('.route-row-editor')).map(row => ({
+    toId: String(row.querySelector('input[type="hidden"][data-role="to"]')?.value || row.querySelector('[data-role="to"]')?.value || '').trim(),
+    color: String(row.querySelector('[data-role="color"]')?.value || '#7df9ff').trim() || '#7df9ff',
+    width: Math.max(1, Number(row.querySelector('[data-role="width"]')?.value || 2)),
+    label: String(row.querySelector('[data-role="label"]')?.value || '').trim()
+  })).filter(entry => entry.toId);
+}
+
+function planetForNpc(npcId) {
+  return Object.values(PLANETS).find(planet => (planet.npcIds || []).includes(npcId)) || null;
+}
+
+function renderCheckboxSelector(name, items, selectedIds = [], type, emptyText = 'Нет элементов') {
+  if (!items.length) return `<div class="small-note">${esc(emptyText)}</div>`;
+  return `
+    <div class="selector-panel" data-selector-panel>
+      <div class="field selector-search-field">
+        <input class="input selector-search-input" type="text" placeholder="Поиск по списку..." data-selector-search />
+      </div>
+      <div class="selector-grid selector-grid-scroll" data-selector-grid>
+        ${items.map(item => {
+          const subtitle = item.role || item.type || item.location || item.category || item.habitat || item.id;
+          const haystack = [titleForEntity(type, item), subtitle, item.id].filter(Boolean).join(' ').toLowerCase();
+          return `
+            <label class="selector-option" data-selector-option data-search-text="${esc(haystack)}">
+              <input type="checkbox" name="${name}" value="${esc(item.id)}" ${selectedIds.includes(item.id) ? 'checked' : ''} />
+              ${renderThumb(item, { size: 'xs', type })}
+              <span>
+                <b>${esc(titleForEntity(type, item))}</b>
+                <span class="subtle selector-sub">${esc(subtitle)}</span>
+              </span>
+            </label>
+          `;
+        }).join('')}
+      </div>
+      <div class="small-note selector-empty-note" data-selector-empty hidden>Ничего не найдено</div>
+    </div>
+  `;
+}
+
+function renderInventoryRows(items) {
+  const rows = Array.isArray(items) && items.length ? items : [{ itemId: '', qty: 1 }];
+  return rows.map(entry => `
+    <div class="inventory-row dynamic-row">
+      <select class="select" data-role="item">
+        <option value="">Выбери предмет</option>
+        ${EQUIPMENT_LIST.map(item => `<option value="${item.id}" ${item.id === entry.itemId ? 'selected' : ''}>${esc(item.name)}</option>`).join('')}
+      </select>
+      <input class="input" data-role="qty" type="number" min="1" value="${Math.max(1, Number(entry.qty || 1))}" />
+      <button type="button" class="ghost remove-row-btn">REMOVE</button>
+    </div>
+  `).join('');
+}
+
+function renderMarketRows(items) {
+  const rows = Array.isArray(items) && items.length ? items : [{ itemId: '', price: 0 }];
+  return rows.map((entry, index) => `
+    <div class="market-row-editor dynamic-row">
+      ${renderTypeaheadField({
+        role: 'item',
+        value: entry.itemId || '',
+        placeholder: 'Выбери товар',
+        options: EQUIPMENT_LIST.map(item => ({ value: item.id, label: item.name || item.id, hint: item.id })),
+        key: `market-${index}-${entry.itemId || 'new'}`
+      })}
+      <input class="input" data-role="price" type="number" min="0" value="${Math.max(0, Number(entry.price || 0))}" />
+      <button type="button" class="ghost remove-row-btn">REMOVE</button>
+    </div>
+  `).join('');
+}
+
+function renderSystemRouteRows(items, ownerId = '') {
+  const rows = Array.isArray(items) && items.length ? items : [{ toId: '', color: '#7df9ff', width: 2, label: '' }];
+  const options = SYSTEMS.filter(system => !ownerId || system.id !== ownerId).map(system => ({
+    value: system.id,
+    label: getSystemLabel(system),
+    hint: system.name && system.name !== getSystemLabel(system) ? `${system.name} · ${system.id}` : system.id
+  }));
+  return rows.map((entry, index) => `
+    <div class="route-row-editor dynamic-row">
+      ${renderTypeaheadField({
+        role: 'to',
+        value: entry.toId || '',
+        placeholder: 'Куда ведёт маршрут',
+        options,
+        key: `route-${ownerId || 'world'}-${index}-${entry.toId || 'new'}`
+      })}
+      <input class="input" data-role="label" value="${esc(entry.label || '')}" placeholder="Метка маршрута (необязательно)" />
+      <input class="input" data-role="color" value="${esc(entry.color || '#7df9ff')}" placeholder="#7df9ff" />
+      <input class="input" data-role="width" type="number" min="1" max="10" step="0.5" value="${Math.max(1, Number(entry.width || 2))}" />
+      <button type="button" class="ghost remove-row-btn">REMOVE</button>
+    </div>
+  `).join('');
+}
+
+function renderTypeaheadField({ role, value = '', placeholder = 'Выбрать...', options = [], key = 'typeahead' }) {
+  const current = options.find(option => String(option.value) === String(value)) || null;
+  return `
+    <div class="typeahead-field" data-typeahead-root data-role="${esc(role || '')}">
+      <input type="hidden" data-role="${esc(role || '')}" value="${esc(value || '')}" />
+      <input class="input typeahead-input" type="text" value="${esc(current?.label || value || '')}" placeholder="${esc(placeholder)}" data-typeahead-input autocomplete="off" />
+      <div class="typeahead-list" data-typeahead-list hidden>
+        ${options.map(option => `
+          <button type="button" class="typeahead-option" data-typeahead-option data-value="${esc(option.value)}" data-label="${esc(option.label)}" data-search-text="${esc(`${option.label || ''} ${option.hint || ''} ${option.value || ''}`.toLowerCase())}">
+            <span>${esc(option.label)}</span>
+            ${option.hint ? `<span class="subtle">${esc(option.hint)}</span>` : ''}
+          </button>
+        `).join('')}
+      </div>
+    </div>
+  `;
+}
+
+function renderInventoryRowsEditor(items) {
+  return `<div id="inventory-rows" class="dynamic-list" data-kind="inventory">${renderInventoryRows(items)}</div><button id="add-inventory-row" class="secondary" type="button">ADD_INVENTORY_ITEM</button>`;
+}
+
+function renderSystemRoutesEditor(items, ownerId = '') {
+  return `<div id="route-rows" class="dynamic-list" data-kind="routes" data-owner-id="${esc(ownerId)}">${renderSystemRouteRows(items, ownerId)}</div><button id="add-route-row" class="secondary" type="button">ADD_ROUTE</button>`;
+}
+
+function imageFieldMarkup(entity, title = 'Изображение') {
+  return `
+    <div class="field media-field">
+      <label>${esc(title)}</label>
+      <input type="hidden" name="imageData" value="${esc(entity?.image || '')}" />
+      <div class="media-field-box">
+        <div class="media-preview" data-preview-box>
+          ${renderThumb(entity, { size: 'xl', type: 'entity', glyph: entity?.avatarGlyph || '✦' })}
+        </div>
+        <div class="media-actions">
+          <input class="input image-file-input" type="file" accept="image/*,.dds,image/vnd.ms-dds,application/octet-stream" />
+          <button type="button" class="secondary clear-image-btn">REMOVE_IMAGE</button>
+          <div class="small-note">Изображение копируется в локальную папку world-data/assets. DDS автоматически конвертируется в PNG для корректного отображения. Если включена облачная синхронизация, файл дополнительно грузится в backend и раздаётся на другие ПК по cloud URL.</div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function waitForPendingImageTasks(root) {
+  const tasks = Array.isArray(root?._imagePendingTasks) ? root._imagePendingTasks.filter(Boolean) : [];
+  if (!tasks.length) return Promise.resolve();
+  return Promise.allSettled(tasks);
+}
+
+function isDdsFileV51(file) {
+  const name = String(file?.name || '').toLowerCase();
+  const type = String(file?.type || '').toLowerCase();
+  return name.endsWith('.dds') || type.includes('dds') || type === 'image/vnd.ms-dds';
+}
+
+function readFileAsDataUrlV51(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(reader.error || new Error('file read failed'));
+    reader.readAsDataURL(file);
+  });
+}
+
+function readFileAsArrayBufferV51(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error || new Error('file read failed'));
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+function fourCcFromViewV51(view, offset) {
+  return String.fromCharCode(
+    view.getUint8(offset),
+    view.getUint8(offset + 1),
+    view.getUint8(offset + 2),
+    view.getUint8(offset + 3)
+  );
+}
+
+function rgb565ToRgbaV51(value, alpha = 255) {
+  return [
+    Math.round(((value >> 11) & 31) * 255 / 31),
+    Math.round(((value >> 5) & 63) * 255 / 63),
+    Math.round((value & 31) * 255 / 31),
+    alpha
+  ];
+}
+
+function buildDxtColorPaletteV51(c0, c1, forceFourColor = false) {
+  const a = rgb565ToRgbaV51(c0, 255);
+  const b = rgb565ToRgbaV51(c1, 255);
+  const out = [a, b];
+  if (forceFourColor || c0 > c1) {
+    out[2] = [
+      Math.round((2 * a[0] + b[0]) / 3),
+      Math.round((2 * a[1] + b[1]) / 3),
+      Math.round((2 * a[2] + b[2]) / 3),
+      255
+    ];
+    out[3] = [
+      Math.round((a[0] + 2 * b[0]) / 3),
+      Math.round((a[1] + 2 * b[1]) / 3),
+      Math.round((a[2] + 2 * b[2]) / 3),
+      255
+    ];
+  } else {
+    out[2] = [
+      Math.round((a[0] + b[0]) / 2),
+      Math.round((a[1] + b[1]) / 2),
+      Math.round((a[2] + b[2]) / 2),
+      255
+    ];
+    out[3] = [0, 0, 0, 0];
+  }
+  return out;
+}
+
+function writePixelV51(target, width, height, x, y, rgba) {
+  if (x < 0 || y < 0 || x >= width || y >= height) return;
+  const index = (y * width + x) * 4;
+  target[index] = rgba[0];
+  target[index + 1] = rgba[1];
+  target[index + 2] = rgba[2];
+  target[index + 3] = rgba[3];
+}
+
+function decodeDxtColorBlockV51(bytes, offset, target, width, height, blockX, blockY, alphaValues = null, forceFourColor = false) {
+  const c0 = bytes[offset] | (bytes[offset + 1] << 8);
+  const c1 = bytes[offset + 2] | (bytes[offset + 3] << 8);
+  const palette = buildDxtColorPaletteV51(c0, c1, forceFourColor);
+  const code = (bytes[offset + 4] | (bytes[offset + 5] << 8) | (bytes[offset + 6] << 16) | (bytes[offset + 7] << 24)) >>> 0;
+  for (let py = 0; py < 4; py += 1) {
+    for (let px = 0; px < 4; px += 1) {
+      const pixelIndex = py * 4 + px;
+      const colorIndex = (code >>> (2 * pixelIndex)) & 3;
+      const color = palette[colorIndex].slice();
+      if (alphaValues) color[3] = alphaValues[pixelIndex];
+      writePixelV51(target, width, height, blockX * 4 + px, blockY * 4 + py, color);
+    }
+  }
+}
+
+function decodeDxt1V51(bytes, offset, width, height) {
+  const target = new Uint8Array(width * height * 4);
+  const blocksWide = Math.ceil(width / 4);
+  const blocksHigh = Math.ceil(height / 4);
+  let cursor = offset;
+  for (let by = 0; by < blocksHigh; by += 1) {
+    for (let bx = 0; bx < blocksWide; bx += 1) {
+      decodeDxtColorBlockV51(bytes, cursor, target, width, height, bx, by, null, false);
+      cursor += 8;
+    }
+  }
+  return target;
+}
+
+function decodeDxt3V51(bytes, offset, width, height) {
+  const target = new Uint8Array(width * height * 4);
+  const blocksWide = Math.ceil(width / 4);
+  const blocksHigh = Math.ceil(height / 4);
+  let cursor = offset;
+  for (let by = 0; by < blocksHigh; by += 1) {
+    for (let bx = 0; bx < blocksWide; bx += 1) {
+      const alpha = new Array(16);
+      for (let i = 0; i < 16; i += 1) {
+        const byte = bytes[cursor + Math.floor(i / 2)];
+        const nibble = (i % 2 === 0) ? (byte & 0x0f) : (byte >> 4);
+        alpha[i] = nibble * 17;
+      }
+      decodeDxtColorBlockV51(bytes, cursor + 8, target, width, height, bx, by, alpha, true);
+      cursor += 16;
+    }
+  }
+  return target;
+}
+
+function decodeDxt5AlphaPaletteV51(a0, a1) {
+  const palette = [a0, a1];
+  if (a0 > a1) {
+    palette[2] = Math.round((6 * a0 + a1) / 7);
+    palette[3] = Math.round((5 * a0 + 2 * a1) / 7);
+    palette[4] = Math.round((4 * a0 + 3 * a1) / 7);
+    palette[5] = Math.round((3 * a0 + 4 * a1) / 7);
+    palette[6] = Math.round((2 * a0 + 5 * a1) / 7);
+    palette[7] = Math.round((a0 + 6 * a1) / 7);
+  } else {
+    palette[2] = Math.round((4 * a0 + a1) / 5);
+    palette[3] = Math.round((3 * a0 + 2 * a1) / 5);
+    palette[4] = Math.round((2 * a0 + 3 * a1) / 5);
+    palette[5] = Math.round((a0 + 4 * a1) / 5);
+    palette[6] = 0;
+    palette[7] = 255;
+  }
+  return palette;
+}
+
+function decodeDxt5V51(bytes, offset, width, height) {
+  const target = new Uint8Array(width * height * 4);
+  const blocksWide = Math.ceil(width / 4);
+  const blocksHigh = Math.ceil(height / 4);
+  let cursor = offset;
+  for (let by = 0; by < blocksHigh; by += 1) {
+    for (let bx = 0; bx < blocksWide; bx += 1) {
+      const a0 = bytes[cursor];
+      const a1 = bytes[cursor + 1];
+      const alphaPalette = decodeDxt5AlphaPaletteV51(a0, a1);
+      let alphaBits = 0n;
+      for (let i = 0; i < 6; i += 1) alphaBits |= BigInt(bytes[cursor + 2 + i]) << BigInt(8 * i);
+      const alpha = new Array(16);
+      for (let i = 0; i < 16; i += 1) {
+        const alphaIndex = Number((alphaBits >> BigInt(3 * i)) & 7n);
+        alpha[i] = alphaPalette[alphaIndex];
+      }
+      decodeDxtColorBlockV51(bytes, cursor + 8, target, width, height, bx, by, alpha, true);
+      cursor += 16;
+    }
+  }
+  return target;
+}
+
+function countMaskShiftV51(mask) {
+  let shift = 0;
+  let value = mask >>> 0;
+  if (!value) return 0;
+  while ((value & 1) === 0) {
+    shift += 1;
+    value >>>= 1;
+  }
+  return shift;
+}
+
+function countMaskBitsV51(mask) {
+  let bits = 0;
+  let value = mask >>> 0;
+  while (value) {
+    bits += value & 1;
+    value >>>= 1;
+  }
+  return bits;
+}
+
+function extractMaskedByteV51(pixel, mask, fallback = 0) {
+  mask >>>= 0;
+  if (!mask) return fallback;
+  const shift = countMaskShiftV51(mask);
+  const bits = countMaskBitsV51(mask);
+  const max = (1 << bits) - 1;
+  const value = (pixel & mask) >>> shift;
+  return Math.round(value * 255 / max);
+}
+
+function decodeUncompressedDdsV51(bytes, offset, width, height, bitCount, masks, pitch = 0) {
+  const bytesPerPixel = Math.ceil(bitCount / 8);
+  const rowPitch = pitch > 0 ? pitch : width * bytesPerPixel;
+  const target = new Uint8Array(width * height * 4);
+  for (let y = 0; y < height; y += 1) {
+    const rowOffset = offset + y * rowPitch;
+    for (let x = 0; x < width; x += 1) {
+      const pixelOffset = rowOffset + x * bytesPerPixel;
+      let pixel = 0;
+      for (let i = 0; i < bytesPerPixel; i += 1) pixel |= (bytes[pixelOffset + i] || 0) << (8 * i);
+      const rgba = [
+        extractMaskedByteV51(pixel, masks.r, bytes[pixelOffset] || 0),
+        extractMaskedByteV51(pixel, masks.g, bytes[pixelOffset + 1] || 0),
+        extractMaskedByteV51(pixel, masks.b, bytes[pixelOffset + 2] || 0),
+        masks.a ? extractMaskedByteV51(pixel, masks.a, 255) : 255
+      ];
+      writePixelV51(target, width, height, x, y, rgba);
+    }
+  }
+  return target;
+}
+
+function pngDataUrlFromRgbaV51(width, height, rgba) {
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  const imageData = new ImageData(new Uint8ClampedArray(rgba), width, height);
+  ctx.putImageData(imageData, 0, 0);
+  return canvas.toDataURL('image/png');
+}
+
+function convertDdsArrayBufferToPngDataUrlV51(buffer) {
+  const view = new DataView(buffer);
+  const bytes = new Uint8Array(buffer);
+  if (buffer.byteLength < 128 || fourCcFromViewV51(view, 0) !== 'DDS ') {
+    throw new Error('Файл не похож на DDS');
+  }
+  const height = view.getUint32(12, true);
+  const width = view.getUint32(16, true);
+  const pitchOrLinearSize = view.getUint32(20, true);
+  const pfFlags = view.getUint32(80, true);
+  const fourCC = fourCcFromViewV51(view, 84);
+  const bitCount = view.getUint32(88, true);
+  const masks = {
+    r: view.getUint32(92, true),
+    g: view.getUint32(96, true),
+    b: view.getUint32(100, true),
+    a: view.getUint32(104, true)
+  };
+  if (!width || !height) throw new Error('DDS содержит некорректный размер');
+
+  let format = fourCC;
+  let dataOffset = 128;
+  if (fourCC === 'DX10') {
+    if (buffer.byteLength < 148) throw new Error('Некорректный DDS DX10');
+    const dxgiFormat = view.getUint32(128, true);
+    dataOffset = 148;
+    if (dxgiFormat === 71 || dxgiFormat === 72) format = 'DXT1';
+    else if (dxgiFormat === 74 || dxgiFormat === 75) format = 'DXT3';
+    else if (dxgiFormat === 77 || dxgiFormat === 78) format = 'DXT5';
+    else if (dxgiFormat === 28) format = 'RGBA32';
+    else if (dxgiFormat === 87) format = 'BGRA32';
+    else throw new Error(`DDS DX10 format ${dxgiFormat} пока не поддерживается`);
+  }
+
+  let rgba = null;
+  if (format === 'DXT1') rgba = decodeDxt1V51(bytes, dataOffset, width, height);
+  else if (format === 'DXT3') rgba = decodeDxt3V51(bytes, dataOffset, width, height);
+  else if (format === 'DXT5') rgba = decodeDxt5V51(bytes, dataOffset, width, height);
+  else if (format === 'RGBA32') rgba = decodeUncompressedDdsV51(bytes, dataOffset, width, height, 32, { r: 0x000000ff, g: 0x0000ff00, b: 0x00ff0000, a: 0xff000000 }, width * 4);
+  else if (format === 'BGRA32') rgba = decodeUncompressedDdsV51(bytes, dataOffset, width, height, 32, { r: 0x00ff0000, g: 0x0000ff00, b: 0x000000ff, a: 0xff000000 }, width * 4);
+  else if ((pfFlags & 0x40) && (bitCount === 32 || bitCount === 24 || bitCount === 16)) rgba = decodeUncompressedDdsV51(bytes, dataOffset, width, height, bitCount, masks, pitchOrLinearSize);
+  else throw new Error(`DDS формат ${format || 'без FourCC'} пока не поддерживается`);
+
+  return pngDataUrlFromRgbaV51(width, height, rgba);
+}
+
+async function readImageFileAsRenderableDataUrlV51(file) {
+  if (!isDdsFileV51(file)) return readFileAsDataUrlV51(file);
+  const buffer = await readFileAsArrayBufferV51(file);
+  return convertDdsArrayBufferToPngDataUrlV51(buffer);
+}
+
+function bindImageInputs(root) {
+  if (!Array.isArray(root._imagePendingTasks)) root._imagePendingTasks = [];
+  root.querySelectorAll('.media-field').forEach(field => {
+    const fileInput = field.querySelector('.image-file-input');
+    const hidden = field.querySelector('input[name="imageData"]');
+    const preview = field.querySelector('[data-preview-box]');
+    const clearBtn = field.querySelector('.clear-image-btn');
+    const entityNameInput = root.querySelector('[name="displayName"], [name="name"]');
+    const glyphInput = root.querySelector('[name="avatarGlyph"]');
+
+    const renderPreview = () => {
+      const pseudo = {
+        id: root.querySelector('[name="id"]')?.value || 'entity',
+        name: entityNameInput?.value || '',
+        displayName: entityNameInput?.value || '',
+        avatarGlyph: glyphInput?.value || '',
+        image: hidden.value || ''
+      };
+      preview.innerHTML = renderThumb(pseudo, { size: 'xl', type: 'entity', glyph: pseudo.avatarGlyph || '✦' });
+    };
+
+    fileInput?.addEventListener('change', async event => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      const token = `${Date.now()}_${Math.random().toString(36).slice(2)}`;
+      field.dataset.imageToken = token;
+      field.dataset.imagePending = '1';
+      try {
+        const dataUrl = await readImageFileAsRenderableDataUrlV51(file);
+        hidden.value = dataUrl;
+        field.dataset.pendingImageValue = dataUrl;
+        renderPreview();
+        const saveTask = (async () => {
+            if (window.electronAPI?.saveWorldImage) {
+              const stem = [root.dataset.entityType || 'entity', root.querySelector('[name="id"]')?.value || '', entityNameInput?.value || file.name].filter(Boolean).join('_');
+              const result = await window.electronAPI.saveWorldImage({ dataUrl, preferredStem: stem });
+              if (!result?.ok || !result?.url) {
+                throw new Error(result?.message || 'unknown error');
+              }
+              if (field.dataset.imageToken === token) {
+                hidden.value = result.url || result.localUrl || dataUrl;
+                field.dataset.savedImageValue = hidden.value;
+                renderPreview();
+              }
+              if (result?.warning) {
+                Toast.show(`Локальный файл сохранён, но upload в backend не удался: ${result.warning}`, 'info');
+              }
+              return result;
+            }
+            return { ok: true, url: dataUrl };
+        })();
+        field._imageTask = saveTask.finally(() => {
+          if (field.dataset.imageToken === token) delete field.dataset.imagePending;
+        });
+        root._imagePendingTasks.push(field._imageTask);
+        await field._imageTask;
+      } catch (error) {
+        delete field.dataset.imagePending;
+        Toast.show(`Не удалось обработать изображение: ${error.message}`, 'err');
+      }
+    });
+
+    clearBtn?.addEventListener('click', () => {
+      hidden.value = '';
+      field.dataset.savedImageValue = '';
+      field.dataset.pendingImageValue = '';
+      delete field.dataset.imagePending;
+      field._imageTask = null;
+      if (fileInput) fileInput.value = '';
+      renderPreview();
+    });
+
+    entityNameInput?.addEventListener('input', renderPreview);
+    glyphInput?.addEventListener('input', renderPreview);
+    renderPreview();
+  });
+}
+
+function bindDynamicRowEditor(root) {
+  root.querySelectorAll('.remove-row-btn').forEach(button => {
+    if (button.dataset.bound === '1') return;
+    button.dataset.bound = '1';
+    button.addEventListener('click', () => {
+      const row = button.closest('.dynamic-row');
+      const list = row?.parentElement;
+      row?.remove();
+      if (list && !list.children.length) {
+        if (list.dataset.kind === 'inventory') list.insertAdjacentHTML('beforeend', renderInventoryRows([]));
+        if (list.dataset.kind === 'market') list.insertAdjacentHTML('beforeend', renderMarketRows([]));
+        if (list.dataset.kind === 'routes') list.insertAdjacentHTML('beforeend', renderSystemRouteRows([], list.dataset.ownerId || ''));
+        bindDynamicRowEditor(root);
+      }
+    });
+  });
+
+  const addInventory = root.querySelector('#add-inventory-row');
+  if (addInventory && addInventory.dataset.bound !== '1') {
+    addInventory.dataset.bound = '1';
+    addInventory.addEventListener('click', () => {
+      root.querySelector('#inventory-rows')?.insertAdjacentHTML('beforeend', renderInventoryRows([]));
+      bindDynamicRowEditor(root);
+    });
+  }
+
+  const addMarket = root.querySelector('#add-market-row');
+  if (addMarket && addMarket.dataset.bound !== '1') {
+    addMarket.dataset.bound = '1';
+    addMarket.addEventListener('click', () => {
+      root.querySelector('#market-rows')?.insertAdjacentHTML('beforeend', renderMarketRows([]));
+      bindDynamicRowEditor(root);
+    });
+  }
+
+  const addRoute = root.querySelector('#add-route-row');
+  if (addRoute && addRoute.dataset.bound !== '1') {
+    addRoute.dataset.bound = '1';
+    addRoute.addEventListener('click', () => {
+      const list = root.querySelector('#route-rows');
+      list?.insertAdjacentHTML('beforeend', renderSystemRouteRows([], list?.dataset?.ownerId || ''));
+      bindDynamicRowEditor(root);
+    });
+  }
+}
+
+const UI = {
+  activeModuleId: null,
+  activeElement: null,
+  selectedPlanetId: null,
+  selectedSystemId: null,
+  attachEntityLinks(root) {
+    root?.querySelectorAll('[data-entity][data-id]').forEach(node => {
+      if (node.dataset.bound === '1') return;
+      node.dataset.bound = '1';
+      node.addEventListener('click', event => {
+        event.preventDefault();
+        if (node.dataset.action === 'use-item') {
+          Tooling.openForItem(node.dataset.id);
+          return;
+        }
+        Wiki.showEntity(node.dataset.entity, node.dataset.id, true);
+      });
+    });
+  },
+  openModule(id, options = {}) {
+    if (this.activeModuleId !== id) this.closeModule();
+    if (id === 'profile') this.renderProfile();
+    if (id === 'tool') Tooling.render();
+    if (id === 'market') {
+      if (!this.selectedPlanetId) {
+        Toast.show('Сначала выбери планету на карте', 'info');
+        return;
+      }
+      this.renderMarket();
+    }
+    if (id === 'wiki' && !options.preserveWikiState) Wiki.prime();
+    if (id === 'gm') GM.render();
+    if (id === 'config') Configurator.render();
+    if (id === 'sync') Sync.render();
+
+    const moduleElement = $(`#mod-${id}`);
+    if (!moduleElement) return;
+    AudioManager.play('moduleOpen', { volume: 0.72 });
+    if (options.overLogin || (id === 'sync' && document.getElementById('login-screen')?.classList.contains('open'))) moduleElement.classList.add('over-login');
+    else moduleElement.classList.remove('over-login');
+    moduleElement.style.display = 'block';
+    requestAnimationFrame(() => moduleElement.classList.add('open'));
+    this.activeModuleId = id;
+    this.activeElement = moduleElement;
+    document.body.classList.add('module-open');
+  },
+  closeModule() {
+    if (!this.activeElement) return;
+    const prev = this.activeElement;
+    prev.classList.remove('open');
+    prev.classList.remove('over-login');
+    setTimeout(() => { prev.style.display = 'none'; }, 220);
+    this.activeModuleId = null;
+    this.activeElement = null;
+    document.body.classList.remove('module-open');
+  },
+  inventoryMarkup(inventory) {
+    return renderTagList(inventory.map(entry => {
+      const item = Data.getItem(entry.itemId);
+      if (!isEntityVisible(item)) return '';
+      return renderEntityButton('item', item || { id: entry.itemId, name: entry.itemId }, { qty: entry.qty, compact: true, thumbSize: 'xs', preferUse: true });
+    }), 'Инвентарь пуст');
+  },
+  socialNpcMarkup(npcIds) {
+    return renderTagList(filterVisibleIds(npcIds, Data.getNpc).map(id => {
+      const npc = Data.getNpc(id);
+      return renderEntityButton('npc', npc, { compact: true, thumbSize: 'xs', subtitle: npc.role || npc.location || '' });
+    }), 'Нет известных контактов');
+  },
+  floraMarkup(ids) {
+    return renderTagList(filterVisibleIds(ids, Data.getFlora).map(id => renderEntityButton('flora', Data.getFlora(id), { compact: true, thumbSize: 'xs', subtitle: Data.getFlora(id)?.habitat || '' })), 'Нет доступных сведений');
+  },
+  faunaMarkup(ids) {
+    return renderTagList(filterVisibleIds(ids, Data.getFauna).map(id => renderEntityButton('fauna', Data.getFauna(id), { compact: true, thumbSize: 'xs', subtitle: Data.getFauna(id)?.habitat || '' })), 'Нет доступных сведений');
+  },
+  renderProfile() {
+    const user = App.currentUser;
+    if (!user) return;
+    const weapon = Data.getItem(user.equipmentSlots.weapon);
+    const armor = Data.getItem(user.equipmentSlots.armor);
+    const canEdit = user.role !== 'gm';
+    const { planet: currentPlanet, system: currentSystem } = getPlayerCurrentLocation(user);
+    const currentLocationMarkup = currentPlanet
+      ? `
+        <div class="result-stack">
+          ${renderEntityButton('planet', currentPlanet, { compact: false, thumbSize: 'sm', subtitle: currentPlanet.code || currentPlanet.location?.system || 'Текущая планета' })}
+          ${currentSystem ? renderEntityButton('system', currentSystem, { compact: true, thumbSize: 'xs', subtitle: 'Текущая система' }) : ''}
+        </div>
+      `
+      : '<div class="small-note">Положение не задано в World Config.</div>';
+
+    $('#profile-content').innerHTML = `
+      <div class="grid3">
+        <div class="stack">
+          <div class="card profile-card">
+            <div class="avatar media-avatar">${renderThumb(user, { size: 'hero', type: 'player', glyph: user.avatarGlyph || initials(user.displayName) })}</div>
+            <h2 class="mono accent" style="margin:16px 0 4px">${esc(user.displayName)}</h2>
+            <div class="subtle" style="margin-bottom:12px">${esc(user.rank)}</div>
+            <div class="small-note" style="margin-bottom:18px">${esc(user.lore || 'Нет досье')}</div>
+            <div class="stat">
+              <div>
+                <div class="data-row"><span class="data-label">Здоровье</span><span class="data-value">${user.stats.hp}%</span></div>
+                <div class="bar"><div class="fill" style="width:${clamp(user.stats.hp,0,100)}%"></div></div>
+              </div>
+              <div>
+                <div class="data-row"><span class="data-label">Щит</span><span class="data-value">${user.stats.shield}</span></div>
+                <div class="bar"><div class="fill" style="width:${clamp(user.stats.shield/1.5,0,100)}%"></div></div>
+              </div>
+              <div>
+                <div class="data-row"><span class="data-label">Биомодуль</span><span class="data-value">${user.stats.bio}</span></div>
+                <div class="bar"><div class="fill" style="width:${clamp(user.stats.bio,0,100)}%"></div></div>
+              </div>
+            </div>
+            <div style="margin-top:18px">
+              <div class="data-row"><span class="data-label">Баланс</span><span class="data-value">${formatCredits(user.credits)}</span></div>
+              <div class="data-row"><span class="data-label">ID</span><span class="data-value">#${esc(user.id.toUpperCase())}</span></div>
+            </div>
+            <div style="margin-top:18px">
+              <div class="section-title">Текущее положение</div>
+              ${currentLocationMarkup}
+            </div>
+          </div>
+        </div>
+
+        <div class="stack">
+          <div class="card profile-card">
+            <div class="section-title">Характеристики</div>
+            <div class="abilities">
+              ${Object.entries(user.abilities).map(([key, value]) => `<div class="ability"><span>${key.toUpperCase()}</span><b>${value}</b></div>`).join('')}
+            </div>
+          </div>
+
+          <div class="card profile-card">
+            <div class="section-title">Снаряжение</div>
+            <div class="equip-click-wrap">${weapon ? renderEntityButton('item', weapon, { compact: false, thumbSize: 'md', subtitle: weapon.desc || '' }) : '<div class="equip"><div class="icon">⚔</div><div>—</div></div>'}</div>
+            <div class="equip-click-wrap">${armor ? renderEntityButton('item', armor, { compact: false, thumbSize: 'md', subtitle: armor.desc || '' }) : '<div class="equip"><div class="icon">⛨</div><div>—</div></div>'}</div>
+            <div class="section-title" style="margin-top:18px">Инвентарь</div>
+            <div class="small-note" style="margin-bottom:8px">Нажми на активный предмет, чтобы открыть его механику. Обычные предметы откроют статью в архиве.</div>
+            <div class="tags entity-button-row">${this.inventoryMarkup(user.inventory)}</div>
+            <div class="section-title" style="margin-top:18px">Импланты</div>
+            <div class="list-grid">${user.implants.map(implant => `<div class="data-row"><span>${esc(implant.name)}</span><span class="data-value">${esc(implant.status)}</span></div>`).join('') || '<div class="small-note">Нет имплантов</div>'}</div>
+          </div>
+        </div>
+
+        <div class="stack">
+          <div class="card profile-card">
+            <div class="section-title">Социальные связи</div>
+            <div class="tags entity-button-row">${this.socialNpcMarkup(user.social.npcIds)}</div>
+            <div class="section-title" style="margin-top:18px">Организации</div>
+            <div class="tags">${(user.social.orgs || []).map(org => `<span class="tag">${esc(org)}</span>`).join('') || '<div class="small-note">Нет данных</div>'}</div>
+          </div>
+
+          <form id="profile-edit-form" class="card profile-card form">
+            <div class="section-title">Редактирование профиля</div>
+            <div class="field"><label>Отображаемое имя</label><input class="input" name="displayName" value="${esc(user.displayName)}" ${canEdit ? '' : 'disabled'} /></div>
+            <div class="field"><label>Пароль</label><input class="input" name="pass" value="${esc(user.pass)}" ${canEdit ? '' : 'disabled'} /></div>
+            <div class="field"><label>Лор персонажа</label><textarea class="area" name="lore" ${canEdit ? '' : 'disabled'}>${esc(user.lore)}</textarea></div>
+            <div class="field"><label>Личные заметки</label><textarea class="area" name="notes">${esc(user.notes)}</textarea></div>
+            <button class="primary" type="submit">СОХРАНИТЬ ПРОФИЛЬ</button>
+            <div class="small-note">Изображение и связанный контент задаются через мастерский конфигуратор. Доступ к планетам, NPC и статьям тоже контролируется там.</div>
+          </form>
+        </div>
+      </div>
+    `;
+
+    this.attachEntityLinks($('#profile-content'));
+
+    $('#profile-edit-form')?.addEventListener('submit', async event => {
+      event.preventDefault();
+      const formData = new FormData(event.currentTarget);
+      user.notes = String(formData.get('notes') || '').trim();
+      if (user.role !== 'gm') {
+        user.displayName = String(formData.get('displayName') || user.displayName).trim() || user.displayName;
+        user.pass = String(formData.get('pass') || user.pass).trim() || user.pass;
+        user.lore = String(formData.get('lore') || user.lore).trim() || user.lore;
+      }
+      if (PLAYER_TEMPLATES[user.id]) {
+        PLAYER_TEMPLATES[user.id].notes = user.notes;
+        PLAYER_TEMPLATES[user.id].displayName = user.displayName;
+        PLAYER_TEMPLATES[user.id].pass = user.pass;
+        PLAYER_TEMPLATES[user.id].lore = user.lore;
+      }
+      const saveWorldRes = await persistPlayersTemplateOnly();
+      if (!saveWorldRes?.ok) {
+        Toast.show(`Не удалось записать players.json: ${saveWorldRes?.message || 'unknown error'}`, 'err');
+        return;
+      }
+      await App.saveState('Профиль обновлён');
+      this.renderProfile();
+    });
+  },
+  renderPlanetAnalysis(planetId, systemId) {
+    const planet = Data.getPlanet(planetId);
+    const system = Data.getSystem(systemId);
+    if (!planet || !isEntityVisible(planet)) {
+      Toast.show('У вас нет доступа к этой планете', 'err');
+      return;
+    }
+    this.selectedPlanetId = planet.id;
+    this.selectedSystemId = systemId;
+    AudioManager.play('planetFocus', { volume: 0.85 });
+    $('#obj-name').textContent = planet.name.toUpperCase();
+    $('#obj-subname').textContent = system ? `Система ${system.name}` : 'Планетарный объект';
+    $('#obj-id').textContent = planet.code || planet.id;
+    $('#hud-analysis').style.display = 'block';
+    $('#market-trigger').style.display = 'block';
+
+    $('#analysis-content').innerHTML = `
+      <div class="analysis-hero">
+        ${renderThumb(planet, { size: 'hero', type: 'planet', glyph: initials(planet.name, '◌') })}
+        <div>
+          <div class="section-title">Планетарный скан</div>
+          <div class="analysis-headline">${esc(planet.name)}</div>
+          <div class="subtle">${esc(planet.location?.system || '')}</div>
+          <div style="margin-top:8px">${__renderRichText(getPlanetReference(planet), '<div class="small-note">Нет справки для пилотов</div>')}</div>
+          <div style="margin-top:12px">${renderEntityButton('planet', planet, { compact: true, thumbSize: 'xs', subtitle: 'Открыть полную статью в архиве' })}</div>
+        </div>
+      </div>
+      <div class="analysis-section">
+        <div class="section-title">Локация</div>
+        <div class="data-row"><span class="data-label">Регион</span><span class="data-value">${esc(planet.location?.arm || '')}</span></div>
+        <div class="data-row"><span class="data-label">Узел</span><span class="data-value">${esc(planet.location?.node || '')}</span></div>
+        <div class="data-row"><span class="data-label">Система</span><span class="data-value">${esc(planet.location?.system || '')}</span></div>
+        <div class="data-row"><span class="data-label">Объект</span><span class="data-value">${esc(planet.location?.obj || '')}</span></div>
+      </div>
+      <div class="analysis-section">
+        <div class="section-title">Физические характеристики</div>
+        <div class="data-row"><span class="data-label">Тип</span><span class="data-value">${esc(planet.physics?.type || '')}</span></div>
+        <div class="data-row"><span class="data-label">Масса</span><span class="data-value">${esc(planet.physics?.mass || '')}</span></div>
+        <div class="data-row"><span class="data-label">Радиус</span><span class="data-value">${esc(planet.physics?.radius || '')}</span></div>
+        <div class="data-row"><span class="data-label">Гравитация</span><span class="data-value">${esc(planet.physics?.gravity || '')}</span></div>
+        <div class="data-row"><span class="data-label">Температура</span><span class="data-value">${esc(planet.physics?.temp || '')}</span></div>
+        <div class="data-row"><span class="data-label">Климат</span><span class="data-value">${esc(planet.physics?.climate || '')}</span></div>
+        <div class="subtle" style="margin-top:6px">${esc(planet.physics?.atm || '')}</div>
+      </div>
+      <div class="analysis-section">
+        <div class="section-title">Социо-политический статус</div>
+        <div class="data-row"><span class="data-label">Население</span><span class="data-value">${esc(planet.socio?.pop || '')}</span></div>
+        <div class="data-row"><span class="data-label">Столица</span><span class="data-value">${esc(planet.socio?.capital || '')}</span></div>
+        <div class="data-row"><span class="data-label">Правление</span><span class="data-value">${esc(planet.socio?.gov || '')}</span></div>
+        <div class="subtle" style="margin-top:6px"><b>Режим:</b> ${esc(planet.socio?.law || '')}</div>
+      </div>
+      <div class="analysis-section">
+        <div class="section-title">Ключевые сущности</div>
+        <div class="subtle" style="margin-bottom:6px">NPC</div>
+        <div class="tags entity-button-row">${this.socialNpcMarkup(planet.npcIds)}</div>
+        <div class="subtle" style="margin:10px 0 6px">Флора</div>
+        <div class="tags entity-button-row">${this.floraMarkup(planet.floraIds)}</div>
+        <div class="subtle" style="margin:10px 0 6px">Фауна</div>
+        <div class="tags entity-button-row">${this.faunaMarkup(planet.faunaIds)}</div>
+      </div>
+      <div class="analysis-section">
+        <div class="section-title">Справка для пилотов</div>
+        <div class="annotation-box">
+          ${__renderRichText(getPlanetReference(planet), '<p>Нет справки для пилотов.</p>')}
+          ${planet.pilot?.warning ? `<div style="margin-top:12px"><span class="warning">ПРЕДУПРЕЖДЕНИЕ:</span>${__renderRichText(planet.pilot?.warning, '')}</div>` : ''}
+        </div>
+      </div>
+    `;
+
+    this.attachEntityLinks($('#analysis-content'));
+  },
+  renderMarket() {
+    const planet = Data.getPlanet(this.selectedPlanetId);
+    const user = App.currentUser;
+    if (!planet || !user || !isEntityVisible(planet)) return;
+    const marketAccess = getMarketAccessState(user, planet.id);
+
+    $('#market-title').textContent = `LOCAL_TERMINAL: ${planet.name.toUpperCase()}`;
+    $('#market-subtitle').textContent = marketAccess.canBuy
+      ? 'Рынок планеты и локальные предложения'
+      : `Покупка заблокирована: ${marketAccess.reason}`;
+    $('#market-balance').textContent = `${formatCredits(user.credits)}`;
+    $('#market-planet').textContent = planet.name;
+
+    const visibleEntries = (planet.market || []).filter(entry => isEntityVisible(Data.getItem(entry.itemId)));
+    const accessBanner = marketAccess.canBuy
+      ? `<div class="card pad18 small-note market-access-banner ok">Покупка разрешена. Персонаж находится на планете <b>${esc(planet.name)}</b>.</div>`
+      : `<div class="card pad18 small-note market-access-banner err"><b>Покупка заблокирована.</b> ${esc(marketAccess.reason)}${marketAccess.currentPlanet ? ` Сейчас персонаж находится на планете <b>${esc(marketAccess.currentPlanet.name)}</b>.` : ''}</div>`;
+
+    $('#market-items').innerHTML = `${accessBanner}${visibleEntries.map(entry => {
+      const item = Data.getItem(entry.itemId) || { id: entry.itemId, name: entry.itemId, desc: '' };
+      return `
+        <div class="card market-item market-card">
+          <div class="market-card-top">
+            ${renderThumb(item, { size: 'lg', type: 'item', glyph: initials(item.name, '▣') })}
+            <div>
+              <button class="market-link" data-entity="item" data-id="${esc(item.id)}">${esc(item.name)}</button>
+              <div class="subtle" style="margin-top:6px;min-height:36px">${esc(item.desc || 'Нет описания')}</div>
+              <div class="tags" style="margin-top:10px">${(item.tags || []).map(tag => `<span class="tag">${esc(tag)}</span>`).join('')}</div>
+            </div>
+          </div>
+          <div class="price" style="margin:14px 0 8px">${formatCredits(entry.price)}</div>
+          <button class="primary buy-btn" data-item-id="${esc(entry.itemId)}" data-price="${entry.price}" ${marketAccess.canBuy ? '' : 'disabled aria-disabled="true" title="Покупка доступна только на текущей планете персонажа"'}>КУПИТЬ</button>
+        </div>
+      `;
+    }).join('') || '<div class="card pad18 small-note">На этой планете нет доступных предложений для текущего пользователя.</div>'}`;
+
+    this.attachEntityLinks($('#market-items'));
+
+    $('#market-items').querySelectorAll('.buy-btn').forEach(button => {
+      button.addEventListener('click', async () => {
+        const access = getMarketAccessState(user, planet.id);
+        if (!access.canBuy) {
+          Toast.show(access.reason, 'err');
+          return;
+        }
+        const price = Number(button.dataset.price);
+        const itemId = button.dataset.itemId;
+        if (user.credits < price) {
+          Toast.show('Недостаточно кредитов', 'err');
+          return;
+        }
+        user.credits -= price;
+        const entry = user.inventory.find(inv => inv.itemId === itemId);
+        if (entry) entry.qty += 1;
+        else user.inventory.push({ itemId, qty: 1 });
+        AudioManager.play('marketBuy', { volume: 0.9 });
+        await App.saveState(`Куплено: ${Data.getItem(itemId)?.name || itemId}`);
+        this.renderMarket();
+      });
+    });
+  },
+  exportProfile() {
+    const user = App.currentUser;
+    if (!user) return;
+    const payload = {
+      exportedAt: new Date().toISOString(),
+      user,
+      resolvedEquipment: {
+        weapon: Data.getItem(user.equipmentSlots.weapon),
+        armor: Data.getItem(user.equipmentSlots.armor),
+        inventory: user.inventory.map(entry => ({ ...entry, item: Data.getItem(entry.itemId) || null }))
+      }
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `${user.id}-profile.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+    Toast.show('Профиль экспортирован', 'ok');
+  }
+};
+
+const Wiki = {
+  entityPool() {
+    const pool = [];
+    getVisibleSystems().forEach(system => pool.push({ type: 'system', entity: system, summary: `Система · ${system.planetIds?.length || 0} планет` }));
+    Object.values(Data.planets).filter(entity => isEntityVisible(entity)).forEach(planet => pool.push({ type: 'planet', entity: planet, summary: planet.location?.system || planet.code || 'Планета' }));
+    Object.values(Data.npcs).filter(entity => isEntityVisible(entity)).forEach(npc => pool.push({ type: 'npc', entity: npc, summary: npc.role || npc.location || 'NPC' }));
+    Object.values(Data.equipment).filter(entity => isEntityVisible(entity)).forEach(item => pool.push({ type: 'item', entity: item, summary: `${item.type || 'предмет'} · ${item.rarity || ''}` }));
+    Object.values(Data.flora).filter(entity => isEntityVisible(entity)).forEach(flora => pool.push({ type: 'flora', entity: flora, summary: flora.habitat || 'Флора' }));
+    Object.values(Data.fauna).filter(entity => isEntityVisible(entity)).forEach(fauna => pool.push({ type: 'fauna', entity: fauna, summary: fauna.habitat || 'Фауна' }));
+    Object.values(Data.articles).filter(entity => isEntityVisible(entity)).forEach(article => pool.push({ type: 'article', entity: article, summary: article.category || article.summary || 'Статья архива' }));
+    return pool;
+  },
+  prime() {
+    const hits = this.entityPool().slice(0, 10);
+    $('#wiki-results').innerHTML = hits.map(hit => `
+      <div class="wiki-hit wiki-hit-rich" data-entity="${hit.type}" data-id="${hit.entity.id}">
+        ${renderThumb(hit.entity, { size: 'sm', type: hit.type })}
+        <div>
+          <div><b>${esc(titleForEntity(hit.type, hit.entity))}</b></div>
+          <div class="subtle">${esc(hit.summary)}</div>
+        </div>
+      </div>
+    `).join('') || '<div class="subtle">Нет доступных записей.</div>';
+    $('#wiki-results').querySelectorAll('.wiki-hit').forEach(node => {
+      node.addEventListener('click', () => this.showEntity(node.dataset.entity, node.dataset.id));
+    });
+    if (hits[0]) this.showEntity(hits[0].type, hits[0].entity.id);
+  },
+  search(query) {
+    const q = String(query || '').trim().toLowerCase();
+    if (!q) return this.prime();
+    const results = this.entityPool().filter(hit => {
+      const entity = hit.entity;
+      const hay = [
+        entity.id,
+        entity.name,
+        entity.displayName,
+        hit.summary,
+        entity.summary,
+        entity.desc,
+        entity.location,
+        entity.role,
+        entity.habitat,
+        entity.code,
+        getPlanetReference(entity),
+        getPlanetInfo(entity),
+        entity.use,
+        entity.behavior,
+        entity.body,
+        entity.category
+      ].filter(Boolean).join(' ').toLowerCase();
+      return hay.includes(q);
+    });
+
+    $('#wiki-results').innerHTML = results.map(hit => `
+      <div class="wiki-hit wiki-hit-rich" data-entity="${hit.type}" data-id="${hit.entity.id}">
+        ${renderThumb(hit.entity, { size: 'sm', type: hit.type })}
+        <div>
+          <div><b>${esc(titleForEntity(hit.type, hit.entity))}</b></div>
+          <div class="subtle">${esc(hit.summary)}</div>
+        </div>
+      </div>
+    `).join('') || '<div class="subtle">Ничего не найдено в пределах твоего доступа.</div>';
+
+    $('#wiki-results').querySelectorAll('.wiki-hit').forEach(node => {
+      node.addEventListener('click', () => this.showEntity(node.dataset.entity, node.dataset.id));
+    });
+    if (results[0]) this.showEntity(results[0].type, results[0].entity.id);
+  },
+  currentView: null,
+  showEntity(type, id, autoOpen = false) {
+    this.currentView = { type, id };
+    const entity = entityByType(type, id);
+    if (!entity || !isEntityVisible(entity)) {
+      $('#wiki-detail').innerHTML = '<div class="subtle">Эта запись недоступна текущему пользователю.</div>';
+      if (autoOpen && UI.activeModuleId !== 'wiki') UI.openModule('wiki', { preserveWikiState: true });
+      return;
+    }
+    if (autoOpen && UI.activeModuleId !== 'wiki') UI.openModule('wiki', { preserveWikiState: true });
+    const target = $('#wiki-detail');
+
+    if (type === 'system') {
+      const planets = getVisiblePlanetsForSystem(entity);
+      target.innerHTML = `
+        <div class="wiki-hero">
+          ${renderThumb(entity, { size: 'hero', type: 'system', glyph: initials(entity.name, '✦') })}
+          <div>
+            <div class="section-title">Звёздная система</div>
+            <h2 class="mono accent">${esc(entity.name)}</h2>
+            <div class="subtle">Координаты: ${esc(entity.pos?.x)} / ${esc(entity.pos?.y)}</div>
+            <div class="small-note" style="margin-top:8px">Видимость для игроков регулируется отдельно. Система появляется на карте только у тех, кто имеет к ней доступ.</div>
+          </div>
+        </div>
+        <div class="section-title">Планеты</div>
+        <div class="result-stack">${planets.map(planet => renderEntityButton('planet', planet, { subtitle: planet.code || planet.location?.system || '', thumbSize: 'md' })).join('') || '<div class="small-note">Нет доступных планет в этой системе.</div>'}</div>
+        ${renderRelatedArticlesSection(entity.relatedArticleIds)}
+      `;
+    }
+
+    if (type === 'planet') {
+      target.innerHTML = `
+        <div class="wiki-hero">
+          ${renderThumb(entity, { size: 'hero', type: 'planet', glyph: initials(entity.name, '◌') })}
+          <div>
+            <div class="section-title">Планета</div>
+            <h2 class="mono accent">${esc(entity.name)}</h2>
+            <div class="subtle">${esc(entity.code || '')} · ${esc(entity.location?.system || '')}</div>
+            ${__renderRichText(getPlanetInfo(entity), '<p>Нет информации</p>')}
+          </div>
+        </div>
+        <div class="wiki-data-grid">
+          <div class="card pad18">
+            <div class="section-title">Физика</div>
+            <div class="data-row"><span class="data-label">Тип</span><span class="data-value">${esc(entity.physics?.type || '')}</span></div>
+            <div class="data-row"><span class="data-label">Климат</span><span class="data-value">${esc(entity.physics?.climate || '')}</span></div>
+            <div class="data-row"><span class="data-label">Гравитация</span><span class="data-value">${esc(entity.physics?.gravity || '')}</span></div>
+            <div class="data-row"><span class="data-label">Атмосфера</span><span class="data-value">${esc(entity.physics?.atm || '')}</span></div>
+          </div>
+          <div class="card pad18">
+            <div class="section-title">Общество</div>
+            <div class="data-row"><span class="data-label">Население</span><span class="data-value">${esc(entity.socio?.pop || '')}</span></div>
+            <div class="data-row"><span class="data-label">Столица</span><span class="data-value">${esc(entity.socio?.capital || '')}</span></div>
+            <div class="data-row"><span class="data-label">Правление</span><span class="data-value">${esc(entity.socio?.gov || '')}</span></div>
+            <div class="small-note" style="margin-top:8px">${esc(entity.socio?.law || '')}</div>
+          </div>
+        </div>
+        <div class="section-title" style="margin-top:18px">Ключевые NPC</div>
+        <div class="tags entity-button-row">${UI.socialNpcMarkup(entity.npcIds)}</div>
+        <div class="section-title" style="margin-top:18px">Флора</div>
+        <div class="tags entity-button-row">${UI.floraMarkup(entity.floraIds)}</div>
+        <div class="section-title" style="margin-top:18px">Фауна</div>
+        <div class="tags entity-button-row">${UI.faunaMarkup(entity.faunaIds)}</div>
+        <div class="section-title" style="margin-top:18px">Рынок</div>
+        <div class="result-stack">${(entity.market || []).filter(entry => isEntityVisible(Data.getItem(entry.itemId))).map(entry => renderEntityButton('item', Data.getItem(entry.itemId), { subtitle: `${formatCredits(entry.price)}`, thumbSize: 'sm' })).join('') || '<div class="small-note">Нет доступных товаров</div>'}</div>
+        ${renderRelatedArticlesSection(entity.relatedArticleIds)}
+      `;
+    }
+
+    if (type === 'npc') {
+      const homePlanet = planetForNpc(entity.id);
+      target.innerHTML = `
+        <div class="wiki-hero">
+          ${renderZoomableThumb(entity, { size: 'hero', type: 'npc', glyph: initials(entity.name, '⌁') })}
+          <div>
+            <div class="section-title">NPC</div>
+            <h2 class="mono accent">${esc(entity.name)}</h2>
+            <div class="subtle">${esc(entity.role || '')} · ${esc(entity.location || '')}</div>
+            <p>${esc(entity.summary || 'Нет описания')}</p>
+          </div>
+        </div>
+        <div class="section-title">Черты</div>
+        <div class="tags">${(entity.traits || []).map(trait => `<span class="tag">${esc(trait)}</span>`).join('') || '<div class="small-note">Нет данных</div>'}</div>
+        ${homePlanet && isEntityVisible(homePlanet) ? `<div class="section-title" style="margin-top:18px">Связанная планета</div><div>${renderEntityButton('planet', homePlanet, { subtitle: homePlanet.code || '', thumbSize: 'sm' })}</div>` : ''}
+        ${renderRelatedArticlesSection(entity.relatedArticleIds)}
+        <div class="section-title" style="margin-top:18px">Связь</div>
+        ${App.currentUser?.role === 'gm' ? ChatUI.renderNpcThreadsForGm(entity) : ChatUI.renderNpcThreadForPlayer(entity)}
+      `;
+    }
+
+    if (type === 'item') {
+      const soldOn = Object.values(PLANETS).filter(planet => isEntityVisible(planet) && (planet.market || []).some(entry => entry.itemId === entity.id));
+      target.innerHTML = `
+        <div class="wiki-hero">
+          ${renderThumb(entity, { size: 'hero', type: 'item', glyph: initials(entity.name, '▣') })}
+          <div>
+            <div class="section-title">Предмет</div>
+            <h2 class="mono accent">${esc(entity.name)}</h2>
+            <div class="subtle">${esc(entity.type || '')} · ${esc(entity.rarity || '')}</div>
+            <p>${esc(entity.desc || 'Нет описания')}</p>
+            ${itemHasUsableMechanic(entity) ? `<button class="primary" type="button" id="wiki-use-item-btn">ОТКРЫТЬ МОДУЛЬ ПРЕДМЕТА</button>` : ''}
+          </div>
+        </div>
+        <div class="tags">${(entity.tags || []).map(tag => `<span class="tag">${esc(tag)}</span>`).join('') || '<div class="small-note">Нет тегов</div>'}</div>
+        ${itemHasUsableMechanic(entity) ? `<div class="card pad18" style="margin:18px 0"><div class="data-row"><span class="data-label">Механика</span><span class="data-value">${esc(entity.mechanicTitle || 'Дешифратор')}</span></div><div class="small-note" style="margin-top:8px">${esc(entity.mechanicHint || 'Этот предмет открывает интерактивный инструмент из инвентаря.')}</div></div>` : ''}
+        <div class="section-title" style="margin-top:18px">Где встречается</div>
+        <div class="result-stack">${soldOn.map(planet => renderEntityButton('planet', planet, { subtitle: `${formatCredits((planet.market || []).find(entry => entry.itemId === entity.id)?.price || 0)}`, thumbSize: 'sm' })).join('') || '<div class="small-note">Не продаётся на известных рынках</div>'}</div>
+        ${renderRelatedArticlesSection(entity.relatedArticleIds)}
+      `;
+    }
+
+    if (type === 'flora') {
+      const planets = Object.values(PLANETS).filter(planet => isEntityVisible(planet) && (planet.floraIds || []).includes(entity.id));
+      target.innerHTML = `
+        <div class="wiki-hero">
+          ${renderThumb(entity, { size: 'hero', type: 'flora', glyph: initials(entity.name, '❀') })}
+          <div>
+            <div class="section-title">Флора</div>
+            <h2 class="mono accent">${esc(entity.name)}</h2>
+            <div class="subtle">${esc(entity.habitat || '')}</div>
+            <p>${esc(entity.summary || 'Нет описания')}</p>
+          </div>
+        </div>
+        <div class="data-row"><span class="data-label">Опасность</span><span class="data-value">${esc(entity.danger || '')}</span></div>
+        <div class="data-row"><span class="data-label">Применение</span><span class="data-value">${esc(entity.use || '')}</span></div>
+        <div class="section-title" style="margin-top:18px">Где найдено</div>
+        <div class="result-stack">${planets.map(planet => renderEntityButton('planet', planet, { subtitle: planet.location?.system || '', thumbSize: 'sm' })).join('') || '<div class="small-note">Связанных планет нет</div>'}</div>
+        ${renderRelatedArticlesSection(entity.relatedArticleIds)}
+      `;
+    }
+
+    if (type === 'fauna') {
+      const planets = Object.values(PLANETS).filter(planet => isEntityVisible(planet) && (planet.faunaIds || []).includes(entity.id));
+      target.innerHTML = `
+        <div class="wiki-hero">
+          ${renderThumb(entity, { size: 'hero', type: 'fauna', glyph: initials(entity.name, '◈') })}
+          <div>
+            <div class="section-title">Фауна</div>
+            <h2 class="mono accent">${esc(entity.name)}</h2>
+            <div class="subtle">${esc(entity.habitat || '')}</div>
+            <p>${esc(entity.summary || 'Нет описания')}</p>
+          </div>
+        </div>
+        <div class="data-row"><span class="data-label">Опасность</span><span class="data-value">${esc(entity.danger || '')}</span></div>
+        <div class="data-row"><span class="data-label">Поведение</span><span class="data-value">${esc(entity.behavior || '')}</span></div>
+        <div class="section-title" style="margin-top:18px">Где замечено</div>
+        <div class="result-stack">${planets.map(planet => renderEntityButton('planet', planet, { subtitle: planet.location?.system || '', thumbSize: 'sm' })).join('') || '<div class="small-note">Связанных планет нет</div>'}</div>
+        ${renderRelatedArticlesSection(entity.relatedArticleIds)}
+      `;
+    }
+
+    if (type === 'article') {
+      target.innerHTML = `
+        <div class="wiki-hero">
+          ${renderThumb(entity, { size: 'hero', type: 'article', glyph: initials(entity.name, '✶') })}
+          <div>
+            <div class="section-title">Статья архива</div>
+            <h2 class="mono accent">${esc(entity.name || entity.id)}</h2>
+            <div class="subtle">${esc(entity.category || 'Архив')}</div>
+            <p>${esc(entity.summary || 'Нет краткого описания')}</p>
+          </div>
+        </div>
+        <div class="card pad18"><div class="article-body">${esc(entity.body || 'Текст статьи пока пуст.')}</div></div>
+        ${renderRelatedArticlesSection(entity.relatedArticleIds, 'Связанные статьи')}
+        ${(entity.relatedPlanetIds || []).length ? `<div class="section-title" style="margin-top:18px">Связанные планеты</div><div class="result-stack">${filterVisibleIds(entity.relatedPlanetIds, Data.getPlanet).map(id => Data.getPlanet(id)).filter(Boolean).map(planet => renderEntityButton('planet', planet, { subtitle: planet.code || planet.location?.system || '', thumbSize: 'sm' })).join('') || '<div class="small-note">Нет доступных планет</div>'}</div>` : ''}
+        ${(entity.relatedNpcIds || []).length ? `<div class="section-title" style="margin-top:18px">Связанные NPC</div><div class="result-stack">${filterVisibleIds(entity.relatedNpcIds, Data.getNpc).map(id => Data.getNpc(id)).filter(Boolean).map(npc => renderEntityButton('npc', npc, { subtitle: npc.role || npc.location || '', thumbSize: 'sm' })).join('') || '<div class="small-note">Нет доступных NPC</div>'}</div>` : ''}
+        ${(entity.relatedItemIds || []).length ? `<div class="section-title" style="margin-top:18px">Связанные предметы</div><div class="result-stack">${filterVisibleIds(entity.relatedItemIds, Data.getItem).map(id => Data.getItem(id)).filter(Boolean).map(item => renderEntityButton('item', item, { subtitle: item.type || item.rarity || '', thumbSize: 'sm' })).join('') || '<div class="small-note">Нет доступных предметов</div>'}</div>` : ''}
+        ${(entity.relatedFloraIds || []).length ? `<div class="section-title" style="margin-top:18px">Связанная флора</div><div class="result-stack">${filterVisibleIds(entity.relatedFloraIds, Data.getFlora).map(id => Data.getFlora(id)).filter(Boolean).map(flora => renderEntityButton('flora', flora, { subtitle: flora.habitat || '', thumbSize: 'sm' })).join('') || '<div class="small-note">Нет доступной флоры</div>'}</div>` : ''}
+        ${(entity.relatedFaunaIds || []).length ? `<div class="section-title" style="margin-top:18px">Связанная фауна</div><div class="result-stack">${filterVisibleIds(entity.relatedFaunaIds, Data.getFauna).map(id => Data.getFauna(id)).filter(Boolean).map(fauna => renderEntityButton('fauna', fauna, { subtitle: fauna.habitat || '', thumbSize: 'sm' })).join('') || '<div class="small-note">Нет доступной фауны</div>'}</div>` : ''}
+      `;
+    }
+
+    UI.attachEntityLinks(target);
+    ChatUI.bindWithin(target);
+    target.querySelector('#wiki-use-item-btn')?.addEventListener('click', () => Tooling.openForItem(id));
+  }
+};
+
+const GM = {
+  selectedUserId: 'u1',
+  renderBootstrap() {
+    const root = $('#login-sync-bootstrap');
+    if (!root) return;
+    const config = this.config || { enabled: false, url: '', anonKey: '', campaignId: '', deviceLabel: '', tableName: 'campaign_snapshots', storageBucket: 'campaign-assets', pollIntervalMs: 45000 };
+    root.innerHTML = `
+      <div class="boot-sync-card">
+        <div class="section-title">Подключение к кампании</div>
+        
+        <form id="bootstrap-sync-form" class="form">
+          <div class="field"><label>SUPABASE_URL</label><input class="input" name="url" value="${esc(config.url || '')}" placeholder="https://project.supabase.co" /></div>
+          <div class="field"><label>PUBLISHABLE / ANON KEY</label><input class="input" name="anonKey" value="${esc(config.anonKey || '')}" placeholder="sb_publishable_... или anon key" /></div>
+          <div class="cols2">
+            <div class="field"><label>CAMPAIGN_ID</label><input class="input" name="campaignId" value="${esc(config.campaignId || '')}" placeholder="campaign-alpha" /></div>
+            <div class="field"><label>DEVICE_LABEL</label><input class="input" name="deviceLabel" value="${esc(config.deviceLabel || '')}" placeholder="player-laptop / gm-main-pc" /></div>
+          </div>
+          <div class="cols2">
+            <div class="field"><label>STORAGE_BUCKET</label><input class="input" name="storageBucket" value="${esc(config.storageBucket || 'campaign-assets')}" placeholder="campaign-assets" /></div>
+            <div class="field"><label>TABLE_NAME</label><input class="input" name="tableName" value="${esc(config.tableName || 'campaign_snapshots')}" /></div>
+          </div>
+          <input type="hidden" name="enabled" value="1" />
+          <input type="hidden" name="pollIntervalMs" value="${Number(config.pollIntervalMs || 45000)}" />
+          <div class="boot-sync-actions">
+            <button type="submit" class="primary">СОХРАНИТЬ И ПОДКЛЮЧИТЬ</button>
+            <button type="button" id="bootstrap-open-advanced" class="secondary">РАСШИРЕННЫЕ НАСТРОЙКИ</button>
+          </div>
+          <div class="boot-status">После сохранения данные кампании будут проверены автоматически.</div>
+        </form>
+      </div>
+    `;
+    $('#bootstrap-sync-form')?.addEventListener('submit', async event => {
+      event.preventDefault();
+      const res = await this.saveConfigFromForm(event.currentTarget, { forceEnable: true, silentToast: true });
+      if (!res?.ok) return;
+      await this.ping();
+      await this.checkForRemoteUpdates('bootstrap-save', { applyIfNewer: true, force: true, silent: true });
+      App.state = await Persistence.load();
+      mirrorPlayersIntoWorld(App.state);
+      App.fillLoginSelect();
+      App.updateBootView();
+      $('#login-error').textContent = '';
+      Toast.show('Синхронизация подключена. Теперь можно войти.', 'ok');
+    });
+    $('#bootstrap-open-advanced')?.addEventListener('click', () => UI.openModule('sync', { overLogin: true }));
+  },
+
+  render() {
+    const players = Object.values(App.state.users);
+    if (!players.find(player => player.id === this.selectedUserId)) this.selectedUserId = players[0]?.id || 'u1';
+    const active = players.find(player => player.id === this.selectedUserId);
+    $('#gm-content').innerHTML = `
+      <div class="gm-grid">
+        <div class="card gm-pane">
+          <div class="section-title">Игроки</div>
+          <div class="result-stack">
+            ${players.map(player => `<div class="player-chip ${player.id === this.selectedUserId ? 'active' : ''}" data-id="${player.id}">${renderThumb(player, { size: 'xs', type: 'player', glyph: player.avatarGlyph || initials(player.displayName) })}<div><b>${esc(player.displayName)}</b><div class="subtle" style="margin-top:4px">${esc(player.rank)} · ${formatCredits(player.credits)}</div></div></div>`).join('')}
+          </div>
+        </div>
+        <div class="card gm-pane">${this.renderEditor(active)}</div>
+      </div>
+    `;
+
+    $('#gm-content').querySelectorAll('.player-chip').forEach(node => {
+      node.addEventListener('click', () => {
+        this.selectedUserId = node.dataset.id;
+        this.render();
+      });
+    });
+
+    $('#gm-editor-form')?.addEventListener('submit', async event => {
+      event.preventDefault();
+      const formData = new FormData(event.currentTarget);
+      const user = App.state.users[this.selectedUserId];
+      user.displayName = String(formData.get('displayName') || user.displayName).trim() || user.displayName;
+      user.rank = String(formData.get('rank') || user.rank).trim() || user.rank;
+      user.pass = String(formData.get('pass') || user.pass).trim() || user.pass;
+      user.credits = Number(formData.get('credits') || user.credits);
+      user.lore = String(formData.get('lore') || user.lore).trim();
+      user.notes = String(formData.get('notes') || user.notes).trim();
+      user.stats.hp = Number(formData.get('hp') || user.stats.hp);
+      user.stats.shield = Number(formData.get('shield') || user.stats.shield);
+      user.stats.bio = Number(formData.get('bio') || user.stats.bio);
+      user.abilities.str = Number(formData.get('str') || user.abilities.str);
+      user.abilities.dex = Number(formData.get('dex') || user.abilities.dex);
+      user.abilities.con = Number(formData.get('con') || user.abilities.con);
+      user.abilities.int = Number(formData.get('int') || user.abilities.int);
+      user.abilities.wis = Number(formData.get('wis') || user.abilities.wis);
+      user.abilities.cha = Number(formData.get('cha') || user.abilities.cha);
+      user.equipmentSlots.weapon = String(formData.get('weapon') || user.equipmentSlots.weapon);
+      user.equipmentSlots.armor = String(formData.get('armor') || user.equipmentSlots.armor);
+      user.inventory = parseInventoryEditor(String(formData.get('inventory') || ''));
+      user.social.orgs = String(formData.get('orgs') || '').split('\n').map(v => v.trim()).filter(Boolean);
+      user.social.npcIds = String(formData.get('npcIds') || '').split('\n').map(v => v.trim()).filter(Boolean);
+      await App.saveState(`GM обновил профиль ${user.displayName}`);
+      this.render();
+    });
+  },
+  renderEditor(user) {
+    if (!user) return '<div class="subtle">Нет пользователя</div>';
+    const inventoryTextRaw = user.inventory.map(entry => `${entry.itemId}:${entry.qty}`).join('\n');
+    const orgsText = user.social.orgs.join('\n');
+    const npcsText = user.social.npcIds.join('\n');
+    const visiblePlanets = Object.values(Data.planets).filter(planet => isEntityVisible(planet, user));
+    return `
+      <form id="gm-editor-form" class="form">
+        <div class="section-title">Редактор профиля</div>
+        <div class="gm-profile-head">
+          ${renderThumb(user, { size: 'lg', type: 'player', glyph: user.avatarGlyph || initials(user.displayName) })}
+          <div class="small-note">Изображение, знания мира, рынки и доступ к энциклопедии настраиваются через <b>WORLD_CONFIG</b>.</div>
+        </div>
+        <div class="cols2">
+          <div class="field"><label>Имя</label><input class="input" name="displayName" value="${esc(user.displayName)}" /></div>
+          <div class="field"><label>Ранг</label><input class="input" name="rank" value="${esc(user.rank)}" /></div>
+        </div>
+        <div class="cols2">
+          <div class="field"><label>Пароль</label><input class="input" name="pass" value="${esc(user.pass)}" /></div>
+          <div class="field"><label>Кредиты</label><input class="input" type="number" name="credits" value="${user.credits}" /></div>
+        </div>
+        <div class="cols3">
+          <div class="field"><label>HP</label><input class="input" type="number" name="hp" value="${user.stats.hp}" /></div>
+          <div class="field"><label>Shield</label><input class="input" type="number" name="shield" value="${user.stats.shield}" /></div>
+          <div class="field"><label>Bio</label><input class="input" type="number" name="bio" value="${user.stats.bio}" /></div>
+        </div>
+        <div class="cols3">
+          <div class="field"><label>STR</label><input class="input" type="number" name="str" value="${user.abilities.str}" /></div>
+          <div class="field"><label>DEX</label><input class="input" type="number" name="dex" value="${user.abilities.dex}" /></div>
+          <div class="field"><label>CON</label><input class="input" type="number" name="con" value="${user.abilities.con}" /></div>
+          <div class="field"><label>INT</label><input class="input" type="number" name="int" value="${user.abilities.int}" /></div>
+          <div class="field"><label>WIS</label><input class="input" type="number" name="wis" value="${user.abilities.wis}" /></div>
+          <div class="field"><label>CHA</label><input class="input" type="number" name="cha" value="${user.abilities.cha}" /></div>
+        </div>
+        <div class="cols2">
+          <div class="field">
+            <label>Оружие</label>
+            <select class="select" name="weapon">${WEAPON_OPTIONS.map(option => `<option value="${option.id}" ${option.id === user.equipmentSlots.weapon ? 'selected' : ''}>${esc(option.name)}</option>`).join('')}</select>
+          </div>
+          <div class="field">
+            <label>Броня</label>
+            <select class="select" name="armor">${ARMOR_OPTIONS.map(option => `<option value="${option.id}" ${option.id === user.equipmentSlots.armor ? 'selected' : ''}>${esc(option.name)}</option>`).join('')}</select>
+          </div>
+        </div>
+        <div class="field"><label>Лор</label><textarea class="area" name="lore">${esc(user.lore)}</textarea></div>
+        <div class="field"><label>Заметки</label><textarea class="area" name="notes">${esc(user.notes)}</textarea></div>
+        <div class="field"><label>Инвентарь (itemId:qty, по одному на строку)</label><textarea class="area inv-editor" name="inventory">${esc(inventoryTextRaw)}</textarea></div>
+        <div class="field"><label>NPC id (по одному на строку)</label><textarea class="area inv-editor" name="npcIds">${esc(npcsText)}</textarea></div>
+        <div class="field"><label>Организации (по одной на строку)</label><textarea class="area" name="orgs">${esc(orgsText)}</textarea></div>
+        <div class="small-note">Игрок сейчас видит ${visiblePlanets.length} планет(ы) через систему доступа.</div>
+        <button class="primary" type="submit">СОХРАНИТЬ ИЗМЕНЕНИЯ</button>
+      </form>
+    `;
+  },
+  async restoreDefaults() {
+    App.state = makeDefaultState();
+    await App.saveState('Данные восстановлены из шаблонов');
+    this.render();
+  }
+};
+
+const Configurator = {
+  selectedType: 'planets',
+  selectedId: null,
+  searchQuery: '',
+  getItems(type) {
+    if (type === 'players') return sortEntitiesForList(Object.values(App.state?.users || PLAYER_TEMPLATES));
+    if (type === 'systems') return sortEntitiesForList(SYSTEMS);
+    if (type === 'planets') return sortEntitiesForList(Object.values(PLANETS));
+    if (type === 'npcs') return sortEntitiesForList(Object.values(NPCS));
+    if (type === 'equipment') return sortEntitiesForList(Object.values(EQUIPMENT));
+    if (type === 'flora') return sortEntitiesForList(Object.values(FLORA));
+    if (type === 'fauna') return sortEntitiesForList(Object.values(FAUNA));
+    if (type === 'articles') return sortEntitiesForList(Object.values(ARTICLES));
+    return [];
+  },
+  getSelectedEntity() {
+    return this.getItems(this.selectedType).find(item => item.id === this.selectedId) || null;
+  },
+  renderReportsPanel() {
+    const reports = (App.state?.gmReports?.items || []).slice(0, 12);
+    return `
+      <div class="card pad18 config-report-card">
+        <div class="row" style="justify-content:space-between;align-items:center;gap:12px">
+          <div>
+            <div class="section-title">Журнал ДМа</div>
+            <div class="small-note">Сюда падают результаты мини-игр предметов и другие тех. отчёты.</div>
+          </div>
+          <button id="config-clear-reports-btn" class="ghost" type="button">CLEAR_REPORTS</button>
+        </div>
+        <div class="result-stack report-stack" style="margin-top:12px">
+          ${reports.length ? reports.map(report => `<div class="report-card ${report.success ? 'ok' : 'warn'}"><div class="report-top"><b>${esc(report.title || 'Отчёт')}</b><span>${esc(new Date(report.createdAt || Date.now()).toLocaleString('ru-RU'))}</span></div><div class="small-note" style="margin:6px 0 8px">${esc(report.playerName || getPlayerDisplayName(report.playerId))} · ${esc(report.itemName || report.itemId || report.category || 'tool')}</div><div>${esc(report.text || '')}</div>${report.details ? `<div class="small-note" style="margin-top:8px">${esc(report.details)}</div>` : ''}</div>`).join('') : '<div class="small-note">Журнал пока пуст.</div>'}
+        </div>
+      </div>
+    `;
+  },
+  renderBootstrap() {
+    const root = $('#login-sync-bootstrap');
+    if (!root) return;
+    const config = this.config || { enabled: false, url: '', anonKey: '', campaignId: '', deviceLabel: '', tableName: 'campaign_snapshots', storageBucket: 'campaign-assets', pollIntervalMs: 45000 };
+    root.innerHTML = `
+      <div class="boot-sync-card">
+        <div class="section-title">Подключение к кампании</div>
+        
+        <form id="bootstrap-sync-form" class="form">
+          <div class="field"><label>SUPABASE_URL</label><input class="input" name="url" value="${esc(config.url || '')}" placeholder="https://project.supabase.co" /></div>
+          <div class="field"><label>PUBLISHABLE / ANON KEY</label><input class="input" name="anonKey" value="${esc(config.anonKey || '')}" placeholder="sb_publishable_... или anon key" /></div>
+          <div class="cols2">
+            <div class="field"><label>CAMPAIGN_ID</label><input class="input" name="campaignId" value="${esc(config.campaignId || '')}" placeholder="campaign-alpha" /></div>
+            <div class="field"><label>DEVICE_LABEL</label><input class="input" name="deviceLabel" value="${esc(config.deviceLabel || '')}" placeholder="player-laptop / gm-main-pc" /></div>
+          </div>
+          <div class="cols2">
+            <div class="field"><label>STORAGE_BUCKET</label><input class="input" name="storageBucket" value="${esc(config.storageBucket || 'campaign-assets')}" placeholder="campaign-assets" /></div>
+            <div class="field"><label>TABLE_NAME</label><input class="input" name="tableName" value="${esc(config.tableName || 'campaign_snapshots')}" /></div>
+          </div>
+          <input type="hidden" name="enabled" value="1" />
+          <input type="hidden" name="pollIntervalMs" value="${Number(config.pollIntervalMs || 45000)}" />
+          <div class="boot-sync-actions">
+            <button type="submit" class="primary">СОХРАНИТЬ И ПОДКЛЮЧИТЬ</button>
+            <button type="button" id="bootstrap-open-advanced" class="secondary">РАСШИРЕННЫЕ НАСТРОЙКИ</button>
+          </div>
+          <div class="boot-status">После сохранения данные кампании будут проверены автоматически.</div>
+        </form>
+      </div>
+    `;
+    $('#bootstrap-sync-form')?.addEventListener('submit', async event => {
+      event.preventDefault();
+      const res = await this.saveConfigFromForm(event.currentTarget, { forceEnable: true, silentToast: true });
+      if (!res?.ok) return;
+      await this.ping();
+      await this.checkForRemoteUpdates('bootstrap-save', { applyIfNewer: true, force: true, silent: true });
+      App.state = await Persistence.load();
+      mirrorPlayersIntoWorld(App.state);
+      App.fillLoginSelect();
+      App.updateBootView();
+      $('#login-error').textContent = '';
+      Toast.show('Синхронизация подключена. Теперь можно войти.', 'ok');
+    });
+    $('#bootstrap-open-advanced')?.addEventListener('click', () => UI.openModule('sync', { overLogin: true }));
+  },
+
+  render() {
+    const root = $('#config-content');
+    if (!root) return;
+    const types = Object.entries(WORLD_SECTIONS);
+    const rawItems = this.getItems(this.selectedType);
+    const search = String(this.searchQuery || '').trim().toLowerCase();
+    const matchesSearch = item => {
+      if (!search) return true;
+      const hay = [item?.id, item?.name, item?.title, item?.displayName, item?.label, item?.mapLabel, item?.subtitle, item?.category, this.selectedType === 'systems' ? getSystemLabel(item) : '']
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      return hay.includes(search);
+    };
+    const items = rawItems.filter(matchesSearch);
+    if (this.selectedId && !items.some(item => item.id === this.selectedId)) this.selectedId = items[0]?.id || null;
+    if (!items.length) this.selectedId = null;
+    if (!this.selectedId && items.length) this.selectedId = items[0].id;
+    const selected = this.getSelectedEntity();
+
+    root.innerHTML = `
+      ${App.currentUser?.role === 'gm' ? this.renderReportsPanel() : ''}
+      <div class="config-grid">
+        <div class="card config-side">
+          <div class="section-title">Категории</div>
+          <div class="config-type-list">
+            ${types.map(([key, meta]) => `<button class="secondary config-type-btn ${key === this.selectedType ? 'active' : ''}" data-type="${key}">${esc(meta.label)}</button>`).join('')}
+          </div>
+          <div class="section-title" style="margin-top:18px">Элементы</div>
+          <div class="row" style="margin-bottom:12px;justify-content:space-between">
+            <div class="small-note">${esc(WORLD_SECTIONS[this.selectedType].label)}</div>
+            <button id="config-add-btn" class="secondary">ADD_NEW</button>
+          </div>
+          <div class="field" style="margin-bottom:12px">
+            <input id="config-search-input" class="input" value="${esc(this.searchQuery || '')}" placeholder="Поиск по ID, названию, метке..." />
+          </div>
+          <div class="result-stack config-entity-list">
+            ${items.length ? items.map(item => {
+              const primary = this.selectedType === 'systems' ? getSystemLabel(item) : (item.name || item.displayName || item.title || item.id);
+              const secondary = this.selectedType === 'systems'
+                ? [item.name && item.name !== getSystemLabel(item) ? item.name : '', item.id].filter(Boolean).join(' · ')
+                : (item.mapLabel || item.id);
+              return `<div class="player-chip config-chip ${item.id === this.selectedId ? 'active' : ''}" data-config-id="${esc(item.id)}">${renderThumb(item, { size: 'xs', type: this.selectedType === 'equipment' ? 'item' : this.selectedType.slice(0,-1), glyph: item.avatarGlyph || initials(primary || item.id) })}<div><b>${esc(primary)}</b><div class="subtle" style="margin-top:4px">${esc(secondary)}</div></div></div>`;
+            }).join('') : `<div class="subtle">${search ? 'Ничего не найдено' : 'Список пуст'}</div>`}
+          </div>
+        </div>
+        <div class="card gm-pane config-main">
+          ${selected ? this.renderEditor(selected) : '<div class="subtle">Выберите или создайте сущность.</div>'}
+        </div>
+      </div>
+    `;
+
+    root.querySelectorAll('[data-type]').forEach(node => {
+      node.addEventListener('click', () => {
+        this.selectedType = node.dataset.type;
+        this.selectedId = null;
+        this.render();
+      });
+    });
+
+    root.querySelectorAll('[data-config-id]').forEach(node => {
+      node.addEventListener('click', () => {
+        this.selectedId = node.dataset.configId;
+        this.render();
+      });
+    });
+
+    $('#config-search-input')?.addEventListener('input', event => {
+      const field = event.currentTarget;
+      const value = renderFocusableInputValue(field.value);
+      const start = field.selectionStart;
+      const end = field.selectionEnd;
+      this.searchQuery = value;
+      this.render();
+      restoreInputSelection('#config-search-input', value, start, end);
+    });
+
+    $('#config-add-btn')?.addEventListener('click', () => this.createNew());
+    $('#config-clear-reports-btn')?.addEventListener('click', async () => {
+      App.state.gmReports = { items: [] };
+      await App.saveState('Журнал ДМа очищен');
+      this.render();
+    });
+    $('#config-delete-btn')?.addEventListener('click', () => this.deleteSelected());
+    $('#config-duplicate-btn')?.addEventListener('click', () => this.duplicateSelected());
+    const configForm = $('#config-editor-form');
+    if (configForm) {
+      const currentEntity = this.getSelectedEntity();
+      FormDrafts.bind(configForm, FormDrafts.configKey(this.selectedType, currentEntity?.id || this.selectedId || 'new'));
+    }
+    configForm?.addEventListener('submit', event => this.submit(event));
+    configForm?.querySelectorAll('[type="submit"]').forEach(button => {
+      if (button.dataset.bound === '1') return;
+      button.dataset.bound = '1';
+      button.addEventListener('click', event => {
+        event.preventDefault();
+        configForm.requestSubmit();
+      });
+    });
+    bindImageInputs(root);
+    bindDynamicRowEditor(root);
+    bindFilterableSelectors(root);
+    bindTypeaheadFields(root);
+    bindSearchableSelects(root);
+  },
+  renderHeader(entity, description) {
+    return `
+      <div class="row" style="justify-content:space-between;align-items:flex-start;margin-bottom:18px;gap:12px">
+        <div>
+          <div class="section-title">Конфигуратор мира</div>
+          <h2 style="margin:0 0 6px">${esc(entity.name || entity.displayName || entity.id)}</h2>
+          <div class="small-note">${description}</div>
+        </div>
+        <div class="row config-actions">
+          <button id="config-duplicate-btn" type="button" class="secondary">DUPLICATE</button>
+          <button id="config-delete-btn" type="button" class="ghost">DELETE</button>
+        </div>
+      </div>
+    `;
+  },
+  renderVisibilityField(entity) {
+    return `
+      <div class="field">
+        <label>Доступ игрокам</label>
+        ${renderCheckboxSelector('visibilityPlayerIds', playerEntities(false), entityVisibilityIds(entity), 'player', 'Нет игроков')}
+        <div class="small-note">Если ничего не отмечено — элемент виден всем игрокам. GM видит всё всегда.</div>
+      </div>
+    `;
+  },
+  renderPlayerEditor(user) {
+    return `
+      <form id="config-editor-form" class="form" data-entity-type="players">
+        ${this.renderHeader(user, 'Шаблон персонажа с изображением, инвентарём и контактами. При сохранении обновляется players.json и живое состояние профилей.')}
+        ${imageFieldMarkup(user, 'Портрет персонажа')}
+        <div class="cols3">
+          <div class="field"><label>ID</label><input class="input" name="id" value="${esc(user.id)}" /></div>
+          <div class="field"><label>Короткое имя</label><input class="input" name="shortName" value="${esc(user.shortName || '')}" /></div>
+          <div class="field"><label>Роль</label><select class="select" name="role"><option value="player" ${user.role === 'player' ? 'selected' : ''}>player</option><option value="gm" ${user.role === 'gm' ? 'selected' : ''}>gm</option></select></div>
+        </div>
+        <div class="cols3">
+          <div class="field"><label>Отображаемое имя</label><input class="input" name="displayName" value="${esc(user.displayName)}" /></div>
+          <div class="field"><label>Ранг</label><input class="input" name="rank" value="${esc(user.rank || '')}" /></div>
+          <div class="field"><label>Глиф</label><input class="input" name="avatarGlyph" value="${esc(user.avatarGlyph || '')}" /></div>
+        </div>
+        <div class="cols3">
+          <div class="field"><label>Пароль</label><input class="input" name="pass" value="${esc(user.pass || '')}" /></div>
+          <div class="field"><label>Кредиты</label><input class="input" type="number" name="credits" value="${Number(user.credits || 0)}" /></div>
+          <div class="field"><label>Текущая планета</label><select class="select" name="currentPlanetId"><option value="">Не задана</option>${Object.values(PLANETS).map(option => `<option value="${option.id}" ${option.id === (user.currentPlanetId || '') ? 'selected' : ''}>${esc(option.name)}</option>`).join('')}</select><div class="small-note">Подсветка этой планеты появится на карте и в профиле персонажа.</div></div>
+        </div>
+        <div class="cols3">
+          <div class="field"><label>HP</label><input class="input" type="number" name="hp" value="${Number(user.stats?.hp || 0)}" /></div>
+          <div class="field"><label>Shield</label><input class="input" type="number" name="shield" value="${Number(user.stats?.shield || 0)}" /></div>
+          <div class="field"><label>Bio</label><input class="input" type="number" name="bio" value="${Number(user.stats?.bio || 0)}" /></div>
+        </div>
+        <div class="cols3">
+          <div class="field"><label>STR</label><input class="input" type="number" name="str" value="${Number(user.abilities?.str || 0)}" /></div>
+          <div class="field"><label>DEX</label><input class="input" type="number" name="dex" value="${Number(user.abilities?.dex || 0)}" /></div>
+          <div class="field"><label>CON</label><input class="input" type="number" name="con" value="${Number(user.abilities?.con || 0)}" /></div>
+          <div class="field"><label>INT</label><input class="input" type="number" name="int" value="${Number(user.abilities?.int || 0)}" /></div>
+          <div class="field"><label>WIS</label><input class="input" type="number" name="wis" value="${Number(user.abilities?.wis || 0)}" /></div>
+          <div class="field"><label>CHA</label><input class="input" type="number" name="cha" value="${Number(user.abilities?.cha || 0)}" /></div>
+        </div>
+        <div class="cols2">
+          <div class="field"><label>Оружие</label><select class="select" name="weapon">${WEAPON_OPTIONS.map(option => `<option value="${option.id}" ${option.id === user.equipmentSlots?.weapon ? 'selected' : ''}>${esc(option.name)}</option>`).join('')}</select></div>
+          <div class="field"><label>Броня</label><select class="select" name="armor">${ARMOR_OPTIONS.map(option => `<option value="${option.id}" ${option.id === user.equipmentSlots?.armor ? 'selected' : ''}>${esc(option.name)}</option>`).join('')}</select></div>
+        </div>
+        <div class="field"><label>Лор</label><textarea class="area" name="lore">${esc(user.lore || '')}</textarea></div>
+        <div class="field"><label>Заметки</label><textarea class="area" name="notes">${esc(user.notes || '')}</textarea></div>
+        <div class="field"><label>Инвентарь</label><div id="inventory-rows" class="dynamic-list" data-kind="inventory">${renderInventoryRows(user.inventory)}</div><button id="add-inventory-row" class="secondary" type="button">ADD_INVENTORY_ITEM</button></div>
+        <div class="field"><label>Импланты (name|status)</label><textarea class="area inv-editor" name="implants">${esc(implantsText(user.implants))}</textarea></div>
+        <div class="field"><label>Связанные NPC</label>${renderCheckboxSelector('npcIds', Object.values(NPCS), user.social?.npcIds || [], 'npc', 'Нет NPC')}</div>
+        <div class="field"><label>Организации</label><textarea class="area" name="orgs">${esc(listText(user.social?.orgs))}</textarea></div>
+        <div class="field"><label>Связанные статьи</label>${renderRelatedArticlesEditor(user.relatedArticleIds || [])}</div>
+        <button class="primary" type="submit">SAVE_TEMPLATE</button>
+      </form>
+    `;
+  },
+  renderSystemEditor(system) {
+    return `
+      <form id="config-editor-form" class="form" data-entity-type="systems">
+        ${this.renderHeader(system, 'Система управляет точкой на галактической карте и набором планет внутри. Можно ограничить доступ по игрокам.')}
+        ${imageFieldMarkup(system, 'Изображение системы')}
+        <div class="cols2">
+          <div class="field"><label>ID</label><input class="input" name="id" value="${esc(system.id)}" /></div>
+          <div class="field"><label>Внутренний код точки</label><input class="input" value="${esc(system.id)}" disabled /></div>
+        </div>
+        <div class="cols4 cols-responsive-4">
+          <div class="field"><label>Pos X (0..1)</label><input class="input" type="number" step="0.001" min="0" max="1" name="posX" value="${Number(system.pos?.x ?? 0.5)}" /></div>
+          <div class="field"><label>Pos Y (0..1)</label><input class="input" type="number" step="0.001" min="0" max="1" name="posY" value="${Number(system.pos?.y ?? 0.5)}" /></div>
+          <div class="field"><label>Цвет системы</label><input class="input" name="color" value="${esc(system.color || '#7df9ff')}" placeholder="#7df9ff" /></div>
+          <div class="field"><label>Внешний вид метки</label><select class="select" name="markerStyle">${SYSTEM_MARKER_STYLES.map(option => `<option value="${option.id}" ${option.id === (system.markerStyle || 'orbital') ? 'selected' : ''}>${esc(option.label)}</option>`).join('')}</select></div>
+        </div>
+        <div class="cols2">
+          <div class="field"><label>Метка на карте</label><input class="input" name="markerLabel" value="${esc(system.markerLabel || system.name || '')}" placeholder="Узел кривопространства / Точка интереса" /></div>
+          <div class="field"><label>Внутреннее название</label><input class="input" name="name" value="${esc(system.name || '')}" placeholder="Cassilia Binary" /></div>
+        </div>
+        <div class="field"><label>Планеты в системе</label>${renderCheckboxSelector('planetIds', Object.values(PLANETS), system.planetIds || [], 'planet', 'Нет планет')}</div>
+        <div class="field"><label>Маршруты</label>${renderSystemRoutesEditor(system.routes || [], system.id)}</div>
+        ${this.renderVisibilityField(system)}
+        <div class="field"><label>Связанные статьи</label>${renderRelatedArticlesEditor(system.relatedArticleIds || [])}</div>
+        <button class="primary" type="submit">SAVE_SYSTEM</button>
+      </form>
+    `;
+  },
+  renderPlanetEditor(planet) {
+    return `
+      <form id="config-editor-form" class="form" data-entity-type="planets">
+        ${this.renderHeader(planet, 'Полный редактор планеты с изображением, доступами, связями и рынком по товарам.')}
+        ${imageFieldMarkup(planet, 'Изображение планеты')}
+        <div class="cols3">
+          <div class="field"><label>ID</label><input class="input" name="id" value="${esc(planet.id)}" /></div>
+          <div class="field"><label>Название</label><input class="input" name="name" value="${esc(planet.name || '')}" /></div>
+          <div class="field"><label>Код</label><input class="input" name="code" value="${esc(planet.code || '')}" /></div>
+        </div>
+        <div class="cols4 cols-responsive-4">
+          <div class="field"><label>Цвет</label><input class="input" name="color" value="${esc(planet.color || '#7df9ff')}" /></div>
+          <div class="field"><label>Dist</label><input class="input" type="number" name="dist" value="${Number(planet.dist || 0)}" /></div>
+          <div class="field"><label>Speed</label><input class="input" type="number" step="0.0001" name="speed" value="${Number(planet.speed || 0)}" /></div>
+          <div class="field"><label>Size</label><input class="input" type="number" name="size" value="${Number(planet.size || 0)}" /></div>
+        </div>
+        ${this.renderVisibilityField(planet)}
+        <div class="section-title">Локация</div>
+        <div class="cols2">
+          <div class="field"><label>Рукав</label><input class="input" name="loc_arm" value="${esc(planet.location?.arm || '')}" /></div>
+          <div class="field"><label>Узел</label><input class="input" name="loc_node" value="${esc(planet.location?.node || '')}" /></div>
+          <div class="field"><label>Система</label><input class="input" name="loc_system" value="${esc(planet.location?.system || '')}" /></div>
+          <div class="field"><label>Объект</label><input class="input" name="loc_obj" value="${esc(planet.location?.obj || '')}" /></div>
+        </div>
+        <div class="section-title">Физика</div>
+        <div class="cols2">
+          <div class="field"><label>Тип</label><input class="input" name="phy_type" value="${esc(planet.physics?.type || '')}" /></div>
+          <div class="field"><label>Масса</label><input class="input" name="phy_mass" value="${esc(planet.physics?.mass || '')}" /></div>
+          <div class="field"><label>Радиус</label><input class="input" name="phy_radius" value="${esc(planet.physics?.radius || '')}" /></div>
+          <div class="field"><label>Гравитация</label><input class="input" name="phy_gravity" value="${esc(planet.physics?.gravity || '')}" /></div>
+          <div class="field"><label>Климат</label><input class="input" name="phy_climate" value="${esc(planet.physics?.climate || '')}" /></div>
+          <div class="field"><label>Температура</label><input class="input" name="phy_temp" value="${esc(planet.physics?.temp || '')}" /></div>
+        </div>
+        <div class="field"><label>Атмосфера</label><input class="input" name="phy_atm" value="${esc(planet.physics?.atm || '')}" /></div>
+        <div class="section-title">Социум</div>
+        <div class="cols2">
+          <div class="field"><label>Население</label><input class="input" name="soc_pop" value="${esc(planet.socio?.pop || '')}" /></div>
+          <div class="field"><label>Столица</label><input class="input" name="soc_capital" value="${esc(planet.socio?.capital || '')}" /></div>
+          <div class="field"><label>Правление</label><input class="input" name="soc_gov" value="${esc(planet.socio?.gov || '')}" /></div>
+          <div class="field"><label>Правовой режим</label><input class="input" name="soc_law" value="${esc(planet.socio?.law || '')}" /></div>
+        </div>
+        <div class="section-title">Текстовые блоки планеты</div>
+        <div class="field"><label>Справка</label><textarea class="area" name="pilot_reference">${esc(getPlanetReference(planet))}</textarea></div>
+        <div class="field"><label>Информация</label><textarea class="area article-body-editor" name="pilot_info">${esc(getPlanetInfo(planet))}</textarea></div>
+        <div class="field"><label>Предупреждение</label><textarea class="area" name="pilot_warning">${esc(planet.pilot?.warning || '')}</textarea></div>
+        <div class="field"><label>Ключевые NPC</label>${renderCheckboxSelector('npcIds', Object.values(NPCS), planet.npcIds || [], 'npc', 'Нет NPC')}</div>
+        <div class="field"><label>Флора</label>${renderCheckboxSelector('floraIds', Object.values(FLORA), planet.floraIds || [], 'flora', 'Нет флоры')}</div>
+        <div class="field"><label>Фауна</label>${renderCheckboxSelector('faunaIds', Object.values(FAUNA), planet.faunaIds || [], 'fauna', 'Нет фауны')}</div>
+        <div class="field"><label>Рынок</label><div id="market-rows" class="dynamic-list" data-kind="market">${renderMarketRows(planet.market)}</div><button id="add-market-row" class="secondary" type="button">ADD_MARKET_ITEM</button></div>
+        <div class="field"><label>Связанные статьи</label>${renderRelatedArticlesEditor(planet.relatedArticleIds || [])}</div>
+        <button class="primary" type="submit">SAVE_PLANET</button>
+      </form>
+    `;
+  },
+  renderNpcEditor(npc) {
+    return `
+      <form id="config-editor-form" class="form" data-entity-type="npcs">
+        ${this.renderHeader(npc, 'NPC получает своё изображение, описание и отдельный доступ для игроков.')}
+        ${imageFieldMarkup(npc, 'Изображение NPC')}
+        <div class="cols2">
+          <div class="field"><label>ID</label><input class="input" name="id" value="${esc(npc.id)}" /></div>
+          <div class="field"><label>Имя</label><input class="input" name="name" value="${esc(npc.name || '')}" /></div>
+        </div>
+        <div class="cols2">
+          <div class="field"><label>Роль</label><input class="input" name="role" value="${esc(npc.role || '')}" /></div>
+          <div class="field"><label>Локация</label><input class="input" name="location" value="${esc(npc.location || '')}" /></div>
+        </div>
+        ${this.renderVisibilityField(npc)}
+        <div class="field"><label>Краткое описание</label><textarea class="area" name="summary">${esc(npc.summary || '')}</textarea></div>
+        <div class="field"><label>Черты (по одной на строку)</label><textarea class="area inv-editor" name="traits">${esc(listText(npc.traits))}</textarea></div>
+        <div class="field"><label>Связанные статьи</label>${renderRelatedArticlesEditor(npc.relatedArticleIds || [])}</div>
+        <button class="primary" type="submit">SAVE_NPC</button>
+      </form>
+    `;
+  },
+  renderEquipmentEditor(item) {
+    return `
+      <form id="config-editor-form" class="form" data-entity-type="equipment">
+        ${this.renderHeader(item, 'Предметы получают уникальные изображения и показываются в профилях, рынке и вики.')}
+        ${imageFieldMarkup(item, 'Изображение предмета')}
+        <div class="cols3">
+          <div class="field"><label>ID</label><input class="input" name="id" value="${esc(item.id)}" /></div>
+          <div class="field"><label>Тип</label><input class="input" name="type" value="${esc(item.type || '')}" /></div>
+          <div class="field"><label>Редкость</label><input class="input" name="rarity" value="${esc(item.rarity || '')}" /></div>
+        </div>
+        <div class="field"><label>Название</label><input class="input" name="name" value="${esc(item.name || '')}" /></div>
+        ${this.renderVisibilityField(item)}
+        <div class="field"><label>Описание</label><textarea class="area" name="desc">${esc(item.desc || '')}</textarea></div>
+        <div class="cols3">
+          <div class="field"><label>Механика предмета</label><select class="select" name="mechanicType"><option value="" ${!item.mechanicType ? 'selected' : ''}>Нет активной механики</option><option value="decryptor" ${item.mechanicType === 'decryptor' ? 'selected' : ''}>Дешифратор / интерактивный модуль</option></select></div>
+          <div class="field"><label>Режим модуля</label><select class="select" name="decryptorMode"><option value="decryptor" ${String(item.decryptorMode || 'decryptor') === 'decryptor' ? 'selected' : ''}>Обычный дешифратор</option><option value="codebreaker" ${item.decryptorMode === 'codebreaker' ? 'selected' : ''}>Мини-игра: быстрый взлом</option><option value="doorhack" ${item.decryptorMode === 'doorhack' ? 'selected' : ''}>Мини-игра: дверной взлом</option></select></div>
+          <div class="field"><label>Название модуля</label><input class="input" name="mechanicTitle" value="${esc(item.mechanicTitle || '')}" placeholder="Полевой дешифратор" /></div>
+        </div>
+        <div class="cols3">
+          <div class="field"><label>Шифр по умолчанию</label><select class="select" name="decryptorDefaultCipher"><option value="caesar" ${String(item.decryptorDefaultCipher || 'caesar') === 'caesar' ? 'selected' : ''}>Caesar</option><option value="vigenere" ${item.decryptorDefaultCipher === 'vigenere' ? 'selected' : ''}>Vigenere</option><option value="atbash" ${item.decryptorDefaultCipher === 'atbash' ? 'selected' : ''}>Atbash</option><option value="xor" ${item.decryptorDefaultCipher === 'xor' ? 'selected' : ''}>XOR/Base64</option></select></div>
+          <div class="field"><label>Лимит времени (сек)</label><input class="input" type="number" min="5" max="120" name="mechanicTimeLimit" value="${esc(String(item.mechanicTimeLimit || 20))}" /></div>
+          <div class="field"><label>Длина кода / слотов</label><input class="input" type="number" min="3" max="8" name="mechanicCodeLength" value="${esc(String(item.mechanicCodeLength || item.mechanicSlots || 5))}" /></div>
+        </div>
+        <div class="field"><label>Подсказка к механике</label><textarea class="area" name="mechanicHint">${esc(item.mechanicHint || '')}</textarea></div>
+        <div class="field"><label>Теги (по одному на строку)</label><textarea class="area inv-editor" name="tags">${esc(listText(item.tags))}</textarea></div>
+        <div class="field"><label>Связанные статьи</label>${renderRelatedArticlesEditor(item.relatedArticleIds || [])}</div>
+        <button class="primary" type="submit">SAVE_ITEM</button>
+      </form>
+    `;
+  },
+  renderFloraEditor(flora) {
+    return `
+      <form id="config-editor-form" class="form" data-entity-type="flora">
+        ${this.renderHeader(flora, 'Флора появляется в статьях планет и ведёт в отдельную вики-запись по клику.')}
+        ${imageFieldMarkup(flora, 'Изображение флоры')}
+        <div class="cols2">
+          <div class="field"><label>ID</label><input class="input" name="id" value="${esc(flora.id)}" /></div>
+          <div class="field"><label>Название</label><input class="input" name="name" value="${esc(flora.name || '')}" /></div>
+        </div>
+        ${this.renderVisibilityField(flora)}
+        <div class="field"><label>Ареал</label><input class="input" name="habitat" value="${esc(flora.habitat || '')}" /></div>
+        <div class="field"><label>Краткое описание</label><textarea class="area" name="summary">${esc(flora.summary || '')}</textarea></div>
+        <div class="cols2">
+          <div class="field"><label>Опасность</label><input class="input" name="danger" value="${esc(flora.danger || '')}" /></div>
+          <div class="field"><label>Применение</label><input class="input" name="use" value="${esc(flora.use || '')}" /></div>
+        </div>
+        <div class="field"><label>Связанные статьи</label>${renderRelatedArticlesEditor(flora.relatedArticleIds || [])}</div>
+        <button class="primary" type="submit">SAVE_FLORA</button>
+      </form>
+    `;
+  },
+  renderFaunaEditor(fauna) {
+    return `
+      <form id="config-editor-form" class="form" data-entity-type="fauna">
+        ${this.renderHeader(fauna, 'Фауна тоже получает картинку, свой доступ и отдельную статью в архиве.')}
+        ${imageFieldMarkup(fauna, 'Изображение фауны')}
+        <div class="cols2">
+          <div class="field"><label>ID</label><input class="input" name="id" value="${esc(fauna.id)}" /></div>
+          <div class="field"><label>Название</label><input class="input" name="name" value="${esc(fauna.name || '')}" /></div>
+        </div>
+        ${this.renderVisibilityField(fauna)}
+        <div class="field"><label>Ареал</label><input class="input" name="habitat" value="${esc(fauna.habitat || '')}" /></div>
+        <div class="field"><label>Краткое описание</label><textarea class="area" name="summary">${esc(fauna.summary || '')}</textarea></div>
+        <div class="cols2">
+          <div class="field"><label>Опасность</label><input class="input" name="danger" value="${esc(fauna.danger || '')}" /></div>
+          <div class="field"><label>Поведение</label><input class="input" name="behavior" value="${esc(fauna.behavior || '')}" /></div>
+        </div>
+        <div class="field"><label>Связанные статьи</label>${renderRelatedArticlesEditor(fauna.relatedArticleIds || [])}</div>
+        <button class="primary" type="submit">SAVE_FAUNA</button>
+      </form>
+    `;
+  },
+  renderArticleEditor(article) {
+    return `
+      <form id="config-editor-form" class="form" data-entity-type="articles">
+        ${this.renderHeader(article, 'Отдельная энциклопедическая статья архива с доступами, изображением и связями на другие материалы.')}
+        ${imageFieldMarkup(article, 'Изображение статьи')}
+        <div class="cols3">
+          <div class="field"><label>ID</label><input class="input" name="id" value="${esc(article.id)}" /></div>
+          <div class="field"><label>Заголовок</label><input class="input" name="name" value="${esc(article.name || '')}" /></div>
+          <div class="field"><label>Категория</label><input class="input" name="category" value="${esc(article.category || '')}" placeholder="Архив" /></div>
+        </div>
+        ${this.renderVisibilityField(article)}
+        <div class="field"><label>Краткое описание</label><textarea class="area" name="summary">${esc(article.summary || '')}</textarea></div>
+        <div class="field"><label>Полный текст статьи</label><textarea class="area article-body-editor" name="body">${esc(article.body || '')}</textarea></div>
+        <div class="section-title">Связанные материалы</div>
+        <div class="field"><label>Связанные статьи</label>${renderCheckboxSelector('relatedArticleIds', Object.values(ARTICLES).filter(item => item.id !== article.id), article.relatedArticleIds || [], 'article', 'Нет статей')}</div>
+        <div class="field"><label>Связанные планеты</label>${renderCheckboxSelector('relatedPlanetIds', Object.values(PLANETS), article.relatedPlanetIds || [], 'planet', 'Нет планет')}</div>
+        <div class="field"><label>Связанные NPC</label>${renderCheckboxSelector('relatedNpcIds', Object.values(NPCS), article.relatedNpcIds || [], 'npc', 'Нет NPC')}</div>
+        <div class="field"><label>Связанные предметы</label>${renderCheckboxSelector('relatedItemIds', Object.values(EQUIPMENT), article.relatedItemIds || [], 'item', 'Нет предметов')}</div>
+        <div class="field"><label>Связанная флора</label>${renderCheckboxSelector('relatedFloraIds', Object.values(FLORA), article.relatedFloraIds || [], 'flora', 'Нет флоры')}</div>
+        <div class="field"><label>Связанная фауна</label>${renderCheckboxSelector('relatedFaunaIds', Object.values(FAUNA), article.relatedFaunaIds || [], 'fauna', 'Нет фауны')}</div>
+        <button class="primary" type="submit">SAVE_ARTICLE</button>
+      </form>
+    `;
+  },
+  renderEditor(entity) {
+    if (this.selectedType === 'players') return this.renderPlayerEditor(entity);
+    if (this.selectedType === 'systems') return this.renderSystemEditor(entity);
+    if (this.selectedType === 'planets') return this.renderPlanetEditor(entity);
+    if (this.selectedType === 'npcs') return this.renderNpcEditor(entity);
+    if (this.selectedType === 'equipment') return this.renderEquipmentEditor(entity);
+    if (this.selectedType === 'flora') return this.renderFloraEditor(entity);
+    if (this.selectedType === 'fauna') return this.renderFaunaEditor(entity);
+    if (this.selectedType === 'articles') return this.renderArticleEditor(entity);
+    return '<div class="subtle">Редактор недоступен</div>';
+  },
+  createNew() {
+    const entity = createBlankEntity(this.selectedType);
+    this.insertEntity(this.selectedType, entity);
+    this.selectedId = entity.id;
+    this.render();
+  },
+  duplicateSelected() {
+    const entity = this.getSelectedEntity();
+    if (!entity) return;
+    const copy = deep(entity);
+    const newId = slugifyId(`${entity.id}_copy`, this.selectedType.slice(0, -1));
+    copy.id = newId;
+    const base = copy.name || copy.displayName || copy.id;
+    if (copy.name) copy.name = `${base} (копия)`;
+    if (copy.displayName) copy.displayName = `${base} (копия)`;
+    this.selectedId = copy.id;
+    this.insertEntity(this.selectedType, copy);
+    this.render();
+  },
+  allEntitiesWithArticleRefs() {
+    return [
+      ...Object.values(PLAYER_TEMPLATES),
+      ...SYSTEMS,
+      ...Object.values(PLANETS),
+      ...Object.values(NPCS),
+      ...Object.values(EQUIPMENT),
+      ...Object.values(FLORA),
+      ...Object.values(FAUNA),
+      ...Object.values(ARTICLES)
+    ];
+  },
+  cleanupReferences(type, id) {
+    if (type === 'systems') {
+      SYSTEMS.forEach(system => {
+        system.routes = (system.routes || []).filter(route => route.toId !== id);
+      });
+      if (GalaxyMap.state.activeSystemId === id) GalaxyMap.exitSystem();
+    }
+    if (type === 'planets') {
+      SYSTEMS.forEach(system => { system.planetIds = (system.planetIds || []).filter(value => value !== id); });
+      Object.values(ARTICLES).forEach(article => { article.relatedPlanetIds = (article.relatedPlanetIds || []).filter(value => value !== id); });
+      if (UI.selectedPlanetId === id) UI.selectedPlanetId = null;
+    }
+    if (type === 'npcs') {
+      Object.values(PLANETS).forEach(planet => { planet.npcIds = (planet.npcIds || []).filter(value => value !== id); });
+      Object.values(PLAYER_TEMPLATES).forEach(player => { player.social.npcIds = (player.social?.npcIds || []).filter(value => value !== id); });
+      Object.values(App.state.users || {}).forEach(player => { player.social.npcIds = (player.social?.npcIds || []).filter(value => value !== id); });
+      Object.values(ARTICLES).forEach(article => { article.relatedNpcIds = (article.relatedNpcIds || []).filter(value => value !== id); });
+    }
+    if (type === 'flora') {
+      Object.values(PLANETS).forEach(planet => { planet.floraIds = (planet.floraIds || []).filter(value => value !== id); });
+      Object.values(ARTICLES).forEach(article => { article.relatedFloraIds = (article.relatedFloraIds || []).filter(value => value !== id); });
+    }
+    if (type === 'fauna') {
+      Object.values(PLANETS).forEach(planet => { planet.faunaIds = (planet.faunaIds || []).filter(value => value !== id); });
+      Object.values(ARTICLES).forEach(article => { article.relatedFaunaIds = (article.relatedFaunaIds || []).filter(value => value !== id); });
+    }
+    if (type === 'articles') {
+      this.allEntitiesWithArticleRefs().forEach(entity => { entity.relatedArticleIds = (entity.relatedArticleIds || []).filter(value => value !== id); });
+    }
+    if (type === 'equipment') {
+      Object.values(PLANETS).forEach(planet => { planet.market = (planet.market || []).filter(entry => entry.itemId !== id); });
+      Object.values(PLAYER_TEMPLATES).forEach(player => {
+        player.inventory = (player.inventory || []).filter(entry => entry.itemId !== id);
+        if (player.equipmentSlots?.weapon === id) player.equipmentSlots.weapon = '';
+        if (player.equipmentSlots?.armor === id) player.equipmentSlots.armor = '';
+      });
+      Object.values(App.state.users || {}).forEach(player => {
+        player.inventory = (player.inventory || []).filter(entry => entry.itemId !== id);
+        if (player.equipmentSlots?.weapon === id) player.equipmentSlots.weapon = '';
+        if (player.equipmentSlots?.armor === id) player.equipmentSlots.armor = '';
+      });
+      Object.values(ARTICLES).forEach(article => { article.relatedItemIds = (article.relatedItemIds || []).filter(value => value !== id); });
+    }
+  },
+  remapReferences(type, oldId, newId) {
+    if (oldId === newId) return;
+    if (type === 'systems') {
+      SYSTEMS.forEach(system => {
+        system.routes = (system.routes || []).map(route => route.toId === oldId ? { ...route, toId: newId } : route);
+      });
+      if (GalaxyMap.state.activeSystemId === oldId) GalaxyMap.state.activeSystemId = newId;
+    }
+    if (type === 'planets') {
+      SYSTEMS.forEach(system => { system.planetIds = (system.planetIds || []).map(value => value === oldId ? newId : value); });
+      Object.values(ARTICLES).forEach(article => { article.relatedPlanetIds = (article.relatedPlanetIds || []).map(value => value === oldId ? newId : value); });
+      if (UI.selectedPlanetId === oldId) UI.selectedPlanetId = newId;
+    }
+    if (type === 'npcs') {
+      Object.values(PLANETS).forEach(planet => { planet.npcIds = (planet.npcIds || []).map(value => value === oldId ? newId : value); });
+      Object.values(PLAYER_TEMPLATES).forEach(player => { player.social.npcIds = (player.social?.npcIds || []).map(value => value === oldId ? newId : value); });
+      Object.values(App.state.users || {}).forEach(player => { player.social.npcIds = (player.social?.npcIds || []).map(value => value === oldId ? newId : value); });
+      Object.values(ARTICLES).forEach(article => { article.relatedNpcIds = (article.relatedNpcIds || []).map(value => value === oldId ? newId : value); });
+    }
+    if (type === 'flora') {
+      Object.values(PLANETS).forEach(planet => { planet.floraIds = (planet.floraIds || []).map(value => value === oldId ? newId : value); });
+      Object.values(ARTICLES).forEach(article => { article.relatedFloraIds = (article.relatedFloraIds || []).map(value => value === oldId ? newId : value); });
+    }
+    if (type === 'fauna') {
+      Object.values(PLANETS).forEach(planet => { planet.faunaIds = (planet.faunaIds || []).map(value => value === oldId ? newId : value); });
+      Object.values(ARTICLES).forEach(article => { article.relatedFaunaIds = (article.relatedFaunaIds || []).map(value => value === oldId ? newId : value); });
+    }
+    if (type === 'articles') {
+      this.allEntitiesWithArticleRefs().forEach(entity => { entity.relatedArticleIds = (entity.relatedArticleIds || []).map(value => value === oldId ? newId : value); });
+      if (Wiki.currentView?.type === 'article' && Wiki.currentView?.id === oldId) Wiki.currentView = { type: 'article', id: newId };
+    }
+    if (type === 'equipment') {
+      Object.values(PLANETS).forEach(planet => { planet.market = (planet.market || []).map(entry => entry.itemId === oldId ? { ...entry, itemId: newId } : entry); });
+      Object.values(PLAYER_TEMPLATES).forEach(player => {
+        player.inventory = (player.inventory || []).map(entry => entry.itemId === oldId ? { ...entry, itemId: newId } : entry);
+        if (player.equipmentSlots?.weapon === oldId) player.equipmentSlots.weapon = newId;
+        if (player.equipmentSlots?.armor === oldId) player.equipmentSlots.armor = newId;
+      });
+      Object.values(App.state.users || {}).forEach(player => {
+        player.inventory = (player.inventory || []).map(entry => entry.itemId === oldId ? { ...entry, itemId: newId } : entry);
+        if (player.equipmentSlots?.weapon === oldId) player.equipmentSlots.weapon = newId;
+        if (player.equipmentSlots?.armor === oldId) player.equipmentSlots.armor = newId;
+      });
+      Object.values(ARTICLES).forEach(article => { article.relatedItemIds = (article.relatedItemIds || []).map(value => value === oldId ? newId : value); });
+    }
+    if (type === 'players' && App.state.users?.[oldId]) {
+      App.state.users[newId] = { ...App.state.users[oldId], id: newId };
+      delete App.state.users[oldId];
+      if (App.currentUserId === oldId) App.currentUserId = newId;
+    }
+  },
+  async deleteSelected() {
+    const entity = this.getSelectedEntity();
+    if (!entity) return;
+    if (this.selectedType === 'players' && entity.id === 'gm') {
+      Toast.show('Профиль ведущего удалять нельзя', 'err');
+      return;
+    }
+    const ok = window.confirm(`Удалить ${entity.name || entity.displayName || entity.id}?`);
+    if (!ok) return;
+    const removedId = entity.id;
+    this.cleanupReferences(this.selectedType, removedId);
+    this.removeEntity(this.selectedType, removedId);
+    await this.persistAll(`Удалена сущность ${removedId}`, this.selectedType === 'players' ? { playerSync: { deleteId: removedId } } : {});
+    const remaining = this.getItems(this.selectedType);
+    this.selectedId = remaining[0]?.id || null;
+    this.render();
+  },
+  insertEntity(type, entity) {
+    if (type === 'players') {
+      PLAYER_TEMPLATES[entity.id] = deep(entity);
+      App.state.users[entity.id] = deep(entity);
+    }
+    if (type === 'systems') SYSTEMS.push(entity);
+    if (type === 'planets') PLANETS[entity.id] = entity;
+    if (type === 'npcs') NPCS[entity.id] = entity;
+    if (type === 'equipment') EQUIPMENT[entity.id] = entity;
+    if (type === 'flora') FLORA[entity.id] = entity;
+    if (type === 'fauna') FAUNA[entity.id] = entity;
+    if (type === 'articles') ARTICLES[entity.id] = entity;
+  },
+  removeEntity(type, id) {
+    if (type === 'players') {
+      delete PLAYER_TEMPLATES[id];
+      delete App.state.users[id];
+    }
+    if (type === 'systems') {
+      const index = SYSTEMS.findIndex(item => item.id === id);
+      if (index >= 0) SYSTEMS.splice(index, 1);
+    }
+    if (type === 'planets') delete PLANETS[id];
+    if (type === 'npcs') delete NPCS[id];
+    if (type === 'equipment') delete EQUIPMENT[id];
+    if (type === 'flora') delete FLORA[id];
+    if (type === 'fauna') delete FAUNA[id];
+    if (type === 'articles') delete ARTICLES[id];
+  },
+  replaceEntity(type, oldId, entity) {
+    this.removeEntity(type, oldId);
+    this.insertEntity(type, entity);
+    this.remapReferences(type, oldId, entity.id);
+    this.selectedId = entity.id;
+  },
+  collectEntity(type, formEl, formData = new FormData(formEl)) {
+    const mediaField = formEl.querySelector('.media-field');
+    const hiddenImage = formEl.querySelector('input[name="imageData"]')?.value || '';
+    const image = String(hiddenImage || formData.get('imageData') || mediaField?.dataset?.savedImageValue || mediaField?.dataset?.pendingImageValue || '').trim();
+    if (type === 'players') {
+      const baseId = slugifyId(formData.get('id') || formData.get('displayName') || '', 'player');
+      return {
+        id: baseId,
+        role: String(formData.get('role') || 'player'),
+        pass: String(formData.get('pass') || '0000').trim(),
+        shortName: String(formData.get('shortName') || baseId).trim(),
+        displayName: String(formData.get('displayName') || baseId).trim(),
+        rank: String(formData.get('rank') || '').trim(),
+        avatarGlyph: String(formData.get('avatarGlyph') || '').trim(),
+        credits: Number(formData.get('credits') || 0),
+        lore: String(formData.get('lore') || '').trim(),
+        notes: String(formData.get('notes') || '').trim(),
+        stats: { hp: Number(formData.get('hp') || 0), shield: Number(formData.get('shield') || 0), bio: Number(formData.get('bio') || 0) },
+        abilities: {
+          str: Number(formData.get('str') || 0), dex: Number(formData.get('dex') || 0), con: Number(formData.get('con') || 0),
+          int: Number(formData.get('int') || 0), wis: Number(formData.get('wis') || 0), cha: Number(formData.get('cha') || 0)
+        },
+        equipmentSlots: { weapon: String(formData.get('weapon') || ''), armor: String(formData.get('armor') || '') },
+        inventory: readInventoryRows(formEl),
+        implants: parseImplantsEditor(formData.get('implants') || ''),
+        social: { npcIds: getCheckedValues(formEl, 'npcIds'), orgs: parseListEditor(formData.get('orgs') || '') },
+        currentPlanetId: String(formData.get('currentPlanetId') || '').trim(),
+        relatedArticleIds: getCheckedValues(formEl, 'relatedArticleIds'),
+        image
+      };
+    }
+    if (type === 'systems') {
+      return {
+        id: slugifyId(formData.get('id') || formData.get('name') || formData.get('markerLabel') || '', 'system'),
+        name: String(formData.get('name') || formData.get('markerLabel') || '').trim(),
+        markerLabel: String(formData.get('markerLabel') || formData.get('name') || '').trim(),
+        markerStyle: SYSTEM_MARKER_STYLES.some(option => option.id === String(formData.get('markerStyle') || 'orbital').trim()) ? String(formData.get('markerStyle') || 'orbital').trim() : 'orbital',
+        color: String(formData.get('color') || '#7df9ff').trim() || '#7df9ff',
+        pos: { x: Number(clamp(Number(formData.get('posX') || 0.5), 0, 1).toFixed(3)), y: Number(clamp(Number(formData.get('posY') || 0.5), 0, 1).toFixed(3)) },
+        planetIds: getCheckedValues(formEl, 'planetIds'),
+        routes: readSystemRouteRows(formEl),
+        image,
+        relatedArticleIds: getCheckedValues(formEl, 'relatedArticleIds'),
+        visibility: { playerIds: getCheckedValues(formEl, 'visibilityPlayerIds') }
+      };
+    }
+    if (type === 'planets') {
+      return {
+        id: slugifyId(formData.get('id') || formData.get('name') || '', 'planet'),
+        name: String(formData.get('name') || '').trim(),
+        code: String(formData.get('code') || '').trim(),
+        color: String(formData.get('color') || '#7df9ff').trim(),
+        dist: Number(formData.get('dist') || 0),
+        speed: Number(formData.get('speed') || 0),
+        size: Number(formData.get('size') || 0),
+        location: { arm: String(formData.get('loc_arm') || '').trim(), node: String(formData.get('loc_node') || '').trim(), system: String(formData.get('loc_system') || '').trim(), obj: String(formData.get('loc_obj') || '').trim() },
+        physics: {
+          type: String(formData.get('phy_type') || '').trim(), mass: String(formData.get('phy_mass') || '').trim(), radius: String(formData.get('phy_radius') || '').trim(),
+          gravity: String(formData.get('phy_gravity') || '').trim(), climate: String(formData.get('phy_climate') || '').trim(), temp: String(formData.get('phy_temp') || '').trim(), atm: String(formData.get('phy_atm') || '').trim()
+        },
+        socio: { pop: String(formData.get('soc_pop') || '').trim(), capital: String(formData.get('soc_capital') || '').trim(), gov: String(formData.get('soc_gov') || '').trim(), law: String(formData.get('soc_law') || '').trim() },
+        pilot: { reference: String(formData.get('pilot_reference') || '').trim(), info: String(formData.get('pilot_info') || '').trim(), warning: String(formData.get('pilot_warning') || '').trim() },
+        npcIds: getCheckedValues(formEl, 'npcIds'),
+        floraIds: getCheckedValues(formEl, 'floraIds'),
+        faunaIds: getCheckedValues(formEl, 'faunaIds'),
+        market: readMarketRows(formEl),
+        image,
+        relatedArticleIds: getCheckedValues(formEl, 'relatedArticleIds'),
+        visibility: { playerIds: getCheckedValues(formEl, 'visibilityPlayerIds') }
+      };
+    }
+    if (type === 'npcs') {
+      return {
+        id: slugifyId(formData.get('id') || formData.get('name') || '', 'npc'),
+        name: String(formData.get('name') || '').trim(),
+        role: String(formData.get('role') || '').trim(),
+        location: String(formData.get('location') || '').trim(),
+        summary: String(formData.get('summary') || '').trim(),
+        traits: parseListEditor(formData.get('traits') || ''),
+        image,
+        relatedArticleIds: getCheckedValues(formEl, 'relatedArticleIds'),
+        visibility: { playerIds: getCheckedValues(formEl, 'visibilityPlayerIds') }
+      };
+    }
+    if (type === 'equipment') {
+      return {
+        id: slugifyId(formData.get('id') || formData.get('name') || '', 'item'),
+        type: String(formData.get('type') || '').trim(),
+        name: String(formData.get('name') || '').trim(),
+        desc: String(formData.get('desc') || '').trim(),
+        rarity: String(formData.get('rarity') || '').trim(),
+        tags: parseListEditor(formData.get('tags') || ''),
+        image,
+        relatedArticleIds: getCheckedValues(formEl, 'relatedArticleIds'),
+        visibility: { playerIds: getCheckedValues(formEl, 'visibilityPlayerIds') },
+        mechanicType: String(formData.get('mechanicType') || '').trim(),
+        decryptorMode: String(formData.get('decryptorMode') || 'decryptor').trim(),
+        mechanicTitle: String(formData.get('mechanicTitle') || '').trim(),
+        decryptorDefaultCipher: String(formData.get('decryptorDefaultCipher') || 'caesar').trim(),
+        mechanicHint: String(formData.get('mechanicHint') || '').trim(),
+        mechanicTimeLimit: clamp(Number(formData.get('mechanicTimeLimit') || 20), 5, 120),
+        mechanicCodeLength: clamp(Number(formData.get('mechanicCodeLength') || 5), 3, 8),
+        mechanicSlots: clamp(Number(formData.get('mechanicCodeLength') || formData.get('mechanicSlots') || 3), 3, 5)
+      };
+    }
+    if (type === 'flora') {
+      return {
+        id: slugifyId(formData.get('id') || formData.get('name') || '', 'flora'),
+        name: String(formData.get('name') || '').trim(),
+        habitat: String(formData.get('habitat') || '').trim(),
+        summary: String(formData.get('summary') || '').trim(),
+        danger: String(formData.get('danger') || '').trim(),
+        use: String(formData.get('use') || '').trim(),
+        image,
+        relatedArticleIds: getCheckedValues(formEl, 'relatedArticleIds'),
+        visibility: { playerIds: getCheckedValues(formEl, 'visibilityPlayerIds') }
+      };
+    }
+    if (type === 'fauna') {
+      return {
+        id: slugifyId(formData.get('id') || formData.get('name') || '', 'fauna'),
+        name: String(formData.get('name') || '').trim(),
+        habitat: String(formData.get('habitat') || '').trim(),
+        summary: String(formData.get('summary') || '').trim(),
+        danger: String(formData.get('danger') || '').trim(),
+        behavior: String(formData.get('behavior') || '').trim(),
+        image,
+        relatedArticleIds: getCheckedValues(formEl, 'relatedArticleIds'),
+        visibility: { playerIds: getCheckedValues(formEl, 'visibilityPlayerIds') }
+      };
+    }
+    if (type === 'articles') {
+      return {
+        id: slugifyId(formData.get('id') || formData.get('name') || '', 'article'),
+        name: String(formData.get('name') || '').trim(),
+        category: String(formData.get('category') || '').trim(),
+        summary: String(formData.get('summary') || '').trim(),
+        body: String(formData.get('body') || '').trim(),
+        image,
+        relatedArticleIds: getCheckedValues(formEl, 'relatedArticleIds'),
+        relatedPlanetIds: getCheckedValues(formEl, 'relatedPlanetIds'),
+        relatedNpcIds: getCheckedValues(formEl, 'relatedNpcIds'),
+        relatedItemIds: getCheckedValues(formEl, 'relatedItemIds'),
+        relatedFloraIds: getCheckedValues(formEl, 'relatedFloraIds'),
+        relatedFaunaIds: getCheckedValues(formEl, 'relatedFaunaIds'),
+        visibility: { playerIds: getCheckedValues(formEl, 'visibilityPlayerIds') }
+      };
+    }
+    return null;
+  },
+  async submit(event) {
+    event.preventDefault();
+    const current = this.getSelectedEntity();
+    const oldId = current?.id || this.selectedId;
+    const formEl = event.currentTarget;
+    Debug.log('CONFIG_SUBMIT_START', { type: this.selectedType, oldId });
+    try {
+      await waitForPendingImageTasks(formEl);
+      const formData = new FormData(formEl);
+      const entity = this.collectEntity(this.selectedType, formEl, formData);
+      Debug.log('CONFIG_ENTITY_COLLECTED', {
+        type: this.selectedType,
+        oldId,
+        newId: entity?.id,
+        name: entity?.name || entity?.displayName || '',
+        visibilityPlayerIds: entity?.visibility?.playerIds || [],
+        npcIds: entity?.npcIds || entity?.social?.npcIds || [],
+        floraIds: entity?.floraIds || [],
+        faunaIds: entity?.faunaIds || [],
+        marketCount: Array.isArray(entity?.market) ? entity.market.length : undefined
+      });
+      if (!entity?.id) {
+        Toast.show('Не удалось собрать сущность', 'err');
+        return;
+      }
+      if (this.selectedType === 'players' && oldId === 'gm' && entity.role !== 'gm') {
+        Toast.show('Профиль ведущего должен оставаться ролью gm', 'err');
+        return;
+      }
+      this.replaceEntity(this.selectedType, oldId, entity);
+      Debug.log('CONFIG_ENTITY_REPLACED', { type: this.selectedType, oldId, newId: entity.id });
+      FormDrafts.clear(FormDrafts.configKey(this.selectedType, oldId || this.selectedId || 'new'));
+      FormDrafts.clear(FormDrafts.configKey(this.selectedType, entity.id || 'new'));
+      await this.persistAll(`Сохранён раздел ${WORLD_SECTIONS[this.selectedType].label}`, this.selectedType === 'players' ? { playerSync: { playerId: entity.id, oldId } } : {});
+      this.render();
+    } catch (error) {
+      Debug.error('CONFIG_SUBMIT_FAILED', {
+        type: this.selectedType,
+        oldId,
+        message: error?.message || String(error),
+        stack: error?.stack || null
+      });
+      Toast.show(`Save failed: ${error.message}`, 'err');
+    }
+  },
+  buildPayload(type) {
+    if (type === 'players') return serializeWorldSection('players', PLAYER_TEMPLATES);
+    if (type === 'systems') return serializeWorldSection('systems', SYSTEMS);
+    if (type === 'planets') return serializeWorldSection('planets', PLANETS);
+    if (type === 'npcs') return serializeWorldSection('npcs', NPCS);
+    if (type === 'equipment') return serializeWorldSection('equipment', EQUIPMENT);
+    if (type === 'flora') return serializeWorldSection('flora', FLORA);
+    if (type === 'fauna') return serializeWorldSection('fauna', FAUNA);
+    if (type === 'articles') return serializeWorldSection('articles', ARTICLES);
+    throw new Error(`Unknown type ${type}`);
+  },
+  async persistAll(message, options = {}) {
+    if (!window.electronAPI?.saveWorldData) {
+      Toast.show('Сохранение файлов мира доступно только в Electron', 'err');
+      return;
+    }
+
+    const snapshot = buildWorldSnapshot();
+    Debug.log('PERSIST_ALL_SNAPSHOT', {
+      selectedType: this.selectedType,
+      selectedId: this.selectedId,
+      counts: {
+        players: Object.keys(snapshot.players?.PLAYER_TEMPLATES || {}).length,
+        systems: (snapshot.systems?.SYSTEMS || []).length,
+        planets: Object.keys(snapshot.planets?.PLANETS || {}).length,
+        npcs: Object.keys(snapshot.npcs?.NPCS || {}).length,
+        equipment: Object.keys(snapshot.equipment?.EQUIPMENT || {}).length,
+        flora: Object.keys(snapshot.flora?.FLORA || {}).length,
+        fauna: Object.keys(snapshot.fauna?.FAUNA || {}).length
+      }
+    });
+    const res = await window.electronAPI.saveWorldData(snapshot);
+    Debug.log('PERSIST_ALL_RESULT', res);
+    if (!res?.ok || !res.world) {
+      Toast.show(`Ошибка записи мира: ${res?.message || 'unknown'}`, 'err');
+      return;
+    }
+
+    worldData = res.world;
+    applyWorldData(res.world);
+
+    if (this.selectedType === 'players') {
+      mirrorPlayersIntoWorld(App.state);
+      App.state.users = deep(PLAYER_TEMPLATES);
+      App.state.meta.lastUpdatedAt = new Date().toISOString();
+      await App.writeLocalMirrors();
+      const playerSync = options?.playerSync || {};
+      let playerRes = { ok: true, status: 'noop' };
+      if (playerSync.deleteId) {
+        playerRes = await PlayerSync.deletePlayer(playerSync.deleteId, { silentToast: true, rerender: false });
+      }
+      if (playerSync.playerId && App.state.users[playerSync.playerId]) {
+        playerRes = await PlayerSync.pushPlayerRecord(playerSync.playerId, App.state.users[playerSync.playerId], { oldId: playerSync.oldId, rerender: false });
+      }
+      if (!playerRes?.ok && playerRes?.status !== 'disabled') {
+        Toast.show(`Локально сохранено, но профиль не обновился в облаке: ${playerRes?.message || 'unknown error'}`, 'info');
+      }
+      App.refreshAfterLocalWrite();
+    } else {
+      Sync.markLocalDirty('WORLD_CONFIG_PENDING_SYNC');
+      await Persistence.save(App.state);
+      await Sync.pushCurrentSnapshot('world-config-save', { silent: true });
+      App.state = await Persistence.load();
+    }
+
+    if (UI.selectedPlanetId && !isEntityVisible(Data.getPlanet(UI.selectedPlanetId))) {
+      UI.selectedPlanetId = null;
+      $('#market-trigger').style.display = 'none';
+    }
+
+    App.renderLive();
+    Toast.show(message, 'ok');
+  },
+  async resetWorldDefaults() {
+    if (!window.electronAPI?.resetWorldData) {
+      Toast.show('Сброс файлов мира доступен только в Electron', 'err');
+      return;
+    }
+    const ok = window.confirm('Сбросить все файлы мира к исходным значениям?');
+    if (!ok) return;
+    const res = await window.electronAPI.resetWorldData();
+    if (!res?.ok) {
+      Toast.show(`Не удалось сбросить файлы мира: ${res?.message || 'unknown'}`, 'err');
+      return;
+    }
+    await App.loadWorldData();
+    App.state = makeDefaultState();
+    Sync.markLocalDirty('WORLD_RESET_PENDING_SYNC');
+    await Persistence.save(App.state);
+    await Sync.pushCurrentSnapshot('world-reset', { silent: true });
+    App.state = await Persistence.load();
+    App.fillLoginSelect();
+    if (App.currentUserId && !App.state.users[App.currentUserId]) App.logout();
+    this.selectedId = null;
+    this.render();
+    App.renderLive();
+    Toast.show('Файлы мира сброшены к дефолту', 'ok');
+  }
+};
+
+
+
+function ensureGalaxyLegend() {
+  if (!App.state) App.state = makeDefaultState();
+  if (!Array.isArray(App.state.galaxyLegend)) App.state.galaxyLegend = [];
+  return App.state.galaxyLegend;
+}
+
+async function saveWorldConfigFromMap(message = 'Изменения на карте сохранены') {
+  const snapshot = buildWorldSnapshot();
+  const res = await window.electronAPI.saveWorldData(snapshot);
+  if (!res?.ok || !res.world) {
+    Toast.show(`Ошибка записи мира: ${res?.message || 'unknown'}`, 'err');
+    return false;
+  }
+  worldData = res.world;
+  applyWorldData(res.world);
+  Sync.markLocalDirty('WORLD_MAP_EDITOR_PENDING_SYNC');
+  await Persistence.save(App.state);
+  await Sync.pushCurrentSnapshot('world-map-editor-save', { silent: true });
+  App.state = await Persistence.load();
+  if (!Array.isArray(App.state.galaxyLegend)) App.state.galaxyLegend = [];
+  App.renderLive();
+  Toast.show(message, 'ok');
+  return true;
+}
+
+function renderGalaxyLegendEditor() {
+  const entries = ensureGalaxyLegend();
+  const rows = entries.length ? entries : [{ color: '#7df9ff', label: 'Новая фракция' }];
+  return `
+    <div class="field">
+      <label>Навигационные метки / фракции</label>
+      <div id="galaxy-legend-rows" class="dynamic-list" data-kind="galaxy-legend">
+        ${rows.map(entry => `
+          <div class="legend-row-editor dynamic-row">
+            <input class="input" data-role="color" value="${esc(entry.color || '#7df9ff')}" placeholder="#7df9ff" />
+            <input class="input" data-role="label" value="${esc(entry.label || '')}" placeholder="Название фракции / обозначения" />
+            <button type="button" class="ghost remove-row-btn">REMOVE</button>
+          </div>
+        `).join('')}
+      </div>
+      <button id="add-legend-row-btn" class="secondary" type="button">ADD_LEGEND_ENTRY</button>
+    </div>
+  `;
+}
+
+function readGalaxyLegendRows(root) {
+  return Array.from(root.querySelectorAll('.legend-row-editor')).map(row => ({
+    color: String(row.querySelector('[data-role="color"]')?.value || '#7df9ff').trim() || '#7df9ff',
+    label: String(row.querySelector('[data-role="label"]')?.value || '').trim()
+  })).filter(entry => entry.label);
+}
+
+function renderGalaxyMapSystemQuickEditor(system) {
+  const editableRoutes = renderSystemRoutesEditor(system.routes || [], system.id);
+  return `
+    <form id="galaxy-system-quick-form" class="form">
+      <div class="section-title">БЫСТРЫЙ РЕДАКТОР СИСТЕМЫ</div>
+      <div class="cols2">
+        <div class="field"><label>Метка на карте</label><input class="input" name="markerLabel" value="${esc(system.markerLabel || system.name || '')}" /></div>
+        <div class="field"><label>Внутреннее название</label><input class="input" name="name" value="${esc(system.name || '')}" /></div>
+      </div>
+      <div class="cols4 cols-responsive-4">
+        <div class="field"><label>Цвет системы</label><input class="input" name="color" value="${esc(system.color || '#7df9ff')}" /></div>
+        <div class="field"><label>Вид метки</label><select class="select" name="markerStyle">${SYSTEM_MARKER_STYLES.map(option => `<option value="${option.id}" ${option.id === (system.markerStyle || 'orbital') ? 'selected' : ''}>${esc(option.label)}</option>`).join('')}</select></div>
+        <div class="field"><label>Pos X (0..1)</label><input class="input" type="number" step="0.001" min="0" max="1" name="posX" value="${Number(system.pos?.x ?? 0.5)}" /></div>
+        <div class="field"><label>Pos Y (0..1)</label><input class="input" type="number" step="0.001" min="0" max="1" name="posY" value="${Number(system.pos?.y ?? 0.5)}" /></div>
+      </div>
+      <div class="field"><label>Маршруты</label>${editableRoutes}</div>
+      ${App.currentUser?.role === 'gm' ? renderGalaxyLegendEditor() : ''}
+      <div class="row" style="justify-content:flex-end;gap:10px">
+        <button class="secondary" type="button" id="galaxy-quick-open-config">OPEN_WORLD_CONFIG</button>
+        <button class="primary" type="submit">SAVE_SYSTEM</button>
+      </div>
+    </form>
+  `;
+}
+
+function renderGalaxyLegendOverlay() {
+  let node = document.getElementById('galaxy-legend-overlay');
+  if (!node) {
+    node = document.createElement('div');
+    node.id = 'galaxy-legend-overlay';
+    node.className = 'galaxy-legend-overlay card';
+    document.body.appendChild(node);
+  }
+  const worldLegend = Array.isArray(worldData?.ui?.galaxyLegend) ? worldData.ui.galaxyLegend : [];
+  const stateLegend = Array.isArray(App?.state?.galaxyLegend) ? App.state.galaxyLegend : [];
+  const entries = (stateLegend.length ? stateLegend : worldLegend).filter(entry => entry && (entry.label || entry.color));
+  if (App?.state && (!Array.isArray(App.state.galaxyLegend) || !App.state.galaxyLegend.length) && worldLegend.length) {
+    App.state.galaxyLegend = deep(worldLegend);
+  }
+  const showOverlay = !UI.activeModuleId && GalaxyMap?.state?.viewMode === 'galaxy';
+  if (!showOverlay) {
+    node.style.display = 'none';
+    return;
+  }
+  const markerMarkup = GALAXY_MARKER_LEGEND.map(entry => `
+    <div class="legend-chip legend-chip-marker">
+      <span class="legend-marker legend-marker-${esc(entry.id)}">${esc(entry.glyph)}</span>
+      <span>${esc(entry.label)}</span>
+    </div>
+  `).join('');
+  const colorMarkup = entries.length
+    ? `<div class="legend-group-title">ЦВЕТОВЫЕ ОБОЗНАЧЕНИЯ</div>${entries.map(entry => `<div class="legend-chip"><span class="legend-swatch" style="background:${esc(entry.color || '#7df9ff')}"></span><span>${esc(entry.label)}</span></div>`).join('')}`
+    : '';
+  node.style.display = 'block';
+  node.innerHTML = `
+    <div class="section-title">НАВИГАЦИЯ</div>
+    <div class="legend-group-title">ТИПЫ МЕТОК</div>
+    ${markerMarkup}
+    ${colorMarkup}
+  `;
+}
+
+function renderGalaxyFocusButtonMarkup({ systemId = '', planetId = '', label = 'Перейти к системе', subtle = '' } = {}) {
+  const attrs = [
+    systemId ? `data-focus-system="${esc(systemId)}"` : '',
+    planetId ? `data-focus-planet="${esc(planetId)}"` : ''
+  ].filter(Boolean).join(' ');
+  if (!attrs) return '';
+  return `
+    <div class="wiki-map-action">
+      <button class="secondary" type="button" ${attrs}>${esc(label)}</button>
+      ${subtle ? `<div class="small-note">${esc(subtle)}</div>` : ''}
+    </div>
+  `;
+}
+
+function renderArticleGalaxyFocusMarkup(article) {
+  const relatedPlanetIds = filterVisibleIds(article?.relatedPlanetIds || [], Data.getPlanet);
+  if (!relatedPlanetIds.length) return '';
+  const rendered = [];
+  const seenSystems = new Set();
+  for (const planetId of relatedPlanetIds) {
+    const planet = Data.getPlanet(planetId);
+    if (!planet) continue;
+    const system = Data.getSystemForPlanet(planetId);
+    if (!system || !isEntityVisible(system)) continue;
+    if (seenSystems.has(`${system.id}::${planetId}`)) continue;
+    seenSystems.add(`${system.id}::${planetId}`);
+    rendered.push(renderGalaxyFocusButtonMarkup({
+      systemId: system.id,
+      planetId,
+      label: relatedPlanetIds.length > 1 ? `Перейти к системе: ${system.name || system.id}` : 'Перейти к системе',
+      subtle: planet.name ? `Фокус на системе ${system.name || system.id} и планете ${planet.name}` : ''
+    }));
+  }
+  if (!rendered.length) return '';
+  return `<div class="section-title" style="margin-top:18px">Переход на карту</div><div class="wiki-map-action-stack">${rendered.join('')}</div>`;
+}
+
+function bindGalaxyFocusWithin(root) {
+  root?.querySelectorAll?.('[data-focus-system], [data-focus-planet]')?.forEach(node => {
+    if (node.dataset.boundGalaxyFocus === '1') return;
+    node.dataset.boundGalaxyFocus = '1';
+    node.addEventListener('click', event => {
+      event.preventDefault();
+      const planetId = String(node.dataset.focusPlanet || '').trim();
+      const directSystemId = String(node.dataset.focusSystem || '').trim();
+      const systemId = directSystemId || (planetId ? (Data.getSystemForPlanet(planetId)?.id || '') : '');
+      if (!systemId) {
+        Toast.show('Не удалось найти систему для перехода', 'err');
+        return;
+      }
+      const ok = GalaxyMap.focusTarget(systemId, planetId || null);
+      if (!ok) Toast.show('Система недоступна на карте', 'err');
+    });
+  });
+}
+
+const GalaxyMap = {
+  canvas: $('#galaxy'),
+  ctx: null,
+  DPR: window.devicePixelRatio || 1,
+  W: 0,
+  H: 0,
+  dragging: false,
+  lastP: { x:0, y:0 },
+  dragStart: { x:0, y:0 },
+  state: { cx:0.5, cy:0.5, tx:0.5, ty:0.5, zoom:1, tzoom:1, mx:0.5, my:0.5, viewMode:'galaxy', activeSystemId:null },
+  bgStars: [],
+  bloomStars: [],
+  galStars: [],
+  clouds: [],
+  dustBands: [],
+  vortices: [],
+  regionGlows: [],
+  filaments: [],
+  galaxyImages: { base: null, overlay: null },
+  galaxyImageStatus: { base: 'idle', overlay: 'idle' },
+  init() {
+    this.ctx = this.canvas.getContext('2d');
+    this.resize();
+    this.generate();
+    this.loadBackgroundImages();
+    this.bind();
+    this.draw();
+  },
+  generate() {
+    this.bgStars = [];
+    this.bloomStars = [];
+    this.galStars = [];
+    this.clouds = [];
+    this.dustBands = [];
+    this.vortices = [];
+    this.regionGlows = [];
+    this.filaments = [];
+  },
+  loadBackgroundImages() {
+    const loadLayer = (key, src) => {
+      const img = new Image();
+      this.galaxyImageStatus[key] = 'loading';
+      img.onload = () => {
+        this.galaxyImages[key] = img;
+        this.galaxyImageStatus[key] = 'ready';
+      };
+      img.onerror = () => {
+        this.galaxyImages[key] = null;
+        this.galaxyImageStatus[key] = 'missing';
+        console.warn(`Galaxy background image not found: ${src}`);
+      };
+      img.src = src;
+    };
+    loadLayer('base', 'assets/images/galaxy1.png');
+    loadLayer('overlay', 'assets/images/galaxy2.png');
+  },
+  drawGalaxyImageLayer(img, options = {}) {
+    if (!img || !img.complete || !img.naturalWidth || !img.naturalHeight) return false;
+    const { ctx, W, H, state } = this;
+    const bounds = options.bounds || { x: 0, y: 0, w: 1, h: 1 };
+    const topLeft = this.worldToScreen(bounds.x, bounds.y);
+    const bottomRight = this.worldToScreen(bounds.x + bounds.w, bounds.y + bounds.h);
+    const targetX = Math.min(topLeft.sx, bottomRight.sx);
+    const targetY = Math.min(topLeft.sy, bottomRight.sy);
+    const targetW = Math.abs(bottomRight.sx - topLeft.sx);
+    const targetH = Math.abs(bottomRight.sy - topLeft.sy);
+    if (targetW <= 1 || targetH <= 1) return false;
+
+    const imgAspect = img.naturalWidth / img.naturalHeight;
+    const targetAspect = targetW / targetH;
+    const mode = options.fit === 'cover' ? 'cover' : 'contain';
+    let drawW;
+    let drawH;
+    if (mode === 'cover') {
+      if (imgAspect > targetAspect) {
+        drawH = targetH;
+        drawW = drawH * imgAspect;
+      } else {
+        drawW = targetW;
+        drawH = drawW / imgAspect;
+      }
+    } else if (imgAspect > targetAspect) {
+      drawW = targetW;
+      drawH = drawW / imgAspect;
+    } else {
+      drawH = targetH;
+      drawW = drawH * imgAspect;
+    }
+
+    const cameraShiftX = (state.cx - 0.5) * W * (options.cameraParallax || 0);
+    const cameraShiftY = (state.cy - 0.5) * H * (options.cameraParallax || 0);
+    const mouseShiftX = (state.mx - 0.5) * (options.mouseParallax || 0) * this.DPR;
+    const mouseShiftY = (state.my - 0.5) * (options.mouseParallax || 0) * this.DPR;
+    const x = targetX + (targetW - drawW) / 2 + cameraShiftX + mouseShiftX;
+    const y = targetY + (targetH - drawH) / 2 + cameraShiftY + mouseShiftY;
+
+    ctx.save();
+    ctx.globalAlpha = clamp(Number(options.alpha ?? 1), 0, 1);
+    ctx.globalCompositeOperation = options.composite || 'source-over';
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    const filters = [];
+    const blurPx = Math.max(0, Number(options.blur || 0));
+    if (blurPx > 0) filters.push(`blur(${(blurPx * this.DPR).toFixed(2)}px)`);
+    const brightness = Number(options.brightness || 1);
+    if (Number.isFinite(brightness) && Math.abs(brightness - 1) > 0.001) filters.push(`brightness(${brightness.toFixed(3)})`);
+    const saturate = Number(options.saturate || 1);
+    if (Number.isFinite(saturate) && Math.abs(saturate - 1) > 0.001) filters.push(`saturate(${saturate.toFixed(3)})`);
+    ctx.filter = filters.length ? filters.join(' ') : 'none';
+    if (options.glow) {
+      ctx.shadowColor = options.glowColor || 'rgba(125,249,255,0.55)';
+      ctx.shadowBlur = Number(options.glow) * this.DPR;
+    }
+    ctx.drawImage(img, x, y, drawW, drawH);
+    ctx.restore();
+    return true;
+  },
+  drawGalaxyBackground() {
+    const { ctx, W, H } = this;
+    const sky = ctx.createLinearGradient(0, 0, 0, H);
+    sky.addColorStop(0, '#030812');
+    sky.addColorStop(0.42, '#050c15');
+    sky.addColorStop(1, '#02050a');
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, W, H);
+
+    const baseDrawn = this.drawGalaxyImageLayer(this.galaxyImages.base, {
+      bounds: { x: -0.03, y: -0.03, w: 1.06, h: 1.06 },
+      fit: 'cover',
+      alpha: 0.98,
+      blur: 7.5,
+      brightness: 0.82,
+      saturate: 1.08,
+      mouseParallax: 10,
+      cameraParallax: -0.015
+    });
+
+    this.drawGalaxyImageLayer(this.galaxyImages.overlay, {
+      bounds: { x: 0, y: 0, w: 1, h: 1 },
+      fit: 'contain',
+      alpha: 0.98,
+      composite: 'screen',
+      blur: 2.2,
+      brightness: 1.18,
+      saturate: 1.22,
+      glow: 18,
+      glowColor: 'rgba(125,249,255,0.42)',
+      mouseParallax: 22,
+      cameraParallax: -0.028
+    });
+
+    if (!baseDrawn) {
+      const fallback = ctx.createRadialGradient(W * 0.5, H * 0.5, 0, W * 0.5, H * 0.5, Math.max(W, H) * 0.68);
+      fallback.addColorStop(0, 'rgba(72,116,180,0.2)');
+      fallback.addColorStop(0.45, 'rgba(30,72,120,0.08)');
+      fallback.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = fallback;
+      ctx.fillRect(0, 0, W, H);
+    }
+  },
+  bind() {
+    window.addEventListener('resize', () => this.resize());
+    window.addEventListener('mousemove', event => {
+      this.state.mx = event.clientX / window.innerWidth;
+      this.state.my = event.clientY / window.innerHeight;
+      if (!this.dragging) return;
+      if (isMapInteractionBlocked(event.target)) {
+        this.dragging = false;
+        return;
+      }
+      this.state.tx -= (event.clientX - this.lastP.x) / (this.state.zoom * window.innerWidth);
+      this.state.ty -= (event.clientY - this.lastP.y) / (this.state.zoom * window.innerHeight);
+      this.lastP = { x:event.clientX, y:event.clientY };
+    });
+    window.addEventListener('mousedown', event => {
+      if (isMapInteractionBlocked(event.target)) {
+        this.dragging = false;
+        return;
+      }
+      this.dragging = true;
+      this.lastP = { x:event.clientX, y:event.clientY };
+      this.dragStart = { x:event.clientX, y:event.clientY };
+    });
+    window.addEventListener('mouseup', event => {
+      const wasDragging = this.dragging;
+      const start = this.dragStart || { x: event.clientX, y: event.clientY };
+      const dragDistance = Math.hypot(event.clientX - start.x, event.clientY - start.y);
+      this.dragging = false;
+      if (!wasDragging) return;
+      if (isMapInteractionBlocked(event.target)) return;
+      if (dragDistance < 5) this.handleClick(event.clientX, event.clientY);
+    });
+    window.addEventListener('wheel', event => {
+      if (App.uiHoverLock || isMapInteractionBlocked(event.target)) return;
+      this.state.tzoom = clamp(this.state.tzoom * (event.deltaY < 0 ? 1.18 : 0.84), 0.55, 30);
+      if (this.state.viewMode === 'system' && event.deltaY > 0 && this.state.tzoom < 4.5) this.exitSystem(true);
+    }, { passive:true });
+  },
+  resize() {
+    this.DPR = window.devicePixelRatio || 1;
+    this.W = window.innerWidth * this.DPR;
+    this.H = window.innerHeight * this.DPR;
+    this.canvas.width = this.W;
+    this.canvas.height = this.H;
+    this.canvas.style.width = `${window.innerWidth}px`;
+    this.canvas.style.height = `${window.innerHeight}px`;
+  },
+  worldToScreen(x, y) {
+    return { sx: (x - this.state.cx) * this.state.zoom * this.W + this.W / 2, sy: (y - this.state.cy) * this.state.zoom * this.H + this.H / 2 };
+  },
+  enterSystem(systemId) {
+    const system = Data.getSystem(systemId);
+    if (!system || !isEntityVisible(system)) return;
+    this.state.viewMode = 'system';
+    this.state.activeSystemId = systemId;
+    AudioManager.play('systemJump', { volume: 0.86 });
+    this.state.tx = system.pos.x;
+    this.state.ty = system.pos.y;
+    this.state.tzoom = 12.0;
+    $('#back-to-galaxy').style.display = 'block';
+    $('#hud-analysis').style.display = 'block';
+    $('#obj-name').textContent = getSystemLabel(system).toUpperCase();
+    $('#obj-subname').textContent = system.name && system.name !== getSystemLabel(system) ? system.name : 'Приближение к системе';
+    $('#obj-id').textContent = system.id;
+    $('#analysis-content').innerHTML = App.currentUser?.role === 'gm' ? renderGalaxyMapSystemQuickEditor(system) : '<div class="subtle">Выбери планету на орбите для получения подробного скана.</div>';
+    if (App.currentUser?.role === 'gm') bindGalaxyMapQuickEditor(system.id);
+    $('#market-trigger').style.display = 'none';
+  },
+  exitSystem(preserveView = true) {
+    const activeSystem = Data.getSystem(this.state.activeSystemId);
+    this.state.viewMode = 'galaxy';
+    this.state.activeSystemId = null;
+    if (!preserveView) {
+      this.state.tx = 0.5;
+      this.state.ty = 0.5;
+      this.state.tzoom = 1.0;
+    } else if (activeSystem?.pos) {
+      this.state.tx = activeSystem.pos.x;
+      this.state.ty = activeSystem.pos.y;
+    }
+    UI.selectedPlanetId = null;
+    $('#back-to-galaxy').style.display = 'none';
+    $('#hud-analysis').style.display = 'none';
+    renderGalaxyLegendOverlay();
+  },
+  recenterGalaxy() {
+    this.state.viewMode = 'galaxy';
+    this.state.activeSystemId = null;
+    this.state.tx = 0.5;
+    this.state.ty = 0.5;
+    this.state.tzoom = 1.0;
+    this.state.mx = 0.5;
+    this.state.my = 0.5;
+    UI.selectedPlanetId = null;
+    $('#back-to-galaxy').style.display = 'none';
+    $('#hud-analysis').style.display = 'none';
+    $('#market-trigger').style.display = 'none';
+    const objName = $('#obj-name');
+    const objSub = $('#obj-subname');
+    const objId = $('#obj-id');
+    const analysis = $('#analysis-content');
+    if (objName) objName.textContent = 'SCAN_IDLE';
+    if (objSub) objSub.textContent = 'Выберите систему, затем планету';
+    if (objId) objId.textContent = '---';
+    if (analysis) analysis.innerHTML = '<div class="subtle">Карта возвращена к центру галактики.</div>';
+    renderGalaxyLegendOverlay();
+  },
+  focusTarget(systemId, planetId = null) {
+    const system = Data.getSystem(systemId);
+    if (!system || !isEntityVisible(system) || !system.pos) return false;
+    UI.closeModule();
+    this.state.tx = Number(system.pos.x || 0.5);
+    this.state.ty = Number(system.pos.y || 0.5);
+    this.state.mx = 0.5;
+    this.state.my = 0.5;
+    if (planetId) {
+      this.state.viewMode = 'galaxy';
+      this.state.activeSystemId = null;
+      this.state.tzoom = 7.5;
+      requestAnimationFrame(() => {
+        try {
+          this.enterSystem(systemId);
+          if (planetId && Data.getPlanet(planetId)) UI.renderPlanetAnalysis(planetId, systemId);
+        } catch (error) {
+          console.warn('Galaxy focus planet failed', error);
+        }
+      });
+      return true;
+    }
+    this.state.viewMode = 'galaxy';
+    this.state.activeSystemId = null;
+    this.state.tzoom = Math.max(5.2, Number(this.state.tzoom || 1));
+    UI.selectedPlanetId = null;
+    $('#back-to-galaxy').style.display = 'none';
+    $('#hud-analysis').style.display = 'none';
+    $('#market-trigger').style.display = 'none';
+    const objName = $('#obj-name');
+    const objSub = $('#obj-subname');
+    const objId = $('#obj-id');
+    const analysis = $('#analysis-content');
+    if (objName) objName.textContent = getSystemLabel(system).toUpperCase();
+    if (objSub) objSub.textContent = 'Фокус камеры на системе';
+    if (objId) objId.textContent = system.id;
+    if (analysis) analysis.innerHTML = `<div class="subtle">Камера сфокусирована на системе ${esc(system.name || system.id)}.</div>`;
+    renderGalaxyLegendOverlay();
+    return true;
+  },
+  handleClick(mx, my) {
+    const px = mx * this.DPR;
+    const py = my * this.DPR;
+    if (this.state.viewMode === 'galaxy') {
+      for (const system of getVisibleSystems()) {
+        const point = this.worldToScreen(system.pos.x, system.pos.y);
+        if (Math.hypot(point.sx - px, point.sy - py) < 26 * this.DPR) return this.enterSystem(system.id);
+      }
+      return;
+    }
+
+    const system = Data.getSystem(this.state.activeSystemId);
+    if (!system || !isEntityVisible(system)) return;
+    const center = this.worldToScreen(system.pos.x, system.pos.y);
+    const t = now() * 0.001;
+    for (const planet of getVisiblePlanetsForSystem(system)) {
+      const dist = planet.dist * this.state.zoom * (this.W / 2000);
+      const ang = t * planet.speed * 50;
+      const x = center.sx + Math.cos(ang) * dist;
+      const y = center.sy + Math.sin(ang) * dist;
+      if (Math.hypot(x - px, y - py) < 24 * this.DPR) {
+        UI.renderPlanetAnalysis(planet.id, system.id);
+        return;
+      }
+    }
+  },
+  draw() {
+    const { ctx, W, H, state } = this;
+    state.cx = lerp(state.cx, state.tx, 0.08);
+    state.cy = lerp(state.cy, state.ty, 0.08);
+    state.zoom = lerp(state.zoom, state.tzoom, 0.08);
+
+    ctx.clearRect(0, 0, W, H);
+    this.drawGalaxyBackground();
+
+    const currentLocation = getPlayerCurrentLocation(App.currentUser);
+    const currentSystemId = currentLocation.system?.id || null;
+    const currentPlanetId = currentLocation.planet?.id || null;
+
+    if (state.viewMode === 'galaxy') {
+      const routes = getVisibleSystemRoutes(App.currentUser);
+      routes.forEach(route => {
+        const from = this.worldToScreen(route.from.pos.x, route.from.pos.y);
+        const to = this.worldToScreen(route.to.pos.x, route.to.pos.y);
+        const midX = (from.sx + to.sx) / 2;
+        const midY = (from.sy + to.sy) / 2;
+        const rgb = hexToRgbString(route.color || '#7df9ff', '125,249,255');
+        const glow = ctx.createLinearGradient(from.sx, from.sy, to.sx, to.sy);
+        glow.addColorStop(0, `rgba(${rgb},0.04)`);
+        glow.addColorStop(0.5, `rgba(${rgb},0.22)`);
+        glow.addColorStop(1, `rgba(${rgb},0.04)`);
+        ctx.save();
+        ctx.lineCap = 'round';
+        ctx.strokeStyle = glow;
+        ctx.lineWidth = (route.width + 5) * this.DPR;
+        ctx.beginPath();
+        ctx.moveTo(from.sx, from.sy);
+        ctx.lineTo(to.sx, to.sy);
+        ctx.stroke();
+        ctx.strokeStyle = `rgba(${rgb},0.72)`;
+        ctx.lineWidth = route.width * this.DPR;
+        ctx.setLineDash([10 * this.DPR, 8 * this.DPR]);
+        ctx.beginPath();
+        ctx.moveTo(from.sx, from.sy);
+        ctx.lineTo(to.sx, to.sy);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        if (route.label) {
+          ctx.font = `${9 * this.DPR}px Consolas`;
+          ctx.lineWidth = 3 * this.DPR;
+          ctx.strokeStyle = 'rgba(4,10,18,0.9)';
+          ctx.strokeText(route.label, midX + 8 * this.DPR, midY - 8 * this.DPR);
+          ctx.fillStyle = `rgba(${rgb},0.92)`;
+          ctx.fillText(route.label, midX + 8 * this.DPR, midY - 8 * this.DPR);
+        }
+        ctx.restore();
+      });
+    }
+
+    for (const system of getVisibleSystems()) {
+      const point = this.worldToScreen(system.pos.x, system.pos.y);
+      const active = system.id === state.activeSystemId;
+      const isCurrentSystem = currentSystemId === system.id;
+      if (state.viewMode === 'galaxy' || active) {
+        const systemColor = system.color || '#7df9ff';
+        const ringColor = active ? '255,245,255' : hexToRgbString(systemColor, '118,232,255');
+        const size = (active ? 13 : 8) * this.DPR;
+        const halo = ctx.createRadialGradient(point.sx, point.sy, 0, point.sx, point.sy, size * 4.2);
+        halo.addColorStop(0, active ? 'rgba(255,255,255,0.8)' : `rgba(${ringColor},0.42)`);
+        halo.addColorStop(0.2, active ? 'rgba(255,255,255,0.28)' : `rgba(${ringColor},0.12)`);
+        halo.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = halo;
+        ctx.beginPath();
+        ctx.arc(point.sx, point.sy, size * 4.2, 0, Math.PI * 2);
+        ctx.fill();
+
+        drawSystemMarker(ctx, point, size, system, { active, dpr: this.DPR, glow: 1 });
+
+        if (isCurrentSystem && state.viewMode === 'galaxy') {
+          const pulse = 1 + 0.08 * Math.sin(now() * 0.004);
+          ctx.save();
+          ctx.setLineDash([7 * this.DPR, 7 * this.DPR]);
+          ctx.lineWidth = 1.6 * this.DPR;
+          ctx.strokeStyle = `rgba(${hexToRgbString(system.color || '#7df9ff', '118,232,255')},0.85)`;
+          ctx.beginPath();
+          ctx.arc(point.sx, point.sy, size * 3.5 * pulse, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.restore();
+
+          ctx.font = `bold ${10 * this.DPR}px Consolas`;
+          ctx.lineWidth = 4 * this.DPR;
+          ctx.strokeStyle = 'rgba(3,8,16,0.9)';
+          ctx.strokeText('YOU ARE HERE', point.sx + 14 * this.DPR, point.sy + 16 * this.DPR);
+          ctx.fillStyle = 'rgba(230,248,255,0.96)';
+          ctx.fillText('YOU ARE HERE', point.sx + 14 * this.DPR, point.sy + 16 * this.DPR);
+          if (currentLocation.planet) {
+            ctx.font = `${9 * this.DPR}px Consolas`;
+            ctx.strokeText(currentLocation.planet.name, point.sx + 14 * this.DPR, point.sy + 29 * this.DPR);
+            ctx.fillText(currentLocation.planet.name, point.sx + 14 * this.DPR, point.sy + 29 * this.DPR);
+          }
+        }
+
+        const galaxyLabelFade = clamp((state.zoom - 2.75) / 1.4, 0, 1);
+        if (state.viewMode === 'galaxy' && galaxyLabelFade > 0.02) {
+          ctx.save();
+          ctx.globalAlpha = galaxyLabelFade;
+          ctx.font = `${11 * this.DPR}px Consolas`;
+          ctx.lineWidth = 4 * this.DPR;
+          ctx.strokeStyle = 'rgba(4,10,18,0.86)';
+          const labelText = getSystemLabel(system);
+          ctx.strokeText(labelText, point.sx + 14 * this.DPR, point.sy - 6 * this.DPR);
+          ctx.fillStyle = `rgba(${ringColor},0.96)`;
+          ctx.fillText(labelText, point.sx + 14 * this.DPR, point.sy - 6 * this.DPR);
+          ctx.restore();
+        }
+      }
+      if (active && state.zoom > 4) {
+        const t = now() * 0.001;
+        for (const planet of getVisiblePlanetsForSystem(system)) {
+          const dist = planet.dist * state.zoom * (W / 2000);
+          const ang = t * planet.speed * 50;
+          const x = point.sx + Math.cos(ang) * dist;
+          const y = point.sy + Math.sin(ang) * dist;
+          ctx.strokeStyle = 'rgba(125,249,255,0.08)';
+          ctx.beginPath();
+          ctx.arc(point.sx, point.sy, dist, 0, Math.PI * 2);
+          ctx.stroke();
+
+          const glow = ctx.createRadialGradient(x, y, 0, x, y, planet.size * 3.2 * this.DPR);
+          glow.addColorStop(0, planet.color || '#7df9ff');
+          glow.addColorStop(1, 'transparent');
+          ctx.fillStyle = glow;
+          ctx.beginPath();
+          ctx.arc(x, y, planet.size * 3.2 * this.DPR, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.fillStyle = planet.color || '#7df9ff';
+          ctx.beginPath();
+          ctx.arc(x, y, planet.size * this.DPR, 0, Math.PI * 2);
+          ctx.fill();
+
+          if (UI.selectedPlanetId === planet.id) {
+            ctx.setLineDash([6 * this.DPR, 6 * this.DPR]);
+            ctx.strokeStyle = 'rgba(125,249,255,0.26)';
+            ctx.beginPath();
+            ctx.moveTo(x, y);
+            ctx.lineTo(W - 20 * this.DPR, y);
+            ctx.stroke();
+            ctx.setLineDash([]);
+          }
+
+          if (planet.id === currentPlanetId) {
+            ctx.save();
+            ctx.setLineDash([4 * this.DPR, 5 * this.DPR]);
+            ctx.strokeStyle = 'rgba(230,248,255,0.9)';
+            ctx.lineWidth = 1.4 * this.DPR;
+            ctx.beginPath();
+            ctx.arc(x, y, planet.size * this.DPR * 2.6, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.font = `${9 * this.DPR}px Consolas`;
+            ctx.lineWidth = 3 * this.DPR;
+            ctx.strokeStyle = 'rgba(3,8,16,0.92)';
+            ctx.strokeText('YOU ARE HERE', x + 12 * this.DPR, y - 10 * this.DPR);
+            ctx.fillStyle = 'rgba(235,248,255,0.96)';
+            ctx.fillText('YOU ARE HERE', x + 12 * this.DPR, y - 10 * this.DPR);
+            ctx.restore();
+          }
+        }
+      }
+    }
+
+    requestAnimationFrame(() => this.draw());
+  }
+};
+
+
+window.addEventListener('load', () => App.init());
+// === v0.3.8 extension patch: rich text, news, tasks, ambient controls ===
+let NEWS = {};
+let NEWS_LIST = [];
+let TASKS = {};
+let TASK_LIST = [];
+
+WORLD_SECTIONS.news = { label: 'Новости', mapKey: 'NEWS', listKey: 'NEWS_LIST' };
+WORLD_SECTIONS.tasks = { label: 'Задания', mapKey: 'TASKS', listKey: 'TASK_LIST' };
+Data.news = NEWS;
+Data.tasks = TASKS;
+
+const __renderRichText = (value, fallback = '') => {
+  const html = String(value ?? '').trim();
+  if (!html) return fallback;
+  return `<div class="rich-text">${html}</div>`;
+};
+const __htmlHint = '<div class="small-note">Допускается стандартная HTML-разметка: &lt;b&gt;, &lt;i&gt;, &lt;u&gt;, &lt;br&gt;, &lt;p&gt;, &lt;ul&gt;, &lt;li&gt;, &lt;a&gt; и т.д. Для локальных ссылок на статьи используй формат &lt;a href="article:article_id"&gt;Текст ссылки&lt;/a&gt;.</div>';
+
+function __resolveLocalArticleLink(value = '') {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const direct = raw.match(/^(?:article:|local-article:)(.+)$/i);
+  if (direct) return String(direct[1] || '').replace(/^\/+/, '').trim();
+  const uri = raw.match(/^(?:article|local-article):\/\/(.+)$/i);
+  if (uri) return String(uri[1] || '').replace(/^\/+/, '').trim();
+  return '';
+}
+
+function __bindLocalArticleLinks(root = document) {
+  if (!root || root.__localArticleLinksBound) return;
+  root.__localArticleLinksBound = true;
+  root.addEventListener('click', event => {
+    const link = event.target?.closest?.('a[href], a[data-article-id], [data-article-link]');
+    if (!link) return;
+    const articleId = String(link.dataset?.articleId || link.dataset?.articleLink || __resolveLocalArticleLink(link.getAttribute('href') || '')).trim();
+    if (!articleId) return;
+    const article = Data?.getArticle?.(articleId);
+    event.preventDefault();
+    event.stopPropagation();
+    if (!article) {
+      Toast.show(`Статья не найдена: ${articleId}`, 'err');
+      return;
+    }
+    Wiki.showEntity('article', articleId, true);
+  });
+}
+
+const __applyWorldData = applyWorldData;
+applyWorldData = function(payload = {}) {
+  __applyWorldData(payload);
+  NEWS = payload.news?.NEWS || {};
+  NEWS_LIST = payload.news?.NEWS_LIST || Object.values(NEWS);
+  TASKS = payload.tasks?.TASKS || {};
+  TASK_LIST = payload.tasks?.TASK_LIST || Object.values(TASKS);
+  Data.news = NEWS;
+  Data.tasks = TASKS;
+};
+
+const __buildWorldSnapshot = buildWorldSnapshot;
+buildWorldSnapshot = function() {
+  const snap = __buildWorldSnapshot();
+  snap.news = serializeWorldSection('news', NEWS);
+  snap.tasks = serializeWorldSection('tasks', TASKS);
+  return snap;
+};
+
+const __createBlankEntity = createBlankEntity;
+createBlankEntity = function(type) {
+  const stamp = Date.now().toString().slice(-6);
+  if (type === 'news') {
+    return { id: `news_${stamp}`, name: 'Новая новость', title: 'Новая новость', subtitle: '', body: '', image: '', publishedAt: new Date().toISOString(), visibility: { playerIds: [] } };
+  }
+  if (type === 'tasks') {
+    return { id: `task_${stamp}`, name: 'Новое задание', title: 'Новое задание', subtitle: '', summary: '', body: '', reward: '', status: 'open', image: '', relatedArticleIds: [], visibility: { playerIds: [] } };
+  }
+  return __createBlankEntity(type);
+};
+
+const __entityByType = entityByType;
+entityByType = function(type, id) {
+  if (type === 'news') return Data.getNews(id);
+  if (type === 'task') return Data.getTask(id);
+  return __entityByType(type, id);
+};
+
+const __titleForEntity = titleForEntity;
+titleForEntity = function(type, entity) {
+  if (type === 'news' || type === 'task') return entity?.title || entity?.name || entity?.id || 'Entity';
+  return __titleForEntity(type, entity);
+};
+
+Data.getNews = function(id) { return this.news[id] || null; };
+Data.getTask = function(id) { return this.tasks[id] || null; };
+
+const __appendNpcChatMessage = appendNpcChatMessage;
+appendNpcChatMessage = function(npcId, playerId, payload = {}) {
+  const message = __appendNpcChatMessage(npcId, playerId, payload);
+  if (message && message.sender === 'player') {
+    appendGmReport({
+      playerId,
+      category: 'npc-message',
+      title: 'Новое сообщение NPC',
+      text: `Новое сообщение от "${getPlayerDisplayName(playerId)}" персонажу "${Data.getNpc(npcId)?.name || npcId}".`,
+      details: String(payload.text || '')
+    });
+  }
+  return message;
+};
+
+const __ensureAmbient = AudioManager.ensureAmbient.bind(AudioManager);
+AudioManager.ambientVolume = Number(localStorage.getItem('galactic-ambient-volume') || '0.22');
+if (!Number.isFinite(AudioManager.ambientVolume)) AudioManager.ambientVolume = 0.22;
+AudioManager.ensureAmbient = function() {
+  const node = __ensureAmbient();
+  if (node) node.volume = clamp(this.ambientVolume, 0, 1) * this.masterVolume;
+  return node;
+};
+AudioManager.setAmbientVolume = function(value) {
+  this.ambientVolume = clamp(Number(value ?? this.ambientVolume), 0, 1);
+  try { localStorage.setItem('galactic-ambient-volume', String(this.ambientVolume)); } catch {}
+  if (this.ambientNode) this.ambientNode.volume = this.ambientVolume * this.masterVolume;
+};
+
+UI.renderNews = function() {
+  const visible = Object.values(NEWS).filter(entry => isEntityVisible(entry)).sort((a, b) => new Date(b.publishedAt || 0) - new Date(a.publishedAt || 0));
+  const root = $('#news-content');
+  if (!root) return;
+  root.innerHTML = `
+    <div class="news-stack">
+      ${visible.length ? visible.map(entry => `
+        <article class="card pad18 news-card">
+          <div class="news-card-head">
+            ${renderThumb(entry, { size: 'md', type: 'news', glyph: '✦' })}
+            <div>
+              <div class="section-title">НОВОСТЬ</div>
+              <h2>${esc(entry.title || entry.name || 'Без заголовка')}</h2>
+              ${entry.subtitle ? `<div class="subtle">${esc(entry.subtitle)}</div>` : ''}
+              <div class="small-note">${esc(new Date(entry.publishedAt || Date.now()).toLocaleString('ru-RU'))}</div>
+            </div>
+          </div>
+          ${__renderRichText(entry.body, '<div class="small-note">Нет текста новости.</div>')}
+        </article>
+      `).join('') : '<div class="card pad18 small-note">Пока нет опубликованных новостей.</div>'}
+    </div>
+  `;
+};
+
+UI.renderTasks = function() {
+  const visible = Object.values(TASKS).filter(entry => isEntityVisible(entry));
+  const root = $('#tasks-content');
+  if (!root) return;
+  const columns = [
+    { key: 'open', label: 'Не принятые' },
+    { key: 'active', label: 'Активные' },
+    { key: 'completed', label: 'Завершённые' }
+  ];
+  root.innerHTML = `
+    <div class="task-board">
+      ${columns.map(column => `
+        <section class="card pad18 task-column">
+          <div class="section-title">${column.label}</div>
+          <div class="task-column-stack">
+            ${visible.filter(task => (task.status || 'open') === column.key).map(task => `
+              <article class="task-card">
+                <div class="task-card-head">
+                  ${renderThumb(task, { size: 'sm', type: 'task', glyph: '◫' })}
+                  <div>
+                    <b>${esc(task.title || task.name || 'Без названия')}</b>
+                    ${task.subtitle ? `<div class="subtle">${esc(task.subtitle)}</div>` : ''}
+                  </div>
+                </div>
+                ${task.reward ? `<div class="chip" style="margin:8px 0">НАГРАДА: ${esc(task.reward)}</div>` : ''}
+                ${task.summary ? `<div class="small-note" style="margin-bottom:8px">${esc(task.summary)}</div>` : ''}
+                ${__renderRichText(task.body, '')}
+                ${renderRelatedArticlesSection(task.relatedArticleIds || [], 'Материалы по заданию')}
+              </article>
+            `).join('') || '<div class="small-note">Пусто</div>'}
+          </div>
+        </section>
+      `).join('')}
+    </div>
+  `;
+  UI.attachEntityLinks(root);
+};
+
+const __openModule = UI.openModule.bind(UI);
+UI.openModule = function(id, options = {}) {
+  if (id === 'news') this.renderNews();
+  if (id === 'tasks') this.renderTasks();
+  return __openModule(id, options);
+};
+
+const __bindStaticEvents = App.bindStaticEvents.bind(App);
+App.bindStaticEvents = function() {
+  __bindStaticEvents();
+  $('#open-news')?.addEventListener('click', () => UI.openModule('news'));
+  $('#open-tasks')?.addEventListener('click', () => UI.openModule('tasks'));
+  $('#ambient-volume')?.addEventListener('input', event => {
+    AudioManager.setAmbientVolume(event.target.value);
+    const label = $('#ambient-volume-value');
+    if (label) label.textContent = `${Math.round(AudioManager.ambientVolume * 100)}%`;
+    AudioManager.onUserGesture();
+  });
+  $('#ambient-mute-btn')?.addEventListener('click', () => {
+    AudioManager.setAmbientVolume(AudioManager.ambientVolume > 0 ? 0 : 0.22);
+    const slider = $('#ambient-volume');
+    if (slider) slider.value = String(AudioManager.ambientVolume);
+    const label = $('#ambient-volume-value');
+    if (label) label.textContent = `${Math.round(AudioManager.ambientVolume * 100)}%`;
+  });
+};
+
+const __appInit = App.init.bind(App);
+App.init = async function() {
+  await __appInit();
+  const slider = $('#ambient-volume');
+  if (slider) slider.value = String(AudioManager.ambientVolume);
+  const label = $('#ambient-volume-value');
+  if (label) label.textContent = `${Math.round(AudioManager.ambientVolume * 100)}%`;
+};
+
+const __wikiShowEntity = Wiki.showEntity.bind(Wiki);
+Wiki.showEntity = function(type, id, autoOpen = false) {
+  if (!['system', 'planet', 'article'].includes(type)) {
+    return __wikiShowEntity(type, id, autoOpen);
+  }
+  this.currentView = { type, id };
+  const entity = entityByType(type, id);
+  if (!entity || !isEntityVisible(entity)) {
+    $('#wiki-detail').innerHTML = '<div class="subtle">Эта запись недоступна текущему пользователю.</div>';
+    if (autoOpen && UI.activeModuleId !== 'wiki') UI.openModule('wiki', { preserveWikiState: true });
+    return;
+  }
+  if (autoOpen && UI.activeModuleId !== 'wiki') UI.openModule('wiki', { preserveWikiState: true });
+  const target = $('#wiki-detail');
+  if (type === 'system') {
+    const planets = getVisiblePlanetsForSystem(entity);
+    target.innerHTML = `
+      <div class="wiki-hero">
+        ${renderThumb(entity, { size: 'hero', type: 'system', glyph: initials(entity.name, '✦') })}
+        <div>
+          <div class="section-title">Звёздная система</div>
+          <h2 class="mono accent">${esc(entity.name)}</h2>
+          <div class="subtle">Координаты: ${esc(entity.pos?.x)} / ${esc(entity.pos?.y)}</div>
+          ${__renderRichText(entity.summary || entity.body || '', '')}
+        </div>
+      </div>
+      ${renderGalaxyFocusButtonMarkup({ systemId: entity.id })}
+      <div class="section-title">Планеты</div>
+      <div class="result-stack">${planets.map(planet => renderEntityButton('planet', planet, { subtitle: planet.code || planet.location?.system || '', thumbSize: 'md' })).join('') || '<div class="small-note">Нет доступных планет в этой системе.</div>'}</div>
+      ${renderRelatedArticlesSection(entity.relatedArticleIds)}
+    `;
+  } else if (type === 'planet') {
+    target.innerHTML = `
+      <div class="wiki-hero">
+        ${renderThumb(entity, { size: 'hero', type: 'planet', glyph: initials(entity.name, '◌') })}
+        <div>
+          <div class="section-title">Планета</div>
+          <h2 class="mono accent">${esc(entity.name)}</h2>
+          <div class="subtle">${esc(entity.code || '')} · ${esc(entity.location?.system || '')}</div>
+          ${__renderRichText(getPlanetInfo(entity), '<p>Нет информации</p>')}
+        </div>
+      </div>
+      <div class="wiki-data-grid">
+        <div class="card pad18">
+          <div class="section-title">Физика</div>
+          <div class="data-row"><span class="data-label">Тип</span><span class="data-value">${esc(entity.physics?.type || '')}</span></div>
+          <div class="data-row"><span class="data-label">Климат</span><span class="data-value">${esc(entity.physics?.climate || '')}</span></div>
+          <div class="data-row"><span class="data-label">Гравитация</span><span class="data-value">${esc(entity.physics?.gravity || '')}</span></div>
+          <div class="data-row"><span class="data-label">Атмосфера</span><span class="data-value">${esc(entity.physics?.atm || '')}</span></div>
+        </div>
+        <div class="card pad18">
+          <div class="section-title">Общество</div>
+          <div class="data-row"><span class="data-label">Население</span><span class="data-value">${esc(entity.socio?.pop || '')}</span></div>
+          <div class="data-row"><span class="data-label">Столица</span><span class="data-value">${esc(entity.socio?.capital || '')}</span></div>
+          <div class="data-row"><span class="data-label">Правление</span><span class="data-value">${esc(entity.socio?.gov || '')}</span></div>
+          <div class="small-note" style="margin-top:8px">${esc(entity.socio?.law || '')}</div>
+        </div>
+      </div>
+      ${entity.pilot?.warning ? `<div class="card pad18" style="margin-top:18px"><div class="section-title">Предупреждение</div>${__renderRichText(entity.pilot?.warning, '')}</div>` : ''}
+      <div class="section-title" style="margin-top:18px">Ключевые NPC</div>
+      <div class="tags entity-button-row">${UI.socialNpcMarkup(entity.npcIds)}</div>
+      <div class="section-title" style="margin-top:18px">Флора</div>
+      <div class="tags entity-button-row">${UI.floraMarkup(entity.floraIds)}</div>
+      <div class="section-title" style="margin-top:18px">Фауна</div>
+      <div class="tags entity-button-row">${UI.faunaMarkup(entity.faunaIds)}</div>
+      <div class="section-title" style="margin-top:18px">Рынок</div>
+      <div class="result-stack">${(entity.market || []).filter(entry => isEntityVisible(Data.getItem(entry.itemId))).map(entry => renderEntityButton('item', Data.getItem(entry.itemId), { subtitle: `${formatCredits(entry.price)}`, thumbSize: 'sm' })).join('') || '<div class="small-note">Нет доступных товаров</div>'}</div>
+      ${renderGalaxyFocusButtonMarkup({ systemId: Data.getSystemForPlanet(entity.id)?.id || '', planetId: entity.id })}
+      ${renderRelatedArticlesSection(entity.relatedArticleIds)}
+    `;
+  } else if (type === 'article') {
+    const relatedSections = [
+      renderRelatedArticlesSection(entity.relatedArticleIds),
+      filterVisibleIds(entity.relatedPlanetIds || [], Data.getPlanet).length ? `<div class="section-title" style="margin-top:18px">Планеты</div><div class="result-stack">${filterVisibleIds(entity.relatedPlanetIds || [], Data.getPlanet).map(pid => renderEntityButton('planet', Data.getPlanet(pid), { thumbSize: 'sm', subtitle: Data.getPlanet(pid)?.code || '' })).join('')}</div>` : '',
+      filterVisibleIds(entity.relatedNpcIds || [], Data.getNpc).length ? `<div class="section-title" style="margin-top:18px">NPC</div><div class="result-stack">${filterVisibleIds(entity.relatedNpcIds || [], Data.getNpc).map(nid => renderEntityButton('npc', Data.getNpc(nid), { thumbSize: 'sm', subtitle: Data.getNpc(nid)?.role || '' })).join('')}</div>` : '',
+      filterVisibleIds(entity.relatedItemIds || [], Data.getItem).length ? `<div class="section-title" style="margin-top:18px">Предметы</div><div class="result-stack">${filterVisibleIds(entity.relatedItemIds || [], Data.getItem).map(iid => renderEntityButton('item', Data.getItem(iid), { thumbSize: 'sm', subtitle: Data.getItem(iid)?.type || '' })).join('')}</div>` : '',
+      filterVisibleIds(entity.relatedFloraIds || [], Data.getFlora).length ? `<div class="section-title" style="margin-top:18px">Флора</div><div class="result-stack">${filterVisibleIds(entity.relatedFloraIds || [], Data.getFlora).map(fid => renderEntityButton('flora', Data.getFlora(fid), { thumbSize: 'sm', subtitle: Data.getFlora(fid)?.habitat || '' })).join('')}</div>` : '',
+      filterVisibleIds(entity.relatedFaunaIds || [], Data.getFauna).length ? `<div class="section-title" style="margin-top:18px">Фауна</div><div class="result-stack">${filterVisibleIds(entity.relatedFaunaIds || [], Data.getFauna).map(fid => renderEntityButton('fauna', Data.getFauna(fid), { thumbSize: 'sm', subtitle: Data.getFauna(fid)?.habitat || '' })).join('')}</div>` : ''
+    ].filter(Boolean).join('');
+    target.innerHTML = `
+      <div class="wiki-hero">
+        ${renderThumb(entity, { size: 'hero', type: 'article', glyph: initials(entity.name, '✎') })}
+        <div>
+          <div class="section-title">Статья архива</div>
+          <h2 class="mono accent">${esc(entity.name || 'Без названия')}</h2>
+          <div class="subtle">${esc(entity.category || 'Архив')}</div>
+          ${__renderRichText(entity.summary, '<p>Нет аннотации</p>')}
+        </div>
+      </div>
+      <div class="card pad18 wiki-article-body">${__renderRichText(entity.body, '<div class="small-note">Текст статьи пока не заполнен.</div>')}</div>
+      ${renderArticleGalaxyFocusMarkup(entity)}
+      ${relatedSections}
+    `;
+  }
+  UI.attachEntityLinks(target);
+  bindGalaxyFocusWithin(target);
+  ChatUI.bindWithin(target);
+};
+
+ChatUI.messageMarkup = function(message, npcId) {
+  const own = message.sender === 'npc';
+  const label = own ? (Data.getNpc(npcId)?.name || 'NPC') : getPlayerDisplayName(message.playerId);
+  return `<div class="chat-bubble ${own ? 'npc' : 'player'}"><div class="chat-meta">${esc(label)} · ${esc(new Date(message.createdAt || Date.now()).toLocaleString('ru-RU'))}</div>${__renderRichText(message.text, '<div></div>')}</div>`;
+};
+
+const __renderNpcThreadForPlayer = ChatUI.renderNpcThreadForPlayer.bind(ChatUI);
+ChatUI.renderNpcThreadForPlayer = function(npc) {
+  return __renderNpcThreadForPlayer(npc).replace('</textarea></div>', '</textarea>' + __htmlHint + '</div>');
+};
+const __renderNpcThreadsForGm = ChatUI.renderNpcThreadsForGm.bind(ChatUI);
+ChatUI.renderNpcThreadsForGm = function(npc) {
+  return __renderNpcThreadsForGm(npc).replaceAll('</textarea></div>', '</textarea>' + __htmlHint + '</div>');
+};
+
+const __configGetItems = Configurator.getItems.bind(Configurator);
+Configurator.getItems = function(type) {
+  if (type === 'news') return Object.values(NEWS).sort((a, b) => new Date(b.publishedAt || 0) - new Date(a.publishedAt || 0));
+  if (type === 'tasks') return sortEntitiesForList(Object.values(TASKS));
+  return __configGetItems(type);
+};
+
+Configurator.renderReportsPanel = (function(orig){
+  return function() {
+    return orig.call(this).replace('Сюда падают результаты мини-игр предметов и другие тех. отчёты.', 'Сюда падают результаты мини-игр, новые сообщения NPC и другие тех. отчёты.');
+  };
+})(Configurator.renderReportsPanel);
+
+Configurator.renderHeader = (function(orig){
+  return function(entity, description) {
+    return orig.call(this, { ...entity, name: entity?.title || entity?.name || entity?.displayName || entity?.id }, description);
+  };
+})(Configurator.renderHeader);
+
+Configurator.renderSystemEditor = (function(orig){
+  return function(system) {
+    return orig.call(this, system).replace(
+      `<div class="field"><label>Планеты в системе</label>${renderCheckboxSelector('planetIds', Object.values(PLANETS), system.planetIds || [], 'planet', 'Нет планет')}</div>`,
+      `<div class="field"><label>Планеты в системе</label>${renderCheckboxSelector('planetIds', Object.values(PLANETS), system.planetIds || [], 'planet', 'Нет планет')}</div><div class="field"><label>Краткое описание</label><textarea class="area" name="summary">${esc(system.summary || '')}</textarea>${__htmlHint}</div><div class="field"><label>Развёрнутый текст</label><textarea class="area article-body-editor" name="body">${esc(system.body || '')}</textarea>${__htmlHint}</div>`
+    );
+  };
+})(Configurator.renderSystemEditor);
+
+for (const key of ['renderPlanetEditor','renderNpcEditor','renderEquipmentEditor','renderFloraEditor','renderFaunaEditor','renderArticleEditor']) {
+  const orig = Configurator[key].bind(Configurator);
+  Configurator[key] = function(entity) {
+    let html = orig(entity);
+    const names = ['pilot_reference','pilot_info','pilot_warning','summary','desc','body'];
+    for (const name of names) {
+      html = html.replace(new RegExp(`(<textarea[^>]*name="${name}"[^>]*>[\\s\\S]*?<\\/textarea>)`), `$1${__htmlHint}`);
+    }
+    return html;
+  };
+}
+
+Configurator.renderNewsEditor = function(entry) {
+  return `
+    <form id="config-editor-form" class="form" data-entity-type="news">
+      ${this.renderHeader(entry, 'Новостная лента кампании. Игроки видят её в отдельной вкладке.')}
+      ${imageFieldMarkup(entry, 'Изображение новости')}
+      <div class="cols2">
+        <div class="field"><label>ID</label><input class="input" name="id" value="${esc(entry.id)}" /></div>
+        <div class="field"><label>Дата публикации</label><input class="input" name="publishedAt" value="${esc(entry.publishedAt || new Date().toISOString())}" /></div>
+      </div>
+      <div class="field"><label>Заголовок</label><input class="input" name="title" value="${esc(entry.title || entry.name || '')}" /></div>
+      <div class="field"><label>Подзаголовок</label><input class="input" name="subtitle" value="${esc(entry.subtitle || '')}" /></div>
+      ${this.renderVisibilityField(entry)}
+      <div class="field"><label>Текст новости</label><textarea class="area article-body-editor" name="body">${esc(entry.body || '')}</textarea>${__htmlHint}</div>
+      <button class="primary" type="submit">SAVE_NEWS</button>
+    </form>
+  `;
+};
+
+Configurator.renderTaskEditor = function(task) {
+  return `
+    <form id="config-editor-form" class="form" data-entity-type="tasks">
+      ${this.renderHeader(task, 'Доска заданий с колонками «не принятые», «активные» и «завершённые».')}
+      ${imageFieldMarkup(task, 'Изображение задания')}
+      <div class="cols3">
+        <div class="field"><label>ID</label><input class="input" name="id" value="${esc(task.id)}" /></div>
+        <div class="field"><label>Статус</label><select class="select" name="status"><option value="open" ${String(task.status || 'open') === 'open' ? 'selected' : ''}>Не принято</option><option value="active" ${task.status === 'active' ? 'selected' : ''}>Активно</option><option value="completed" ${task.status === 'completed' ? 'selected' : ''}>Завершено</option></select></div>
+        <div class="field"><label>Награда</label><input class="input" name="reward" value="${esc(task.reward || '')}" /></div>
+      </div>
+      <div class="field"><label>Заголовок</label><input class="input" name="title" value="${esc(task.title || task.name || '')}" /></div>
+      <div class="field"><label>Подзаголовок</label><input class="input" name="subtitle" value="${esc(task.subtitle || '')}" /></div>
+      ${this.renderVisibilityField(task)}
+      <div class="field"><label>Краткое описание</label><textarea class="area" name="summary">${esc(task.summary || '')}</textarea>${__htmlHint}</div>
+      <div class="field"><label>Полный текст</label><textarea class="area article-body-editor" name="body">${esc(task.body || '')}</textarea>${__htmlHint}</div>
+      <div class="field"><label>Связанные статьи</label>${renderRelatedArticlesEditor(task.relatedArticleIds || [])}</div>
+      <button class="primary" type="submit">SAVE_TASK</button>
+    </form>
+  `;
+};
+
+const __configRenderEditor = Configurator.renderEditor.bind(Configurator);
+Configurator.renderEditor = function(entity) {
+  if (this.selectedType === 'news') return this.renderNewsEditor(entity);
+  if (this.selectedType === 'tasks') return this.renderTaskEditor(entity);
+  return __configRenderEditor(entity);
+};
+
+const __configInsertEntity = Configurator.insertEntity.bind(Configurator);
+Configurator.insertEntity = function(type, entity) {
+  if (type === 'news') { NEWS[entity.id] = deep(entity); return; }
+  if (type === 'tasks') { TASKS[entity.id] = deep(entity); return; }
+  return __configInsertEntity(type, entity);
+};
+
+const __configRemoveEntity = Configurator.removeEntity.bind(Configurator);
+Configurator.removeEntity = function(type, id) {
+  if (type === 'news') { delete NEWS[id]; return; }
+  if (type === 'tasks') { delete TASKS[id]; return; }
+  return __configRemoveEntity(type, id);
+};
+
+const __configBuildPayload = Configurator.buildPayload.bind(Configurator);
+Configurator.buildPayload = function(type) {
+  if (type === 'news') return serializeWorldSection('news', NEWS);
+  if (type === 'tasks') return serializeWorldSection('tasks', TASKS);
+  return __configBuildPayload(type);
+};
+
+const __configCollectEntity = Configurator.collectEntity.bind(Configurator);
+Configurator.collectEntity = function(type, formEl, formData = new FormData(formEl)) {
+  if (type === 'news') {
+    const image = String(formEl.querySelector('input[name="imageData"]')?.value || '').trim();
+    const title = String(formData.get('title') || '').trim();
+    return {
+      id: slugifyId(formData.get('id') || title || '', 'news'),
+      name: title,
+      title,
+      subtitle: String(formData.get('subtitle') || '').trim(),
+      body: String(formData.get('body') || '').trim(),
+      publishedAt: String(formData.get('publishedAt') || new Date().toISOString()).trim(),
+      image,
+      visibility: { playerIds: getCheckedValues(formEl, 'visibilityPlayerIds') }
+    };
+  }
+  if (type === 'tasks') {
+    const image = String(formEl.querySelector('input[name="imageData"]')?.value || '').trim();
+    const title = String(formData.get('title') || '').trim();
+    return {
+      id: slugifyId(formData.get('id') || title || '', 'task'),
+      name: title,
+      title,
+      subtitle: String(formData.get('subtitle') || '').trim(),
+      summary: String(formData.get('summary') || '').trim(),
+      body: String(formData.get('body') || '').trim(),
+      reward: String(formData.get('reward') || '').trim(),
+      status: String(formData.get('status') || 'open').trim(),
+      image,
+      relatedArticleIds: getCheckedValues(formEl, 'relatedArticleIds'),
+      visibility: { playerIds: getCheckedValues(formEl, 'visibilityPlayerIds') }
+    };
+  }
+  const entity = __configCollectEntity(type, formEl, formData);
+  if (type === 'systems') {
+    entity.summary = String(formData.get('summary') || '').trim();
+    entity.body = String(formData.get('body') || '').trim();
+  }
+  return entity;
+};
+
+Configurator.render = (function(orig) {
+  return function() {
+    orig.call(this);
+    const root = $('#config-content');
+    root?.querySelectorAll('[data-config-id] b').forEach((node, index) => {
+      const item = this.getItems(this.selectedType)[index];
+      if (item) node.textContent = item.title || item.name || item.displayName || item.id;
+    });
+  };
+})(Configurator.render);
+
+
+// ===== v0.3.11 profile & item overhaul =====
+const ITEM_TYPE_OPTIONS_V2 = [
+  { value: 'weapon', label: 'Оружие' },
+  { value: 'armor', label: 'Броня' },
+  { value: 'implant', label: 'Импланты' },
+  { value: 'gear', label: 'Снаряжение' },
+  { value: 'misc', label: 'Разное' },
+  { value: 'tech', label: 'Техника' },
+  { value: 'hacking', label: 'Хакерские инструменты' },
+  { value: 'consumable', label: 'Расходники' },
+  { value: 'document', label: 'Документы / пропуска' }
+];
+const ITEM_RARITY_OPTIONS_V2 = ['обычный', 'необычный', 'редкий', 'эпический', 'легендарный', 'уникальный'];
+const WEAPON_SLOT_OPTIONS_V2 = [
+  { value: 'primary', label: 'Основное оружие' },
+  { value: 'secondary', label: 'Вторичное оружие' },
+  { value: 'versatile', label: 'Универсальное' }
+];
+
+function itemTypeLabelV2(value) {
+  return ITEM_TYPE_OPTIONS_V2.find(option => option.value === value)?.label || value || 'Предмет';
+}
+function itemRarityLabelV2(value) {
+  return ITEM_RARITY_OPTIONS_V2.includes(value) ? value : (value || 'обычный');
+}
+function mapLegacyItemTypeV2(value) {
+  const map = {
+    weapon: 'weapon', armor: 'armor', implant: 'implant', tool: 'hacking', tech: 'tech',
+    misc: 'misc', consumable: 'consumable', trade: 'misc', permit: 'document', flora: 'misc', fauna: 'misc'
+  };
+  return map[String(value || '').trim()] || String(value || 'misc').trim() || 'misc';
+}
+function normalizeImplantEntryV2(entry = {}) {
+  if (typeof entry === 'string') return { name: entry, energyCost: 0, desc: '' };
+  return {
+    name: String(entry.name || 'Имплант').trim(),
+    energyCost: Number(entry.energyCost || 0),
+    desc: String(entry.desc || entry.status || '').trim()
+  };
+}
+function parseImplantsAdvancedEditorV2(text) {
+  return String(text || '').split('\n').map(line => line.trim()).filter(Boolean).map(line => {
+    const parts = line.split('|');
+    return {
+      name: String(parts[0] || 'Имплант').trim(),
+      energyCost: Number(parts[1] || 0),
+      desc: String(parts.slice(2).join('|') || '').trim()
+    };
+  });
+}
+function implantsAdvancedTextV2(value) {
+  return Array.isArray(value) ? value.map(entry => `${entry.name || ''}|${Number(entry.energyCost || 0)}|${entry.desc || ''}`).join('\n') : '';
+}
+function normalizeEquipmentItemV2(item = {}) {
+  const next = { ...item };
+  next.type = mapLegacyItemTypeV2(next.type);
+  next.rarity = itemRarityLabelV2(next.rarity);
+  next.tags = Array.isArray(next.tags) ? next.tags : [];
+  next.relatedArticleIds = Array.isArray(next.relatedArticleIds) ? next.relatedArticleIds : [];
+  next.visibility = { playerIds: Array.isArray(next.visibility?.playerIds) ? next.visibility.playerIds : [] };
+  next.damage = String(next.damage || '').trim();
+  next.weaponSlot = String(next.weaponSlot || 'primary').trim();
+  next.armorClass = Number(next.armorClass || 0);
+  next.energyDelta = Number(next.energyDelta || 0);
+  return next;
+}
+function normalizePlayerProfileV2(user = {}) {
+  const next = { ...user };
+  const oldStats = next.stats || {};
+  const hpLegacy = Number(oldStats.hp ?? 100);
+  const shieldLegacy = Number(oldStats.shield ?? 50);
+  next.stats = {
+    hpCurrent: Number(oldStats.hpCurrent ?? oldStats.currentHp ?? hpLegacy),
+    hpMax: Number(oldStats.hpMax ?? oldStats.maxHp ?? hpLegacy),
+    shieldCurrent: Number(oldStats.shieldCurrent ?? oldStats.currentShield ?? shieldLegacy),
+    shieldMax: Number(oldStats.shieldMax ?? oldStats.maxShield ?? shieldLegacy),
+    energyCurrent: Number(oldStats.energyCurrent ?? oldStats.currentEnergy ?? 1),
+    energyMax: Number(oldStats.energyMax ?? oldStats.maxEnergy ?? 1)
+  };
+  next.equipmentSlots = {
+    primaryWeapon: next.equipmentSlots?.primaryWeapon || next.equipmentSlots?.weapon || '',
+    secondaryWeapon: next.equipmentSlots?.secondaryWeapon || '',
+    armor: next.equipmentSlots?.armor || ''
+  };
+  next.implants = Array.isArray(next.implants) ? next.implants.map(normalizeImplantEntryV2) : [];
+  next.inventory = Array.isArray(next.inventory) ? next.inventory : [];
+  next.social = {
+    npcIds: Array.isArray(next.social?.npcIds) ? next.social.npcIds : [],
+    orgs: Array.isArray(next.social?.orgs) ? next.social.orgs : []
+  };
+  return next;
+}
+function getWeaponOptionsBySlotV2(slot = 'primary') {
+  return Object.values(EQUIPMENT).filter(item => {
+    const norm = normalizeEquipmentItemV2(item);
+    if (norm.type !== 'weapon') return false;
+    if (!slot) return true;
+    if (norm.weaponSlot === 'versatile') return true;
+    return norm.weaponSlot === slot;
+  }).sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ru'));
+}
+function getArmorOptionsV2() {
+  return Object.values(EQUIPMENT).filter(item => normalizeEquipmentItemV2(item).type === 'armor').sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ru'));
+}
+function getEquippedItemsV2(user = {}) {
+  const normalized = normalizePlayerProfileV2(user);
+  return {
+    primary: Data.getItem(normalized.equipmentSlots.primaryWeapon) || null,
+    secondary: Data.getItem(normalized.equipmentSlots.secondaryWeapon) || null,
+    armor: Data.getItem(normalized.equipmentSlots.armor) || null
+  };
+}
+function getEffectiveEnergyMaxV2(user = {}) {
+  const normalized = normalizePlayerProfileV2(user);
+  const equipped = getEquippedItemsV2(normalized);
+  let delta = 0;
+  for (const item of [equipped.primary, equipped.secondary, equipped.armor]) {
+    if (item) delta += Number(item.energyDelta || 0);
+  }
+  return Math.max(0, Number(normalized.stats.energyMax || 1) + delta);
+}
+function statBarMarkupV2(label, current, max, accentLabel = '') {
+  const safeMax = Math.max(0, Number(max || 0));
+  const safeCurrent = clamp(Number(current || 0), 0, safeMax || Number(current || 0) || 0);
+  const pct = safeMax > 0 ? clamp((safeCurrent / safeMax) * 100, 0, 100) : 0;
+  return `<div><div class="data-row"><span class="data-label">${esc(label)}</span><span class="data-value">${safeCurrent} / ${safeMax}${accentLabel ? ` ${esc(accentLabel)}` : ''}</span></div><div class="bar"><div class="fill" style="width:${pct}%"></div></div></div>`;
+}
+function itemExtraSummaryV2(item = {}) {
+  const norm = normalizeEquipmentItemV2(item);
+  const bits = [itemTypeLabelV2(norm.type), itemRarityLabelV2(norm.rarity)];
+  if (norm.type === 'weapon' && norm.damage) bits.push(`урон ${norm.damage}`);
+  if (norm.type === 'armor' && Number(norm.armorClass || 0)) bits.push(`КБ ${norm.armorClass}`);
+  if (Number(norm.energyDelta || 0)) bits.push(`${norm.energyDelta > 0 ? '+' : ''}${norm.energyDelta} энергии`);
+  return bits.filter(Boolean).join(' · ');
+}
+
+const __applyWorldDataV2 = applyWorldData;
+applyWorldData = function(payload = {}) {
+  __applyWorldDataV2(payload);
+  for (const [id, item] of Object.entries(EQUIPMENT)) {
+    EQUIPMENT[id] = normalizeEquipmentItemV2(item);
+  }
+  EQUIPMENT_LIST = Object.values(EQUIPMENT).sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ru'));
+  WEAPON_OPTIONS = getWeaponOptionsBySlotV2();
+  ARMOR_OPTIONS = getArmorOptionsV2();
+  for (const [id, player] of Object.entries(PLAYER_TEMPLATES)) {
+    PLAYER_TEMPLATES[id] = normalizePlayerProfileV2(player);
+  }
+  PLAYER_LIST = Object.values(PLAYER_TEMPLATES).sort((a, b) => (a.displayName || '').localeCompare(b.displayName || '', 'ru'));
+  if (App?.state?.users) {
+    for (const [id, player] of Object.entries(App.state.users)) App.state.users[id] = normalizePlayerProfileV2(player);
+  }
+  if (worldData?.equipment) {
+    worldData.equipment.EQUIPMENT = EQUIPMENT;
+    worldData.equipment.EQUIPMENT_LIST = EQUIPMENT_LIST;
+    worldData.equipment.WEAPON_OPTIONS = WEAPON_OPTIONS;
+    worldData.equipment.ARMOR_OPTIONS = ARMOR_OPTIONS;
+  }
+  if (worldData?.players) {
+    worldData.players.PLAYER_TEMPLATES = PLAYER_TEMPLATES;
+    worldData.players.PLAYER_LIST = PLAYER_LIST;
+  }
+  Data.equipment = EQUIPMENT;
+};
+
+const __createBlankEntityV2 = createBlankEntity;
+createBlankEntity = function(type) {
+  if (type === 'players') {
+    const entity = __createBlankEntityV2(type);
+    return normalizePlayerProfileV2({
+      ...entity,
+      stats: { hpCurrent: 12, hpMax: 12, shieldCurrent: 0, shieldMax: 0, energyCurrent: 1, energyMax: 1 },
+      implants: []
+    });
+  }
+  if (type === 'equipment') {
+    const entity = __createBlankEntityV2(type);
+    return normalizeEquipmentItemV2({ ...entity, type: 'misc', rarity: 'обычный', weaponSlot: 'primary', armorClass: 0, damage: '', energyDelta: 0 });
+  }
+  return __createBlankEntityV2(type);
+};
+
+const __persistenceNormalizeV2 = Persistence.normalize.bind(Persistence);
+Persistence.normalize = function(candidate) {
+  const state = __persistenceNormalizeV2(candidate);
+  for (const [id, user] of Object.entries(state.users || {})) state.users[id] = normalizePlayerProfileV2(user);
+  return state;
+};
+
+const __mirrorPlayersIntoWorldV2 = mirrorPlayersIntoWorld;
+mirrorPlayersIntoWorld = function(state = App?.state) {
+  const record = __mirrorPlayersIntoWorldV2(state);
+  for (const [id, user] of Object.entries(record || {})) record[id] = normalizePlayerProfileV2(user);
+  PLAYER_TEMPLATES = record;
+  PLAYER_LIST = Object.values(PLAYER_TEMPLATES).sort((a, b) => (a.displayName || '').localeCompare(b.displayName || '', 'ru'));
+  if (worldData?.players) {
+    worldData.players.PLAYER_TEMPLATES = PLAYER_TEMPLATES;
+    worldData.players.PLAYER_LIST = PLAYER_LIST;
+  }
+  return record;
+};
+
+const FormDrafts = {
+  store: {},
+  profileKey(userId) {
+    return `profile:${String(userId || '')}`;
+  },
+  configKey(type, entityId = '') {
+    return `config:${String(type || 'unknown')}:${String(entityId || 'new')}`;
+  },
+  bind(form, key) {
+    if (!form || !key) return;
+    if (form.dataset.draftBoundKey === key) {
+      this.apply(key, form);
+      return;
+    }
+    form.dataset.draftBoundKey = key;
+    const remember = () => this.remember(key, form);
+    form.addEventListener('input', remember);
+    form.addEventListener('change', remember);
+    this.apply(key, form);
+  },
+  remember(key, form) {
+    if (!form || !key) return;
+    const values = {};
+    for (const field of Array.from(form.elements || [])) {
+      if (!field?.name || field.disabled || field.type === 'file') continue;
+      if (field.type === 'checkbox') {
+        if (!Array.isArray(values[field.name])) values[field.name] = [];
+        if (field.checked) values[field.name].push(field.value);
+        continue;
+      }
+      if (field.type === 'radio') {
+        if (field.checked) values[field.name] = field.value;
+        continue;
+      }
+      values[field.name] = field.value;
+    }
+    this.store[key] = values;
+  },
+  apply(key, form) {
+    const values = this.store[key];
+    if (!values || !form) return;
+    for (const field of Array.from(form.elements || [])) {
+      if (!field?.name || !(field.name in values) || field.type === 'file') continue;
+      const value = values[field.name];
+      if (field.type === 'checkbox') {
+        field.checked = Array.isArray(value) ? value.includes(field.value) : Boolean(value);
+        continue;
+      }
+      if (field.type === 'radio') {
+        field.checked = value === field.value;
+        continue;
+      }
+      field.value = value ?? '';
+    }
+  },
+  clear(key) {
+    if (!key) return;
+    delete this.store[key];
+  }
+};
+
+const UiSyncGuard = {
+  pendingReasons: new Set(),
+  isEditingCriticalForm() {
+    const active = document.activeElement;
+    if (!active) return false;
+    return Boolean(active.closest('#profile-edit-form, #config-editor-form, .direct-chat-form, .messages-npc-chat-form, .npc-chat-form, .npc-chat-init-form'));
+  },
+  defer(reason = 'remote-sync') {
+    if (!reason) reason = 'remote-sync';
+    this.pendingReasons.add(String(reason));
+  },
+  flushIfIdle() {
+    if (!this.pendingReasons.size || this.isEditingCriticalForm()) return false;
+    const reasons = Array.from(this.pendingReasons);
+    this.pendingReasons.clear();
+    Debug.log('UI_SYNC_GUARD_FLUSH', { reasons });
+    App.refreshAfterLocalWrite();
+    return true;
+  }
+};
+
+document.addEventListener('focusout', () => {
+  setTimeout(() => {
+    try { UiSyncGuard.flushIfIdle(); } catch {}
+  }, 0);
+});
+
+window.addEventListener('beforeunload', () => {
+  try { UiSyncGuard.pendingReasons.clear(); } catch {}
+});
+
+UI.renderProfile = function() {
+  const user = normalizePlayerProfileV2(App.currentUser);
+  if (!user) return;
+  const { primary, secondary, armor } = getEquippedItemsV2(user);
+  const isGm = user.role === 'gm';
+  const canEdit = user.role !== 'gm';
+  const effectiveEnergyMax = getEffectiveEnergyMaxV2(user);
+  const { planet: currentPlanet, system: currentSystem } = getPlayerCurrentLocation(user);
+  const currentLocationMarkup = currentPlanet
+    ? `
+      <div class="result-stack">
+        ${renderEntityButton('planet', currentPlanet, { compact: false, thumbSize: 'sm', subtitle: currentPlanet.code || currentPlanet.location?.system || 'Текущая планета' })}
+        ${currentSystem ? renderEntityButton('system', currentSystem, { compact: true, thumbSize: 'xs', subtitle: 'Текущая система' }) : ''}
+      </div>
+    `
+    : '<div class="small-note">Положение не задано в World Config.</div>';
+
+  $('#profile-content').innerHTML = `
+    <div class="grid3">
+      <div class="stack">
+        <div class="card profile-card">
+          <div class="avatar media-avatar">${renderThumb(user, { size: 'hero', type: 'player', glyph: user.avatarGlyph || initials(user.displayName) })}</div>
+          <h2 class="mono accent" style="margin:16px 0 4px">${esc(user.displayName)}</h2>
+          <div class="subtle" style="margin-bottom:12px">${esc(user.rank)}</div>
+          <div class="small-note" style="margin-bottom:18px">${esc(user.lore || 'Нет досье')}</div>
+          <div class="stat">
+            ${statBarMarkupV2('Здоровье', user.stats.hpCurrent, user.stats.hpMax)}
+            ${statBarMarkupV2('Щит', user.stats.shieldCurrent, user.stats.shieldMax)}
+            ${statBarMarkupV2('Энергия', user.stats.energyCurrent, effectiveEnergyMax)}
+          </div>
+          <div style="margin-top:18px">
+            <div class="data-row"><span class="data-label">Баланс</span><span class="data-value">${formatCredits(user.credits)}</span></div>
+            <div class="data-row"><span class="data-label">ID</span><span class="data-value">#${esc(user.id.toUpperCase())}</span></div>
+          </div>
+          <div style="margin-top:18px">
+            <div class="section-title">Текущее положение</div>
+            ${currentLocationMarkup}
+          </div>
+        </div>
+      </div>
+
+      <div class="stack">
+        <div class="card profile-card">
+          <div class="section-title">Характеристики</div>
+          <div class="abilities">
+            ${Object.entries(user.abilities).map(([key, value]) => `<div class="ability"><span>${key.toUpperCase()}</span><b>${value}</b></div>`).join('')}
+          </div>
+        </div>
+
+        <div class="card profile-card">
+          <div class="section-title">Экипировка</div>
+          <div class="result-stack">
+            <div><div class="small-note" style="margin-bottom:6px">Основное оружие</div>${primary ? renderEntityButton('item', primary, { compact: false, thumbSize: 'md', subtitle: itemExtraSummaryV2(primary) }) : '<div class="equip"><div class="icon">⚔</div><div>—</div></div>'}</div>
+            <div><div class="small-note" style="margin-bottom:6px">Вторичное оружие</div>${secondary ? renderEntityButton('item', secondary, { compact: false, thumbSize: 'md', subtitle: itemExtraSummaryV2(secondary) }) : '<div class="equip"><div class="icon">✦</div><div>—</div></div>'}</div>
+            <div><div class="small-note" style="margin-bottom:6px">Броня${armor?.armorClass ? ` · КБ ${esc(String(armor.armorClass))}` : ''}</div>${armor ? renderEntityButton('item', armor, { compact: false, thumbSize: 'md', subtitle: itemExtraSummaryV2(armor) }) : '<div class="equip"><div class="icon">⛨</div><div>—</div></div>'}</div>
+          </div>
+          <div class="section-title" style="margin-top:18px">Инвентарь</div>
+          <div class="small-note" style="margin-bottom:8px">Нажми на активный предмет, чтобы открыть его механику. Обычные предметы откроют статью в архиве.</div>
+          <div class="tags entity-button-row">${this.inventoryMarkup(user.inventory)}</div>
+          <div class="section-title" style="margin-top:18px">Импланты</div>
+          <div class="result-stack">${(user.implants || []).map(implant => `<div class="card pad18 profile-implant-card"><div class="data-row"><span class="data-label">${esc(implant.name)}</span><span class="data-value">${Number(implant.energyCost || 0)} EN</span></div><div class="small-note" style="margin-top:8px">${esc(implant.desc || 'Без описания')}</div></div>`).join('') || '<div class="small-note">Нет имплантов</div>'}</div>
+        </div>
+      </div>
+
+      <div class="stack">
+        <div class="card profile-card">
+          <div class="section-title">Социальные связи</div>
+          <div class="tags entity-button-row">${this.socialNpcMarkup(user.social.npcIds)}</div>
+          <div class="section-title" style="margin-top:18px">Организации</div>
+          <div class="tags">${(user.social.orgs || []).map(org => `<span class="tag">${esc(org)}</span>`).join('') || '<div class="small-note">Нет данных</div>'}</div>
+        </div>
+
+        <form id="profile-edit-form" class="card profile-card form">
+          <div class="section-title">Редактирование профиля</div>
+          <div class="field"><label>Отображаемое имя</label><input class="input" name="displayName" value="${esc(user.displayName)}" ${canEdit ? '' : 'disabled'} /></div>
+          <div class="field"><label>Пароль</label><input class="input" name="pass" value="${esc(user.pass)}" ${canEdit ? '' : 'disabled'} /></div>
+          <div class="field"><label>Лор персонажа</label><textarea class="area" name="lore" ${canEdit ? '' : 'disabled'}>${esc(user.lore)}</textarea></div>
+          <div class="field"><label>Личные заметки</label><textarea class="area" name="notes">${esc(user.notes)}</textarea></div>
+          <button class="primary" type="submit">СОХРАНИТЬ ПРОФИЛЬ</button>
+          ${isGm ? `
+          <div class="row profile-storage-actions" style="justify-content:flex-start;gap:10px;flex-wrap:wrap;margin-top:12px">
+            <button class="secondary" type="button" id="open-save-folder-btn">ОТКРЫТЬ ПАПКУ СОХРАНЕНИЙ</button>
+            <button class="ghost" type="button" id="show-save-paths-btn">ПОКАЗАТЬ ПУТИ</button>
+            <button class="ghost" type="button" id="backup-world-data-btn">СДЕЛАТЬ БЭКАП КАМПАНИИ</button>
+          </div>` : ''}
+        </form>
+      </div>
+    </div>
+  `;
+
+  this.attachEntityLinks($('#profile-content'));
+
+  const profileForm = $('#profile-edit-form');
+  FormDrafts.bind(profileForm, FormDrafts.profileKey(user.id));
+
+  profileForm?.querySelector('#open-save-folder-btn')?.addEventListener('click', async () => {
+    const res = await window.electronAPI?.openWorldDataDir?.();
+    if (!res?.ok) Toast.show(`Не удалось открыть папку сохранений: ${res?.message || 'unknown error'}`, 'err');
+    else Toast.show(`Открыта папка сохранений: ${res.path}`, 'ok');
+  });
+  profileForm?.querySelector('#show-save-paths-btn')?.addEventListener('click', async () => {
+    const paths = await window.electronAPI?.getPaths?.();
+    if (!paths) {
+      Toast.show('Не удалось получить пути сохранений', 'err');
+      return;
+    }
+    Toast.show(`WORLD: ${paths.worldDataDir || 'n/a'} | STATE: ${paths.stateFile || 'n/a'}`, 'info');
+    const info = document.getElementById('state-path');
+    if (info) info.textContent = `STATE_FILE: ${paths.stateFile || 'n/a'} // WORLD_DATA: ${paths.worldDataDir || 'n/a'} // SYNC_CFG: ${paths.syncConfigFile || 'n/a'}`;
+  });
+  profileForm?.querySelector('#backup-world-data-btn')?.addEventListener('click', async () => {
+    const res = await window.electronAPI?.backupWorldData?.();
+    if (res?.cancelled) return;
+    if (!res?.ok) {
+      Toast.show(`Не удалось создать бэкап: ${res?.message || 'unknown error'}`, 'err');
+      return;
+    }
+    Toast.show(`Бэкап сохранён: ${res.backupDir}`, 'ok');
+  });
+
+  profileForm?.addEventListener('submit', async event => {
+    event.preventDefault();
+    const fd = new FormData(event.currentTarget);
+    const currentRemote = App.state.users[user.id] || user;
+    const runtime = normalizePlayerProfileV2({ ...currentRemote });
+    runtime.displayName = String(fd.get('displayName') || runtime.displayName).trim() || runtime.displayName;
+    runtime.pass = String(fd.get('pass') || runtime.pass).trim() || runtime.pass;
+    runtime.lore = String(fd.get('lore') || runtime.lore).trim();
+    runtime.notes = String(fd.get('notes') || runtime.notes).trim();
+    const patch = shallowDiffObject(currentRemote, runtime, ['displayName', 'pass', 'lore', 'notes']);
+    App.state.users[user.id] = normalizePlayerProfileV2(runtime);
+    PLAYER_TEMPLATES[user.id] = deep(App.state.users[user.id]);
+    await App.writeLocalMirrors();
+    FormDrafts.clear(FormDrafts.profileKey(user.id));
+    const syncRes = await PlayerSync.pushPlayerPatch(user.id, patch, {
+      notice: `Профиль обновлён: ${runtime.displayName}`,
+      rerender: true
+    });
+    if (!syncRes?.ok && syncRes?.status !== 'disabled') {
+      Toast.show(`Локально сохранено, но облако не обновилось: ${syncRes?.message || 'unknown error'}`, 'info');
+      this.renderProfile();
+      return;
+    }
+    this.renderProfile();
+  });
+};
+
+Configurator.renderPlayerEditor = function(user) {
+  user = normalizePlayerProfileV2(user);
+  const primaryOptions = getWeaponOptionsBySlotV2('primary');
+  const secondaryOptions = getWeaponOptionsBySlotV2('secondary');
+  const armorOptions = getArmorOptionsV2();
+  return `
+    <form id="config-editor-form" class="form" data-entity-type="players">
+      ${this.renderHeader(user, 'Шаблон персонажа с точным здоровьем, щитом, энергией, экипировкой и имплантами. При сохранении обновляется players.json и живое состояние профилей.')}
+      ${imageFieldMarkup(user, 'Портрет персонажа')}
+      <div class="cols3">
+        <div class="field"><label>ID</label><input class="input" name="id" value="${esc(user.id)}" /></div>
+        <div class="field"><label>Короткое имя</label><input class="input" name="shortName" value="${esc(user.shortName || '')}" /></div>
+        <div class="field"><label>Роль</label><select class="select" name="role"><option value="player" ${user.role === 'player' ? 'selected' : ''}>player</option><option value="gm" ${user.role === 'gm' ? 'selected' : ''}>gm</option></select></div>
+      </div>
+      <div class="cols3">
+        <div class="field"><label>Отображаемое имя</label><input class="input" name="displayName" value="${esc(user.displayName)}" /></div>
+        <div class="field"><label>Ранг</label><input class="input" name="rank" value="${esc(user.rank || '')}" /></div>
+        <div class="field"><label>Глиф</label><input class="input" name="avatarGlyph" value="${esc(user.avatarGlyph || '')}" /></div>
+      </div>
+      <div class="cols3">
+        <div class="field"><label>Пароль</label><input class="input" name="pass" value="${esc(user.pass || '')}" /></div>
+        <div class="field"><label>Кредиты</label><input class="input" type="number" name="credits" value="${Number(user.credits || 0)}" /></div>
+        <div class="field"><label>Текущая планета</label><select class="select" name="currentPlanetId"><option value="">Не задана</option>${Object.values(PLANETS).map(option => `<option value="${option.id}" ${option.id === (user.currentPlanetId || '') ? 'selected' : ''}>${esc(option.name)}</option>`).join('')}</select></div>
+      </div>
+      <div class="cols3">
+        <div class="field"><label>Текущее здоровье</label><input class="input" type="number" name="hpCurrent" value="${Number(user.stats.hpCurrent || 0)}" /></div>
+        <div class="field"><label>Макс. здоровье</label><input class="input" type="number" name="hpMax" value="${Number(user.stats.hpMax || 0)}" /></div>
+        <div class="field"><label>Энергия (текущая)</label><input class="input" type="number" name="energyCurrent" value="${Number(user.stats.energyCurrent || 0)}" /></div>
+      </div>
+      <div class="cols3">
+        <div class="field"><label>Текущий щит</label><input class="input" type="number" name="shieldCurrent" value="${Number(user.stats.shieldCurrent || 0)}" /></div>
+        <div class="field"><label>Макс. щит</label><input class="input" type="number" name="shieldMax" value="${Number(user.stats.shieldMax || 0)}" /></div>
+        <div class="field"><label>Энергия (базовый максимум)</label><input class="input" type="number" name="energyMax" value="${Number(user.stats.energyMax || 1)}" /></div>
+      </div>
+      <div class="cols3">
+        <div class="field"><label>STR</label><input class="input" type="number" name="str" value="${Number(user.abilities?.str || 0)}" /></div>
+        <div class="field"><label>DEX</label><input class="input" type="number" name="dex" value="${Number(user.abilities?.dex || 0)}" /></div>
+        <div class="field"><label>CON</label><input class="input" type="number" name="con" value="${Number(user.abilities?.con || 0)}" /></div>
+        <div class="field"><label>INT</label><input class="input" type="number" name="int" value="${Number(user.abilities?.int || 0)}" /></div>
+        <div class="field"><label>WIS</label><input class="input" type="number" name="wis" value="${Number(user.abilities?.wis || 0)}" /></div>
+        <div class="field"><label>CHA</label><input class="input" type="number" name="cha" value="${Number(user.abilities?.cha || 0)}" /></div>
+      </div>
+      <div class="cols3">
+        <div class="field"><label>Основное оружие</label><select class="select" name="primaryWeapon"><option value="">—</option>${primaryOptions.map(option => `<option value="${option.id}" ${option.id === (user.equipmentSlots?.primaryWeapon || '') ? 'selected' : ''}>${esc(option.name)}</option>`).join('')}</select></div>
+        <div class="field"><label>Вторичное оружие</label><select class="select" name="secondaryWeapon"><option value="">—</option>${secondaryOptions.map(option => `<option value="${option.id}" ${option.id === (user.equipmentSlots?.secondaryWeapon || '') ? 'selected' : ''}>${esc(option.name)}</option>`).join('')}</select></div>
+        <div class="field"><label>Броня</label><select class="select" name="armor"><option value="">—</option>${armorOptions.map(option => `<option value="${option.id}" ${option.id === (user.equipmentSlots?.armor || '') ? 'selected' : ''}>${esc(option.name)}</option>`).join('')}</select></div>
+      </div>
+      <div class="field"><label>Лор</label><textarea class="area" name="lore">${esc(user.lore || '')}</textarea>${__htmlHint}</div>
+      <div class="field"><label>Заметки</label><textarea class="area" name="notes">${esc(user.notes || '')}</textarea>${__htmlHint}</div>
+      <div class="field"><label>Инвентарь</label>${renderInventoryRowsEditor(user.inventory || [])}</div>
+      <div class="field"><label>Импланты (name|energyCost|description)</label><textarea class="area inv-editor" name="implants">${esc(implantsAdvancedTextV2(user.implants))}</textarea></div>
+      <div class="field"><label>NPC-связи</label>${renderCheckboxSelector('npcIds', Object.values(NPCS), user.social?.npcIds || [], 'npc', 'Нет NPC')}</div>
+      <div class="field"><label>Организации (по одной на строке)</label><textarea class="area" name="orgs">${esc(listText(user.social?.orgs || []))}</textarea></div>
+      <div class="field"><label>Связанные статьи</label>${renderRelatedArticlesEditor(user.relatedArticleIds || [])}</div>
+      <button class="primary" type="submit">SAVE_PLAYER</button>
+    </form>
+  `;
+};
+
+Configurator.renderEquipmentEditor = function(item) {
+  item = normalizeEquipmentItemV2(item);
+  return `
+    <form id="config-editor-form" class="form" data-entity-type="equipment">
+      ${this.renderHeader(item, 'Предметы теперь имеют фиксированные категории, редкость и доп. параметры для оружия, брони и энергетики.')}
+      ${imageFieldMarkup(item, 'Изображение предмета')}
+      <div class="cols3">
+        <div class="field"><label>ID</label><input class="input" name="id" value="${esc(item.id)}" /></div>
+        <div class="field"><label>Категория</label><select class="select" name="type">${ITEM_TYPE_OPTIONS_V2.map(option => `<option value="${option.value}" ${option.value === item.type ? 'selected' : ''}>${esc(option.label)}</option>`).join('')}</select></div>
+        <div class="field"><label>Редкость</label><select class="select" name="rarity">${ITEM_RARITY_OPTIONS_V2.map(option => `<option value="${option}" ${option === item.rarity ? 'selected' : ''}>${esc(option)}</option>`).join('')}</select></div>
+      </div>
+      <div class="field"><label>Название</label><input class="input" name="name" value="${esc(item.name || '')}" /></div>
+      ${this.renderVisibilityField(item)}
+      <div class="field"><label>Описание</label><textarea class="area" name="desc">${esc(item.desc || '')}</textarea>${__htmlHint}</div>
+      <div class="cols3">
+        <div class="field"><label>Урон оружия</label><input class="input" name="damage" value="${esc(item.damage || '')}" placeholder="например 2d6+1" /></div>
+        <div class="field"><label>Слот оружия</label><select class="select" name="weaponSlot">${WEAPON_SLOT_OPTIONS_V2.map(option => `<option value="${option.value}" ${option.value === String(item.weaponSlot || 'primary') ? 'selected' : ''}>${esc(option.label)}</option>`).join('')}</select></div>
+        <div class="field"><label>Класс брони</label><input class="input" type="number" name="armorClass" value="${Number(item.armorClass || 0)}" /></div>
+      </div>
+      <div class="cols3">
+        <div class="field"><label>Энергия: модификатор макс.</label><input class="input" type="number" name="energyDelta" value="${Number(item.energyDelta || 0)}" /></div>
+        <div class="field"><label>Механика предмета</label><select class="select" name="mechanicType"><option value="" ${!item.mechanicType ? 'selected' : ''}>Нет активной механики</option><option value="decryptor" ${item.mechanicType === 'decryptor' ? 'selected' : ''}>Дешифратор / интерактивный модуль</option></select></div>
+        <div class="field"><label>Режим модуля</label><select class="select" name="decryptorMode"><option value="decryptor" ${String(item.decryptorMode || 'decryptor') === 'decryptor' ? 'selected' : ''}>Обычный дешифратор</option><option value="codebreaker" ${item.decryptorMode === 'codebreaker' ? 'selected' : ''}>Мини-игра: быстрый взлом</option><option value="doorhack" ${item.decryptorMode === 'doorhack' ? 'selected' : ''}>Мини-игра: дверной взлом</option></select></div>
+      </div>
+      <div class="cols3">
+        <div class="field"><label>Название модуля</label><input class="input" name="mechanicTitle" value="${esc(item.mechanicTitle || '')}" placeholder="Полевой дешифратор" /></div>
+        <div class="field"><label>Шифр по умолчанию</label><select class="select" name="decryptorDefaultCipher"><option value="caesar" ${String(item.decryptorDefaultCipher || 'caesar') === 'caesar' ? 'selected' : ''}>Caesar</option><option value="vigenere" ${item.decryptorDefaultCipher === 'vigenere' ? 'selected' : ''}>Vigenere</option><option value="atbash" ${item.decryptorDefaultCipher === 'atbash' ? 'selected' : ''}>Atbash</option><option value="xor" ${item.decryptorDefaultCipher === 'xor' ? 'selected' : ''}>XOR/Base64</option></select></div>
+        <div class="field"><label>Лимит времени / длина кода</label><input class="input" type="number" min="3" max="120" name="mechanicTimeLimit" value="${esc(String(item.mechanicTimeLimit || 20))}" /></div>
+      </div>
+      <div class="field"><label>Подсказка к механике</label><textarea class="area" name="mechanicHint">${esc(item.mechanicHint || '')}</textarea></div>
+      <div class="field"><label>Теги (по одному на строку)</label><textarea class="area inv-editor" name="tags">${esc(listText(item.tags))}</textarea></div>
+      <div class="field"><label>Связанные статьи</label>${renderRelatedArticlesEditor(item.relatedArticleIds || [])}</div>
+      <button class="primary" type="submit">SAVE_ITEM</button>
+    </form>
+  `;
+};
+
+const __configCollectEntityV2 = Configurator.collectEntity.bind(Configurator);
+Configurator.collectEntity = function(type, formEl, formData = new FormData(formEl)) {
+  if (type === 'players') {
+    const mediaField = formEl.querySelector('.media-field');
+    const hiddenImage = formEl.querySelector('input[name="imageData"]')?.value || '';
+    const image = String(hiddenImage || formData.get('imageData') || mediaField?.dataset?.savedImageValue || mediaField?.dataset?.pendingImageValue || '').trim();
+    return normalizePlayerProfileV2({
+      id: slugifyId(formData.get('id') || formData.get('displayName') || '', 'player'),
+      role: String(formData.get('role') || 'player'),
+      pass: String(formData.get('pass') || '0000').trim(),
+      shortName: String(formData.get('shortName') || '').trim(),
+      displayName: String(formData.get('displayName') || '').trim(),
+      rank: String(formData.get('rank') || '').trim(),
+      avatarGlyph: String(formData.get('avatarGlyph') || '').trim(),
+      credits: Number(formData.get('credits') || 0),
+      lore: String(formData.get('lore') || '').trim(),
+      notes: String(formData.get('notes') || '').trim(),
+      stats: {
+        hpCurrent: Number(formData.get('hpCurrent') || 0),
+        hpMax: Number(formData.get('hpMax') || 0),
+        shieldCurrent: Number(formData.get('shieldCurrent') || 0),
+        shieldMax: Number(formData.get('shieldMax') || 0),
+        energyCurrent: Number(formData.get('energyCurrent') || 0),
+        energyMax: Number(formData.get('energyMax') || 1)
+      },
+      abilities: {
+        str: Number(formData.get('str') || 0), dex: Number(formData.get('dex') || 0), con: Number(formData.get('con') || 0),
+        int: Number(formData.get('int') || 0), wis: Number(formData.get('wis') || 0), cha: Number(formData.get('cha') || 0)
+      },
+      equipmentSlots: {
+        primaryWeapon: String(formData.get('primaryWeapon') || ''),
+        secondaryWeapon: String(formData.get('secondaryWeapon') || ''),
+        armor: String(formData.get('armor') || '')
+      },
+      inventory: readInventoryRows(formEl),
+      implants: parseImplantsAdvancedEditorV2(formData.get('implants') || ''),
+      social: { npcIds: getCheckedValues(formEl, 'npcIds'), orgs: parseListEditor(formData.get('orgs') || '') },
+      currentPlanetId: String(formData.get('currentPlanetId') || '').trim(),
+      relatedArticleIds: getCheckedValues(formEl, 'relatedArticleIds'),
+      image
+    });
+  }
+  if (type === 'equipment') {
+    const base = __configCollectEntityV2(type, formEl, formData);
+    return normalizeEquipmentItemV2({
+      ...base,
+      type: String(formData.get('type') || 'misc').trim(),
+      rarity: String(formData.get('rarity') || 'обычный').trim(),
+      damage: String(formData.get('damage') || '').trim(),
+      weaponSlot: String(formData.get('weaponSlot') || 'primary').trim(),
+      armorClass: Number(formData.get('armorClass') || 0),
+      energyDelta: Number(formData.get('energyDelta') || 0)
+    });
+  }
+  return __configCollectEntityV2(type, formEl, formData);
+};
+
+const __configCleanupReferencesV2 = Configurator.cleanupReferences.bind(Configurator);
+Configurator.cleanupReferences = function(type, id) {
+  __configCleanupReferencesV2(type, id);
+  if (type === 'equipment') {
+    for (const player of Object.values(PLAYER_TEMPLATES)) {
+      if (player.equipmentSlots?.primaryWeapon === id) player.equipmentSlots.primaryWeapon = '';
+      if (player.equipmentSlots?.secondaryWeapon === id) player.equipmentSlots.secondaryWeapon = '';
+    }
+    for (const player of Object.values(App.state?.users || {})) {
+      if (player.equipmentSlots?.primaryWeapon === id) player.equipmentSlots.primaryWeapon = '';
+      if (player.equipmentSlots?.secondaryWeapon === id) player.equipmentSlots.secondaryWeapon = '';
+    }
+  }
+};
+const __configRemapReferencesV2 = Configurator.remapReferences.bind(Configurator);
+Configurator.remapReferences = function(type, oldId, newId) {
+  __configRemapReferencesV2(type, oldId, newId);
+  if (type === 'equipment' && oldId !== newId) {
+    for (const player of Object.values(PLAYER_TEMPLATES)) {
+      if (player.equipmentSlots?.primaryWeapon === oldId) player.equipmentSlots.primaryWeapon = newId;
+      if (player.equipmentSlots?.secondaryWeapon === oldId) player.equipmentSlots.secondaryWeapon = newId;
+    }
+    for (const player of Object.values(App.state?.users || {})) {
+      if (player.equipmentSlots?.primaryWeapon === oldId) player.equipmentSlots.primaryWeapon = newId;
+      if (player.equipmentSlots?.secondaryWeapon === oldId) player.equipmentSlots.secondaryWeapon = newId;
+    }
+  }
+};
+
+Wiki.showEntity = (function(orig){
+  return function(type, id, autoOpen = false) {
+    orig.call(this, type, id, autoOpen);
+    if (type !== 'item') return;
+    const entity = Data.getItem(id);
+    const target = $('#wiki-detail');
+    if (!entity || !target) return;
+    const hero = target.querySelector('.wiki-hero > div');
+    const tags = target.querySelector('.tags');
+    if (hero) {
+      const subtle = hero.querySelector('.subtle');
+      if (subtle) subtle.textContent = itemExtraSummaryV2(entity);
+      const detailCard = document.createElement('div');
+      detailCard.className = 'card pad18';
+      detailCard.style.margin = '18px 0';
+      detailCard.innerHTML = `
+        <div class="data-row"><span class="data-label">Категория</span><span class="data-value">${esc(itemTypeLabelV2(entity.type))}</span></div>
+        ${entity.type === 'weapon' ? `<div class="data-row"><span class="data-label">Слот</span><span class="data-value">${esc(WEAPON_SLOT_OPTIONS_V2.find(option => option.value === (entity.weaponSlot || 'primary'))?.label || entity.weaponSlot || '')}</span></div><div class="data-row"><span class="data-label">Урон</span><span class="data-value">${esc(entity.damage || '—')}</span></div>` : ''}
+        ${entity.type === 'armor' ? `<div class="data-row"><span class="data-label">Класс брони</span><span class="data-value">${esc(String(entity.armorClass || 0))}</span></div>` : ''}
+        ${Number(entity.energyDelta || 0) ? `<div class="data-row"><span class="data-label">Модификатор энергии</span><span class="data-value">${entity.energyDelta > 0 ? '+' : ''}${esc(String(entity.energyDelta))}</span></div>` : ''}
+      `;
+      const soldTitle = Array.from(target.querySelectorAll('.section-title')).find(node => node.textContent.trim() === 'Где встречается');
+      soldTitle?.before(detailCard);
+    }
+    if (tags) tags.insertAdjacentHTML('beforebegin', `<div class="small-note" style="margin-bottom:8px">${esc(itemExtraSummaryV2(entity))}</div>`);
+  };
+})(Wiki.showEntity);
+
+// Apply upgraded schema immediately for already loaded data
+try {
+  applyWorldData(worldData);
+  if (App?.state?.users) {
+    for (const [id, user] of Object.entries(App.state.users)) App.state.users[id] = normalizePlayerProfileV2(user);
+  }
+  if (App?.currentUser) App.currentUser = normalizePlayerProfileV2(App.currentUser);
+} catch (error) {
+  Debug.error('PROFILE_ITEM_OVERHAUL_APPLY_FAILED', { message: error?.message || String(error) });
+}
+
+
+// ==== v0.3.11.4 chat expansion: direct player messages + NPC initiation + edit/delete ====
+const __makeDefaultState_chat = makeDefaultState;
+makeDefaultState = function() {
+  const state = __makeDefaultState_chat();
+  if (!state.directChats || typeof state.directChats !== 'object') state.directChats = {};
+  return state;
+};
+
+const __buildSharedStateSnapshot_chat = buildSharedStateSnapshot;
+buildSharedStateSnapshot = function(state = App?.state || makeDefaultState()) {
+  const snap = __buildSharedStateSnapshot_chat(state);
+  snap.directChats = deep(state?.directChats || {});
+  return snap;
+};
+
+const __persistNormalize_chat = Persistence.normalize.bind(Persistence);
+Persistence.normalize = function(candidate) {
+  const state = __persistNormalize_chat(candidate);
+  state.directChats = deep(candidate?.directChats || {});
+  if (!state.directChats || typeof state.directChats !== 'object') state.directChats = {};
+  return state;
+};
+
+if (!App.state.directChats || typeof App.state.directChats !== 'object') App.state.directChats = {};
+
+function ensureDirectChatState() {
+  if (!App.state.directChats || typeof App.state.directChats !== 'object') App.state.directChats = {};
+  return App.state.directChats;
+}
+
+function directChatKey(a, b) {
+  return [String(a || ''), String(b || '')].sort().join('__');
+}
+
+function directChatParticipants(key) {
+  const [a, b] = String(key || '').split('__');
+  return { a, b };
+}
+
+function getDirectChatThread(a, b) {
+  const chats = ensureDirectChatState();
+  const key = directChatKey(a, b);
+  if (!Array.isArray(chats[key])) chats[key] = [];
+  return chats[key];
+}
+
+function listDirectChatPartnerIds(userId) {
+  const ids = new Set([...Object.keys(PLAYER_TEMPLATES || {}), ...Object.keys(App.state?.users || {})]);
+  return Array.from(ids)
+    .filter(id => id && id !== userId)
+    .filter(id => (App.state?.users?.[id] || PLAYER_TEMPLATES?.[id] || {}).role !== 'gm')
+    .sort((a, b) => getPlayerDisplayName(a).localeCompare(getPlayerDisplayName(b), 'ru'));
+}
+
+function listDirectChatKeys() {
+  return Object.keys(ensureDirectChatState()).sort((a, b) => {
+    const ta = ensureDirectChatState()[a];
+    const tb = ensureDirectChatState()[b];
+    const da = ta?.length ? new Date(ta[ta.length - 1].createdAt || 0).getTime() : 0;
+    const db = tb?.length ? new Date(tb[tb.length - 1].createdAt || 0).getTime() : 0;
+    return db - da;
+  });
+}
+
+function appendDirectChatMessage(senderId, recipientId, payload = {}) {
+  const thread = getDirectChatThread(senderId, recipientId);
+  const text = String(payload.text || '').trim();
+  if (!text) return null;
+  const message = {
+    id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    sender: 'player',
+    senderId,
+    recipientId,
+    text,
+    createdAt: new Date().toISOString(),
+    authorLabel: getPlayerDisplayName(senderId)
+  };
+  thread.push(message);
+  return message;
+}
+
+function findDirectChatMessageContext(messageId) {
+  for (const key of listDirectChatKeys()) {
+    const thread = ensureDirectChatState()[key] || [];
+    const idx = thread.findIndex(msg => msg.id === messageId);
+    if (idx >= 0) {
+      const parts = directChatParticipants(key);
+      return { key, thread, index: idx, message: thread[idx], ...parts };
+    }
+  }
+  return null;
+}
+
+function editDirectChatMessage(messageId, nextText) {
+  const ctx = findDirectChatMessageContext(messageId);
+  if (!ctx) return null;
+  ctx.message.text = String(nextText || '').trim();
+  ctx.message.editedAt = new Date().toISOString();
+  return ctx.message;
+}
+
+function deleteDirectChatMessage(messageId) {
+  const ctx = findDirectChatMessageContext(messageId);
+  if (!ctx) return false;
+  ctx.thread.splice(ctx.index, 1);
+  if (!ctx.thread.length) delete ensureDirectChatState()[ctx.key];
+  return true;
+}
+
+function findNpcChatMessageContext(messageId) {
+  const all = ensureNpcChatState();
+  for (const npcId of Object.keys(all)) {
+    const byPlayer = all[npcId] || {};
+    for (const playerId of Object.keys(byPlayer)) {
+      const thread = byPlayer[playerId] || [];
+      const idx = thread.findIndex(msg => msg.id === messageId);
+      if (idx >= 0) return { npcId, playerId, thread, index: idx, message: thread[idx] };
+    }
+  }
+  return null;
+}
+
+function editNpcChatMessage(messageId, nextText) {
+  const ctx = findNpcChatMessageContext(messageId);
+  if (!ctx) return null;
+  ctx.message.text = String(nextText || '').trim();
+  ctx.message.editedAt = new Date().toISOString();
+  return ctx.message;
+}
+
+function deleteNpcChatMessage(messageId) {
+  const ctx = findNpcChatMessageContext(messageId);
+  if (!ctx) return false;
+  ctx.thread.splice(ctx.index, 1);
+  return true;
+}
+
+function canEditDeleteNpcMessage(message) {
+  if (App.currentUser?.role === 'gm') return true;
+  return message?.sender === 'player' && message?.playerId === App.currentUserId;
+}
+
+function canEditDeleteDirectMessage(message) {
+  if (App.currentUser?.role === 'gm') return true;
+  return message?.senderId === App.currentUserId;
+}
+
+function formatMessageMetaTime(message) {
+  const created = new Date(message?.createdAt || Date.now()).toLocaleString('ru-RU');
+  if (message?.editedAt) return `${created} · изменено`;
+  return created;
+}
+
+function renderChatMessageControls(kind, message) {
+  const can = kind === 'npc' ? canEditDeleteNpcMessage(message) : canEditDeleteDirectMessage(message);
+  if (!can) return '';
+  return `
+    <div class="chat-actions">
+      <button class="tiny-btn chat-edit-btn" type="button" data-chat-kind="${esc(kind)}" data-message-id="${esc(message.id)}">EDIT</button>
+      <button class="tiny-btn chat-delete-btn" type="button" data-chat-kind="${esc(kind)}" data-message-id="${esc(message.id)}">DEL</button>
+    </div>
+  `;
+}
+
+function bindChatMessageActions(root, rerender) {
+  root?.querySelectorAll('.chat-edit-btn').forEach(button => {
+    if (button.dataset.bound === '1') return;
+    button.dataset.bound = '1';
+    button.addEventListener('click', async () => {
+      const kind = button.dataset.chatKind;
+      const messageId = button.dataset.messageId;
+      let current = '';
+      if (kind === 'npc') current = findNpcChatMessageContext(messageId)?.message?.text || '';
+      else current = findDirectChatMessageContext(messageId)?.message?.text || '';
+      const nextText = prompt('Изменить сообщение', current);
+      if (nextText == null) return;
+      const clean = String(nextText).trim();
+      if (!clean) {
+        Toast.show('Пустое сообщение нельзя сохранить', 'err');
+        return;
+      }
+      const updated = kind === 'npc' ? editNpcChatMessage(messageId, clean) : editDirectChatMessage(messageId, clean);
+      if (!updated) {
+        Toast.show('Сообщение не найдено', 'err');
+        return;
+      }
+      await App.saveState('Сообщение изменено');
+      rerender?.();
+    });
+  });
+  root?.querySelectorAll('.chat-delete-btn').forEach(button => {
+    if (button.dataset.bound === '1') return;
+    button.dataset.bound = '1';
+    button.addEventListener('click', async () => {
+      const kind = button.dataset.chatKind;
+      const messageId = button.dataset.messageId;
+      if (!confirm('Удалить сообщение?')) return;
+      const ok = kind === 'npc' ? deleteNpcChatMessage(messageId) : deleteDirectChatMessage(messageId);
+      if (!ok) {
+        Toast.show('Сообщение не найдено', 'err');
+        return;
+      }
+      await App.saveState('Сообщение удалено');
+      rerender?.();
+    });
+  });
+}
+
+
+function listNpcThreadsForPlayer(playerId = App.currentUserId) {
+  const visibleNpcIds = new Set(Object.values(NPCS || {})
+    .filter(npc => isEntityVisible(npc))
+    .map(npc => String(npc.id)));
+  const fromChats = [];
+  for (const npcId of Object.keys(ensureNpcChatState())) {
+    const thread = getNpcChatThread(npcId, playerId);
+    if (thread.length || visibleNpcIds.has(String(npcId))) fromChats.push(String(npcId));
+  }
+  for (const npcId of visibleNpcIds) if (!fromChats.includes(npcId)) fromChats.push(npcId);
+  return fromChats
+    .map(id => Data.getNpc(id))
+    .filter(Boolean)
+    .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ru'));
+}
+
+function listNpcThreadEntriesForGm() {
+  const entries = [];
+  for (const npcId of Object.keys(ensureNpcChatState())) {
+    const npc = Data.getNpc(npcId);
+    if (!npc) continue;
+    const byPlayer = ensureNpcChatState()[npcId] || {};
+    for (const playerId of Object.keys(byPlayer)) {
+      const thread = Array.isArray(byPlayer[playerId]) ? byPlayer[playerId] : [];
+      const lastAt = thread.length ? new Date(thread[thread.length - 1].createdAt || 0).getTime() : 0;
+      entries.push({
+        key: npcThreadMarkerKey(npcId, playerId),
+        npcId,
+        playerId,
+        npc,
+        thread,
+        lastAt
+      });
+    }
+  }
+  return entries.sort((a, b) => b.lastAt - a.lastAt || String(a.npc.name || '').localeCompare(String(b.npc.name || ''), 'ru'));
+}
+
+function parseNpcThreadKey(key) {
+  const [npcId, playerId] = String(key || '').split('__');
+  return { npcId, playerId };
+}
+
+const MessagesUI = {
+  selectedPlayerKind: null,
+  selectedPlayerKey: null,
+  selectedGmKind: null,
+  selectedGmKey: null,
+  playerSearch: '',
+  gmSearch: '',
+  render() {
+    const root = $('#messages-content');
+    if (!root || !App.currentUser) return;
+    root.innerHTML = App.currentUser.role === 'gm' ? this.renderForGm() : this.renderForPlayer();
+    this.bind(root);
+  },
+  resolvePlayerSelection(partners, npcTargets) {
+    const directIds = partners.map(String);
+    const npcIds = npcTargets.map(npc => String(npc.id));
+    let kind = this.selectedPlayerKind;
+    let key = String(this.selectedPlayerKey || '');
+    if (kind === 'direct' && directIds.includes(key)) return { kind, key };
+    if (kind === 'npc' && npcIds.includes(key)) return { kind, key };
+    if (directIds.length) return { kind: 'direct', key: directIds[0] };
+    if (npcIds.length) return { kind: 'npc', key: npcIds[0] };
+    return { kind: null, key: null };
+  },
+  resolveGmSelection(directKeys, npcEntries) {
+    const npcKeys = npcEntries.map(entry => entry.key);
+    let kind = this.selectedGmKind;
+    let key = String(this.selectedGmKey || '');
+    if (kind === 'direct' && directKeys.includes(key)) return { kind, key };
+    if (kind === 'npc' && npcKeys.includes(key)) return { kind, key };
+    if (npcKeys.length) return { kind: 'npc', key: npcKeys[0] };
+    if (directKeys.length) return { kind: 'direct', key: directKeys[0] };
+    return { kind: null, key: null };
+  },
+  renderForPlayer() {
+    const partners = listDirectChatPartnerIds(App.currentUserId);
+    const npcTargets = listNpcThreadsForPlayer(App.currentUserId);
+    const selection = this.resolvePlayerSelection(partners, npcTargets);
+    this.selectedPlayerKind = selection.kind;
+    this.selectedPlayerKey = selection.key;
+    const activeNpc = selection.kind === 'npc' ? Data.getNpc(selection.key) : null;
+    const directThread = selection.kind === 'direct' && selection.key ? getDirectChatThread(App.currentUserId, selection.key) : [];
+    const npcThread = activeNpc ? getNpcChatThread(activeNpc.id, App.currentUserId) : [];
+    return `
+      <div class="messages-layout">
+        <aside class="messages-side card">
+          <div class="section-title">Сообщения</div>
+          
+          <div class="message-contact-list">
+            <div class="tiny-label" style="margin-bottom:8px">Игроки</div>
+            ${partners.map(id => `
+              <button class="message-contact ${selection.kind === 'direct' && selection.key === id ? 'active' : ''}" type="button" data-message-kind="direct" data-message-key="${esc(id)}">
+                <span>${esc(getPlayerDisplayName(id))}</span>
+              </button>
+            `).join('') || '<div class="small-note">Нет других игроков.</div>'}
+          </div>
+          <div class="message-contact-list" style="margin-top:14px">
+            <div class="tiny-label" style="margin-bottom:8px">NPC</div>
+            ${npcTargets.map(npc => `
+              <button class="message-contact ${selection.kind === 'npc' && selection.key === npc.id ? 'active' : ''}" type="button" data-message-kind="npc" data-message-key="${esc(npc.id)}">
+                <span>${esc(npc.name)}</span>
+              </button>
+            `).join('') || '<div class="small-note">Нет доступных NPC.</div>'}
+          </div>
+        </aside>
+        <section class="messages-main card pad18">
+          ${selection.kind === 'direct' && selection.key ? `
+            <div class="section-title">Диалог с ${esc(getPlayerDisplayName(selection.key))}</div>
+            
+            <div class="chat-thread message-thread" data-direct-thread>
+              ${directThread.map(message => this.directMessageMarkup(message)).join('') || '<div class="small-note">Диалог ещё не начат.</div>'}
+            </div>
+            <form class="form direct-chat-form" data-partner-id="${esc(selection.key)}">
+              <div class="field"><label>Сообщение</label><textarea class="area chat-input" name="message" placeholder="Написать игроку..."></textarea>${typeof __htmlHint !== 'undefined' ? __htmlHint : ''}</div>
+              <button class="primary" type="submit">ОТПРАВИТЬ</button>
+            </form>
+          ` : selection.kind === 'npc' && activeNpc ? `
+            <div class="section-title">Канал с ${esc(activeNpc.name)}</div>
+            <div class="small-note" style="margin-bottom:10px">Этот же диалог доступен из карточки NPC в архиве.</div>
+            <div class="chat-thread message-thread" data-npc-thread>
+              ${npcThread.map(message => ChatUI.messageMarkup(message, activeNpc.id)).join('') || '<div class="small-note">Диалог ещё не начат.</div>'}
+            </div>
+            <form class="form messages-npc-chat-form" data-npc-id="${esc(activeNpc.id)}" data-player-id="${esc(App.currentUserId)}">
+              <div class="field"><label>Сообщение для ${esc(activeNpc.name)}</label><textarea class="area chat-input" name="message" placeholder="Написать NPC..."></textarea>${typeof __htmlHint !== 'undefined' ? __htmlHint : ''}</div>
+              <button class="primary" type="submit">ОТПРАВИТЬ NPC</button>
+            </form>
+          ` : '<div class="small-note">Нет доступных диалогов.</div>'}
+        </section>
+      </div>
+    `;
+  },
+  renderForGm() {
+    const directKeys = listDirectChatKeys();
+    const npcEntries = listNpcThreadEntriesForGm();
+    const selection = this.resolveGmSelection(directKeys, npcEntries);
+    this.selectedGmKind = selection.kind;
+    this.selectedGmKey = selection.key;
+    const parts = selection.kind === 'direct' && selection.key ? directChatParticipants(selection.key) : { a: null, b: null };
+    const directThread = selection.kind === 'direct' && selection.key ? (ensureDirectChatState()[selection.key] || []) : [];
+    const activeNpcEntry = selection.kind === 'npc' ? npcEntries.find(entry => entry.key === selection.key) : null;
+    const playerOptions = listDirectChatPartnerIds('').filter(Boolean);
+    const npcOptions = Object.values(NPCS || {}).sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ru'));
+    return `
+      <div class="messages-layout gm">
+        <aside class="messages-side card">
+          <div class="section-title">Все диалоги</div>
+          
+          <div class="message-contact-list">
+            <div class="tiny-label" style="margin-bottom:8px">Игрок ↔ Игрок</div>
+            ${directKeys.map(threadKey => {
+              const { a, b } = directChatParticipants(threadKey);
+              return `<button class="message-contact ${selection.kind === 'direct' && selection.key === threadKey ? 'active' : ''}" type="button" data-gm-message-kind="direct" data-gm-message-key="${esc(threadKey)}">${esc(getPlayerDisplayName(a))} ↔ ${esc(getPlayerDisplayName(b))}</button>`;
+            }).join('') || '<div class="small-note">Пока нет личных сообщений игроков.</div>'}
+          </div>
+          <div class="message-contact-list" style="margin-top:14px">
+            <div class="tiny-label" style="margin-bottom:8px">NPC ↔ Игрок</div>
+            ${npcEntries.map(entry => `
+              <button class="message-contact ${selection.kind === 'npc' && selection.key === entry.key ? 'active' : ''}" type="button" data-gm-message-kind="npc" data-gm-message-key="${esc(entry.key)}">
+                ${esc(entry.npc.name)} ↔ ${esc(getPlayerDisplayName(entry.playerId))}
+              </button>
+            `).join('') || '<div class="small-note">Пока нет NPC-диалогов.</div>'}
+          </div>
+        </aside>
+        <section class="messages-main stack">
+          <div class="card pad18">
+            <div class="section-title">Инициировать диалог от NPC</div>
+            <form class="form npc-chat-init-form">
+              <div class="grid2">
+                <div class="field"><label>NPC</label><select class="select" name="npcId">${npcOptions.map(npc => `<option value="${esc(npc.id)}">${esc(npc.name)}</option>`).join('')}</select></div>
+                <div class="field"><label>Игрок</label><select class="select" name="playerId">${playerOptions.map(id => `<option value="${esc(id)}">${esc(getPlayerDisplayName(id))}</option>`).join('')}</select></div>
+              </div>
+              <div class="field"><label>Первое сообщение</label><textarea class="area chat-input" name="message" placeholder="Сообщение от имени NPC..."></textarea>${typeof __htmlHint !== 'undefined' ? __htmlHint : ''}</div>
+              <button class="primary" type="submit">ОТПРАВИТЬ ОТ NPC</button>
+            </form>
+          </div>
+          <div class="card pad18">
+            ${selection.kind === 'direct' && selection.key ? `
+              <div class="section-title">${esc(getPlayerDisplayName(parts.a))} ↔ ${esc(getPlayerDisplayName(parts.b))}</div>
+              <div class="chat-thread message-thread" data-direct-thread>
+                ${directThread.map(message => this.directMessageMarkup(message)).join('') || '<div class="small-note">Нет сообщений.</div>'}
+              </div>
+            ` : selection.kind === 'npc' && activeNpcEntry ? `
+              <div class="section-title">${esc(activeNpcEntry.npc.name)} ↔ ${esc(getPlayerDisplayName(activeNpcEntry.playerId))}</div>
+              <div class="chat-thread message-thread" data-npc-thread>
+                ${activeNpcEntry.thread.map(message => ChatUI.messageMarkup(message, activeNpcEntry.npcId)).join('') || '<div class="small-note">Нет сообщений.</div>'}
+              </div>
+              <form class="form messages-npc-chat-form" data-npc-id="${esc(activeNpcEntry.npcId)}" data-player-id="${esc(activeNpcEntry.playerId)}" data-role="npc">
+                <div class="field"><label>Ответ от имени ${esc(activeNpcEntry.npc.name)}</label><textarea class="area chat-input" name="message" placeholder="Ответить игроку..."></textarea>${typeof __htmlHint !== 'undefined' ? __htmlHint : ''}</div>
+                <button class="primary" type="submit">ОТПРАВИТЬ ОТВЕТ</button>
+              </form>
+            ` : '<div class="small-note">Выбери диалог слева, чтобы посмотреть историю.</div>'}
+          </div>
+        </section>
+      </div>
+    `;
+  },
+  directMessageMarkup(message) {
+    const own = message.senderId === App.currentUserId && App.currentUser?.role !== 'gm';
+    const label = getPlayerDisplayName(message.senderId);
+    return `
+      <div class="chat-bubble ${own ? 'player' : 'npc'}">
+        <div class="chat-head-row">
+          <div class="chat-meta">${esc(label)} · ${esc(formatMessageMetaTime(message))}</div>
+          ${renderChatMessageControls('direct', message)}
+        </div>
+        ${__renderRichText ? __renderRichText(message.text, '<div></div>') : `<div>${esc(message.text)}</div>`}
+      </div>
+    `;
+  },
+  bind(root) {
+    root.querySelectorAll('[data-message-kind]').forEach(button => {
+      button.addEventListener('click', () => {
+        this.selectedPlayerKind = button.dataset.messageKind;
+        this.selectedPlayerKey = button.dataset.messageKey;
+        if (this.selectedPlayerKind === 'npc') markNpcThreadsSeen(npcThreadMarkerKey(this.selectedPlayerKey, App.currentUserId));
+        else if (this.selectedPlayerKind === 'direct') markDirectThreadsSeen(directChatKey(App.currentUserId, this.selectedPlayerKey));
+        persistReadMarkersHard('messages-open-player-thread');
+        this.render();
+        refreshUnreadIndicators();
+      });
+    });
+    root.querySelectorAll('[data-gm-message-kind]').forEach(button => {
+      button.addEventListener('click', () => {
+        this.selectedGmKind = button.dataset.gmMessageKind;
+        this.selectedGmKey = button.dataset.gmMessageKey;
+        if (this.selectedGmKind === 'npc') markNpcThreadsSeen(this.selectedGmKey, 'gm');
+        else if (this.selectedGmKind === 'direct') markDirectThreadsSeen(this.selectedGmKey, 'gm');
+        persistReadMarkersHard('messages-open-gm-thread');
+        this.render();
+        refreshUnreadIndicators();
+      });
+    });
+    root.querySelectorAll('.direct-chat-form').forEach(form => {
+      form.addEventListener('submit', async event => {
+        event.preventDefault();
+        const fd = new FormData(form);
+        const partnerId = form.dataset.partnerId;
+        const text = String(fd.get('message') || '').trim();
+        if (!text) {
+          Toast.show('Сообщение пустое', 'err');
+          return;
+        }
+        appendDirectChatMessage(App.currentUserId, partnerId, { text });
+        markDirectThreadsSeen(directChatKey(App.currentUserId, partnerId));
+        await App.saveState('Сообщение отправлено игроку');
+        this.render();
+      });
+    });
+    root.querySelectorAll('.messages-npc-chat-form').forEach(form => {
+      form.addEventListener('submit', async event => {
+        event.preventDefault();
+        const fd = new FormData(form);
+        const npcId = String(form.dataset.npcId || '');
+        const playerId = String(form.dataset.playerId || App.currentUserId || '');
+        const role = String(form.dataset.role || (App.currentUser?.role === 'gm' ? 'npc' : 'player'));
+        const text = String(fd.get('message') || '').trim();
+        if (!npcId || !playerId || !text) {
+          Toast.show('Сообщение пустое', 'err');
+          return;
+        }
+        appendNpcChatMessage(npcId, playerId, {
+          sender: role === 'npc' ? 'npc' : 'player',
+          text,
+          authorLabel: role === 'npc' ? (Data.getNpc(npcId)?.name || 'NPC') : getPlayerDisplayName(playerId)
+        });
+        markNpcThreadsSeen(npcThreadMarkerKey(npcId, playerId), App.currentUser?.role === 'gm' ? 'gm' : readMarkerUserKey());
+        await App.saveState(role === 'npc' ? 'Ответ NPC отправлен' : 'Сообщение отправлено NPC');
+        this.render();
+      });
+    });
+    root.querySelectorAll('.npc-chat-init-form').forEach(form => {
+      form.addEventListener('submit', async event => {
+        event.preventDefault();
+        const fd = new FormData(form);
+        const npcId = String(fd.get('npcId') || '');
+        const playerId = String(fd.get('playerId') || '');
+        const text = String(fd.get('message') || '').trim();
+        if (!npcId || !playerId || !text) {
+          Toast.show('Заполни NPC, игрока и текст сообщения', 'err');
+          return;
+        }
+        appendNpcChatMessage(npcId, playerId, { sender: 'npc', text, authorLabel: Data.getNpc(npcId)?.name || 'NPC' });
+        this.selectedGmKind = 'npc';
+        this.selectedGmKey = npcThreadMarkerKey(npcId, playerId);
+        markNpcThreadsSeen(this.selectedGmKey, 'gm');
+        await App.saveState('NPC отправил сообщение игроку');
+        this.render();
+      });
+    });
+    bindChatMessageActions(root, () => this.render());
+  }
+};
+
+const __chatMessageMarkup_rich = ChatUI.messageMarkup.bind(ChatUI);
+ChatUI.messageMarkup = function(message, npcId) {
+  const own = message.sender === 'npc';
+  const label = own ? (Data.getNpc(npcId)?.name || 'NPC') : getPlayerDisplayName(message.playerId);
+  return `
+    <div class="chat-bubble ${own ? 'npc' : 'player'}">
+      <div class="chat-head-row">
+        <div class="chat-meta">${esc(label)} · ${esc(formatMessageMetaTime(message))}</div>
+        ${renderChatMessageControls('npc', message)}
+      </div>
+      ${__renderRichText ? __renderRichText(message.text, '<div></div>') : `<div>${esc(message.text)}</div>`}
+    </div>
+  `;
+};
+
+ChatUI.renderNpcThreadsForGm = function(npc) {
+  const existingIds = listNpcChatPlayerIds(npc.id);
+  const allPlayers = listDirectChatPartnerIds('').filter(Boolean);
+  return `
+    <div class="chat-gm-stack">
+      <div class="chat-panel card pad18">
+        <div class="section-title">Инициировать диалог</div>
+        <div class="small-note">ДМ может первым написать игроку от имени NPC.</div>
+        <form class="form npc-chat-init-form" data-default-npc-id="${esc(npc.id)}">
+          <div class="grid2">
+            <div class="field"><label>NPC</label><input class="input" value="${esc(npc.name)}" disabled /></div>
+            <div class="field"><label>Игрок</label><select class="select" name="playerId">${allPlayers.map(id => `<option value="${esc(id)}">${esc(getPlayerDisplayName(id))}</option>`).join('')}</select></div>
+          </div>
+          <input type="hidden" name="npcId" value="${esc(npc.id)}" />
+          <div class="field"><label>Первое сообщение</label><textarea class="area chat-input" name="message" placeholder="Сообщение от имени NPC..."></textarea>${typeof __htmlHint !== 'undefined' ? __htmlHint : ''}</div>
+          <button class="primary" type="submit">НАЧАТЬ ДИАЛОГ</button>
+        </form>
+      </div>
+      ${existingIds.length ? existingIds.map(playerId => {
+        const thread = getNpcChatThread(npc.id, playerId);
+        return `
+          <div class="chat-panel card pad18">
+            <div class="data-row"><span class="data-label">Игрок</span><span class="data-value">${esc(getPlayerDisplayName(playerId))}</span></div>
+            <div class="chat-thread" data-chat-thread>
+              ${thread.map(message => this.messageMarkup(message, npc.id)).join('') || '<div class="small-note">Нет сообщений.</div>'}
+            </div>
+            <form class="form npc-chat-form" data-npc-id="${esc(npc.id)}" data-player-id="${esc(playerId)}" data-role="npc">
+              <div class="field"><label>Ответ от имени ${esc(npc.name)}</label><textarea class="area chat-input" name="message" placeholder="Ответить игроку..."></textarea>${typeof __htmlHint !== 'undefined' ? __htmlHint : ''}</div>
+              <button class="primary" type="submit">ОТПРАВИТЬ ОТВЕТ</button>
+            </form>
+          </div>
+        `;
+      }).join('') : '<div class="chat-panel card pad18"><div class="small-note">Игроки ещё не писали этому NPC.</div></div>'}
+    </div>
+  `;
+};
+
+ChatUI.bindWithin = function(root) {
+  root?.querySelectorAll('.npc-chat-form').forEach(form => {
+    if (form.dataset.bound === '1') return;
+    form.dataset.bound = '1';
+    form.addEventListener('submit', async event => {
+      event.preventDefault();
+      const fd = new FormData(form);
+      const npcId = form.dataset.npcId;
+      const playerId = form.dataset.playerId;
+      const role = form.dataset.role || 'player';
+      const text = String(fd.get('message') || '').trim();
+      if (!text) {
+        Toast.show('Сообщение пустое', 'err');
+        return;
+      }
+      appendNpcChatMessage(npcId, playerId, { sender: role === 'npc' ? 'npc' : 'player', text, authorLabel: role === 'npc' ? (Data.getNpc(npcId)?.name || 'NPC') : getPlayerDisplayName(playerId) });
+      await App.saveState(role === 'npc' ? 'Ответ отправлен игроку' : 'Сообщение отправлено ДМу');
+      Wiki.showEntity('npc', npcId, UI.activeModuleId === 'wiki');
+    });
+  });
+  root?.querySelectorAll('.npc-chat-init-form').forEach(form => {
+    if (form.dataset.bound === '1') return;
+    form.dataset.bound = '1';
+    form.addEventListener('submit', async event => {
+      event.preventDefault();
+      const fd = new FormData(form);
+      const npcId = String(fd.get('npcId') || form.dataset.defaultNpcId || '');
+      const playerId = String(fd.get('playerId') || '');
+      const text = String(fd.get('message') || '').trim();
+      if (!npcId || !playerId || !text) {
+        Toast.show('Заполни игрока и текст сообщения', 'err');
+        return;
+      }
+      appendNpcChatMessage(npcId, playerId, { sender: 'npc', text, authorLabel: Data.getNpc(npcId)?.name || 'NPC' });
+      await App.saveState('NPC инициировал диалог');
+      Wiki.showEntity('npc', npcId, UI.activeModuleId === 'wiki');
+    });
+  });
+  bindChatMessageActions(root, () => {
+    if (Wiki.currentView?.type === 'npc') Wiki.showEntity('npc', Wiki.currentView.id, UI.activeModuleId === 'wiki');
+    else if (UI.activeModuleId === 'messages') MessagesUI.render();
+  });
+};
+
+const __openModule_messages = UI.openModule.bind(UI);
+UI.openModule = function(id, options = {}) {
+  if (id === 'messages') MessagesUI.render();
+  return __openModule_messages(id, options);
+};
+
+const __renderLive_messages = App.renderLive.bind(App);
+App.renderLive = function() {
+  __renderLive_messages();
+  if (UI.activeModuleId === 'messages') MessagesUI.render();
+};
+
+const __bindStaticEvents_messages = App.bindStaticEvents.bind(App);
+App.bindStaticEvents = function() {
+  __bindStaticEvents_messages();
+  $('#open-messages')?.addEventListener('click', () => UI.openModule('messages'));
+};
+
+const __fillLoginSelect_messages = App.fillLoginSelect.bind(App);
+App.fillLoginSelect = function() {
+  __fillLoginSelect_messages();
+  if (!App.state.directChats || typeof App.state.directChats !== 'object') App.state.directChats = {};
+};
+
+
+// ==== v0.3.11.5 unread indicators for messages, news, tasks ====
+const __makeDefaultState_unread = makeDefaultState;
+makeDefaultState = function() {
+  const state = __makeDefaultState_unread();
+  if (!state.readMarkers || typeof state.readMarkers !== 'object') state.readMarkers = { messages: {}, news: {}, tasks: {} };
+  if (!state.readMarkers.messages || typeof state.readMarkers.messages !== 'object') state.readMarkers.messages = {};
+  if (!state.readMarkers.news || typeof state.readMarkers.news !== 'object') state.readMarkers.news = {};
+  if (!state.readMarkers.tasks || typeof state.readMarkers.tasks !== 'object') state.readMarkers.tasks = {};
+  return state;
+};
+
+const __buildSharedStateSnapshot_unread = buildSharedStateSnapshot;
+buildSharedStateSnapshot = function(state = App?.state || makeDefaultState()) {
+  const snap = __buildSharedStateSnapshot_unread(state);
+  snap.readMarkers = deep(state?.readMarkers || { messages: {}, news: {}, tasks: {} });
+  return snap;
+};
+
+const __persistNormalize_unread = Persistence.normalize.bind(Persistence);
+Persistence.normalize = function(candidate) {
+  const state = __persistNormalize_unread(candidate);
+  if (!state.readMarkers || typeof state.readMarkers !== 'object') state.readMarkers = { messages: {}, news: {}, tasks: {} };
+  if (!state.readMarkers.messages || typeof state.readMarkers.messages !== 'object') state.readMarkers.messages = {};
+  if (!state.readMarkers.news || typeof state.readMarkers.news !== 'object') state.readMarkers.news = {};
+  if (!state.readMarkers.tasks || typeof state.readMarkers.tasks !== 'object') state.readMarkers.tasks = {};
+  return state;
+};
+
+function ensureReadMarkers() {
+  if (!App.state) App.state = makeDefaultState();
+  const normalized = normalizeReadMarkersShape(App.state.readMarkers || loadReadMarkersCache());
+  App.state.readMarkers = normalized;
+  return App.state.readMarkers;
+}
+
+const READ_MARKERS_CACHE_KEY = 'GRI_READ_MARKERS_CACHE_V4';
+let __readMarkersRuntimeCache = null;
+let __readMarkersFileSyncInFlight = Promise.resolve();
+
+function normalizeReadMarkersShape(markers) {
+  const safe = deep(markers || {});
+  if (!safe || typeof safe !== 'object') return { messages: {}, news: {}, tasks: {} };
+  if (!safe.messages || typeof safe.messages !== 'object') safe.messages = {};
+  if (!safe.news || typeof safe.news !== 'object') safe.news = {};
+  if (!safe.tasks || typeof safe.tasks !== 'object') safe.tasks = {};
+  return safe;
+}
+
+function loadReadMarkersCache() {
+  try {
+    if (!__readMarkersRuntimeCache || typeof __readMarkersRuntimeCache !== 'object') {
+      __readMarkersRuntimeCache = normalizeReadMarkersShape(JSON.parse(localStorage.getItem(READ_MARKERS_CACHE_KEY) || 'null'));
+    }
+  } catch (error) {
+    __readMarkersRuntimeCache = { messages: {}, news: {}, tasks: {} };
+  }
+  return normalizeReadMarkersShape(__readMarkersRuntimeCache);
+}
+
+async function bootstrapReadMarkersCache() {
+  let merged = loadReadMarkersCache();
+  try {
+    if (window.electronAPI?.loadReadMarkers) {
+      const res = await window.electronAPI.loadReadMarkers();
+      if (res?.ok && res.markers) merged = mergeReadMarkers(merged, normalizeReadMarkersShape(res.markers));
+    }
+  } catch (error) {
+    try { Debug.error('READ_MARKERS_FILE_BOOTSTRAP_FAILED', { message: error?.message || String(error) }); } catch {}
+  }
+  __readMarkersRuntimeCache = normalizeReadMarkersShape(merged);
+  try {
+    localStorage.setItem(READ_MARKERS_CACHE_KEY, JSON.stringify(__readMarkersRuntimeCache));
+  } catch (error) {}
+  return loadReadMarkersCache();
+}
+
+function saveReadMarkersCache(markers = App?.state?.readMarkers) {
+  const normalized = normalizeReadMarkersShape(markers);
+  __readMarkersRuntimeCache = normalized;
+  try {
+    localStorage.setItem(READ_MARKERS_CACHE_KEY, JSON.stringify(normalized));
+  } catch (error) {}
+  if (window.electronAPI?.saveReadMarkers) {
+    __readMarkersFileSyncInFlight = __readMarkersFileSyncInFlight.then(() => window.electronAPI.saveReadMarkers(normalized)).catch(() => {});
+  }
+}
+
+function saveReadMarkersCacheSync(markers = App?.state?.readMarkers) {
+  const normalized = normalizeReadMarkersShape(markers);
+  __readMarkersRuntimeCache = normalized;
+  try { localStorage.setItem(READ_MARKERS_CACHE_KEY, JSON.stringify(normalized)); } catch (error) {}
+  try { window.electronAPI?.saveReadMarkersSync?.(normalized); } catch (error) {}
+}
+
+function getAuthoritativeReadMarkers() {
+  const normalized = normalizeReadMarkersShape(loadReadMarkersCache());
+  if (App?.state) App.state.readMarkers = deep(normalized);
+  return normalized;
+}
+
+function persistReadMarkersHard(reason = 'hard-sync') {
+  try {
+    const normalized = normalizeReadMarkersShape(App?.state?.readMarkers || loadReadMarkersCache());
+    if (App?.state) App.state.readMarkers = deep(normalized);
+    saveReadMarkersCacheSync(normalized);
+    try { Debug.log('READ_MARKERS_HARD_SYNC', { reason, user: readMarkerUserKey(), messageUsers: Object.keys(normalized.messages || {}).length, newsUsers: Object.keys(normalized.news || {}).length, taskUsers: Object.keys(normalized.tasks || {}).length }); } catch {}
+  } catch (error) {
+    try { Debug.error('READ_MARKERS_HARD_SYNC_FAILED', { reason, message: error?.message || String(error) }); } catch {}
+  }
+}
+
+function readMarkerUserKey(user = App.currentUser, userId = App.currentUserId) {
+  if (user?.role === 'gm') return 'gm';
+  return String(userId || user?.id || 'guest');
+}
+
+function ensureMessageMarkerBucket(userKey = readMarkerUserKey()) {
+  const markers = ensureReadMarkers();
+  if (!markers.messages[userKey] || typeof markers.messages[userKey] !== 'object') markers.messages[userKey] = { direct: {}, npc: {} };
+  if (!markers.messages[userKey].direct || typeof markers.messages[userKey].direct !== 'object') markers.messages[userKey].direct = {};
+  if (!markers.messages[userKey].npc || typeof markers.messages[userKey].npc !== 'object') markers.messages[userKey].npc = {};
+  return markers.messages[userKey];
+}
+
+function ensureSeenIdBucket(section, userKey = readMarkerUserKey()) {
+  const markers = ensureReadMarkers();
+  if (!markers[section] || typeof markers[section] !== 'object') markers[section] = {};
+  if (!Array.isArray(markers[section][userKey])) markers[section][userKey] = [];
+  return markers[section][userKey];
+}
+
+function npcThreadMarkerKey(npcId, playerId) {
+  return `${String(npcId || '')}__${String(playerId || '')}`;
+}
+
+function markDirectThreadsSeen(threadKeys, userKey = readMarkerUserKey()) {
+  const bucket = ensureMessageMarkerBucket(userKey);
+  const stamp = new Date().toISOString();
+  (Array.isArray(threadKeys) ? threadKeys : [threadKeys]).filter(Boolean).forEach(key => {
+    bucket.direct[key] = stamp;
+  });
+}
+
+function markNpcThreadsSeen(keys, userKey = readMarkerUserKey()) {
+  const bucket = ensureMessageMarkerBucket(userKey);
+  const stamp = new Date().toISOString();
+  (Array.isArray(keys) ? keys : [keys]).filter(Boolean).forEach(key => {
+    bucket.npc[key] = stamp;
+  });
+}
+
+function markSectionSeen(section, ids, userKey = readMarkerUserKey()) {
+  const bucket = ensureSeenIdBucket(section, userKey);
+  const set = new Set(bucket);
+  (Array.isArray(ids) ? ids : [ids]).filter(Boolean).forEach(id => set.add(String(id)));
+  ensureReadMarkers()[section][userKey] = Array.from(set);
+}
+
+function visibleNewsEntries() {
+  return Object.values(NEWS).filter(entry => isEntityVisible(entry)).sort((a, b) => new Date(b.publishedAt || 0) - new Date(a.publishedAt || 0));
+}
+
+function visibleTaskEntries() {
+  return Object.values(TASKS).filter(entry => isEntityVisible(entry));
+}
+
+
+function allKnownPlayerIds() {
+  return new Set([
+    ...Object.keys(PLAYER_TEMPLATES || {}),
+    ...Object.keys(App.state?.users || {})
+  ].filter(Boolean));
+}
+
+function isVisibleDirectThreadForViewer(threadKey, viewer = App.currentUser, viewerId = App.currentUserId) {
+  if (!threadKey || !viewer) return false;
+  const { a, b } = directChatParticipants(threadKey);
+  const known = allKnownPlayerIds();
+  if (!known.has(a) || !known.has(b)) return false;
+  if ((App.state?.users?.[a] || PLAYER_TEMPLATES?.[a] || {}).role === 'gm') return false;
+  if ((App.state?.users?.[b] || PLAYER_TEMPLATES?.[b] || {}).role === 'gm') return false;
+  if (viewer.role === 'gm') return true;
+  return a === String(viewerId) || b === String(viewerId);
+}
+
+function isVisibleNpcThreadForViewer(npcId, playerId, viewer = App.currentUser, viewerId = App.currentUserId) {
+  if (!npcId || !playerId || !viewer) return false;
+  const npc = Data.getNpc(npcId);
+  if (!npc) return false;
+  const known = allKnownPlayerIds();
+  if (!known.has(String(playerId))) return false;
+  if (viewer.role === 'gm') return true;
+  if (String(playerId) !== String(viewerId)) return false;
+  return isEntityVisible(npc, viewer);
+}
+
+function pruneReadMarkersForState() {
+  if (!App?.state?.readMarkers) return;
+  const markers = ensureReadMarkers();
+  const directKeys = new Set(Object.keys(ensureDirectChatState() || {}));
+  const npcThreadKeys = new Set();
+  for (const [npcId, byPlayer] of Object.entries(ensureNpcChatState() || {})) {
+    if (!Data.getNpc(npcId)) continue;
+    for (const playerId of Object.keys(byPlayer || {})) {
+      if (!allKnownPlayerIds().has(String(playerId))) continue;
+      npcThreadKeys.add(npcThreadMarkerKey(npcId, playerId));
+    }
+  }
+  for (const [userKey, bucket] of Object.entries(markers.messages || {})) {
+    const direct = {};
+    const npc = {};
+    for (const [key, ts] of Object.entries(bucket?.direct || {})) {
+      if (directKeys.has(key)) direct[key] = ts;
+    }
+    for (const [key, ts] of Object.entries(bucket?.npc || {})) {
+      if (npcThreadKeys.has(key)) npc[key] = ts;
+    }
+    if (Object.keys(direct).length || Object.keys(npc).length) markers.messages[userKey] = { direct, npc };
+    else delete markers.messages[userKey];
+  }
+  const validNews = new Set(visibleNewsEntries().map(entry => String(entry.id)).concat(Object.keys(NEWS || {}).map(String)));
+  const validTasks = new Set(visibleTaskEntries().map(entry => String(entry.id)).concat(Object.keys(TASKS || {}).map(String)));
+  for (const [userKey, ids] of Object.entries(markers.news || {})) {
+    const next = (Array.isArray(ids) ? ids : []).map(String).filter(id => validNews.has(id));
+    if (next.length) markers.news[userKey] = Array.from(new Set(next));
+    else delete markers.news[userKey];
+  }
+  for (const [userKey, ids] of Object.entries(markers.tasks || {})) {
+    const next = (Array.isArray(ids) ? ids : []).map(String).filter(id => validTasks.has(id));
+    if (next.length) markers.tasks[userKey] = Array.from(new Set(next));
+    else delete markers.tasks[userKey];
+  }
+}
+
+function countUnreadDirectMessagesForCurrentUser() {
+  if (!App.currentUser) return 0;
+  const userKey = readMarkerUserKey();
+  const bucket = ensureMessageMarkerBucket(userKey);
+  const threadKeys = listDirectChatKeys().filter(key => isVisibleDirectThreadForViewer(key));
+  if (App.currentUser.role === 'gm') {
+    return threadKeys.reduce((sum, key) => {
+      const seenAt = new Date(bucket.direct[key] || 0).getTime();
+      const thread = ensureDirectChatState()[key] || [];
+      return sum + thread.filter(msg => new Date(msg.createdAt || 0).getTime() > seenAt).length;
+    }, 0);
+  }
+  return threadKeys.reduce((sum, key) => {
+    const seenAt = new Date(bucket.direct[key] || 0).getTime();
+    const thread = ensureDirectChatState()[key] || [];
+    return sum + thread.filter(msg => msg.senderId !== App.currentUserId && new Date(msg.createdAt || 0).getTime() > seenAt).length;
+  }, 0);
+}
+
+function countUnreadNpcMessagesForCurrentUser() {
+  if (!App.currentUser) return 0;
+  const userKey = readMarkerUserKey();
+  const bucket = ensureMessageMarkerBucket(userKey);
+  if (App.currentUser.role === 'gm') {
+    return Object.entries(ensureNpcChatState()).reduce((sum, entry) => {
+      const npcId = entry[0];
+      const byPlayer = entry[1] || {};
+      return sum + Object.entries(byPlayer).reduce((inner, playerEntry) => {
+        const playerId = playerEntry[0];
+        if (!isVisibleNpcThreadForViewer(npcId, playerId, App.currentUser, App.currentUserId)) return inner;
+        const thread = Array.isArray(playerEntry[1]) ? playerEntry[1] : [];
+        const seenAt = new Date(bucket.npc[npcThreadMarkerKey(npcId, playerId)] || 0).getTime();
+        return inner + thread.filter(msg => msg.sender === 'player' && new Date(msg.createdAt || 0).getTime() > seenAt).length;
+      }, 0);
+    }, 0);
+  }
+  return Object.keys(ensureNpcChatState()).reduce((sum, npcId) => {
+    if (!isVisibleNpcThreadForViewer(npcId, App.currentUserId, App.currentUser, App.currentUserId)) return sum;
+    const thread = getNpcChatThread(npcId, App.currentUserId);
+    const seenAt = new Date(bucket.npc[npcThreadMarkerKey(npcId, App.currentUserId)] || 0).getTime();
+    return sum + thread.filter(msg => msg.sender === 'npc' && new Date(msg.createdAt || 0).getTime() > seenAt).length;
+  }, 0);
+}
+
+function countUnreadMessages() {
+  return countUnreadDirectMessagesForCurrentUser() + countUnreadNpcMessagesForCurrentUser();
+}
+
+function countUnreadNews() {
+  if (!App.currentUser) return 0;
+  const seen = new Set(ensureSeenIdBucket('news', readMarkerUserKey()));
+  return visibleNewsEntries().filter(entry => !seen.has(String(entry.id))).length;
+}
+
+function countNewTasks() {
+  if (!App.currentUser) return 0;
+  const seen = new Set(ensureSeenIdBucket('tasks', readMarkerUserKey()));
+  return visibleTaskEntries().filter(entry => !seen.has(String(entry.id))).length;
+}
+
+function renderDockUnreadBadge(button, count) {
+  if (!button) return;
+  let badge = button.querySelector('.dock-badge');
+  if (!count) {
+    badge?.remove();
+    return;
+  }
+  if (!badge) {
+    badge = document.createElement('span');
+    badge.className = 'dock-badge';
+    button.appendChild(badge);
+  }
+  badge.textContent = count > 99 ? '99+' : String(count);
+}
+
+function refreshUnreadIndicators() {
+  try { App.state.readMarkers = deep(loadReadMarkersCache()); } catch (error) {}
+  renderDockUnreadBadge(document.querySelector('#open-messages'), countUnreadMessages());
+  renderDockUnreadBadge(document.querySelector('#open-news'), countUnreadNews());
+  renderDockUnreadBadge(document.querySelector('#open-tasks'), countNewTasks());
+}
+
+function markMessagesModuleSeen() {
+  if (!App.currentUser) return;
+  if (App.currentUser.role === 'gm') {
+    markDirectThreadsSeen(listDirectChatKeys(), 'gm');
+    const npcKeys = [];
+    for (const [npcId, byPlayer] of Object.entries(ensureNpcChatState())) {
+      for (const playerId of Object.keys(byPlayer || {})) npcKeys.push(npcThreadMarkerKey(npcId, playerId));
+    }
+    markNpcThreadsSeen(npcKeys, 'gm');
+  } else {
+    markDirectThreadsSeen(listDirectChatPartnerIds(App.currentUserId).map(id => directChatKey(App.currentUserId, id)));
+    const npcKeys = Object.keys(ensureNpcChatState())
+      .filter(npcId => getNpcChatThread(npcId, App.currentUserId).length)
+      .map(npcId => npcThreadMarkerKey(npcId, App.currentUserId));
+    if (npcKeys.length) markNpcThreadsSeen(npcKeys);
+  }
+}
+
+const __uiRenderNews_unread = UI.renderNews.bind(UI);
+UI.renderNews = function() {
+  __uiRenderNews_unread();
+  if (App.currentUser) {
+    markSectionSeen('news', visibleNewsEntries().map(entry => entry.id));
+    persistReadMarkersHard('render-news');
+    refreshUnreadIndicators();
+  }
+};
+
+const __uiRenderTasks_unread = UI.renderTasks.bind(UI);
+UI.renderTasks = function() {
+  __uiRenderTasks_unread();
+  if (App.currentUser) {
+    markSectionSeen('tasks', visibleTaskEntries().map(entry => entry.id));
+    persistReadMarkersHard('render-tasks');
+    refreshUnreadIndicators();
+  }
+};
+
+const __messagesRender_unread = MessagesUI.render.bind(MessagesUI);
+MessagesUI.render = function() {
+  __messagesRender_unread();
+  refreshUnreadIndicators();
+};
+
+const __wikiShowEntity_unread = Wiki.showEntity.bind(Wiki);
+Wiki.showEntity = function(type, id, autoOpen = false) {
+  const result = __wikiShowEntity_unread(type, id, autoOpen);
+  if (App.currentUser && type === 'npc') {
+    if (App.currentUser.role === 'gm') {
+      const npc = Data.getNpc(id);
+      const keys = listNpcChatPlayerIds(id).map(playerId => npcThreadMarkerKey(id, playerId));
+      if (keys.length) markNpcThreadsSeen(keys, 'gm');
+    } else {
+      markNpcThreadsSeen(npcThreadMarkerKey(id, App.currentUserId));
+    }
+    refreshUnreadIndicators();
+  }
+  return result;
+};
+
+const __appFinishLogin_unread = App.finishLogin.bind(App);
+App.finishLogin = function() {
+  try {
+    if (this.state) {
+      this.state.readMarkers = deep(loadReadMarkersCache());
+      pruneReadMarkersForState();
+      persistReadMarkersHard('finish-login-merge');
+    }
+  } catch (error) {
+    Debug.error('READ_MARKERS_LOGIN_MERGE_FAILED', { message: error?.message || String(error) });
+  }
+  __appFinishLogin_unread();
+  refreshUnreadIndicators();
+};
+
+const __appRenderLive_unread = App.renderLive.bind(App);
+App.renderLive = function() {
+  __appRenderLive_unread();
+  refreshUnreadIndicators();
+};
+
+const __appLogout_unread = App.logout.bind(App);
+App.logout = function() {
+  __appLogout_unread();
+  refreshUnreadIndicators();
+};
+
+const __syncApplyRemoteSnapshot_unread = Sync.applyRemoteSnapshot.bind(Sync);
+Sync.applyRemoteSnapshot = async function(snapshot) {
+  const res = await __syncApplyRemoteSnapshot_unread(snapshot);
+  refreshUnreadIndicators();
+  return res;
+};
+
+const __openModule_unread = UI.openModule.bind(UI);
+UI.openModule = function(id, options = {}) {
+  const res = __openModule_unread(id, options);
+  if (id === 'messages') refreshUnreadIndicators();
+  return res;
+};
+
+try { refreshUnreadIndicators(); } catch {}
+
+
+// ==== v0.3.12.2 unread persistence + message avatars/badges ====
+let __readMarkersPersistTimer = null;
+let __readMarkersSaveQueue = Promise.resolve();
+
+async function persistReadMarkersNow(reason = 'manual') {
+  if (!App?.state) return;
+  saveReadMarkersCache(App.state?.readMarkers);
+  const snapshot = deep(App.state);
+  __readMarkersSaveQueue = __readMarkersSaveQueue.then(async () => {
+    try {
+      await Persistence.save(snapshot);
+      Debug.log('READ_MARKERS_SAVED', {
+        reason,
+        user: readMarkerUserKey(),
+        messages: Object.keys(snapshot?.readMarkers?.messages || {}).length,
+        news: Object.keys(snapshot?.readMarkers?.news || {}).length,
+        tasks: Object.keys(snapshot?.readMarkers?.tasks || {}).length
+      });
+    } catch (error) {
+      Debug.error('READ_MARKERS_SAVE_FAILED', { reason, message: error?.message || String(error) });
+    }
+  });
+  return __readMarkersSaveQueue;
+}
+
+function persistReadMarkersSoon(reason = 'debounced') {
+  if (!App?.state) return;
+  saveReadMarkersCache(App.state?.readMarkers);
+  if (__readMarkersPersistTimer) clearTimeout(__readMarkersPersistTimer);
+  __readMarkersPersistTimer = setTimeout(() => {
+    __readMarkersPersistTimer = null;
+    persistReadMarkersNow(reason);
+  }, 60);
+}
+
+const __markDirectThreadsSeen_persist = markDirectThreadsSeen;
+markDirectThreadsSeen = function(threadKeys, userKey = readMarkerUserKey()) {
+  __markDirectThreadsSeen_persist(threadKeys, userKey);
+  persistReadMarkersHard('direct-seen');
+  persistReadMarkersSoon('direct-seen');
+};
+
+const __markNpcThreadsSeen_persist = markNpcThreadsSeen;
+markNpcThreadsSeen = function(keys, userKey = readMarkerUserKey()) {
+  __markNpcThreadsSeen_persist(keys, userKey);
+  persistReadMarkersHard('npc-seen');
+  persistReadMarkersSoon('npc-seen');
+};
+
+const __markSectionSeen_persist = markSectionSeen;
+markSectionSeen = function(section, ids, userKey = readMarkerUserKey()) {
+  __markSectionSeen_persist(section, ids, userKey);
+  persistReadMarkersHard(`${section}-seen`);
+  persistReadMarkersSoon(`${section}-seen`);
+};
+
+function mergeReadMarkers(localMarkers = {}, remoteMarkers = {}) {
+  const merged = {
+    messages: {},
+    news: {},
+    tasks: {}
+  };
+  const allUserKeys = new Set([
+    ...Object.keys(localMarkers?.messages || {}),
+    ...Object.keys(remoteMarkers?.messages || {}),
+    ...Object.keys(localMarkers?.news || {}),
+    ...Object.keys(remoteMarkers?.news || {}),
+    ...Object.keys(localMarkers?.tasks || {}),
+    ...Object.keys(remoteMarkers?.tasks || {})
+  ]);
+  for (const userKey of allUserKeys) {
+    const localMessageBucket = localMarkers?.messages?.[userKey] || {};
+    const remoteMessageBucket = remoteMarkers?.messages?.[userKey] || {};
+    const direct = {};
+    const npc = {};
+    for (const key of new Set([...Object.keys(localMessageBucket.direct || {}), ...Object.keys(remoteMessageBucket.direct || {})])) {
+      const localTs = new Date(localMessageBucket.direct?.[key] || 0).getTime();
+      const remoteTs = new Date(remoteMessageBucket.direct?.[key] || 0).getTime();
+      const chosen = localTs >= remoteTs ? localMessageBucket.direct?.[key] : remoteMessageBucket.direct?.[key];
+      if (chosen) direct[key] = chosen;
+    }
+    for (const key of new Set([...Object.keys(localMessageBucket.npc || {}), ...Object.keys(remoteMessageBucket.npc || {})])) {
+      const localTs = new Date(localMessageBucket.npc?.[key] || 0).getTime();
+      const remoteTs = new Date(remoteMessageBucket.npc?.[key] || 0).getTime();
+      const chosen = localTs >= remoteTs ? localMessageBucket.npc?.[key] : remoteMessageBucket.npc?.[key];
+      if (chosen) npc[key] = chosen;
+    }
+    if (Object.keys(direct).length || Object.keys(npc).length) merged.messages[userKey] = { direct, npc };
+
+    const newsSet = new Set([...(localMarkers?.news?.[userKey] || []), ...(remoteMarkers?.news?.[userKey] || [])].map(String));
+    if (newsSet.size) merged.news[userKey] = Array.from(newsSet);
+
+    const tasksSet = new Set([...(localMarkers?.tasks?.[userKey] || []), ...(remoteMarkers?.tasks?.[userKey] || [])].map(String));
+    if (tasksSet.size) merged.tasks[userKey] = Array.from(tasksSet);
+  }
+  return merged;
+}
+
+const __persistenceLoad_readCache = Persistence.load.bind(Persistence);
+Persistence.load = async function() {
+  const state = await __persistenceLoad_readCache();
+  const localReadMarkers = deep(loadReadMarkersCache());
+  state.readMarkers = localReadMarkers;
+  App.state = { ...(App.state || {}), ...(state || {}) };
+  App.state.readMarkers = deep(localReadMarkers);
+  pruneReadMarkersForState();
+  state.readMarkers = deep(App.state.readMarkers || localReadMarkers || {});
+  persistReadMarkersHard('persistence-load');
+  return this.normalize(state);
+};
+
+const __persistenceSave_readCache = Persistence.save.bind(Persistence);
+Persistence.save = async function(state) {
+  const normalized = deep(loadReadMarkersCache());
+  if (state) state.readMarkers = normalized;
+  if (App?.state) App.state.readMarkers = deep(normalized);
+  saveReadMarkersCacheSync(normalized);
+  return __persistenceSave_readCache(state);
+};
+
+const __syncApplyRemoteSnapshot_readMerge = Sync.applyRemoteSnapshot.bind(Sync);
+Sync.applyRemoteSnapshot = async function(snapshot, remoteMeta = {}, options = {}) {
+  const mergedSnapshot = deep(snapshot || {});
+  mergedSnapshot.state = mergedSnapshot.state || {};
+  const localReadMarkers = deep(loadReadMarkersCache());
+  mergedSnapshot.state.readMarkers = localReadMarkers;
+  const res = await __syncApplyRemoteSnapshot_readMerge(mergedSnapshot, remoteMeta, options);
+  App.state.readMarkers = deep(localReadMarkers);
+  pruneReadMarkersForState();
+  persistReadMarkersHard('sync-apply');
+  refreshUnreadIndicators();
+  return res;
+};
+
+function getPlayerEntityForChat(playerId) {
+  return App.state?.users?.[playerId] || PLAYER_TEMPLATES?.[playerId] || { id: playerId, displayName: getPlayerDisplayName(playerId), avatarGlyph: initials(getPlayerDisplayName(playerId)) };
+}
+
+function getDirectUnreadCountForViewer(threadKey) {
+  if (!App.currentUser || !threadKey) return 0;
+  if (!isVisibleDirectThreadForViewer(threadKey)) return 0;
+  const bucket = ensureMessageMarkerBucket(readMarkerUserKey());
+  const seenAt = new Date(bucket.direct?.[threadKey] || 0).getTime();
+  const thread = ensureDirectChatState()[threadKey] || [];
+  if (App.currentUser.role === 'gm') {
+    return thread.filter(msg => new Date(msg.createdAt || 0).getTime() > seenAt).length;
+  }
+  return thread.filter(msg => msg.senderId !== App.currentUserId && new Date(msg.createdAt || 0).getTime() > seenAt).length;
+}
+
+function getNpcUnreadCountForViewer(npcId, playerId) {
+  if (!App.currentUser || !npcId || !playerId) return 0;
+  if (!isVisibleNpcThreadForViewer(npcId, playerId, App.currentUser, App.currentUserId)) return 0;
+  const bucket = ensureMessageMarkerBucket(readMarkerUserKey());
+  const key = npcThreadMarkerKey(npcId, playerId);
+  const seenAt = new Date(bucket.npc?.[key] || 0).getTime();
+  const thread = getNpcChatThread(npcId, playerId);
+  if (App.currentUser.role === 'gm') {
+    return thread.filter(msg => msg.sender === 'player' && new Date(msg.createdAt || 0).getTime() > seenAt).length;
+  }
+  return thread.filter(msg => msg.sender === 'npc' && new Date(msg.createdAt || 0).getTime() > seenAt).length;
+}
+
+function getThreadLastAt(thread = []) {
+  if (!Array.isArray(thread) || !thread.length) return 0;
+  return new Date(thread[thread.length - 1]?.createdAt || 0).getTime();
+}
+
+function getThreadLastPreview(thread = []) {
+  const text = String(thread?.[thread.length - 1]?.text || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  return text || 'Диалог ещё не начат';
+}
+
+function renderMessageListBadge(count) {
+  if (!count) return '';
+  return `<span class="message-unread-badge">${count > 99 ? '99+' : esc(String(count))}</span>`;
+}
+
+function renderMessageContactRow({ active = false, title = '', subtitle = '', avatarHtml = '', unread = 0, kind = '', key = '', gm = false }) {
+  const dataAttr = gm ? `data-gm-message-kind="${esc(kind)}" data-gm-message-key="${esc(key)}"` : `data-message-kind="${esc(kind)}" data-message-key="${esc(key)}"`;
+  return `
+    <button class="message-contact ${active ? 'active' : ''}" type="button" ${dataAttr}>
+      <span class="message-contact-avatar">${avatarHtml}</span>
+      <span class="message-contact-meta">
+        <span class="message-contact-title">${esc(title)}</span>
+        <span class="message-contact-subtitle">${esc(subtitle)}</span>
+      </span>
+      ${renderMessageListBadge(unread)}
+    </button>
+  `;
+}
+
+function renderPlayerChatHeader(playerId) {
+  const player = getPlayerEntityForChat(playerId);
+  return `
+    <div class="message-thread-head">
+      <div class="message-thread-avatar">${renderZoomableThumb(player, { size: 'lg', type: 'player', glyph: player.avatarGlyph || initials(player.displayName) })}</div>
+      <div>
+        <div class="section-title">Диалог с ${esc(player.displayName || getPlayerDisplayName(playerId))}</div>
+        
+      </div>
+    </div>
+  `;
+}
+
+function renderNpcChatHeader(npc, playerId = '') {
+  const subtitle = App.currentUser?.role === 'gm' && playerId ? `Канал с игроком ${getPlayerDisplayName(playerId)}` : 'Этот же диалог доступен из карточки NPC в архиве.';
+  return `
+    <div class="message-thread-head">
+      <div class="message-thread-avatar">${renderZoomableThumb(npc, { size: 'lg', type: 'npc', glyph: npc.avatarGlyph || initials(npc.name || 'NPC') })}</div>
+      <div>
+        <div class="section-title">Канал с ${esc(npc.name || 'NPC')}</div>
+        <div class="small-note">${esc(subtitle)}</div>
+      </div>
+    </div>
+  `;
+}
+
+function renderDualPlayerChatHeader(a, b) {
+  const pa = getPlayerEntityForChat(a);
+  const pb = getPlayerEntityForChat(b);
+  return `
+    <div class="message-thread-head">
+      <div class="message-thread-dual">
+        ${renderThumb(pa, { size: 'sm', type: 'player', glyph: pa.avatarGlyph || initials(pa.displayName) })}
+        ${renderThumb(pb, { size: 'sm', type: 'player', glyph: pb.avatarGlyph || initials(pb.displayName) })}
+      </div>
+      <div>
+        <div class="section-title">${esc(getPlayerDisplayName(a))} ↔ ${esc(getPlayerDisplayName(b))}</div>
+        <div class="small-note">Личная переписка игроков.</div>
+      </div>
+    </div>
+  `;
+}
+
+MessagesUI.renderForPlayer = function() {
+  const search = String(this.playerSearch || '').trim().toLowerCase();
+  const matchesSearch = (...parts) => {
+    if (!search) return true;
+    const hay = parts.filter(Boolean).join(' ').toLowerCase();
+    return hay.includes(search);
+  };
+
+  const directEntries = listDirectChatPartnerIds(App.currentUserId).map(id => {
+    const player = getPlayerEntityForChat(id);
+    const key = directChatKey(App.currentUserId, id);
+    const thread = getDirectChatThread(App.currentUserId, id);
+    return {
+      id,
+      player,
+      key,
+      thread,
+      unread: getDirectUnreadCountForViewer(key),
+      lastAt: getThreadLastAt(thread),
+      preview: getThreadLastPreview(thread)
+    };
+  }).filter(entry => matchesSearch(entry.player.displayName || getPlayerDisplayName(entry.id), entry.preview, entry.id))
+    .sort((a, b) => b.lastAt - a.lastAt || b.unread - a.unread || String(a.player.displayName || '').localeCompare(String(b.player.displayName || ''), 'ru'));
+
+  const npcEntries = listNpcThreadsForPlayer(App.currentUserId).map(npc => {
+    const thread = getNpcChatThread(npc.id, App.currentUserId);
+    return {
+      npc,
+      thread,
+      unread: getNpcUnreadCountForViewer(npc.id, App.currentUserId),
+      lastAt: getThreadLastAt(thread),
+      preview: getThreadLastPreview(thread)
+    };
+  }).filter(entry => matchesSearch(entry.npc.name, entry.preview, entry.npc.id, entry.npc.mapLabel))
+    .sort((a, b) => b.lastAt - a.lastAt || b.unread - a.unread || String(a.npc.name || '').localeCompare(String(b.npc.name || ''), 'ru'));
+
+  const selection = this.resolvePlayerSelection(directEntries.map(entry => entry.id), npcEntries.map(entry => entry.npc));
+  this.selectedPlayerKind = selection.kind;
+  this.selectedPlayerKey = selection.key;
+  const activeDirect = selection.kind === 'direct' ? directEntries.find(entry => entry.id === selection.key) : null;
+  const activeNpcEntry = selection.kind === 'npc' ? npcEntries.find(entry => entry.npc.id === selection.key) : null;
+  const activeNpc = activeNpcEntry?.npc || null;
+  const directThread = activeDirect?.thread || [];
+  const npcThread = activeNpcEntry?.thread || [];
+
+  return `
+    <div class="messages-layout">
+      <aside class="messages-side card">
+        <div class="section-title">Сообщения</div>
+        
+        <div class="field" style="margin-bottom:12px"><input class="input" id="messages-search-player" value="${esc(this.playerSearch || '')}" placeholder="Поиск по имени, ID или тексту..." /></div>
+        <div class="small-note" style="margin:-4px 0 12px">Сортировка по дате последнего сообщения, новые сверху.</div>
+        <div class="message-contact-list">
+          <div class="tiny-label" style="margin-bottom:8px">Игроки</div>
+          ${directEntries.map(entry => renderMessageContactRow({
+            active: selection.kind === 'direct' && selection.key === entry.id,
+            title: entry.player.displayName || getPlayerDisplayName(entry.id),
+            subtitle: entry.preview,
+            avatarHtml: renderThumb(entry.player, { size: 'xs', type: 'player', glyph: entry.player.avatarGlyph || initials(entry.player.displayName) }),
+            unread: entry.unread,
+            kind: 'direct',
+            key: entry.id
+          })).join('') || `<div class="small-note">${search ? 'Ничего не найдено' : 'Нет других игроков.'}</div>`}
+        </div>
+        <div class="message-contact-list" style="margin-top:14px">
+          <div class="tiny-label" style="margin-bottom:8px">NPC</div>
+          ${npcEntries.map(entry => renderMessageContactRow({
+            active: selection.kind === 'npc' && selection.key === entry.npc.id,
+            title: entry.npc.name,
+            subtitle: entry.preview,
+            avatarHtml: renderThumb(entry.npc, { size: 'xs', type: 'npc', glyph: entry.npc.avatarGlyph || initials(entry.npc.name || 'NPC') }),
+            unread: entry.unread,
+            kind: 'npc',
+            key: entry.npc.id
+          })).join('') || `<div class="small-note">${search ? 'Ничего не найдено' : 'Нет доступных NPC.'}</div>`}
+        </div>
+      </aside>
+      <section class="messages-main card pad18">
+        ${activeDirect ? `
+          ${renderPlayerChatHeader(activeDirect.id)}
+          <div class="chat-thread message-thread" data-direct-thread>
+            ${directThread.map(message => this.directMessageMarkup(message)).join('') || '<div class="small-note">Диалог ещё не начат.</div>'}
+          </div>
+          <form class="form direct-chat-form" data-partner-id="${esc(activeDirect.id)}">
+            <div class="field"><label>Сообщение</label><textarea class="area chat-input" name="message" placeholder="Написать игроку..."></textarea>${typeof __htmlHint !== 'undefined' ? __htmlHint : ''}</div>
+            <button class="primary" type="submit">ОТПРАВИТЬ</button>
+          </form>
+        ` : activeNpc ? `
+          ${renderNpcChatHeader(activeNpc)}
+          <div class="chat-thread message-thread" data-npc-thread>
+            ${npcThread.map(message => ChatUI.messageMarkup(message, activeNpc.id)).join('') || '<div class="small-note">Диалог ещё не начат.</div>'}
+          </div>
+          <form class="form messages-npc-chat-form" data-npc-id="${esc(activeNpc.id)}" data-player-id="${esc(App.currentUserId)}">
+            <div class="field"><label>Сообщение для ${esc(activeNpc.name)}</label><textarea class="area chat-input" name="message" placeholder="Написать NPC..."></textarea>${typeof __htmlHint !== 'undefined' ? __htmlHint : ''}</div>
+            <button class="primary" type="submit">ОТПРАВИТЬ NPC</button>
+          </form>
+        ` : '<div class="small-note">Нет доступных диалогов.</div>'}
+      </section>
+    </div>
+  `;
+};
+
+MessagesUI.renderForGm = function() {
+  const search = String(this.gmSearch || '').trim().toLowerCase();
+  const matchesSearch = (...parts) => {
+    if (!search) return true;
+    const hay = parts.filter(Boolean).join(' ').toLowerCase();
+    return hay.includes(search);
+  };
+
+  const directEntries = listDirectChatKeys().map(threadKey => {
+    const parts = directChatParticipants(threadKey);
+    const thread = ensureDirectChatState()[threadKey] || [];
+    return {
+      threadKey,
+      parts,
+      thread,
+      unread: getDirectUnreadCountForViewer(threadKey),
+      lastAt: getThreadLastAt(thread),
+      preview: getThreadLastPreview(thread)
+    };
+  }).filter(entry => matchesSearch(getPlayerDisplayName(entry.parts.a), getPlayerDisplayName(entry.parts.b), entry.preview, entry.threadKey))
+    .sort((a, b) => b.lastAt - a.lastAt || b.unread - a.unread || String(getPlayerDisplayName(a.parts.a)).localeCompare(String(getPlayerDisplayName(b.parts.a)), 'ru'));
+
+  const npcEntries = listNpcThreadEntriesForGm().map(entry => ({
+    ...entry,
+    unread: getNpcUnreadCountForViewer(entry.npcId, entry.playerId),
+    preview: getThreadLastPreview(entry.thread)
+  })).filter(entry => matchesSearch(entry.npc.name, getPlayerDisplayName(entry.playerId), entry.preview, entry.key))
+    .sort((a, b) => b.lastAt - a.lastAt || b.unread - a.unread || String(a.npc.name || '').localeCompare(String(b.npc.name || ''), 'ru'));
+
+  const selection = this.resolveGmSelection(directEntries.map(entry => entry.threadKey), npcEntries);
+  this.selectedGmKind = selection.kind;
+  this.selectedGmKey = selection.key;
+  const activeDirect = selection.kind === 'direct' ? directEntries.find(entry => entry.threadKey === selection.key) : null;
+  const activeNpcEntry = selection.kind === 'npc' ? npcEntries.find(entry => entry.key === selection.key) : null;
+  const playerOptions = listDirectChatPartnerIds('').filter(Boolean);
+  const npcOptions = Object.values(NPCS || {}).sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ru'));
+  return `
+    <div class="messages-layout gm">
+      <aside class="messages-side card">
+        <div class="section-title">Все диалоги</div>
+        
+        <div class="field" style="margin-bottom:12px"><input class="input" id="messages-search-gm" value="${esc(this.gmSearch || '')}" placeholder="Поиск по игроку, NPC или тексту..." /></div>
+        <div class="small-note" style="margin:-4px 0 12px">Сортировка по дате последнего сообщения, новые сверху.</div>
+        <div class="message-contact-list">
+          <div class="tiny-label" style="margin-bottom:8px">Игрок ↔ Игрок</div>
+          ${directEntries.map(entry => {
+            const pa = getPlayerEntityForChat(entry.parts.a);
+            const pb = getPlayerEntityForChat(entry.parts.b);
+            return renderMessageContactRow({
+              active: selection.kind === 'direct' && selection.key === entry.threadKey,
+              title: `${getPlayerDisplayName(entry.parts.a)} ↔ ${getPlayerDisplayName(entry.parts.b)}`,
+              subtitle: entry.preview,
+              avatarHtml: `<span class="message-contact-dual">${renderThumb(pa, { size: 'xs', type: 'player', glyph: pa.avatarGlyph || initials(pa.displayName) })}${renderThumb(pb, { size: 'xs', type: 'player', glyph: pb.avatarGlyph || initials(pb.displayName) })}</span>`,
+              unread: entry.unread,
+              kind: 'direct',
+              key: entry.threadKey,
+              gm: true
+            });
+          }).join('') || `<div class="small-note">${search ? 'Ничего не найдено' : 'Пока нет личных сообщений игроков.'}</div>`}
+        </div>
+        <div class="message-contact-list" style="margin-top:14px">
+          <div class="tiny-label" style="margin-bottom:8px">NPC ↔ Игрок</div>
+          ${npcEntries.map(entry => renderMessageContactRow({
+            active: selection.kind === 'npc' && selection.key === entry.key,
+            title: `${entry.npc.name} ↔ ${getPlayerDisplayName(entry.playerId)}`,
+            subtitle: entry.preview,
+            avatarHtml: renderThumb(entry.npc, { size: 'xs', type: 'npc', glyph: entry.npc.avatarGlyph || initials(entry.npc.name || 'NPC') }),
+            unread: entry.unread,
+            kind: 'npc',
+            key: entry.key,
+            gm: true
+          })).join('') || `<div class="small-note">${search ? 'Ничего не найдено' : 'Пока нет NPC-диалогов.'}</div>`}
+        </div>
+      </aside>
+      <section class="messages-main stack">
+        <div class="card pad18">
+          <div class="section-title">Инициировать диалог от NPC</div>
+          <form class="form npc-chat-init-form">
+            <div class="grid2">
+              <div class="field"><label>NPC</label><select class="select" name="npcId">${npcOptions.map(npc => `<option value="${esc(npc.id)}">${esc(npc.name)}</option>`).join('')}</select></div>
+              <div class="field"><label>Игрок</label><select class="select" name="playerId">${playerOptions.map(id => `<option value="${esc(id)}">${esc(getPlayerDisplayName(id))}</option>`).join('')}</select></div>
+            </div>
+            <div class="field"><label>Первое сообщение</label><textarea class="area chat-input" name="message" placeholder="Сообщение от имени NPC..."></textarea>${typeof __htmlHint !== 'undefined' ? __htmlHint : ''}</div>
+            <button class="primary" type="submit">ОТПРАВИТЬ ОТ NPC</button>
+          </form>
+        </div>
+        <div class="card pad18">
+          ${activeDirect ? `
+            ${renderDualPlayerChatHeader(activeDirect.parts.a, activeDirect.parts.b)}
+            <div class="chat-thread message-thread" data-direct-thread>
+              ${activeDirect.thread.map(message => this.directMessageMarkup(message)).join('') || '<div class="small-note">Нет сообщений.</div>'}
+            </div>
+          ` : activeNpcEntry ? `
+            ${renderNpcChatHeader(activeNpcEntry.npc, activeNpcEntry.playerId)}
+            <div class="chat-thread message-thread" data-npc-thread>
+              ${activeNpcEntry.thread.map(message => ChatUI.messageMarkup(message, activeNpcEntry.npcId)).join('') || '<div class="small-note">Нет сообщений.</div>'}
+            </div>
+            <form class="form messages-npc-chat-form" data-npc-id="${esc(activeNpcEntry.npcId)}" data-player-id="${esc(activeNpcEntry.playerId)}" data-role="npc">
+              <div class="field"><label>Ответ от имени ${esc(activeNpcEntry.npc.name)}</label><textarea class="area chat-input" name="message" placeholder="Ответить игроку..."></textarea>${typeof __htmlHint !== 'undefined' ? __htmlHint : ''}</div>
+              <button class="primary" type="submit">ОТПРАВИТЬ ОТВЕТ</button>
+            </form>
+          ` : '<div class="small-note">Выбери диалог слева, чтобы посмотреть историю.</div>'}
+        </div>
+      </section>
+    </div>
+  `;
+};
+
+const __messagesBind_avatarUnread = MessagesUI.bind.bind(MessagesUI);
+MessagesUI.bind = function(root) {
+  __messagesBind_avatarUnread(root);
+  root.querySelector('#messages-search-player')?.addEventListener('input', event => {
+    const field = event.currentTarget;
+    const value = renderFocusableInputValue(field.value);
+    const start = field.selectionStart;
+    const end = field.selectionEnd;
+    this.playerSearch = value;
+    this.render();
+    restoreInputSelection('#messages-search-player', value, start, end);
+  });
+  root.querySelector('#messages-search-gm')?.addEventListener('input', event => {
+    const field = event.currentTarget;
+    const value = renderFocusableInputValue(field.value);
+    const start = field.selectionStart;
+    const end = field.selectionEnd;
+    this.gmSearch = value;
+    this.render();
+    restoreInputSelection('#messages-search-gm', value, start, end);
+  });
+  bindFilterableSelectors(root);
+  refreshUnreadIndicators();
+};
+
+
+window.addEventListener('beforeunload', () => {
+  try {
+    if (__readMarkersPersistTimer) {
+      clearTimeout(__readMarkersPersistTimer);
+      __readMarkersPersistTimer = null;
+    }
+    saveReadMarkersCacheSync(App?.state?.readMarkers);
+    if (App?.state && window.electronAPI?.saveState) {
+      window.electronAPI.saveState(deep(App.state));
+    }
+  } catch (error) {
+    try { Debug.error('READ_MARKERS_BEFOREUNLOAD_SAVE_FAILED', { message: error?.message || String(error) }); } catch {}
+  }
+});
+
+window.addEventListener('pagehide', () => {
+  try { saveReadMarkersCacheSync(App?.state?.readMarkers); } catch {}
+});
+
+
+// ==== v0.4.0 unread restart fix + per-dialog clearing ====
+const __appInit_readCacheFinal = App.init.bind(App);
+App.init = async function() {
+  await bootstrapReadMarkersCache();
+  return __appInit_readCacheFinal();
+};
+
+const __appLogin_readCacheFinal = App.login.bind(App);
+App.login = async function() {
+  await bootstrapReadMarkersCache();
+  return __appLogin_readCacheFinal();
+};
+
+const __appFinishLogin_readCacheFinal = App.finishLogin.bind(App);
+App.finishLogin = function() {
+  try {
+    if (this.state) {
+      this.state.readMarkers = deep(loadReadMarkersCache());
+      pruneReadMarkersForState();
+      persistReadMarkersHard('finish-login-merge');
+    }
+  } catch (error) {
+    try { Debug.error('READ_MARKERS_FINAL_LOGIN_FAILED', { message: error?.message || String(error) }); } catch {}
+  }
+  return __appFinishLogin_readCacheFinal();
+};
+
+const __persistenceSave_readCacheFinal = Persistence.save.bind(Persistence);
+Persistence.save = async function(state) {
+  const localReadMarkers = deep(loadReadMarkersCache());
+  if (state) state.readMarkers = localReadMarkers;
+  if (App?.state) App.state.readMarkers = deep(localReadMarkers);
+  persistReadMarkersHard('persistence-save-final-before');
+  const res = await __persistenceSave_readCacheFinal(state);
+  persistReadMarkersHard('persistence-save-final-after');
+  return res;
+};
+
+const __uiRenderNews_unreadFinal = UI.renderNews.bind(UI);
+UI.renderNews = function() {
+  __uiRenderNews_unreadFinal();
+  if (App.currentUser) {
+    markSectionSeen('news', visibleNewsEntries().map(entry => entry.id));
+    persistReadMarkersHard('render-news');
+    refreshUnreadIndicators();
+  }
+};
+
+const __uiRenderTasks_unreadFinal = UI.renderTasks.bind(UI);
+UI.renderTasks = function() {
+  __uiRenderTasks_unreadFinal();
+  if (App.currentUser) {
+    markSectionSeen('tasks', visibleTaskEntries().map(entry => entry.id));
+    persistReadMarkersHard('render-tasks');
+    refreshUnreadIndicators();
+  }
+};
+
+const __messagesBind_perDialogUnread = MessagesUI.bind.bind(MessagesUI);
+MessagesUI.bind = function(root) {
+  __messagesBind_perDialogUnread(root);
+  root.querySelectorAll('[data-message-kind]').forEach(button => {
+    button.addEventListener('click', () => {
+      setTimeout(() => refreshUnreadIndicators(), 0);
+    });
+  });
+  root.querySelectorAll('[data-gm-message-kind]').forEach(button => {
+    button.addEventListener('click', () => {
+      setTimeout(() => refreshUnreadIndicators(), 0);
+    });
+  });
+};
+
+// ==== v0.5.0 phase 1: row-level chat sync, outbox, drafts, snapshot isolation ====
+const CHAT_SYNC_CURSOR_KEY = 'galactic_chat_sync_cursor_v1';
+const CHAT_OUTBOX_KEY = 'galactic_chat_outbox_v1';
+const CHAT_DRAFTS_KEY = 'galactic_chat_drafts_v1';
+
+function __safeJsonParse(value, fallback) {
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === 'object' ? parsed : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+const ChatDrafts = {
+  cache: null,
+  all() {
+    if (!this.cache || typeof this.cache !== 'object') {
+      this.cache = __safeJsonParse(localStorage.getItem(CHAT_DRAFTS_KEY) || 'null', {});
+      if (!this.cache || typeof this.cache !== 'object') this.cache = {};
+    }
+    return this.cache;
+  },
+  save() {
+    try { localStorage.setItem(CHAT_DRAFTS_KEY, JSON.stringify(this.all())); } catch {}
+  },
+  keyForForm(form) {
+    if (!form) return '';
+    if (form.classList.contains('direct-chat-form')) return `direct:${String(form.dataset.partnerId || '')}`;
+    if (form.classList.contains('messages-npc-chat-form') || form.classList.contains('npc-chat-form')) return `npc:${String(form.dataset.npcId || '')}:${String(form.dataset.playerId || '')}`;
+    if (form.classList.contains('npc-chat-init-form')) {
+      const npcId = String(form.querySelector('[name="npcId"]')?.value || form.dataset.defaultNpcId || '');
+      const playerId = String(form.querySelector('[name="playerId"]')?.value || '');
+      return `npc-init:${npcId}:${playerId}`;
+    }
+    return '';
+  },
+  get(key) {
+    return String(this.all()[key] || '');
+  },
+  set(key, value) {
+    if (!key) return;
+    const safe = String(value || '');
+    if (safe) this.all()[key] = safe;
+    else delete this.all()[key];
+    this.save();
+  },
+  clear(key) {
+    if (!key) return;
+    delete this.all()[key];
+    this.save();
+  },
+  bind(root) {
+    root?.querySelectorAll('.direct-chat-form, .messages-npc-chat-form, .npc-chat-form, .npc-chat-init-form').forEach(form => {
+      const key = this.keyForForm(form);
+      const textarea = form.querySelector('textarea[name="message"]');
+      if (textarea && key) {
+        const draft = this.get(key);
+        if (draft && textarea.value !== draft) textarea.value = draft;
+        if (textarea.dataset.draftBound !== '1') {
+          textarea.dataset.draftBound = '1';
+          textarea.addEventListener('input', () => this.set(key, textarea.value));
+        }
+      }
+      form.querySelectorAll('select[name="npcId"], select[name="playerId"]').forEach(select => {
+        if (select.dataset.draftBound === '1') return;
+        select.dataset.draftBound = '1';
+        select.addEventListener('change', () => {
+          const nextKey = this.keyForForm(form);
+          const text = form.querySelector('textarea[name="message"]')?.value || '';
+          this.set(nextKey, text);
+        });
+      });
+    });
+  }
+};
+
+const CHAT_POLL_INTERVAL_MS = 3000;
+const CHAT_CURSOR_OVERLAP_MS = 15000;
+const CHAT_HEAL_WINDOW_MS = 180000;
+const CHAT_POLL_LIMIT = 2000;
+const CHAT_STARTUP_LIMIT = 5000;
+const CHAT_KICK_DELAY_MS = 150;
+
+const ChatSync = {
+  pollTimer: null,
+  flushTimer: null,
+  outbox: null,
+  cursor: null,
+  cursorMessageId: null,
+  renderPending: false,
+  initStarted: false,
+  bootstrapDone: false,
+  lastSuccessfulPullAt: 0,
+  pullInFlight: null,
+  flushInFlight: null,
+  isEnabled() {
+    return Boolean(Sync?.config?.enabled && window.electronAPI?.pullChat && window.electronAPI?.upsertChat);
+  },
+  loadCursor() {
+    if (!this.cursor) {
+      this.cursor = String(localStorage.getItem(CHAT_SYNC_CURSOR_KEY) || '').trim() || null;
+    }
+    return this.cursor;
+  },
+  saveCursor(value) {
+    this.cursor = value ? String(value) : null;
+    try {
+      if (this.cursor) localStorage.setItem(CHAT_SYNC_CURSOR_KEY, this.cursor);
+      else localStorage.removeItem(CHAT_SYNC_CURSOR_KEY);
+    } catch {}
+  },
+  loadOutbox() {
+    if (!Array.isArray(this.outbox)) {
+      this.outbox = __safeJsonParse(localStorage.getItem(CHAT_OUTBOX_KEY) || '[]', []);
+      if (!Array.isArray(this.outbox)) this.outbox = [];
+    }
+    return this.outbox;
+  },
+  saveOutbox() {
+    try { localStorage.setItem(CHAT_OUTBOX_KEY, JSON.stringify(this.loadOutbox())); } catch {}
+  },
+  queue(row) {
+    if (!row?.message_id) return;
+    const outbox = this.loadOutbox();
+    const idx = outbox.findIndex(item => String(item?.message_id || '') === String(row.message_id));
+    if (idx >= 0) outbox[idx] = deep(row);
+    else outbox.push(deep(row));
+    this.saveOutbox();
+    this.scheduleImmediateSync('queue');
+  },
+  dropFromOutbox(messageId) {
+    const outbox = this.loadOutbox();
+    const next = outbox.filter(item => String(item?.message_id || '') !== String(messageId || ''));
+    this.outbox = next;
+    this.saveOutbox();
+  },
+  scheduleImmediateSync(reason = 'chat-kick') {
+    if (!this.isEnabled()) return;
+    if (this.flushTimer) clearTimeout(this.flushTimer);
+    this.flushTimer = setTimeout(() => {
+      this.flushTimer = null;
+      this.flushOutbox(reason).catch(error => {
+        try { Debug.error('CHAT_IMMEDIATE_FLUSH_FAILED', { reason, message: error?.message || String(error) }); } catch {}
+      });
+      this.pull(reason, { limit: CHAT_POLL_LIMIT }).catch(error => {
+        try { Debug.error('CHAT_IMMEDIATE_PULL_FAILED', { reason, message: error?.message || String(error) }); } catch {}
+      });
+    }, CHAT_KICK_DELAY_MS);
+  },
+  directRowFromMessage(message, a, b) {
+    const parts = (a && b) ? { a: String(a), b: String(b) } : directChatParticipants(directChatKey(message?.senderId, message?.recipientId));
+    const ordered = [parts.a, parts.b].sort();
+    return {
+      message_id: String(message.id),
+      kind: 'direct',
+      thread_key: directChatKey(ordered[0], ordered[1]),
+      sender_type: 'player',
+      sender_id: String(message.senderId || ''),
+      recipient_player_id: String(message.recipientId || ''),
+      direct_a: ordered[0],
+      direct_b: ordered[1],
+      author_label: message.authorLabel || getPlayerDisplayName(message.senderId),
+      body_html: String(message.text || ''),
+      created_at: message.createdAt || new Date().toISOString(),
+      edited_at: message.editedAt || null,
+      deleted_at: message.deletedAt || null,
+      updated_at: message.editedAt || message.deletedAt || message.createdAt || new Date().toISOString(),
+      client_updated_at: message.editedAt || message.deletedAt || message.createdAt || new Date().toISOString()
+    };
+  },
+  npcRowFromMessage(message, npcId, playerId) {
+    return {
+      message_id: String(message.id),
+      kind: 'npc',
+      thread_key: npcThreadMarkerKey(npcId || message.npcId, playerId || message.playerId),
+      sender_type: String(message.sender || 'player') === 'npc' ? 'npc' : 'player',
+      sender_id: String((String(message.sender || 'player') === 'npc' ? (npcId || message.npcId || '') : (playerId || message.playerId || ''))),
+      recipient_player_id: String(playerId || message.playerId || ''),
+      npc_id: String(npcId || message.npcId || ''),
+      author_label: message.authorLabel || (String(message.sender || 'player') === 'npc' ? (Data.getNpc(npcId || message.npcId)?.name || 'NPC') : getPlayerDisplayName(playerId || message.playerId)),
+      body_html: String(message.text || ''),
+      created_at: message.createdAt || new Date().toISOString(),
+      edited_at: message.editedAt || null,
+      deleted_at: message.deletedAt || null,
+      updated_at: message.editedAt || message.deletedAt || message.createdAt || new Date().toISOString(),
+      client_updated_at: message.editedAt || message.deletedAt || message.createdAt || new Date().toISOString()
+    };
+  },
+  exportAllLocalRows() {
+    const rows = [];
+    for (const [key, thread] of Object.entries(ensureDirectChatState() || {})) {
+      const parts = directChatParticipants(key);
+      (Array.isArray(thread) ? thread : []).forEach(message => rows.push(this.directRowFromMessage(message, parts.a, parts.b)));
+    }
+    for (const [npcId, byPlayer] of Object.entries(ensureNpcChatState() || {})) {
+      for (const [playerId, thread] of Object.entries(byPlayer || {})) {
+        (Array.isArray(thread) ? thread : []).forEach(message => rows.push(this.npcRowFromMessage(message, npcId, playerId)));
+      }
+    }
+    return rows.sort((a, b) => {
+      const aUpdated = new Date(a.updated_at || a.created_at || 0).getTime();
+      const bUpdated = new Date(b.updated_at || b.created_at || 0).getTime();
+      if (aUpdated !== bUpdated) return aUpdated - bUpdated;
+      return String(a.message_id || '').localeCompare(String(b.message_id || ''));
+    });
+  },
+  isCursorNewer(candidateStamp, candidateId) {
+    const current = this.loadCursor();
+    if (!candidateStamp) return false;
+    if (!current) return true;
+    const currentTs = new Date(current).getTime();
+    const candidateTs = new Date(candidateStamp).getTime();
+    if (!Number.isFinite(candidateTs)) return false;
+    if (!Number.isFinite(currentTs)) return true;
+    if (candidateTs !== currentTs) return candidateTs > currentTs;
+    return String(candidateId || '') > String(this.cursorMessageId || '');
+  },
+  updateCursorFromRow(row) {
+    const stamp = String(row?.updated_at || row?.created_at || '').trim();
+    const messageId = String(row?.message_id || '').trim();
+    if (!stamp) return;
+    if (this.isCursorNewer(stamp, messageId)) {
+      this.cursorMessageId = messageId;
+      this.saveCursor(stamp);
+    } else if (!this.cursorMessageId && this.loadCursor() === stamp) {
+      this.cursorMessageId = messageId;
+    }
+  },
+  applyRemoteRows(rows = []) {
+    if (!Array.isArray(rows) || !rows.length) return false;
+    let changed = false;
+    rows.forEach(row => {
+      const kind = String(row.kind || 'direct') === 'npc' ? 'npc' : 'direct';
+      if (kind === 'direct') {
+        const participants = row.thread_key ? directChatParticipants(row.thread_key) : { a: '', b: '' };
+        const a = String(row.direct_a || participants.a || '');
+        const b = String(row.direct_b || participants.b || '');
+        if (!a || !b) return;
+        const thread = getDirectChatThread(a, b);
+        const idx = thread.findIndex(msg => String(msg.id) === String(row.message_id));
+        if (row.deleted_at) {
+          if (idx >= 0) {
+            thread.splice(idx, 1);
+            changed = true;
+          }
+          if (!thread.length) delete ensureDirectChatState()[directChatKey(a, b)];
+          this.updateCursorFromRow(row);
+          return;
+        }
+        const message = {
+          id: String(row.message_id),
+          sender: 'player',
+          senderId: String(row.sender_id || ''),
+          recipientId: String(row.recipient_player_id || (String(row.sender_id || '') === a ? b : a) || ''),
+          text: String(row.body_html || ''),
+          createdAt: row.created_at || new Date().toISOString(),
+          editedAt: row.edited_at || null,
+          authorLabel: row.author_label || getPlayerDisplayName(row.sender_id)
+        };
+        if (idx >= 0) {
+          const prev = thread[idx] || {};
+          if (JSON.stringify(prev) !== JSON.stringify(message)) {
+            thread[idx] = message;
+            changed = true;
+          }
+        } else {
+          thread.push(message);
+          thread.sort((x, y) => {
+            const xTs = new Date(x.createdAt || 0).getTime();
+            const yTs = new Date(y.createdAt || 0).getTime();
+            if (xTs !== yTs) return xTs - yTs;
+            return String(x.id || '').localeCompare(String(y.id || ''));
+          });
+          changed = true;
+        }
+      } else {
+        const npcId = String(row.npc_id || '');
+        const playerId = String(row.recipient_player_id || '');
+        if (!npcId || !playerId) return;
+        const thread = getNpcChatThread(npcId, playerId);
+        const idx = thread.findIndex(msg => String(msg.id) === String(row.message_id));
+        if (row.deleted_at) {
+          if (idx >= 0) {
+            thread.splice(idx, 1);
+            changed = true;
+          }
+          this.updateCursorFromRow(row);
+          return;
+        }
+        const sender = String(row.sender_type || 'player') === 'npc' ? 'npc' : 'player';
+        const message = {
+          id: String(row.message_id),
+          sender,
+          playerId,
+          npcId,
+          text: String(row.body_html || ''),
+          createdAt: row.created_at || new Date().toISOString(),
+          editedAt: row.edited_at || null,
+          authorLabel: row.author_label || (sender === 'npc' ? (Data.getNpc(npcId)?.name || 'NPC') : getPlayerDisplayName(playerId))
+        };
+        if (idx >= 0) {
+          const prev = thread[idx] || {};
+          if (JSON.stringify(prev) !== JSON.stringify(message)) {
+            thread[idx] = message;
+            changed = true;
+          }
+        } else {
+          thread.push(message);
+          thread.sort((x, y) => {
+            const xTs = new Date(x.createdAt || 0).getTime();
+            const yTs = new Date(y.createdAt || 0).getTime();
+            if (xTs !== yTs) return xTs - yTs;
+            return String(x.id || '').localeCompare(String(y.id || ''));
+          });
+          changed = true;
+        }
+      }
+      this.updateCursorFromRow(row);
+    });
+    return changed;
+  },
+  computePullSince(reason = 'poll', options = {}) {
+    if (options.full) return null;
+    const cursor = options.since || this.loadCursor();
+    if (!cursor) return null;
+    const cursorTs = new Date(cursor).getTime();
+    if (!Number.isFinite(cursorTs)) return null;
+    const now = Date.now();
+    const overlapTs = Math.max(0, cursorTs - CHAT_CURSOR_OVERLAP_MS);
+    const lastOkAge = this.lastSuccessfulPullAt ? (now - this.lastSuccessfulPullAt) : Number.POSITIVE_INFINITY;
+    const requireDeepCatchup = reason === 'startup' || reason === 'manual' || options.catchup || lastOkAge > CHAT_HEAL_WINDOW_MS;
+    const sinceTs = requireDeepCatchup ? overlapTs : Math.max(overlapTs, now - CHAT_HEAL_WINDOW_MS);
+    return new Date(Math.max(0, sinceTs)).toISOString();
+  },
+  async persistLocal(reason = 'chat-local-update') {
+    try {
+      await Persistence.save(App.state);
+      Debug.log('CHAT_LOCAL_PERSIST', { reason, directThreads: Object.keys(App.state?.directChats || {}).length, npcThreads: Object.keys(App.state?.npcChats || {}).length });
+    } catch (error) {
+      Debug.error('CHAT_LOCAL_PERSIST_FAILED', { reason, message: error?.message || String(error) });
+    }
+  },
+  async refreshUiAfterIncoming(reason = 'chat-sync') {
+    if (UI.activeModuleId === 'messages') {
+      const active = document.activeElement;
+      if (active && active.classList?.contains('chat-input')) {
+        this.renderPending = true;
+        refreshUnreadIndicators();
+        return;
+      }
+      MessagesUI.render();
+    } else {
+      refreshUnreadIndicators();
+      if (UI.activeModuleId === 'wiki' && Wiki.currentView?.type === 'npc') {
+        Wiki.showEntity('npc', Wiki.currentView.id);
+      }
+    }
+  },
+  async flushOutbox(reason = 'chat-flush') {
+    if (this.flushInFlight) return this.flushInFlight;
+    this.flushInFlight = (async () => {
+      if (!this.isEnabled()) return { ok: false, status: 'disabled' };
+      const outbox = [...this.loadOutbox()];
+      if (!outbox.length) return { ok: true, status: 'empty' };
+      if (window.electronAPI?.pushChatBatch && outbox.length > 1) {
+        const batchRes = await window.electronAPI.pushChatBatch({ rows: outbox });
+        if (batchRes?.ok) {
+          const returned = Array.isArray(batchRes.rows) ? batchRes.rows : outbox;
+          returned.forEach(row => this.dropFromOutbox(row.message_id));
+          this.applyRemoteRows(returned);
+          await this.persistLocal('chat-outbox-batch-flush');
+          await this.refreshUiAfterIncoming('chat-outbox-batch-flush');
+          return { ok: true, status: 'flushed', rows: returned };
+        }
+        Debug.error('CHAT_BATCH_FLUSH_FAILED', { reason, message: batchRes?.message || 'unknown error', count: outbox.length });
+      }
+      for (const row of outbox) {
+        const res = await window.electronAPI.upsertChat({ row });
+        if (!res?.ok) {
+          Debug.error('CHAT_OUTBOX_FLUSH_FAILED', { reason, message: res?.message || 'unknown error', messageId: row?.message_id || null });
+          return { ok: false, status: 'error', message: res?.message || 'CHAT_UPSERT_FAILED' };
+        }
+        this.dropFromOutbox(row.message_id);
+        this.applyRemoteRows([res.row || row]);
+      }
+      await this.persistLocal('chat-outbox-flush');
+      await this.refreshUiAfterIncoming('chat-outbox-flush');
+      return { ok: true, status: 'flushed' };
+    })();
+    try {
+      return await this.flushInFlight;
+    } finally {
+      this.flushInFlight = null;
+    }
+  },
+  async pushBatch(rows = [], reason = 'chat-bootstrap') {
+    if (!this.isEnabled() || !Array.isArray(rows) || !rows.length || !window.electronAPI?.pushChatBatch) return { ok: false, status: 'disabled' };
+    const res = await window.electronAPI.pushChatBatch({ rows });
+    if (res?.ok) {
+      this.applyRemoteRows(res.rows || rows);
+      await this.persistLocal(reason);
+      return { ok: true, status: 'ok' };
+    }
+    Debug.error('CHAT_BATCH_PUSH_FAILED', { reason, message: res?.message || 'unknown error' });
+    return res;
+  },
+  async pull(reason = 'poll', options = {}) {
+    if (this.pullInFlight) return this.pullInFlight;
+    this.pullInFlight = (async () => {
+      if (!this.isEnabled()) return { ok: false, status: 'disabled' };
+      const since = this.computePullSince(reason, options);
+      const res = await window.electronAPI.pullChat({ since, limit: options.limit || (options.full ? CHAT_STARTUP_LIMIT : CHAT_POLL_LIMIT) });
+      if (!res?.ok) {
+        Debug.error('CHAT_PULL_FAILED', { reason, message: res?.message || 'unknown error', since });
+        return res;
+      }
+      this.lastSuccessfulPullAt = Date.now();
+      const rows = Array.isArray(res.rows) ? res.rows : [];
+      if (!rows.length) return { ok: true, status: 'up-to-date', rows: [] };
+      const changed = this.applyRemoteRows(rows);
+      if (changed) {
+        await this.persistLocal(`chat-pull:${reason}`);
+        await this.refreshUiAfterIncoming(`chat-pull:${reason}`);
+      }
+      return { ok: true, status: changed ? 'applied' : 'noop', rows };
+    })();
+    try {
+      return await this.pullInFlight;
+    } finally {
+      this.pullInFlight = null;
+    }
+  },
+  async bootstrap() {
+    if (this.bootstrapDone) return;
+    this.bootstrapDone = true;
+    this.loadCursor();
+    this.loadOutbox();
+    if (!this.isEnabled()) return;
+    const firstPull = await this.pull('startup', { full: !this.cursor, catchup: Boolean(this.cursor), limit: CHAT_STARTUP_LIMIT });
+    const localRows = this.exportAllLocalRows();
+    if ((!firstPull?.rows || !firstPull.rows.length) && localRows.length) {
+      await this.pushBatch(localRows, 'chat-bootstrap-upload');
+    }
+    await this.flushOutbox('startup');
+    await this.pull('startup-post-flush', { catchup: true, limit: CHAT_STARTUP_LIMIT });
+  },
+  startPolling() {
+    this.stopPolling();
+    if (!this.isEnabled()) return;
+    this.pollTimer = setInterval(() => {
+      this.flushOutbox('poll').catch(error => {
+        try { Debug.error('CHAT_POLL_FLUSH_FAILED', { message: error?.message || String(error) }); } catch {}
+      });
+      this.pull('poll', { limit: CHAT_POLL_LIMIT }).catch(error => {
+        try { Debug.error('CHAT_POLL_FAILED', { message: error?.message || String(error) }); } catch {}
+      });
+    }, CHAT_POLL_INTERVAL_MS);
+  },
+  stopPolling() {
+    if (this.pollTimer) {
+      clearInterval(this.pollTimer);
+      this.pollTimer = null;
+    }
+    if (this.flushTimer) {
+      clearTimeout(this.flushTimer);
+      this.flushTimer = null;
+    }
+  }
+};
+
+const __buildSharedStateSnapshot_chatIsolated = buildSharedStateSnapshot;
+buildSharedStateSnapshot = function(state = App?.state || makeDefaultState()) {
+  const snap = __buildSharedStateSnapshot_chatIsolated(state);
+  delete snap.directChats;
+  delete snap.npcChats;
+  if (snap.readMarkers && typeof snap.readMarkers === 'object') {
+    snap.readMarkers = deep(snap.readMarkers);
+    snap.readMarkers.messages = {};
+  }
+  return snap;
+};
+
+const __syncApplyRemoteSnapshot_chatIsolated = Sync.applyRemoteSnapshot.bind(Sync);
+Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}) {
+  const localDirect = deep(App.state?.directChats || {});
+  const localNpc = deep(App.state?.npcChats || {});
+  const localMessageReads = deep(ensureReadMarkers()?.messages || {});
+  const res = await __syncApplyRemoteSnapshot_chatIsolated(payload, remoteMeta, options);
+  App.state.directChats = localDirect;
+  App.state.npcChats = localNpc;
+  const markers = ensureReadMarkers();
+  markers.messages = localMessageReads;
+  persistReadMarkersHard('sync-apply-preserve-chat');
+  if (UI.activeModuleId === 'messages') MessagesUI.render();
+  return res;
+};
+
+const __syncInit_chatSync = Sync.init.bind(Sync);
+Sync.init = async function() {
+  const res = await __syncInit_chatSync();
+  await ChatSync.bootstrap();
+  ChatSync.startPolling();
+  return res;
+};
+
+const __syncLoadConfig_chatSync = Sync.loadConfig.bind(Sync);
+Sync.loadConfig = async function() {
+  const res = await __syncLoadConfig_chatSync();
+  if (this.config?.enabled) ChatSync.startPolling();
+  else ChatSync.stopPolling();
+  return res;
+};
+
+const __appLogout_chatSync = App.logout.bind(App);
+App.logout = function() {
+  ChatSync.stopPolling();
+  return __appLogout_chatSync();
+};
+
+const __appendDirectChatMessage_delta = appendDirectChatMessage;
+appendDirectChatMessage = function(senderId, recipientId, payload = {}) {
+  const message = __appendDirectChatMessage_delta(senderId, recipientId, payload);
+  if (message) ChatSync.queue(ChatSync.directRowFromMessage(message, senderId, recipientId));
+  return message;
+};
+
+const __appendNpcChatMessage_delta = appendNpcChatMessage;
+appendNpcChatMessage = function(npcId, playerId, payload = {}) {
+  const message = __appendNpcChatMessage_delta(npcId, playerId, payload);
+  if (message) ChatSync.queue(ChatSync.npcRowFromMessage(message, npcId, playerId));
+  return message;
+};
+
+const __editDirectChatMessage_delta = editDirectChatMessage;
+editDirectChatMessage = function(messageId, nextText) {
+  const updated = __editDirectChatMessage_delta(messageId, nextText);
+  if (updated) ChatSync.queue(ChatSync.directRowFromMessage(updated));
+  return updated;
+};
+
+const __editNpcChatMessage_delta = editNpcChatMessage;
+editNpcChatMessage = function(messageId, nextText) {
+  const updated = __editNpcChatMessage_delta(messageId, nextText);
+  if (updated) ChatSync.queue(ChatSync.npcRowFromMessage(updated));
+  return updated;
+};
+
+const __deleteDirectChatMessage_delta = deleteDirectChatMessage;
+deleteDirectChatMessage = function(messageId) {
+  const ctx = findDirectChatMessageContext(messageId);
+  if (ctx?.message) {
+    const tomb = { ...ctx.message, deletedAt: new Date().toISOString(), editedAt: null };
+    ChatSync.queue(ChatSync.directRowFromMessage(tomb, ctx.a, ctx.b));
+  }
+  return __deleteDirectChatMessage_delta(messageId);
+};
+
+const __deleteNpcChatMessage_delta = deleteNpcChatMessage;
+deleteNpcChatMessage = function(messageId) {
+  const ctx = findNpcChatMessageContext(messageId);
+  if (ctx?.message) {
+    const tomb = { ...ctx.message, deletedAt: new Date().toISOString(), editedAt: null };
+    ChatSync.queue(ChatSync.npcRowFromMessage(tomb, ctx.npcId, ctx.playerId));
+  }
+  return __deleteNpcChatMessage_delta(messageId);
+};
+
+const __appSaveState_chatDelta = App.saveState.bind(App);
+App.saveState = async function(notice = 'Данные сохранены') {
+  const outbox = ChatSync.loadOutbox();
+  if (outbox.length) {
+    await Persistence.save(this.state);
+    await ChatSync.flushOutbox('save-state');
+    this.state = await Persistence.load();
+    this.fillLoginSelect();
+    this.renderLive();
+    Sync.refreshChip();
+    Toast.show(notice, 'ok');
+    return;
+  }
+  return __appSaveState_chatDelta(notice);
+};
+
+const __messagesBind_chatDrafts = MessagesUI.bind.bind(MessagesUI);
+MessagesUI.bind = function(root) {
+  __messagesBind_chatDrafts(root);
+  ChatDrafts.bind(root);
+  root.querySelectorAll('.direct-chat-form, .messages-npc-chat-form, .npc-chat-form').forEach(form => {
+    form.addEventListener('submit', () => {
+      const key = ChatDrafts.keyForForm(form);
+      setTimeout(() => ChatDrafts.clear(key), 0);
+    });
+  });
+  root.querySelectorAll('.chat-input').forEach(textarea => {
+    if (textarea.dataset.pendingRefreshBound === '1') return;
+    textarea.dataset.pendingRefreshBound = '1';
+    textarea.addEventListener('blur', () => {
+      if (ChatSync.renderPending && UI.activeModuleId === 'messages') {
+        ChatSync.renderPending = false;
+        MessagesUI.render();
+      }
+    });
+  });
+};
+
+window.addEventListener('beforeunload', () => {
+  try {
+    ChatSync.stopPolling();
+    ChatSync.saveOutbox();
+  } catch {}
+});
+
+// ==== v0.5.0.1 patch: persist preserved chats across startup remote apply ====
+const __syncApplyRemoteSnapshot_chatPersist = Sync.applyRemoteSnapshot.bind(Sync);
+Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}) {
+  const res = await __syncApplyRemoteSnapshot_chatPersist(payload, remoteMeta, options);
+  try {
+    await Persistence.save(App.state);
+  } catch (error) {
+    Debug.error('CHAT_PRESERVE_AFTER_REMOTE_APPLY_FAILED', { message: error?.message || String(error) });
+  }
+  return res;
+};
+
+const __appSaveState_chatDeltaGuard = App.saveState.bind(App);
+App.saveState = async function(notice = 'Данные сохранены') {
+  const looksLikeChatNotice = /Сообщение отправлено|Ответ NPC отправлен|Сообщение отправлено NPC|NPC отправил сообщение игроку|Сообщение изменено|Сообщение удалено/i.test(String(notice || ''));
+  if (looksLikeChatNotice && ChatSync.loadOutbox().length) {
+    await Persistence.save(this.state);
+    await ChatSync.flushOutbox('save-state-chat');
+    this.state = await Persistence.load();
+    this.fillLoginSelect();
+    this.renderLive();
+    Sync.refreshChip();
+    Toast.show(notice, 'ok');
+    return;
+  }
+  return __appSaveState_chatDeltaGuard(notice);
+};
+
+// ==== v0.5.0.2 patch: only divert chat notices to row-level outbox ====
+App.saveState = async function(notice = 'Данные сохранены') {
+  const looksLikeChatNotice = /Сообщение отправлено|Ответ NPC отправлен|Сообщение отправлено NPC|NPC отправил сообщение игроку|Сообщение изменено|Сообщение удалено/i.test(String(notice || ''));
+  if (looksLikeChatNotice && ChatSync.loadOutbox().length) {
+    await Persistence.save(this.state);
+    await ChatSync.flushOutbox('save-state-chat');
+    this.state = await Persistence.load();
+    this.fillLoginSelect();
+    this.renderLive();
+    Sync.refreshChip();
+    Toast.show(notice, 'ok');
+    return;
+  }
+  return __appSaveState_chatDelta(notice);
+};
+
+
+// ==== v0.5.6 patch: fast player sync + stable input focus + safer overlays ====
+const PLAYER_SYNC_POLL_INTERVAL_MS = 3000;
+const PLAYER_SYNC_CURSOR_OVERLAP_MS = 8000;
+
+const __uiSyncGuard_isEditingCriticalForm_v056 = UiSyncGuard.isEditingCriticalForm.bind(UiSyncGuard);
+UiSyncGuard.isTypingInOverlayInput = function() {
+  const active = document.activeElement;
+  if (!active) return false;
+  const tag = String(active.tagName || '').toLowerCase();
+  const textLike = tag === 'textarea' || (tag === 'input' && !['button', 'submit', 'reset', 'checkbox', 'radio', 'range', 'color', 'file'].includes(String(active.type || '').toLowerCase())) || active.isContentEditable;
+  if (!textLike) return false;
+  return Boolean(active.closest('.fs-module.open, .modal.open, .media-preview-modal.open, #profile-edit-form, #config-editor-form, .messages-layout, .npc-chat-form, .direct-chat-form, .messages-npc-chat-form, .npc-chat-init-form'));
+};
+UiSyncGuard.isEditingCriticalForm = function() {
+  return __uiSyncGuard_isEditingCriticalForm_v056() || this.isTypingInOverlayInput();
+};
+UiSyncGuard.shouldDeferRerender = function() {
+  return this.isEditingCriticalForm();
+};
+
+
+const __appRefreshAfterLocalWrite_v056 = App.refreshAfterLocalWrite.bind(App);
+App.refreshAfterLocalWrite = function() {
+  this.fillLoginSelect();
+  if (this.currentUserId && !this.state.users[this.currentUserId]) {
+    this.logout();
+    return;
+  }
+  this.renderLive();
+  if (UI.activeModuleId === 'messages') MessagesUI.render();
+  Sync.refreshChip();
+};
+
+PlayerSync.computePullSince = function(reason = 'manual', options = {}) {
+  if (options.forceFull) return null;
+  const meta = ensurePlayerSyncMeta(App.state);
+  const base = meta.lastPulledAt || null;
+  if (!base) return null;
+  const ts = new Date(base).getTime();
+  if (!Number.isFinite(ts)) return null;
+  return new Date(Math.max(0, ts - PLAYER_SYNC_CURSOR_OVERLAP_MS)).toISOString();
+};
+
+PlayerSync.startPolling = function() {
+  this.stopPolling();
+  if (!this.shouldIsolateUsersFromSnapshot()) return;
+  this.pollTimer = setInterval(() => {
+    this.pullUpdates('fast-poll', { silent: true, rerender: !UiSyncGuard.shouldDeferRerender(), limit: 1000 }).catch(error => {
+      try { Debug.error('PLAYER_FAST_POLL_FAILED', { message: error?.message || String(error) }); } catch {}
+    });
+  }, PLAYER_SYNC_POLL_INTERVAL_MS);
+};
+
+PlayerSync.stopPolling = function() {
+  if (this.pollTimer) {
+    clearInterval(this.pollTimer);
+    this.pollTimer = null;
+  }
+};
+
+PlayerSync.pullUpdates = async function(reason = 'manual', options = {}) {
+  if (!this.shouldIsolateUsersFromSnapshot()) return { ok: true, status: 'disabled', rows: [] };
+  const meta = ensurePlayerSyncMeta(App.state);
+  const since = this.computePullSince(reason, options);
+  const res = await window.electronAPI.pullPlayers({ since, limit: options.limit || 500, playerId: options.playerId || null });
+  if (!res?.ok) {
+    meta.lastStatus = 'PULL_FAILED';
+    meta.lastError = res?.message || 'PLAYER_PULL_FAILED';
+    await Persistence.save(App.state);
+    return res;
+  }
+  const rows = Array.isArray(res.rows) ? res.rows : [];
+  if (!rows.length) {
+    meta.enabled = true;
+    meta.lastStatus = 'UP_TO_DATE';
+    meta.lastError = null;
+    meta.lastPulledAt = meta.lastPulledAt || new Date().toISOString();
+    await Persistence.save(App.state);
+    return { ...res, rows };
+  }
+  let changed = false;
+  for (const row of rows) {
+    const before = JSON.stringify(App.state?.users?.[String(row.playerId || row.player_id || '')] || null);
+    this.applyRemoteRow(row);
+    const after = JSON.stringify(App.state?.users?.[String(row.playerId || row.player_id || '')] || null);
+    if (before !== after) changed = true;
+  }
+  meta.enabled = true;
+  meta.lastStatus = 'SYNCED';
+  meta.lastError = null;
+  meta.lastPulledAt = rows.reduce((latest, row) => {
+    const stamp = row?.updatedAt || row?.updated_at || latest || null;
+    if (!latest) return stamp;
+    return new Date(stamp || 0).getTime() > new Date(latest || 0).getTime() ? stamp : latest;
+  }, meta.lastPulledAt || new Date().toISOString());
+  await App.writeLocalMirrors();
+  if (changed) {
+    if (options.rerender !== false) {
+      if (UiSyncGuard.shouldDeferRerender()) UiSyncGuard.defer(`player-pull:${reason}`);
+      else App.refreshAfterLocalWrite();
+    }
+  }
+  return { ...res, rows };
+};
+
+const __syncInit_playerFast_v056 = Sync.init.bind(Sync);
+Sync.init = async function() {
+  const res = await __syncInit_playerFast_v056();
+  PlayerSync.startPolling();
+  return res;
+};
+
+const __syncLoadConfig_playerFast_v056 = Sync.loadConfig.bind(Sync);
+Sync.loadConfig = async function() {
+  const res = await __syncLoadConfig_playerFast_v056();
+  if (this.config?.enabled) PlayerSync.startPolling();
+  else PlayerSync.stopPolling();
+  return res;
+};
+
+const __appLogout_playerFast_v056 = App.logout.bind(App);
+App.logout = function() {
+  PlayerSync.stopPolling();
+  return __appLogout_playerFast_v056();
+};
+
+const __chatSyncRefreshUiAfterIncoming_v056 = ChatSync.refreshUiAfterIncoming.bind(ChatSync);
+ChatSync.refreshUiAfterIncoming = async function(reason = 'chat-sync') {
+  if (UI.activeModuleId === 'messages' && UiSyncGuard.shouldDeferRerender()) {
+    this.renderPending = true;
+    refreshUnreadIndicators();
+    return;
+  }
+  return __chatSyncRefreshUiAfterIncoming_v056(reason);
+};
+
+const __syncCheckForRemoteUpdates_v056 = Sync.checkForRemoteUpdates.bind(Sync);
+Sync.checkForRemoteUpdates = async function(reason = 'manual-check', options = {}) {
+  const nextOptions = { ...(options || {}) };
+  if ((reason === 'poll' || nextOptions.silent) && UiSyncGuard.shouldDeferRerender()) {
+    nextOptions.applyIfNewer = false;
+  }
+  const res = await __syncCheckForRemoteUpdates_v056(reason, nextOptions);
+  if (res?.status === 'newer' && nextOptions.applyIfNewer === false && UiSyncGuard.shouldDeferRerender()) {
+    UiSyncGuard.defer(`snapshot-pending:${reason}`);
+  }
+  return res;
+};
+
+const __renderMessageContactRow_v056 = renderMessageContactRow;
+renderMessageContactRow = function({ active = false, title = '', subtitle = '', avatarHtml = '', unread = 0, kind = '', key = '', gm = false }) {
+  const dataAttr = gm ? `data-gm-message-kind="${esc(kind)}" data-gm-message-key="${esc(key)}"` : `data-message-kind="${esc(kind)}" data-message-key="${esc(key)}"`;
+  const searchText = `${String(title || '')} ${String(subtitle || '')} ${String(key || '')}`.toLowerCase();
+  return `
+    <button class="message-contact ${active ? 'active' : ''}" type="button" ${dataAttr} data-search-text="${esc(searchText)}">
+      <span class="message-contact-avatar">${avatarHtml}</span>
+      <span class="message-contact-meta">
+        <span class="message-contact-title">${esc(title)}</span>
+        <span class="message-contact-subtitle">${esc(subtitle)}</span>
+      </span>
+      ${renderMessageListBadge(unread)}
+    </button>
+  `;
+};
+
+function applyMessageContactFilter(root, query, selector, emptyText = 'Ничего не найдено') {
+  const buttons = Array.from(root.querySelectorAll(selector));
+  const normalized = String(query || '').trim().toLowerCase();
+  let visible = 0;
+  buttons.forEach(button => {
+    const hay = String(button.dataset.searchText || button.textContent || '').toLowerCase();
+    const show = !normalized || hay.includes(normalized);
+    button.style.display = show ? '' : 'none';
+    if (show) visible += 1;
+  });
+  root.querySelectorAll(`[data-filter-empty="${selector}"]`).forEach(node => node.remove());
+  if (!visible) {
+    const holder = document.createElement('div');
+    holder.className = 'small-note';
+    holder.dataset.filterEmpty = selector;
+    holder.textContent = emptyText;
+    const firstButton = root.querySelector(selector);
+    const list = firstButton?.closest('.message-contact-list') || root.querySelector('.message-contact-list');
+    list?.appendChild(holder);
+  }
+}
+
+const __messagesBind_focusStable_v056 = MessagesUI.bind.bind(MessagesUI);
+MessagesUI.bind = function(root) {
+  __messagesBind_focusStable_v056(root);
+  const playerSearch = root.querySelector('#messages-search-player');
+  if (playerSearch && playerSearch.dataset.localFilterBound !== '1') {
+    playerSearch.dataset.localFilterBound = '1';
+    playerSearch.addEventListener('input', event => {
+      event.stopImmediatePropagation();
+      const value = String(event.currentTarget.value || '');
+      this.playerSearch = value;
+      applyMessageContactFilter(root, value, '[data-message-kind]', 'Ничего не найдено');
+    }, true);
+  }
+  const gmSearch = root.querySelector('#messages-search-gm');
+  if (gmSearch && gmSearch.dataset.localFilterBound !== '1') {
+    gmSearch.dataset.localFilterBound = '1';
+    gmSearch.addEventListener('input', event => {
+      event.stopImmediatePropagation();
+      const value = String(event.currentTarget.value || '');
+      this.gmSearch = value;
+      applyMessageContactFilter(root, value, '[data-gm-message-kind]', 'Ничего не найдено');
+    }, true);
+  }
+  if (playerSearch?.value) applyMessageContactFilter(root, playerSearch.value, '[data-message-kind]', 'Ничего не найдено');
+  if (gmSearch?.value) applyMessageContactFilter(root, gmSearch.value, '[data-gm-message-kind]', 'Ничего не найдено');
+};
+
+
+// === v0.6.0 patch: tactical battle scenes MVP ===
+let COMBAT_SCENES = {};
+let COMBAT_SCENE_LIST = [];
+const COMBAT_STATE_KEY = 'combat';
+const COMBAT_SYNC_INTERVAL_MS = 4000;
+const COMBAT_DEFAULT_VISION = 6;
+
+WORLD_SECTIONS.combatScenes = { label: 'Боевые сцены', mapKey: 'COMBAT_SCENES', listKey: 'COMBAT_SCENE_LIST' };
+Data.combatScenes = COMBAT_SCENES;
+Data.getCombatScene = function(id) {
+  return this.combatScenes[id] || null;
+};
+
+function normalizeCombatScene(scene = {}) {
+  const next = { ...scene };
+  next.id = String(next.id || `scene_${Date.now()}`).trim();
+  next.name = String(next.name || 'Новая сцена').trim();
+  next.mode = String(next.mode || 'combat').trim() === 'standard' ? 'standard' : 'combat';
+  next.width = clamp(Number(next.width || 20), 8, 60);
+  next.height = clamp(Number(next.height || 20), 8, 60);
+  next.backgroundImage = String(next.backgroundImage || '').trim();
+  next.backgroundColor = String(next.backgroundColor || '#0b1420').trim() || '#0b1420';
+  next.gridColor = String(next.gridColor || 'rgba(125,249,255,0.12)').trim() || 'rgba(125,249,255,0.12)';
+  next.fogEnabled = next.fogEnabled !== false;
+  next.visionRadius = clamp(Number(next.visionRadius || COMBAT_DEFAULT_VISION), 1, 18);
+  next.assets = Array.isArray(next.assets) ? next.assets.map(normalizeCombatAsset) : [];
+  next.notes = String(next.notes || '').trim();
+  return next;
+}
+
+function normalizeCombatAsset(asset = {}) {
+  return {
+    id: String(asset.id || `asset_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`),
+    type: 'asset',
+    name: String(asset.name || 'Ассет').trim() || 'Ассет',
+    image: String(asset.image || '').trim(),
+    x: clamp(Number(asset.x || 0), 0, 200),
+    y: clamp(Number(asset.y || 0), 0, 200),
+    w: clamp(Number(asset.w || 2), 0.5, 40),
+    h: clamp(Number(asset.h || 2), 0.5, 40),
+    rotation: Number(asset.rotation || 0),
+    z: Number(asset.z || 10),
+    opacity: clamp(Number(asset.opacity ?? 1), 0.1, 1),
+    label: String(asset.label || '').trim(),
+    blockSight: Boolean(asset.blockSight)
+  };
+}
+
+function normalizeCombatToken(token = {}) {
+  return {
+    id: String(token.id || `token_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`),
+    type: String(token.type || 'unit').trim() || 'unit',
+    playerId: String(token.playerId || '').trim(),
+    npcId: String(token.npcId || '').trim(),
+    name: String(token.name || 'Юнит').trim() || 'Юнит',
+    image: String(token.image || '').trim(),
+    x: clamp(Number(token.x || 0), 0, 200),
+    y: clamp(Number(token.y || 0), 0, 200),
+    w: clamp(Number(token.w || 1), 0.5, 8),
+    h: clamp(Number(token.h || 1), 0.5, 8),
+    rotation: Number(token.rotation || 0),
+    hpCurrent: clamp(Number(token.hpCurrent ?? token.hpMax ?? 10), 0, 999),
+    hpMax: clamp(Number(token.hpMax || token.hpCurrent || 10), 1, 999),
+    initiative: Number(token.initiative || 0),
+    visionRadius: clamp(Number(token.visionRadius || 0), 0, 18),
+    hidden: Boolean(token.hidden),
+    locked: Boolean(token.locked),
+    notes: String(token.notes || '').trim(),
+    color: String(token.color || '#7df9ff').trim() || '#7df9ff',
+    weaponId: String(token.weaponId || '').trim(),
+    ownerId: String(token.ownerId || token.playerId || '').trim()
+  };
+}
+
+function ensureCombatState(state = App.state) {
+  if (!state.toolState) state.toolState = {};
+  if (!state.toolState[COMBAT_STATE_KEY]) {
+    state.toolState[COMBAT_STATE_KEY] = {
+      activeSceneId: '',
+      scenes: {},
+      cameraByScene: {},
+      localVersion: 1
+    };
+  }
+  if (!state.toolState[COMBAT_STATE_KEY].scenes) state.toolState[COMBAT_STATE_KEY].scenes = {};
+  if (!state.toolState[COMBAT_STATE_KEY].cameraByScene || typeof state.toolState[COMBAT_STATE_KEY].cameraByScene !== 'object') state.toolState[COMBAT_STATE_KEY].cameraByScene = {};
+  return state.toolState[COMBAT_STATE_KEY];
+}
+
+function ensureCombatRuntime(sceneId, state = App.state) {
+  const combat = ensureCombatState(state);
+  if (!combat.scenes[sceneId]) {
+    combat.scenes[sceneId] = {
+      tokens: [],
+      initiativeOrder: [],
+      turnIndex: 0,
+      round: 1,
+      log: []
+    };
+  }
+  const runtime = combat.scenes[sceneId];
+  runtime.tokens = Array.isArray(runtime.tokens) ? runtime.tokens.map(normalizeCombatToken) : [];
+  runtime.initiativeOrder = Array.isArray(runtime.initiativeOrder) ? runtime.initiativeOrder.map(String) : [];
+  runtime.turnIndex = Math.max(0, Number(runtime.turnIndex || 0));
+  runtime.round = Math.max(1, Number(runtime.round || 1));
+  runtime.log = Array.isArray(runtime.log) ? runtime.log : [];
+  return runtime;
+}
+
+function buildCombatSceneFromCurrentState(sceneId) {
+  const scene = Data.getCombatScene(sceneId);
+  if (!scene) return null;
+  const runtime = ensureCombatRuntime(sceneId);
+  return { scene, runtime };
+}
+
+function sortCombatScenes() {
+  COMBAT_SCENE_LIST = Object.values(COMBAT_SCENES).map(normalizeCombatScene).sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ru'));
+  Data.combatScenes = COMBAT_SCENES;
+}
+
+function setCombatScenes(nextScenes = {}) {
+  COMBAT_SCENES = {};
+  for (const [id, scene] of Object.entries(nextScenes || {})) {
+    COMBAT_SCENES[id] = normalizeCombatScene(scene);
+  }
+  sortCombatScenes();
+}
+
+function createBlankCombatScene() {
+  const stamp = Date.now().toString().slice(-6);
+  return normalizeCombatScene({
+    id: `battle_${stamp}`,
+    name: 'Новая сцена',
+    mode: 'combat',
+    width: 24,
+    height: 16,
+    backgroundColor: '#0d1724',
+    fogEnabled: true,
+    visionRadius: COMBAT_DEFAULT_VISION,
+    assets: []
+  });
+}
+
+function createPlayerCombatToken(playerId) {
+  const player = normalizePlayerProfileV2(App.state.users[playerId] || PLAYER_TEMPLATES[playerId] || {});
+  const equipped = getEquippedItemsV2(player);
+  return normalizeCombatToken({
+    id: `token_player_${player.id}_${Date.now().toString(36)}`,
+    type: 'player',
+    playerId: player.id,
+    ownerId: player.id,
+    name: player.displayName || player.name || player.id,
+    image: player.image || '',
+    x: 0,
+    y: 0,
+    hpCurrent: Number(player.stats?.hpCurrent || 10),
+    hpMax: Number(player.stats?.hpMax || player.stats?.hpCurrent || 10),
+    color: '#7df9ff',
+    weaponId: equipped.primary?.id || equipped.secondary?.id || ''
+  });
+}
+
+function createNpcCombatToken(npcId) {
+  const npc = Data.getNpc(npcId) || { id: npcId, name: npcId };
+  return normalizeCombatToken({
+    id: `token_npc_${npc.id}_${Date.now().toString(36)}`,
+    type: 'npc',
+    npcId: npc.id,
+    ownerId: '',
+    name: npc.name || npc.id,
+    image: npc.image || '',
+    x: 0,
+    y: 0,
+    hpCurrent: Number(npc.hpCurrent || npc.hp || 12),
+    hpMax: Number(npc.hpMax || npc.hp || 12),
+    color: '#ff9f5d'
+  });
+}
+
+function createCustomCombatToken(payload = {}) {
+  return normalizeCombatToken({
+    id: `token_custom_${Date.now().toString(36)}`,
+    type: 'unit',
+    name: String(payload.name || 'Юнит').trim() || 'Юнит',
+    image: String(payload.image || '').trim(),
+    hpCurrent: Number(payload.hpCurrent || payload.hpMax || 10),
+    hpMax: Number(payload.hpMax || payload.hpCurrent || 10),
+    color: String(payload.color || '#e0aaff')
+  });
+}
+
+function parseCombatDamage(value = '') {
+  const raw = String(value || '').trim().toLowerCase();
+  if (!raw) return { text: '1d6', roll: () => rollDice('1d6') };
+  return {
+    text: raw,
+    roll: () => {
+      const simple = raw.match(/^(\d+)$/);
+      if (simple) return Number(simple[1] || 0);
+      const dice = raw.match(/^(\d+)d(\d+)([+-]\d+)?$/i);
+      if (dice) {
+        const count = clamp(Number(dice[1] || 1), 1, 20);
+        const sides = clamp(Number(dice[2] || 6), 2, 100);
+        const delta = Number(dice[3] || 0);
+        let total = delta;
+        for (let i = 0; i < count; i += 1) total += 1 + Math.floor(Math.random() * sides);
+        return Math.max(0, total);
+      }
+      return rollDice('1d6');
+    }
+  };
+}
+
+function rollDice(text = '1d6') {
+  const parsed = parseCombatDamage(text);
+  return parsed.roll();
+}
+
+function getCombatTokenWeapon(token = {}) {
+  if (token.weaponId) return normalizeEquipmentItemV2(Data.getItem(token.weaponId) || { id: token.weaponId, name: token.weaponId, damage: '1d6', type: 'weapon' });
+  if (token.type === 'player' && token.playerId && App.state.users[token.playerId]) {
+    const equipped = getEquippedItemsV2(App.state.users[token.playerId]);
+    return normalizeEquipmentItemV2(equipped.primary || equipped.secondary || { id: 'basic_attack', name: 'Базовая атака', damage: '1d6', type: 'weapon' });
+  }
+  return normalizeEquipmentItemV2({ id: 'basic_attack', name: 'Базовая атака', damage: '1d6', type: 'weapon' });
+}
+
+function ensureCombatModuleMarkup() {
+  if (!document.getElementById('open-combat')) {
+    const dock = document.getElementById('dock');
+    dock?.insertAdjacentHTML('beforeend', `
+      <div class="dock-item" data-label="СЦЕНА" id="open-combat">
+        <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M3 6h18v12H3z"></path><path d="M8 6v12"></path><path d="M16 6v12"></path><path d="M3 12h18"></path><path d="M9 9h.01"></path><path d="M15 15h.01"></path></svg>
+      </div>
+    `);
+  }
+  if (!document.getElementById('mod-combat')) {
+    const toast = document.getElementById('toast');
+    toast?.insertAdjacentHTML('beforebegin', `
+      <div id="mod-combat" class="fs-module">
+        <div class="fs-header">
+          <div>
+            <div class="mono accent">TACTICAL_SCENE_NODE</div>
+            <div class="subtle">Боевая/сценическая карта, Fog of War, токены, инициатива и базовые действия.</div>
+          </div>
+          <button class="secondary module-close">CLOSE_X</button>
+        </div>
+        <div id="combat-content" class="module-wrap"></div>
+      </div>
+    `);
+  }
+}
+
+const Combat = {
+  selectedSceneId: null,
+  selectedObject: null,
+  selectedTargetId: null,
+  syncTimer: null,
+  currentUploadTask: null,
+  hasUnpublishedChanges: false,
+  hoverDistance: null,
+  diceDraft: { d4: 0, d6: 0, d8: 0, d10: 0, d12: 0, d20: 0, d100: 0 },
+  lastDiceRoll: null,
+  isDm() {
+    return App.currentUser?.role === 'gm';
+  },
+  getCombatState() {
+    return ensureCombatState();
+  },
+  getActiveSceneId() {
+    return String(this.getCombatState().activeSceneId || '').trim();
+  },
+  getSceneIdForView() {
+    if (this.isDm()) {
+      return this.selectedSceneId || this.getActiveSceneId() || COMBAT_SCENE_LIST[0]?.id || '';
+    }
+    return this.getActiveSceneId();
+  },
+  getScene() {
+    const id = this.getSceneIdForView();
+    return id ? Data.getCombatScene(id) : null;
+  },
+  getRuntime(sceneId = this.getSceneIdForView()) {
+    return sceneId ? ensureCombatRuntime(sceneId) : null;
+  },
+  selectScene(sceneId) {
+    this.selectedSceneId = sceneId ? String(sceneId) : null;
+    this.selectedObject = null;
+    this.selectedTargetId = null;
+    this.render();
+  },
+  isSceneVisible(scene) {
+    if (!scene) return false;
+    if (this.isDm()) return true;
+    return this.getActiveSceneId() === scene.id;
+  },
+  getControlledTokens(sceneId = this.getSceneIdForView()) {
+    const runtime = this.getRuntime(sceneId);
+    if (!runtime) return [];
+    if (this.isDm()) return runtime.tokens;
+    return runtime.tokens.filter(token => token.playerId && token.playerId === App.currentUser?.id);
+  },
+  isCurrentTurnToken(token) {
+    if (!token || this.getScene()?.mode !== 'combat') return false;
+    return this.getCurrentTurnToken()?.id === token.id;
+  },
+  canControlToken(token) {
+    if (!token) return false;
+    if (this.isDm()) return true;
+    return false;
+  },
+  canActWithToken(token) {
+    if (!token || this.getScene()?.mode !== 'combat') return false;
+    return this.isDm() && this.isCurrentTurnToken(token);
+  },
+  canMoveToken(token) {
+    if (!token || token.locked) return false;
+    if (this.getScene()?.mode !== 'combat') return this.isDm();
+    return this.isDm() && this.isCurrentTurnToken(token);
+  },
+  getDisplayedActorToken(sceneId = this.getSceneIdForView()) {
+    const runtime = this.getRuntime(sceneId);
+    if (!runtime) return null;
+    const current = this.getCurrentTurnToken();
+    if (current) return current;
+    if (this.isDm()) return runtime.tokens[0] || null;
+    return runtime.tokens.find(token => token.playerId && token.playerId === App.currentUser?.id) || null;
+  },
+  measureDistance(fromToken, cellX, cellY) {
+    if (!fromToken) return null;
+    const fromX = Number(fromToken.x || 0);
+    const fromY = Number(fromToken.y || 0);
+    const dx = Number(cellX) - fromX;
+    const dy = Number(cellY) - fromY;
+    return Math.max(Math.abs(dx), Math.abs(dy));
+  },
+  getTokenMoveAllowance(token) {
+    if (!token) return 0;
+    const speed = clamp(Number(token.moveSpeed || token.speed || 6), 0, 99);
+    const moved = clamp(Number(token.movedThisTurn || 0), 0, 999);
+    return Math.max(0, speed - moved);
+  },
+  adjustDice(kind, delta) {
+    if (!this.diceDraft[kind]) this.diceDraft[kind] = 0;
+    this.diceDraft[kind] = clamp(Number(this.diceDraft[kind] || 0) + Number(delta || 0), 0, 20);
+    if (UI.activeModuleId === 'combat' && !this.isDm()) this.render();
+  },
+  clearDiceDraft() {
+    this.diceDraft = { d4: 0, d6: 0, d8: 0, d10: 0, d12: 0, d20: 0, d100: 0 };
+  },
+  async rollSelectedDice() {
+    if (this.isDm()) return;
+    const entries = Object.entries(this.diceDraft).filter(([,qty]) => Number(qty) > 0);
+    if (!entries.length) {
+      Toast.show('Выбери хотя бы один куб', 'info');
+      return;
+    }
+    const parts = [];
+    let total = 0;
+    let isCritSuccess = false;
+    let isCritFail = false;
+    entries.forEach(([kind, qty]) => {
+      const sides = Number(String(kind).replace('d','')) || 6;
+      const rolls = [];
+      for (let i = 0; i < qty; i += 1) {
+        const value = 1 + Math.floor(Math.random() * sides);
+        rolls.push(value);
+        total += value;
+        if (kind === 'd20' && value === 20) isCritSuccess = true;
+        if (kind === 'd20' && value === 1) isCritFail = true;
+      }
+      parts.push(`${qty}${kind}: [${rolls.join(', ')}]`);
+    });
+    const actor = App.currentUser?.displayName || App.currentUser?.shortName || App.currentUserId || 'Игрок';
+    const runtime = this.getRuntime();
+    if (!runtime) return;
+    const createdAt = new Date().toISOString();
+    const text = `${actor} бросает кубы: ${parts.join(' · ')} => ${total}`;
+    runtime.log.unshift({ id: `log_${Date.now().toString(36)}`, createdAt, text, kind: 'dice', by: App.currentUserId || 'player' });
+    runtime.log = runtime.log.slice(0, 40);
+    this.lastDiceRoll = { total, parts, crit: isCritSuccess ? 'success' : (isCritFail ? 'fail' : ''), at: createdAt };
+    this.clearDiceDraft();
+    AudioManager.play(isCritSuccess ? 'success' : (isCritFail ? 'fail' : 'uiClick'), { volume: 0.7 });
+    await this.persist('', { worldChanged: false, commitRemote: true, silentToast: true });
+    if (isCritSuccess) Toast.show(`КРИТИЧЕСКИЙ УСПЕХ • ${text}`, 'ok');
+    else if (isCritFail) Toast.show(`КРИТИЧЕСКАЯ НЕУДАЧА • ${text}`, 'err');
+    else Toast.show(text, 'info');
+  },
+  async requestImage(preferredStem = 'combat_asset') {
+    return new Promise(resolve => {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'image/*,.dds,image/vnd.ms-dds,application/octet-stream';
+      input.addEventListener('change', async event => {
+        const file = event.target.files?.[0];
+        if (!file) {
+          resolve(null);
+          return;
+        }
+        try {
+          const dataUrl = await readImageFileAsRenderableDataUrlV51(file);
+          if (window.electronAPI?.saveWorldImage) {
+            const result = await window.electronAPI.saveWorldImage({ dataUrl, preferredStem });
+            if (result?.ok && result?.url) {
+              if (result?.warning) Toast.show(`Изображение сохранено локально, но cloud upload не удался: ${result.warning}`, 'info');
+              resolve(result.url || result.localUrl || dataUrl);
+              return;
+            }
+          }
+          resolve(dataUrl);
+        } catch (error) {
+          Toast.show(`Не удалось обработать изображение: ${error?.message || error}`, 'err');
+          resolve(null);
+        }
+      }, { once: true });
+      input.click();
+    });
+  },
+  async persist(notice = '', options = {}) {
+    ensureCombatState();
+    mirrorPlayersIntoWorld(App.state);
+    Sync.markLocalDirty('COMBAT_UPDATE');
+    this.hasUnpublishedChanges = this.hasUnpublishedChanges || !options.commitRemote;
+    await Persistence.save(App.state);
+    if (options.worldChanged !== false && window.electronAPI?.saveWorldData) {
+      const result = await window.electronAPI.saveWorldData(buildWorldSnapshot());
+      if (result?.ok && result.world) applyWorldData(result.world);
+      if (!result?.ok) {
+        Toast.show(`Не удалось сохранить карту сцены: ${result?.message || 'unknown error'}`, 'err');
+        return { ok: false, message: result?.message || 'WORLD_SAVE_FAILED' };
+      }
+    }
+    if (options.commitRemote && Sync?.config?.enabled) {
+      await Sync.pushCurrentSnapshot('combat-update', { silent: true });
+      this.hasUnpublishedChanges = false;
+    }
+    if (UI.activeModuleId === 'combat') this.render();
+    Sync.refreshChip();
+    if (notice && !options.silentToast) Toast.show(notice, 'ok');
+    return { ok: true };
+  },
+  async publishSceneState(notice = 'Сцена опубликована игрокам') {
+    return this.persist(notice, { worldChanged: true, commitRemote: true, silentToast: false });
+  },
+  startSync() {
+    if (this.syncTimer || !Sync?.config?.enabled || this.isDm()) return;
+    this.syncTimer = setInterval(async () => {
+      if (UI.activeModuleId !== 'combat') return;
+      const result = await Sync.checkForRemoteUpdates('combat-poll', { applyIfNewer: true, silent: true });
+      if (result?.ok !== false && UI.activeModuleId === 'combat') this.render();
+    }, 1000);
+  },
+  stopSync() {
+    if (!this.syncTimer) return;
+    clearInterval(this.syncTimer);
+    this.syncTimer = null;
+  },
+  createScene() {
+    const scene = createBlankCombatScene();
+    COMBAT_SCENES[scene.id] = scene;
+    sortCombatScenes();
+    this.selectedSceneId = scene.id;
+    ensureCombatRuntime(scene.id);
+    this.persist('Сцена создана', { worldChanged: true, commitRemote: false });
+  },
+  duplicateScene(sceneId) {
+    const scene = Data.getCombatScene(sceneId);
+    if (!scene) return;
+    const runtime = ensureCombatRuntime(sceneId);
+    const copy = normalizeCombatScene({ ...deep(scene), id: `${scene.id}_copy_${Date.now().toString(36).slice(-4)}`, name: `${scene.name} (копия)` });
+    COMBAT_SCENES[copy.id] = copy;
+    sortCombatScenes();
+    ensureCombatState().scenes[copy.id] = deep(runtime);
+    this.selectedSceneId = copy.id;
+    this.persist('Сцена продублирована', { worldChanged: true, commitRemote: false });
+  },
+  deleteScene(sceneId) {
+    if (!sceneId || !COMBAT_SCENES[sceneId]) return;
+    delete COMBAT_SCENES[sceneId];
+    delete ensureCombatState().scenes[sceneId];
+    if (this.getCombatState().activeSceneId === sceneId) this.getCombatState().activeSceneId = '';
+    sortCombatScenes();
+    this.selectedSceneId = COMBAT_SCENE_LIST[0]?.id || null;
+    this.selectedObject = null;
+    this.selectedTargetId = null;
+    this.persist('Сцена удалена', { worldChanged: true, commitRemote: true });
+  },
+  activateScene(sceneId) {
+    this.getCombatState().activeSceneId = String(sceneId || '').trim();
+    this.persist(sceneId ? 'Сцена активирована' : 'Сцена остановлена', { worldChanged: false, commitRemote: true, silentToast: true });
+  },
+  updateSceneFromForm(form) {
+    const scene = this.getScene();
+    if (!scene) return;
+    const fd = new FormData(form);
+    scene.name = String(fd.get('scene_name') || scene.name).trim() || scene.name;
+    scene.mode = String(fd.get('scene_mode') || scene.mode) === 'standard' ? 'standard' : 'combat';
+    scene.width = clamp(Number(fd.get('scene_width') || scene.width), 8, 60);
+    scene.height = clamp(Number(fd.get('scene_height') || scene.height), 8, 60);
+    scene.backgroundColor = String(fd.get('scene_background_color') || scene.backgroundColor).trim() || scene.backgroundColor;
+    scene.gridColor = String(fd.get('scene_grid_color') || scene.gridColor).trim() || scene.gridColor;
+    scene.fogEnabled = fd.get('scene_fog') === 'on';
+    scene.visionRadius = clamp(Number(fd.get('scene_vision_radius') || scene.visionRadius), 1, 18);
+    scene.notes = String(fd.get('scene_notes') || scene.notes || '').trim();
+    COMBAT_SCENES[scene.id] = normalizeCombatScene(scene);
+    sortCombatScenes();
+    this.persist('Сцена обновлена', { worldChanged: true, commitRemote: false, silentToast: true });
+  },
+  async uploadSceneBackground() {
+    const scene = this.getScene();
+    if (!scene) return;
+    const url = await this.requestImage(`combat_scene_${scene.id}`);
+    if (!url) return;
+    scene.backgroundImage = url;
+    COMBAT_SCENES[scene.id] = normalizeCombatScene(scene);
+    sortCombatScenes();
+    await this.persist('Фон сцены обновлён', { worldChanged: true, commitRemote: false, silentToast: true });
+  },
+  clearSceneBackground() {
+    const scene = this.getScene();
+    if (!scene) return;
+    scene.backgroundImage = '';
+    COMBAT_SCENES[scene.id] = normalizeCombatScene(scene);
+    sortCombatScenes();
+    this.persist('Фон сцены удалён', { worldChanged: true, commitRemote: false, silentToast: true });
+  },
+  async addAsset() {
+    const scene = this.getScene();
+    if (!scene || !this.isDm()) return;
+    const url = await this.requestImage(`combat_asset_${scene.id}`);
+    if (!url) return;
+    const asset = normalizeCombatAsset({
+      name: `Ассет ${scene.assets.length + 1}`,
+      image: url,
+      x: Math.max(0, Math.floor(scene.width / 2) - 1),
+      y: Math.max(0, Math.floor(scene.height / 2) - 1),
+      w: 2,
+      h: 2,
+      z: 10
+    });
+    scene.assets.push(asset);
+    this.selectedObject = { kind: 'asset', id: asset.id };
+    await this.persist('Ассет добавлен', { worldChanged: true, commitRemote: false, silentToast: true });
+  },
+  addPlayerToken(playerId) {
+    const scene = this.getScene();
+    if (!scene || !this.isDm() || !playerId) return;
+    const runtime = this.getRuntime(scene.id);
+    if (runtime.tokens.some(token => token.playerId === playerId)) {
+      Toast.show('Токен этого игрока уже размещён на сцене', 'info');
+      return;
+    }
+    const token = createPlayerCombatToken(playerId);
+    token.x = Math.max(0, Math.floor(scene.width / 2));
+    token.y = Math.max(0, Math.floor(scene.height / 2));
+    runtime.tokens.push(token);
+    this.selectedObject = { kind: 'token', id: token.id };
+    this.syncInitiative(scene.id, true);
+    this.persist('Токен игрока добавлен', { worldChanged: false, silentToast: true });
+  },
+  addNpcToken(npcId) {
+    const scene = this.getScene();
+    if (!scene || !this.isDm() || !npcId) return;
+    const runtime = this.getRuntime(scene.id);
+    const token = createNpcCombatToken(npcId);
+    token.x = Math.max(0, Math.floor(scene.width / 2));
+    token.y = Math.max(0, Math.floor(scene.height / 2));
+    runtime.tokens.push(token);
+    this.selectedObject = { kind: 'token', id: token.id };
+    this.syncInitiative(scene.id, true);
+    this.persist('NPC-токен добавлен', { worldChanged: false, commitRemote: false, silentToast: true });
+  },
+  async addCustomToken() {
+    const scene = this.getScene();
+    if (!scene || !this.isDm()) return;
+    const name = prompt('Название юнита', 'Новый юнит');
+    if (!name) return;
+    const hpMax = Number(prompt('Макс. HP', '12') || 12);
+    const url = await this.requestImage(`combat_token_${scene.id}`);
+    const token = createCustomCombatToken({ name, hpMax, hpCurrent: hpMax, image: url || '' });
+    token.x = Math.max(0, Math.floor(scene.width / 2));
+    token.y = Math.max(0, Math.floor(scene.height / 2));
+    const runtime = this.getRuntime(scene.id);
+    runtime.tokens.push(token);
+    this.selectedObject = { kind: 'token', id: token.id };
+    this.syncInitiative(scene.id, true);
+    this.persist('Юнит добавлен', { worldChanged: false, commitRemote: false, silentToast: true });
+  },
+  getSelectedAsset() {
+    const scene = this.getScene();
+    if (!scene || this.selectedObject?.kind !== 'asset') return null;
+    return scene.assets.find(asset => asset.id === this.selectedObject.id) || null;
+  },
+  getSelectedToken() {
+    const runtime = this.getRuntime();
+    if (!runtime || this.selectedObject?.kind !== 'token') return null;
+    return runtime.tokens.find(token => token.id === this.selectedObject.id) || null;
+  },
+  removeSelectedObject() {
+    const scene = this.getScene();
+    const runtime = this.getRuntime();
+    if (!scene || !runtime || !this.selectedObject) return;
+    if (this.selectedObject.kind === 'asset') {
+      scene.assets = scene.assets.filter(asset => asset.id !== this.selectedObject.id);
+      COMBAT_SCENES[scene.id] = normalizeCombatScene(scene);
+      sortCombatScenes();
+      this.selectedObject = null;
+      this.persist('Ассет удалён', { worldChanged: true, commitRemote: false, silentToast: true });
+      return;
+    }
+    if (this.selectedObject.kind === 'token') {
+      runtime.tokens = runtime.tokens.filter(token => token.id !== this.selectedObject.id);
+      runtime.initiativeOrder = runtime.initiativeOrder.filter(id => id !== this.selectedObject.id);
+      if (this.selectedTargetId === this.selectedObject.id) this.selectedTargetId = null;
+      this.selectedObject = null;
+      this.persist('Токен удалён', { worldChanged: false, commitRemote: false, silentToast: true });
+    }
+  },
+  updateSelectedObjectFromForm(form) {
+    const fd = new FormData(form);
+    const asset = this.getSelectedAsset();
+    const token = this.getSelectedToken();
+    if (asset) {
+      asset.name = String(fd.get('asset_name') || asset.name).trim() || asset.name;
+      asset.label = String(fd.get('asset_label') || asset.label || '').trim();
+      asset.x = clamp(Number(fd.get('asset_x') || asset.x), 0, 200);
+      asset.y = clamp(Number(fd.get('asset_y') || asset.y), 0, 200);
+      asset.w = clamp(Number(fd.get('asset_w') || asset.w), 0.5, 40);
+      asset.h = clamp(Number(fd.get('asset_h') || asset.h), 0.5, 40);
+      asset.rotation = Number(fd.get('asset_rotation') || asset.rotation || 0);
+      asset.z = Number(fd.get('asset_z') || asset.z || 10);
+      asset.opacity = clamp(Number(fd.get('asset_opacity') || asset.opacity || 1), 0.1, 1);
+      asset.blockSight = fd.get('asset_block_sight') === 'on';
+      this.persist('Ассет обновлён', { worldChanged: true, commitRemote: false, silentToast: true });
+      return;
+    }
+    if (token) {
+      token.name = String(fd.get('token_name') || token.name).trim() || token.name;
+      token.x = clamp(Number(fd.get('token_x') || token.x), 0, 200);
+      token.y = clamp(Number(fd.get('token_y') || token.y), 0, 200);
+      token.w = clamp(Number(fd.get('token_w') || token.w), 0.5, 8);
+      token.h = clamp(Number(fd.get('token_h') || token.h), 0.5, 8);
+      token.rotation = Number(fd.get('token_rotation') || token.rotation || 0);
+      token.hpCurrent = clamp(Number(fd.get('token_hp_current') || token.hpCurrent), 0, 999);
+      token.hpMax = clamp(Number(fd.get('token_hp_max') || token.hpMax), 1, 999);
+      token.initiative = Number(fd.get('token_initiative') || token.initiative || 0);
+      token.visionRadius = clamp(Number(fd.get('token_vision_radius') || token.visionRadius || 0), 0, 18);
+      token.hidden = fd.get('token_hidden') === 'on';
+      token.locked = fd.get('token_locked') === 'on';
+      token.weaponId = String(fd.get('token_weapon_id') || token.weaponId || '').trim();
+      token.notes = String(fd.get('token_notes') || token.notes || '').trim();
+      if (token.type === 'player' && token.playerId && App.state.users[token.playerId]) {
+        const user = normalizePlayerProfileV2(App.state.users[token.playerId]);
+        user.stats.hpCurrent = token.hpCurrent;
+        user.stats.hpMax = token.hpMax;
+        App.state.users[token.playerId] = user;
+      }
+      this.syncInitiative(this.getSceneIdForView(), false);
+      this.persist('Токен обновлён', { worldChanged: false, commitRemote: false, silentToast: true });
+    }
+  },
+  syncInitiative(sceneId, resetTurn = false) {
+    const runtime = this.getRuntime(sceneId);
+    if (!runtime) return;
+    runtime.tokens = runtime.tokens.map(normalizeCombatToken);
+    runtime.initiativeOrder = runtime.tokens.slice().sort((a, b) => (Number(b.initiative || 0) - Number(a.initiative || 0)) || (a.name || '').localeCompare(b.name || '', 'ru')).map(token => token.id);
+    if (resetTurn) {
+      runtime.turnIndex = 0;
+      runtime.round = 1;
+    } else {
+      runtime.turnIndex = clamp(runtime.turnIndex, 0, Math.max(0, runtime.initiativeOrder.length - 1));
+    }
+  },
+  rollInitiative() {
+    const runtime = this.getRuntime();
+    if (!runtime) return;
+    runtime.tokens.forEach(token => { token.initiative = 1 + Math.floor(Math.random() * 20); token.movedThisTurn = 0; token.actionUsed = false; });
+    this.syncInitiative(this.getSceneIdForView(), true);
+    this.persist('Инициатива переброшена', { worldChanged: false, commitRemote: false, silentToast: true });
+  },
+  nextTurn() {
+    const runtime = this.getRuntime();
+    if (!runtime || !runtime.initiativeOrder.length) return;
+    runtime.turnIndex = Number(runtime.turnIndex || 0) + 1;
+    if (runtime.turnIndex >= runtime.initiativeOrder.length) {
+      runtime.turnIndex = 0;
+      runtime.round = Number(runtime.round || 1) + 1;
+    }
+    const current = this.getCurrentTurnToken();
+    if (current) {
+      current.movedThisTurn = 0;
+      current.actionUsed = false;
+    }
+    this.persist('', { worldChanged: false, commitRemote: true, silentToast: true });
+  },
+  getCurrentTurnToken() {
+    const runtime = this.getRuntime();
+    if (!runtime || !runtime.initiativeOrder.length) return null;
+    return runtime.tokens.find(token => token.id === runtime.initiativeOrder[runtime.turnIndex]) || null;
+  },
+  computeVisibility(scene, runtime) {
+    if (!scene?.fogEnabled || this.isDm()) return null;
+    const ownTokens = runtime.tokens.filter(token => token.playerId && token.playerId === App.currentUser?.id && !token.hidden);
+    if (!ownTokens.length) return new Set();
+    const visible = new Set();
+    ownTokens.forEach(token => {
+      const radius = Math.max(1, Number(token.visionRadius || scene.visionRadius || COMBAT_DEFAULT_VISION));
+      const centerX = Number(token.x || 0) + Number(token.w || 1) / 2;
+      const centerY = Number(token.y || 0) + Number(token.h || 1) / 2;
+      for (let y = 0; y < scene.height; y += 1) {
+        for (let x = 0; x < scene.width; x += 1) {
+          const dx = x + 0.5 - centerX;
+          const dy = y + 0.5 - centerY;
+          if (Math.sqrt(dx * dx + dy * dy) <= radius) visible.add(`${x}:${y}`);
+        }
+      }
+    });
+    return visible;
+  },
+  isTokenVisibleToUser(token, scene, visibleCells) {
+    if (this.isDm() || !scene?.fogEnabled) return true;
+    if (token.playerId && token.playerId === App.currentUser?.id) return true;
+    if (!visibleCells) return true;
+    const tx = Math.floor(Number(token.x || 0));
+    const ty = Math.floor(Number(token.y || 0));
+    return visibleCells.has(`${tx}:${ty}`);
+  },
+  moveSelectedToCell(cellX, cellY) {
+    const scene = this.getScene();
+    if (!scene) return;
+    const asset = this.getSelectedAsset();
+    const token = this.getSelectedToken();
+    if (asset && this.isDm()) {
+      asset.x = clamp(cellX, 0, scene.width - Math.max(1, Math.ceil(asset.w)));
+      asset.y = clamp(cellY, 0, scene.height - Math.max(1, Math.ceil(asset.h)));
+      this.persist('', { worldChanged: true, commitRemote: false, silentToast: true });
+      return;
+    }
+    if (token && this.canMoveToken(token)) {
+      const distance = this.measureDistance(token, cellX, cellY);
+      const allowance = this.getTokenMoveAllowance(token);
+      if (scene.mode === 'combat' && distance > allowance) {
+        Toast.show(`Недостаточно перемещения: нужно ${distance}, осталось ${allowance}`, 'info');
+        return;
+      }
+      token.x = clamp(cellX, 0, scene.width - Math.max(1, Math.ceil(token.w)));
+      token.y = clamp(cellY, 0, scene.height - Math.max(1, Math.ceil(token.h)));
+      if (scene.mode === 'combat') token.movedThisTurn = Number(token.movedThisTurn || 0) + distance;
+      this.persist('', { worldChanged: false, commitRemote: false, silentToast: true });
+    }
+  },
+  handleStageClick(event) {
+    const scene = this.getScene();
+    if (!scene) return;
+    const stage = event.currentTarget;
+    const rect = stage.getBoundingClientRect();
+    const cellX = clamp(Math.floor(((event.clientX - rect.left) / rect.width) * scene.width), 0, scene.width - 1);
+    const cellY = clamp(Math.floor(((event.clientY - rect.top) / rect.height) * scene.height), 0, scene.height - 1);
+    if (!this.isDm()) return;
+    if (this.selectedObject) {
+      this.moveSelectedToCell(cellX, cellY);
+      return;
+    }
+    const controlled = this.getCurrentTurnToken() || this.getControlledTokens(scene.id)[0] || null;
+    if (controlled && this.canMoveToken(controlled)) {
+      this.selectedObject = { kind: 'token', id: controlled.id };
+      this.moveSelectedToCell(cellX, cellY);
+    }
+  },
+  handleObjectClick(kind, id, event) {
+    event.preventDefault();
+    event.stopPropagation();
+    const scene = this.getScene();
+    const runtime = this.getRuntime();
+    if (!scene || !runtime) return;
+    if (kind === 'token') {
+      const token = runtime.tokens.find(item => item.id === id);
+      if (!token) return;
+      if (this.isDm() && this.canMoveToken(token)) {
+        this.selectedObject = { kind, id };
+      } else {
+        this.selectedTargetId = id;
+      }
+    } else {
+      if (!this.isDm()) return;
+      this.selectedObject = { kind, id };
+    }
+    this.render();
+  },
+  resolveAttack() {
+    const scene = this.getScene();
+    const runtime = this.getRuntime();
+    const attacker = this.getSelectedToken();
+    const target = runtime?.tokens.find(token => token.id === this.selectedTargetId) || null;
+    if (!scene || !runtime || !attacker || !target) {
+      Toast.show('Выбери токен и цель', 'info');
+      return;
+    }
+    if (!this.canActWithToken(attacker)) {
+      Toast.show('Сейчас не ход этого токена', 'err');
+      return;
+    }
+    if (attacker.actionUsed) {
+      Toast.show('Действие уже потрачено', 'info');
+      return;
+    }
+    const weapon = getCombatTokenWeapon(attacker);
+    const hitRoll = 1 + Math.floor(Math.random() * 20);
+    const damage = parseCombatDamage(weapon.damage || '1d6').roll();
+    attacker.actionUsed = true;
+    target.hpCurrent = Math.max(0, Number(target.hpCurrent || 0) - damage);
+    if (target.type === 'player' && target.playerId && App.state.users[target.playerId]) {
+      const user = normalizePlayerProfileV2(App.state.users[target.playerId]);
+      user.stats.hpCurrent = target.hpCurrent;
+      user.stats.hpMax = Math.max(user.stats.hpMax, target.hpMax);
+      App.state.users[target.playerId] = user;
+    }
+    runtime.log.unshift({
+      id: `log_${Date.now().toString(36)}`,
+      createdAt: new Date().toISOString(),
+      text: `${attacker.name} атакует ${target.name} оружием «${weapon.name || 'Атака'}»: бросок ${hitRoll}, урон ${damage}.`
+    });
+    runtime.log = runtime.log.slice(0, 20);
+    this.persist('', { worldChanged: false, commitRemote: false, silentToast: true });
+  },
+  getSelectionPanel(scene, runtime) {
+    const asset = this.getSelectedAsset();
+    const token = this.getSelectedToken();
+    if (asset && this.isDm()) {
+      return `
+        <form id="combat-asset-form" class="form combat-editor-form">
+          <div class="section-title">Выбранный ассет</div>
+          <div class="field"><label>Название</label><input class="input" name="asset_name" value="${esc(asset.name)}" /></div>
+          <div class="field"><label>Подпись</label><input class="input" name="asset_label" value="${esc(asset.label || '')}" /></div>
+          <div class="cols3">
+            <div class="field"><label>X</label><input class="input" type="number" step="0.5" name="asset_x" value="${Number(asset.x)}" /></div>
+            <div class="field"><label>Y</label><input class="input" type="number" step="0.5" name="asset_y" value="${Number(asset.y)}" /></div>
+            <div class="field"><label>Z</label><input class="input" type="number" step="1" name="asset_z" value="${Number(asset.z || 10)}" /></div>
+          </div>
+          <div class="cols3">
+            <div class="field"><label>Ширина</label><input class="input" type="number" step="0.5" name="asset_w" value="${Number(asset.w)}" /></div>
+            <div class="field"><label>Высота</label><input class="input" type="number" step="0.5" name="asset_h" value="${Number(asset.h)}" /></div>
+            <div class="field"><label>Поворот</label><input class="input" type="number" step="5" name="asset_rotation" value="${Number(asset.rotation || 0)}" /></div>
+          </div>
+          <div class="field"><label>Прозрачность</label><input class="input" type="number" min="0.1" max="1" step="0.05" name="asset_opacity" value="${Number(asset.opacity || 1)}" /></div>
+          <label class="toggle-row"><input type="checkbox" name="asset_block_sight" ${asset.blockSight ? 'checked' : ''} /> Блокирует обзор</label>
+          <div class="row combat-editor-actions">
+            <button class="primary" type="submit">СОХРАНИТЬ</button>
+            <button class="secondary" id="combat-delete-selection" type="button">УДАЛИТЬ</button>
+          </div>
+        </form>
+      `;
+    }
+    if (token) {
+      const canControl = this.canControlToken(token);
+      const weapon = getCombatTokenWeapon(token);
+      return `
+        <form id="combat-token-form" class="form combat-editor-form">
+          <div class="section-title">${canControl ? 'Мой токен' : 'Выбранный токен'}</div>
+          <div class="combat-mini-head">
+            <div class="combat-mini-thumb">${token.image ? `<img src="${esc(token.image)}" alt="${esc(token.name)}" />` : esc(initials(token.name, '✦'))}</div>
+            <div>
+              <div class="combat-object-title">${esc(token.name)}</div>
+              <div class="small-note">${esc(token.type === 'player' ? 'Персонаж' : token.type === 'npc' ? 'NPC' : 'Юнит')}</div>
+            </div>
+          </div>
+          <div class="cols2">
+            <div class="field"><label>HP</label><input class="input" type="number" name="token_hp_current" value="${Number(token.hpCurrent)}" ${(!this.isDm() && !canControl) ? 'disabled' : ''} /></div>
+            <div class="field"><label>HP max</label><input class="input" type="number" name="token_hp_max" value="${Number(token.hpMax)}" ${(!this.isDm() && !canControl) ? 'disabled' : ''} /></div>
+          </div>
+          ${this.isDm() ? `
+            <div class="field"><label>Название</label><input class="input" name="token_name" value="${esc(token.name)}" /></div>
+            <div class="cols3">
+              <div class="field"><label>X</label><input class="input" type="number" step="0.5" name="token_x" value="${Number(token.x)}" /></div>
+              <div class="field"><label>Y</label><input class="input" type="number" step="0.5" name="token_y" value="${Number(token.y)}" /></div>
+              <div class="field"><label>Поворот</label><input class="input" type="number" step="5" name="token_rotation" value="${Number(token.rotation || 0)}" /></div>
+            </div>
+            <div class="cols3">
+              <div class="field"><label>W</label><input class="input" type="number" step="0.5" name="token_w" value="${Number(token.w)}" /></div>
+              <div class="field"><label>H</label><input class="input" type="number" step="0.5" name="token_h" value="${Number(token.h)}" /></div>
+              <div class="field"><label>Init</label><input class="input" type="number" step="1" name="token_initiative" value="${Number(token.initiative || 0)}" /></div>
+            </div>
+            <div class="cols2">
+              <div class="field"><label>Радиус обзора</label><input class="input" type="number" step="1" name="token_vision_radius" value="${Number(token.visionRadius || 0)}" /></div>
+              <div class="field"><label>Weapon ID</label><input class="input" name="token_weapon_id" value="${esc(token.weaponId || '')}" /></div>
+            </div>
+            <label class="toggle-row"><input type="checkbox" name="token_hidden" ${token.hidden ? 'checked' : ''} /> Скрыт от игроков</label>
+            <label class="toggle-row"><input type="checkbox" name="token_locked" ${token.locked ? 'checked' : ''} /> Зафиксирован</label>
+            <div class="field"><label>Заметки</label><textarea class="area" name="token_notes">${esc(token.notes || '')}</textarea></div>
+          ` : `
+            <input type="hidden" name="token_hp_current" value="${Number(token.hpCurrent)}" />
+            <input type="hidden" name="token_hp_max" value="${Number(token.hpMax)}" />
+            <input type="hidden" name="token_name" value="${esc(token.name)}" />
+            <input type="hidden" name="token_x" value="${Number(token.x)}" />
+            <input type="hidden" name="token_y" value="${Number(token.y)}" />
+            <input type="hidden" name="token_w" value="${Number(token.w)}" />
+            <input type="hidden" name="token_h" value="${Number(token.h)}" />
+            <input type="hidden" name="token_rotation" value="${Number(token.rotation || 0)}" />
+            <input type="hidden" name="token_initiative" value="${Number(token.initiative || 0)}" />
+            <input type="hidden" name="token_vision_radius" value="${Number(token.visionRadius || 0)}" />
+            <input type="hidden" name="token_weapon_id" value="${esc(token.weaponId || '')}" />
+            <input type="hidden" name="token_notes" value="${esc(token.notes || '')}" />
+          `}
+          <div class="card pad18 combat-weapon-box">
+            <div class="small-note">Оружие</div>
+            <b>${esc(weapon.name || 'Базовая атака')}</b>
+            <div class="subtle">${esc(itemExtraSummaryV2(weapon) || `урон ${weapon.damage || '1d6'}`)}</div>
+          </div>
+          <div class="row combat-editor-actions">
+            ${this.isDm() || canControl ? `<button class="primary" type="submit">СОХРАНИТЬ</button>` : ''}
+            ${this.isDm() ? `<button class="secondary" id="combat-delete-selection" type="button">УДАЛИТЬ</button>` : ''}
+            ${this.canActWithToken(token) && this.selectedTargetId ? `<button class="primary" id="combat-attack-btn" type="button">АТАКА ПО ЦЕЛИ</button>` : ''}
+          </div>
+          ${this.selectedTargetId ? `<div class="small-note">Текущая цель: ${esc(runtime.tokens.find(item => item.id === this.selectedTargetId)?.name || '—')}</div>` : `<div class="small-note">Кликни по противнику на карте, чтобы выбрать цель.</div>`}
+        </form>
+      `;
+    }
+    return `
+      <div class="card pad18 combat-empty-card">
+        <div class="section-title">Свойства</div>
+        <div class="small-note">Выбери ассет или токен на карте. ДМ может кликнуть по сетке, чтобы переставить выбранный объект.</div>
+      </div>
+    `;
+  },
+  renderSceneEditor(scene, runtime) {
+    const playerOptions = playerEntities().map(player => `<option value="${esc(player.id)}">${esc(player.displayName || player.name || player.id)}</option>`).join('');
+    const npcOptions = NPC_LIST.map(npc => `<option value="${esc(npc.id)}">${esc(npc.name || npc.id)}</option>`).join('');
+    return `
+      <div class="card pad18 combat-panel">
+        <div class="section-title">Сцены</div>
+        <div class="combat-scene-list">
+          ${COMBAT_SCENE_LIST.map(entry => `
+            <button class="combat-scene-btn ${entry.id === scene?.id ? 'active' : ''}" type="button" data-combat-scene="${esc(entry.id)}">
+              <b>${esc(entry.name)}</b>
+              <span>${esc(entry.mode === 'combat' ? 'Бой' : 'Сцена')}</span>
+            </button>
+          `).join('') || '<div class="small-note">Сцен пока нет.</div>'}
+        </div>
+        <div class="row combat-scene-actions">
+          <button class="primary" type="button" id="combat-create-scene">НОВАЯ СЦЕНА</button>
+          ${scene ? `<button class="secondary" type="button" id="combat-duplicate-scene">ДУБЛИКАТ</button>` : ''}
+          ${scene ? `<button class="secondary" type="button" id="combat-delete-scene">УДАЛИТЬ</button>` : ''}
+        </div>
+      </div>
+      ${scene ? `
+        <form id="combat-scene-form" class="card pad18 combat-panel form">
+          <div class="section-title">Редактор сцены</div>
+          <div class="field"><label>Название</label><input class="input" name="scene_name" value="${esc(scene.name)}" /></div>
+          <div class="cols2">
+            <div class="field"><label>Режим</label><select class="select" name="scene_mode"><option value="combat" ${scene.mode === 'combat' ? 'selected' : ''}>Боевая сцена</option><option value="standard" ${scene.mode === 'standard' ? 'selected' : ''}>Стандартная сцена</option></select></div>
+            <div class="field"><label>Fog of War</label><label class="toggle-row"><input type="checkbox" name="scene_fog" ${scene.fogEnabled ? 'checked' : ''} /> Включён</label></div>
+          </div>
+          <div class="cols2">
+            <div class="field"><label>Ширина (клетки)</label><input class="input" type="number" name="scene_width" value="${Number(scene.width)}" min="8" max="60" /></div>
+            <div class="field"><label>Высота (клетки)</label><input class="input" type="number" name="scene_height" value="${Number(scene.height)}" min="8" max="60" /></div>
+          </div>
+          <div class="cols2">
+            <div class="field"><label>Цвет фона</label><input class="input" name="scene_background_color" value="${esc(scene.backgroundColor)}" /></div>
+            <div class="field"><label>Цвет сетки</label><input class="input" name="scene_grid_color" value="${esc(scene.gridColor)}" /></div>
+          </div>
+          <div class="field"><label>Радиус обзора по умолчанию</label><input class="input" type="number" name="scene_vision_radius" value="${Number(scene.visionRadius)}" min="1" max="18" /></div>
+          <div class="field"><label>Заметки ДМа</label><textarea class="area" name="scene_notes">${esc(scene.notes || '')}</textarea></div>
+          <div class="row combat-editor-actions">
+            <button class="primary" type="submit">СОХРАНИТЬ СЦЕНУ</button>
+            <button class="secondary" type="button" id="combat-activate-scene">${this.getActiveSceneId() === scene.id ? 'ОСТАНОВИТЬ ПОКАЗ' : 'ПОКАЗАТЬ ИГРОКАМ'}</button><button class="secondary" type="button" id="combat-publish-scene">ОПУБЛИКОВАТЬ ИЗМЕНЕНИЯ</button>
+          </div>
+          <div class="combat-background-actions">
+            <div class="section-title" style="margin:0">Фон</div>
+            <div class="row combat-editor-actions">
+              <button class="secondary" type="button" id="combat-upload-background">ЗАГРУЗИТЬ ФОН</button>
+              ${scene.backgroundImage ? '<button class="secondary" type="button" id="combat-clear-background">УБРАТЬ ФОН</button>' : ''}
+            </div>
+            ${scene.backgroundImage ? `<div class="combat-background-preview"><img src="${esc(scene.backgroundImage)}" alt="${esc(scene.name)}" /></div>` : '<div class="small-note">Фон не задан</div>'}
+          </div>
+        </form>
+        <div class="card pad18 combat-panel">
+          <div class="section-title">Токены и ассеты</div>
+          <div class="row combat-editor-actions">
+            <button class="secondary" type="button" id="combat-add-asset">ДОБАВИТЬ АССЕТ</button>
+            <button class="secondary" type="button" id="combat-add-custom-token">ДОБАВИТЬ ЮНИТ</button>
+          </div>
+          <div class="cols2">
+            <div class="field"><label>Токен игрока</label><select class="select" id="combat-player-select"><option value="">Выбери игрока</option>${playerOptions}</select><button class="secondary" type="button" id="combat-add-player-token">ДОБАВИТЬ ИГРОКА</button></div>
+            <div class="field"><label>Токен NPC</label><select class="select" id="combat-npc-select"><option value="">Выбери NPC</option>${npcOptions}</select><button class="secondary" type="button" id="combat-add-npc-token">ДОБАВИТЬ NPC</button></div>
+          </div>
+          <div class="row combat-editor-actions">
+            <button class="secondary" type="button" id="combat-roll-initiative">БРОСИТЬ ИНИЦИАТИВУ</button>
+            <button class="secondary" type="button" id="combat-next-turn">СЛЕДУЮЩИЙ ХОД</button>
+          </div>
+        </div>
+      ` : ''}
+    `;
+  },
+  renderPlayerSidebar(scene, runtime) {
+    const actor = this.getDisplayedActorToken(scene.id);
+    const currentTurn = this.getCurrentTurnToken();
+    const isPlayersTurn = Boolean(actor && currentTurn?.id === actor.id && !this.isDm());
+    const moveLeft = actor ? this.getTokenMoveAllowance(actor) : 0;
+    const diceKeys = ['d4', 'd6', 'd8', 'd10', 'd12', 'd20', 'd100'];
+    return `
+      <div class="card pad18 combat-panel">
+        <div class="section-title">Сцена</div>
+        <div class="combat-scene-summary">
+          <b>${esc(scene.name)}</b>
+          <div class="small-note">${scene.mode === 'combat' ? 'Боевая сцена' : 'Стандартная сцена'} · ${scene.width}×${scene.height}</div>
+        </div>
+        ${actor ? `
+          <div class="combat-token-status">
+            <div class="small-note">Активный токен</div>
+            <b>${esc(actor.name)}</b>
+            <div class="small-note">HP ${actor.hpCurrent} / ${actor.hpMax}</div>
+            <div class="small-note">Ход: ${currentTurn?.id === actor.id ? 'твой' : `у ${esc(currentTurn?.name || '—')}`}</div>
+            <div class="small-note">Осталось движения: ${moveLeft}</div>
+            <div class="small-note">Действие: ${actor.actionUsed ? 'потрачено' : 'готово'}</div>
+            <div class="chip combat-distance-chip ${this.hoverDistance === null ? 'is-hidden' : ''}">Расстояние до курсора: ${this.hoverDistance ?? '—'} кл.</div>
+          </div>
+        ` : '<div class="small-note">На сцене нет активного токена, связанного с тобой.</div>'}
+        ${scene.mode === 'combat' ? `<div class="chip">Раунд ${Number(runtime.round || 1)} · Ход: ${esc(currentTurn?.name || '—')}</div>` : ''}
+      </div>
+      <div class="card pad18 combat-panel combat-dice-panel">
+        <div class="section-title">Броски кубов</div>
+        <div class="small-note">ЛКМ увеличивает количество, ПКМ уменьшает. Карта обновляется мастером в конце хода.</div>
+        <div class="combat-dice-grid">
+          ${diceKeys.map(key => `
+            <button class="combat-dice-btn ${this.diceDraft[key] ? 'active' : ''}" type="button" data-dice-kind="${key}">
+              <span>${key.toUpperCase()}</span>
+              <b>${Number(this.diceDraft[key] || 0)}</b>
+            </button>
+          `).join('')}
+        </div>
+        <div class="row combat-editor-actions">
+          <button class="primary" type="button" id="combat-roll-dice">БРОСИТЬ КУБЫ</button>
+          <button class="secondary" type="button" id="combat-clear-dice">СБРОС</button>
+          ${isPlayersTurn ? `<button class="secondary" type="button" id="combat-toolbar-next">ЗАВЕРШИТЬ ХОД</button>` : ''}
+        </div>
+        ${this.lastDiceRoll ? `<div class="combat-dice-result ${this.lastDiceRoll.crit ? `crit-${esc(this.lastDiceRoll.crit)}` : ''}"><b>Сумма: ${this.lastDiceRoll.total}</b><span>${esc(this.lastDiceRoll.parts.join(' · '))}</span></div>` : ''}
+      </div>
+    `;
+  },
+  renderInspector(scene, runtime) {
+    return `
+      ${this.getSelectionPanel(scene, runtime)}
+      <div class="card pad18 combat-panel">
+        <div class="section-title">Инициатива</div>
+        <div class="combat-initiative-list">
+          ${runtime.initiativeOrder.length ? runtime.initiativeOrder.map((tokenId, index) => {
+            const token = runtime.tokens.find(item => item.id === tokenId);
+            if (!token) return '';
+            const active = index === Number(runtime.turnIndex || 0);
+            return `<div class="combat-init-row ${active ? 'active' : ''}"><span>${index + 1}. ${esc(token.name)}</span><span>${Number(token.initiative || 0)}</span></div>`;
+          }).join('') : '<div class="small-note">Порядок инициативы пока пуст.</div>'}
+        </div>
+      </div>
+      <div class="card pad18 combat-panel">
+        <div class="section-title">Журнал</div>
+        <div class="combat-log-list">
+          ${runtime.log.length ? runtime.log.map(entry => `<div class="combat-log-row"><b>${esc(new Date(entry.createdAt || Date.now()).toLocaleTimeString('ru-RU'))}</b><span>${esc(entry.text || '')}</span></div>`).join('') : '<div class="small-note">Пока нет действий.</div>'}
+        </div>
+      </div>
+    `;
+  },
+  renderFog(scene, visibleCells) {
+    if (this.isDm() || !scene.fogEnabled) return '';
+    if (!visibleCells || !visibleCells.size) {
+      return Array.from({ length: scene.width * scene.height }, (_, index) => {
+        const x = index % scene.width;
+        const y = Math.floor(index / scene.width);
+        return `<div class="combat-fog-cell" style="left:${(x / scene.width) * 100}%;top:${(y / scene.height) * 100}%;width:${100 / scene.width}%;height:${100 / scene.height}%"></div>`;
+      }).join('');
+    }
+    const out = [];
+    for (let y = 0; y < scene.height; y += 1) {
+      for (let x = 0; x < scene.width; x += 1) {
+        if (visibleCells.has(`${x}:${y}`)) continue;
+        out.push(`<div class="combat-fog-cell" style="left:${(x / scene.width) * 100}%;top:${(y / scene.height) * 100}%;width:${100 / scene.width}%;height:${100 / scene.height}%"></div>`);
+      }
+    }
+    return out.join('');
+  },
+  renderBoard(scene, runtime) {
+    const visibleCells = this.computeVisibility(scene, runtime);
+    const currentTurnToken = this.getCurrentTurnToken();
+    return `
+      <div class="combat-board-toolbar card pad18">
+        <div>
+          <div class="section-title">${esc(scene.name)}</div>
+          <div class="small-note">${scene.mode === 'combat' ? `Раунд ${runtime.round} · Ход ${esc(currentTurnToken?.name || '—')}` : 'Стандартная сцена'}${this.isDm() && this.hasUnpublishedChanges ? ' · Есть неопубликованные изменения' : ''}</div>
+        </div>
+        <div class="row combat-board-actions">
+          ${this.isDm() ? `<button class="secondary" type="button" id="combat-toolbar-roll">БРОСИТЬ ИНИЦИАТИВУ</button><button class="secondary" type="button" id="combat-toolbar-publish">СИНХР. СЦЕНУ</button><button class="secondary" type="button" id="combat-toolbar-next">ЗАВЕРШИТЬ ХОД</button>` : '<button class="secondary" type="button" id="combat-toolbar-sync-now">ОБНОВИТЬ СЦЕНУ</button>'}
+          <button class="secondary" type="button" id="combat-center-view">СБРОСИТЬ ВЫБОР</button>
+        </div>
+      </div>
+      <div class="combat-stage-shell card">
+        <div class="combat-stage" id="combat-stage" data-scene-id="${esc(scene.id)}" style="--combat-cols:${scene.width};--combat-rows:${scene.height};background:${esc(scene.backgroundColor)};">
+          <div class="combat-stage-bg" style="${scene.backgroundImage ? `background-image:url('${esc(scene.backgroundImage)}');` : ''}"></div>
+          <div class="combat-stage-grid" style="--combat-grid-color:${esc(scene.gridColor)}"></div>
+          <div class="combat-stage-layer combat-assets-layer">
+            ${scene.assets.map(asset => `
+              <button class="combat-object combat-asset ${this.selectedObject?.kind === 'asset' && this.selectedObject?.id === asset.id ? 'selected' : ''}" type="button" data-combat-kind="asset" data-combat-id="${esc(asset.id)}" style="left:${(asset.x / scene.width) * 100}%;top:${(asset.y / scene.height) * 100}%;width:${(asset.w / scene.width) * 100}%;height:${(asset.h / scene.height) * 100}%;transform:rotate(${Number(asset.rotation || 0)}deg);z-index:${Number(asset.z || 10)};opacity:${Number(asset.opacity || 1)};">
+                ${asset.image ? `<img src="${esc(asset.image)}" alt="${esc(asset.name)}" />` : `<span>${esc(initials(asset.name, '◫'))}</span>`}
+                ${asset.label ? `<span class="combat-object-label">${esc(asset.label)}</span>` : ''}
+              </button>
+            `).join('')}
+          </div>
+          <div class="combat-stage-layer combat-tokens-layer">
+            ${runtime.tokens.filter(token => this.isTokenVisibleToUser(token, scene, visibleCells) && !token.hidden).map(token => {
+              const selected = this.selectedObject?.kind === 'token' && this.selectedObject?.id === token.id;
+              const target = this.selectedTargetId === token.id;
+              const currentTurn = currentTurnToken?.id === token.id;
+              const hpPct = clamp((Number(token.hpCurrent || 0) / Math.max(1, Number(token.hpMax || 1))) * 100, 0, 100);
+              return `
+                <button class="combat-object combat-token ${selected ? 'selected' : ''} ${target ? 'target' : ''} ${currentTurn ? 'turn' : ''}" type="button" data-combat-kind="token" data-combat-id="${esc(token.id)}" style="left:${(token.x / scene.width) * 100}%;top:${(token.y / scene.height) * 100}%;width:${(token.w / scene.width) * 100}%;height:${(token.h / scene.height) * 100}%;transform:rotate(${Number(token.rotation || 0)}deg);--token-accent:${esc(token.color || '#7df9ff')};">
+                  ${token.image ? `<img src="${esc(token.image)}" alt="${esc(token.name)}" />` : `<span class="combat-token-fallback">${esc(initials(token.name, '✦'))}</span>`}
+                  <span class="combat-token-name">${esc(token.name)}</span>
+                  <span class="combat-token-hp"><i style="width:${hpPct}%"></i></span>
+                </button>
+              `;
+            }).join('')}
+          </div>
+          <div class="combat-stage-layer combat-fog-layer">${this.renderFog(scene, visibleCells)}</div>
+        </div>
+      </div>
+    `;
+  },
+  bind(root) {
+    root.querySelectorAll('[data-combat-scene]').forEach(button => {
+      if (button.dataset.bound === '1') return;
+      button.dataset.bound = '1';
+      button.addEventListener('click', () => this.selectScene(button.dataset.combatScene));
+    });
+    root.querySelector('#combat-create-scene')?.addEventListener('click', () => this.createScene());
+    root.querySelector('#combat-duplicate-scene')?.addEventListener('click', () => this.duplicateScene(this.getSceneIdForView()));
+    root.querySelector('#combat-delete-scene')?.addEventListener('click', () => this.deleteScene(this.getSceneIdForView()));
+    root.querySelector('#combat-activate-scene')?.addEventListener('click', () => this.activateScene(this.getActiveSceneId() === this.getSceneIdForView() ? '' : this.getSceneIdForView()));
+    root.querySelector('#combat-upload-background')?.addEventListener('click', () => this.uploadSceneBackground());
+    root.querySelector('#combat-clear-background')?.addEventListener('click', () => this.clearSceneBackground());
+    root.querySelector('#combat-add-asset')?.addEventListener('click', () => this.addAsset());
+    root.querySelector('#combat-add-custom-token')?.addEventListener('click', () => this.addCustomToken());
+    root.querySelector('#combat-add-player-token')?.addEventListener('click', () => this.addPlayerToken(root.querySelector('#combat-player-select')?.value));
+    root.querySelector('#combat-add-npc-token')?.addEventListener('click', () => this.addNpcToken(root.querySelector('#combat-npc-select')?.value));
+    root.querySelector('#combat-roll-initiative')?.addEventListener('click', () => this.rollInitiative());
+    root.querySelector('#combat-next-turn')?.addEventListener('click', () => this.nextTurn());
+    root.querySelector('#combat-publish-scene')?.addEventListener('click', () => this.publishSceneState());
+    root.querySelector('#combat-toolbar-roll')?.addEventListener('click', () => this.rollInitiative());
+    root.querySelector('#combat-toolbar-publish')?.addEventListener('click', () => this.publishSceneState());
+    root.querySelector('#combat-toolbar-next')?.addEventListener('click', () => this.nextTurn());
+    root.querySelector('#combat-center-view')?.addEventListener('click', () => { this.selectedObject = null; this.selectedTargetId = null; this.resetViewState(this.getSceneIdForView(), { persist: true, render: false }); this.render(); });
+    root.querySelector('#combat-scene-form')?.addEventListener('submit', event => {
+      event.preventDefault();
+      this.updateSceneFromForm(event.currentTarget);
+    });
+    root.querySelector('#combat-asset-form')?.addEventListener('submit', event => {
+      event.preventDefault();
+      this.updateSelectedObjectFromForm(event.currentTarget);
+    });
+    root.querySelector('#combat-token-form')?.addEventListener('submit', event => {
+      event.preventDefault();
+      this.updateSelectedObjectFromForm(event.currentTarget);
+    });
+    root.querySelector('#combat-delete-selection')?.addEventListener('click', () => this.removeSelectedObject());
+    root.querySelector('#combat-attack-btn')?.addEventListener('click', () => this.resolveAttack());
+    root.querySelector('#combat-roll-dice')?.addEventListener('click', () => this.rollSelectedDice());
+    root.querySelector('#combat-clear-dice')?.addEventListener('click', () => { this.clearDiceDraft(); this.render(); });
+    root.querySelectorAll('[data-dice-kind]').forEach(button => {
+      if (button.dataset.bound === '1') return;
+      button.dataset.bound = '1';
+      button.addEventListener('click', event => {
+        event.preventDefault();
+        this.adjustDice(button.dataset.diceKind, 1);
+      });
+      button.addEventListener('contextmenu', event => {
+        event.preventDefault();
+        this.adjustDice(button.dataset.diceKind, -1);
+      });
+    });
+    root.querySelectorAll('[data-combat-kind][data-combat-id]').forEach(button => {
+      if (button.dataset.bound === '1') return;
+      button.dataset.bound = '1';
+      button.addEventListener('click', event => this.handleObjectClick(button.dataset.combatKind, button.dataset.combatId, event));
+    });
+    const stage = root.querySelector('#combat-stage');
+    stage?.addEventListener('click', event => this.handleStageClick(event));
+    stage?.addEventListener('mousemove', event => {
+      if (this.isDm()) return;
+      const scene = this.getScene();
+      const actor = this.getDisplayedActorToken();
+      if (!scene || !actor) return;
+      const rect = stage.getBoundingClientRect();
+      const cellX = clamp(Math.floor(((event.clientX - rect.left) / rect.width) * scene.width), 0, scene.width - 1);
+      const cellY = clamp(Math.floor(((event.clientY - rect.top) / rect.height) * scene.height), 0, scene.height - 1);
+      const nextDistance = this.measureDistance(actor, cellX, cellY);
+      if (nextDistance !== this.hoverDistance) {
+        this.hoverDistance = nextDistance;
+        const chip = root.querySelector('.combat-distance-chip');
+        if (chip) { chip.textContent = `Расстояние до курсора: ${nextDistance} кл.`; chip.classList.remove('is-hidden'); }
+      }
+    });
+    stage?.addEventListener('mouseleave', () => {
+      if (this.hoverDistance !== null) {
+        this.hoverDistance = null;
+        const chip = root.querySelector('.combat-distance-chip');
+        if (chip) { chip.textContent = 'Расстояние до курсора: — кл.'; chip.classList.add('is-hidden'); }
+      }
+    });
+  },
+  render() {
+    ensureCombatModuleMarkup();
+    const root = document.getElementById('combat-content');
+    if (!root) return;
+    const scene = this.getScene();
+    if (this.isDm() && !this.selectedSceneId && COMBAT_SCENE_LIST[0]?.id) this.selectedSceneId = COMBAT_SCENE_LIST[0].id;
+    if (!scene) {
+      root.innerHTML = `
+        <div class="combat-empty-wrap card pad18">
+          <div class="section-title">Тактическая сцена</div>
+          <div class="small-note">${this.isDm() ? 'Создай сцену и активируй её для игроков. Здесь можно собирать боевые карты с ассетами, токенами, инициативой и Fog of War.' : 'ДМ ещё не вывел активную сцену для игроков.'}</div>
+          ${this.isDm() ? '<button class="primary" id="combat-empty-create" type="button">СОЗДАТЬ СЦЕНУ</button>' : ''}
+        </div>
+      `;
+      root.querySelector('#combat-empty-create')?.addEventListener('click', () => this.createScene());
+      return;
+    }
+    const runtime = this.getRuntime(scene.id);
+    const left = this.isDm() ? this.renderSceneEditor(scene, runtime) : this.renderPlayerSidebar(scene, runtime);
+    const right = this.renderInspector(scene, runtime);
+    root.innerHTML = `
+      <div class="combat-layout ${this.isDm() ? 'combat-layout-dm' : 'combat-layout-player'}">
+        <aside class="combat-side-left">${left}</aside>
+        <section class="combat-center">${this.renderBoard(scene, runtime)}</section>
+        <aside class="combat-side-right">${right}</aside>
+      </div>
+    `;
+    this.bind(root);
+  }
+};
+
+const __combatApplyWorldData = applyWorldData;
+applyWorldData = function(payload = {}) {
+  __combatApplyWorldData(payload);
+  setCombatScenes(payload.combatScenes?.COMBAT_SCENES || {});
+};
+
+const __combatBuildWorldSnapshot = buildWorldSnapshot;
+buildWorldSnapshot = function() {
+  const snapshot = __combatBuildWorldSnapshot();
+  snapshot.combatScenes = serializeWorldSection('combatScenes', COMBAT_SCENES);
+  return snapshot;
+};
+
+const __combatOpenModule = UI.openModule.bind(UI);
+UI.openModule = function(id, options = {}) {
+  if (id === 'combat') {
+    Combat.render();
+    Combat.startSync();
+  }
+  return __combatOpenModule(id, options);
+};
+
+const __combatCloseModule = UI.closeModule.bind(UI);
+UI.closeModule = function() {
+  const was = this.activeModuleId;
+  const result = __combatCloseModule();
+  if (was === 'combat') Combat.stopSync();
+  return result;
+};
+
+const __combatRenderLive = App.renderLive.bind(App);
+App.renderLive = function() {
+  __combatRenderLive();
+  if (UI.activeModuleId === 'combat') Combat.render();
+};
+
+const __combatBindStaticEvents = App.bindStaticEvents.bind(App);
+App.bindStaticEvents = function() {
+  ensureCombatModuleMarkup();
+  __combatBindStaticEvents();
+  document.getElementById('open-combat')?.addEventListener('click', () => UI.openModule('combat'));
+};
+
+const __combatUpdateBootView = App.updateBootView.bind(App);
+App.updateBootView = function() {
+  __combatUpdateBootView();
+  const button = document.getElementById('open-combat');
+  if (!button) return;
+  button.style.display = App.currentUser ? 'grid' : 'none';
+};
+
+const __combatInit = App.init.bind(App);
+App.init = async function() {
+  ensureCombatModuleMarkup();
+  const res = await __combatInit();
+  const button = document.getElementById('open-combat');
+  if (button) button.style.display = this.currentUser ? 'grid' : 'none';
+  return res;
+};
+
+
+// === v0.6.2 patch: advanced tactical scene tools ===
+const COMBAT_FAST_SYNC_INTERVAL_MS = 1200;
+const COMBAT_DRAG_MIN_MS = 120;
+const COMBAT_PLAYER_BUTTON_LABEL = 'СЦЕНА';
+
+function normalizeCombatTemplate(template = {}) {
+  return {
+    id: String(template.id || `tpl_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`),
+    type: 'template',
+    shape: ['circle', 'cone', 'line', 'rect'].includes(String(template.shape || 'circle')) ? String(template.shape || 'circle') : 'circle',
+    name: String(template.name || 'Шаблон').trim() || 'Шаблон',
+    x: clamp(Number(template.x || 0), 0, 200),
+    y: clamp(Number(template.y || 0), 0, 200),
+    w: clamp(Number(template.w || 3), 0.5, 60),
+    h: clamp(Number(template.h || template.w || 3), 0.5, 60),
+    rotation: Number(template.rotation || 0),
+    color: String(template.color || 'rgba(255,190,92,0.35)').trim() || 'rgba(255,190,92,0.35)',
+    label: String(template.label || '').trim(),
+    blockSight: Boolean(template.blockSight),
+    visibleToPlayers: template.visibleToPlayers !== false,
+    effectType: String(template.effectType || '').trim(),
+    damage: String(template.damage || '').trim(),
+    z: Number(template.z || 20)
+  };
+}
+
+const __normalizeCombatScene_v062 = normalizeCombatScene;
+normalizeCombatScene = function(scene = {}) {
+  const next = __normalizeCombatScene_v062(scene);
+  next.templates = Array.isArray(scene.templates || next.templates) ? (scene.templates || next.templates).map(normalizeCombatTemplate) : [];
+  next.quickSyncRevision = Math.max(1, Number(scene.quickSyncRevision || next.quickSyncRevision || 1));
+  return next;
+};
+
+const __normalizeCombatToken_v062 = normalizeCombatToken;
+normalizeCombatToken = function(token = {}) {
+  const next = __normalizeCombatToken_v062(token);
+  next.statuses = token.statuses && typeof token.statuses === 'object' && !Array.isArray(token.statuses) ? { ...token.statuses } : {};
+  next.moveSpeed = clamp(Number(token.moveSpeed || 6), 1, 24);
+  next.movedThisTurn = clamp(Number(token.movedThisTurn || 0), 0, 999);
+  return next;
+};
+
+const __setCombatScenes_v062 = setCombatScenes;
+setCombatScenes = function(nextScenes = {}) {
+  const normalized = {};
+  for (const [id, scene] of Object.entries(nextScenes || {})) normalized[id] = normalizeCombatScene(scene);
+  return __setCombatScenes_v062(normalized);
+};
+
+const __createBlankCombatScene_v062 = createBlankCombatScene;
+createBlankCombatScene = function() {
+  const scene = __createBlankCombatScene_v062();
+  scene.templates = [];
+  scene.quickSyncRevision = 1;
+  return normalizeCombatScene(scene);
+};
+
+const __ensureCombatRuntime_v062 = ensureCombatRuntime;
+ensureCombatRuntime = function(sceneId, state = App.state) {
+  const runtime = __ensureCombatRuntime_v062(sceneId, state);
+  runtime.turnEvents = Array.isArray(runtime.turnEvents) ? runtime.turnEvents : [];
+  runtime.lastPlayback = runtime.lastPlayback && typeof runtime.lastPlayback === 'object' ? runtime.lastPlayback : null;
+  runtime.actionVersion = Math.max(1, Number(runtime.actionVersion || 1));
+  runtime.discoveredCellsByPlayer = runtime.discoveredCellsByPlayer && typeof runtime.discoveredCellsByPlayer === 'object' ? runtime.discoveredCellsByPlayer : {};
+  return runtime;
+};
+
+Combat.dragState = null;
+Combat.viewDragState = null;
+Combat.ignoreStageClickUntil = 0;
+const COMBAT_CAMERA_LOCAL_STORAGE_KEY = 'combat_camera_local_v19';
+
+function sanitizeCombatCameraMapV19(raw = {}) {
+  const out = {};
+  if (!raw || typeof raw !== 'object') return out;
+  Object.entries(raw).forEach(([sceneId, view]) => {
+    const key = String(sceneId || '').trim();
+    if (!key || !view || typeof view !== 'object') return;
+    out[key] = {
+      zoom: clamp(Number(view.zoom || 1), 0.45, 3.5),
+      panX: Number(view.panX || 0),
+      panY: Number(view.panY || 0),
+      viewportWidth: Math.max(1, Number(view.viewportWidth || 0) || 0),
+      viewportHeight: Math.max(1, Number(view.viewportHeight || 0) || 0),
+      boardWidth: Math.max(1, Number(view.boardWidth || 0) || 0),
+      boardHeight: Math.max(1, Number(view.boardHeight || 0) || 0)
+    };
+  });
+  return out;
+}
+
+Combat.getLocalCameraCache = function(forceReload = false) {
+  if (!forceReload && this._localCameraCache && typeof this._localCameraCache === 'object') return this._localCameraCache;
+  let cache = {};
+  try {
+    cache = sanitizeCombatCameraMapV19(JSON.parse(localStorage.getItem(COMBAT_CAMERA_LOCAL_STORAGE_KEY) || '{}'));
+  } catch {}
+  this._localCameraCache = cache;
+  return cache;
+};
+
+Combat.persistLocalCameraCache = function() {
+  try {
+    const combat = ensureCombatState();
+    const normalized = sanitizeCombatCameraMapV19(combat.cameraByScene || {});
+    this._localCameraCache = normalized;
+    localStorage.setItem(COMBAT_CAMERA_LOCAL_STORAGE_KEY, JSON.stringify(normalized));
+  } catch {}
+};
+
+Combat.broadcastPlayerDisplayMirror = function(sceneId = this.getSceneIdForView()) {
+  if (!window.electronAPI?.updatePlayerDisplayView) return;
+  const key = String(sceneId || this.getSceneIdForView() || this.getActiveSceneId() || '').trim();
+  const payload = { activeSceneId: key || '', cameraByScene: {}, updatedAt: new Date().toISOString() };
+  if (key) {
+    const view = this.getViewState(key);
+    payload.cameraByScene[key] = {
+      zoom: Number(view.zoom || 1),
+      panX: Number(view.panX || 0),
+      panY: Number(view.panY || 0),
+      viewportWidth: Number(view.viewportWidth || 0),
+      viewportHeight: Number(view.viewportHeight || 0),
+      boardWidth: Number(view.boardWidth || 0),
+      boardHeight: Number(view.boardHeight || 0)
+    };
+  }
+  Promise.resolve(window.electronAPI.updatePlayerDisplayView(payload)).catch(() => {});
+};
+
+Combat.queuePlayerDisplayMirrorUpdate = function(sceneId = this.getSceneIdForView()) {
+  clearTimeout(this._playerDisplayMirrorTimer);
+  this._playerDisplayMirrorTimer = setTimeout(() => {
+    this.broadcastPlayerDisplayMirror(sceneId);
+  }, 40);
+};
+Combat.getViewState = function(sceneId = this.getSceneIdForView()) {
+  const combat = ensureCombatState();
+  const key = String(sceneId || '').trim() || '__default';
+  const cached = this.getLocalCameraCache?.()[key] && typeof this.getLocalCameraCache()[key] === 'object' ? this.getLocalCameraCache()[key] : {};
+  const raw = combat.cameraByScene[key] && typeof combat.cameraByScene[key] === 'object' ? combat.cameraByScene[key] : cached;
+  const next = {
+    zoom: clamp(Number(raw.zoom || 1), 0.45, 3.5),
+    panX: Number(raw.panX || 0),
+    panY: Number(raw.panY || 0),
+    viewportWidth: Math.max(1, Number(raw.viewportWidth || cached.viewportWidth || 0) || 0),
+    viewportHeight: Math.max(1, Number(raw.viewportHeight || cached.viewportHeight || 0) || 0),
+    boardWidth: Math.max(1, Number(raw.boardWidth || cached.boardWidth || 0) || 0),
+    boardHeight: Math.max(1, Number(raw.boardHeight || cached.boardHeight || 0) || 0)
+  };
+  combat.cameraByScene[key] = next;
+  return next;
+};
+Combat.getBoardMetrics = function(viewportEl = document.getElementById('combat-stage-viewport')) {
+  const viewport = viewportEl || document.getElementById('combat-stage-viewport');
+  const frame = document.getElementById('combat-stage-board-frame');
+  const viewportWidth = Math.max(1, Number(viewport?.clientWidth || viewport?.getBoundingClientRect?.().width || window.innerWidth || 1280));
+  const viewportHeight = Math.max(1, Number(viewport?.clientHeight || viewport?.getBoundingClientRect?.().height || window.innerHeight || 720));
+  const boardWidth = Math.max(1, Number(frame?.clientWidth || frame?.getBoundingClientRect?.().width || viewportWidth));
+  const boardHeight = Math.max(1, Number(frame?.clientHeight || frame?.getBoundingClientRect?.().height || viewportHeight));
+  return { viewportWidth, viewportHeight, boardWidth, boardHeight, frame, viewport };
+};
+Combat.syncViewportBoardFrame = function(scene = this.getScene(), viewportEl = document.getElementById('combat-stage-viewport')) {
+  const viewport = viewportEl || document.getElementById('combat-stage-viewport');
+  const frame = document.getElementById('combat-stage-board-frame');
+  if (!scene || !viewport || !frame) return this.getBoardMetrics(viewport);
+  const viewportWidth = Math.max(1, Number(viewport.clientWidth || viewport.getBoundingClientRect?.().width || window.innerWidth || 1280));
+  const viewportHeight = Math.max(1, Number(viewport.clientHeight || viewport.getBoundingClientRect?.().height || window.innerHeight || 720));
+  const sceneAspect = Math.max(.1, Number(scene.width || 1) / Math.max(1, Number(scene.height || 1)));
+  let boardWidth = viewportWidth;
+  let boardHeight = boardWidth / sceneAspect;
+  if (boardHeight > viewportHeight) {
+    boardHeight = viewportHeight;
+    boardWidth = boardHeight * sceneAspect;
+  }
+  frame.style.width = `${boardWidth.toFixed(2)}px`;
+  frame.style.height = `${boardHeight.toFixed(2)}px`;
+  frame.dataset.boardWidth = boardWidth.toFixed(2);
+  frame.dataset.boardHeight = boardHeight.toFixed(2);
+  return { viewportWidth, viewportHeight, boardWidth, boardHeight, frame, viewport };
+};
+Combat.clampViewState = function(view, viewportEl = document.getElementById('combat-stage-viewport')) {
+  if (!view) return { zoom: 1, panX: 0, panY: 0 };
+  const metrics = this.getBoardMetrics(viewportEl);
+  const zoom = clamp(Number(view.zoom || 1), 0.45, 3.5);
+  const width = Math.max(1, Number(metrics.boardWidth || metrics.viewportWidth || 1));
+  const height = Math.max(1, Number(metrics.boardHeight || metrics.viewportHeight || 1));
+  const maxPanX = width * Math.max(0.18, (zoom - 1) * 0.62 + 0.18);
+  const maxPanY = height * Math.max(0.18, (zoom - 1) * 0.62 + 0.18);
+  view.zoom = zoom;
+  view.panX = clamp(Number(view.panX || 0), -maxPanX, maxPanX);
+  view.panY = clamp(Number(view.panY || 0), -maxPanY, maxPanY);
+  view.viewportWidth = Number(metrics.viewportWidth || width);
+  view.viewportHeight = Number(metrics.viewportHeight || height);
+  view.boardWidth = Number(metrics.boardWidth || width);
+  view.boardHeight = Number(metrics.boardHeight || height);
+  return view;
+};
+Combat.getViewTransform = function(sceneId = this.getSceneIdForView(), viewportEl = document.getElementById('combat-stage-viewport')) {
+  const view = this.clampViewState(this.getViewState(sceneId), viewportEl);
+  return `translate(${view.panX.toFixed(1)}px, ${view.panY.toFixed(1)}px) scale(${view.zoom.toFixed(3)})`;
+};
+Combat.applyViewTransform = function(viewportEl = document.getElementById('combat-stage-viewport')) {
+  const stage = document.getElementById('combat-stage');
+  const viewport = viewportEl || document.getElementById('combat-stage-viewport');
+  if (!stage || !viewport) return;
+  this.syncViewportBoardFrame(this.getScene(), viewport);
+  const sceneId = this.getSceneIdForView();
+  stage.style.transform = this.getViewTransform(sceneId, viewport);
+  viewport.classList.toggle('is-panning', Boolean(this.viewDragState));
+  if (sceneId) this.queuePlayerDisplayMirrorUpdate(sceneId);
+};
+Combat.queueViewStateSave = function(sceneId = this.getSceneIdForView()) {
+  clearTimeout(this._viewStateSaveTimer);
+  this._viewStateSaveTimer = setTimeout(() => {
+    try { this.persistLocalCameraCache(); } catch {}
+    this.queuePlayerDisplayMirrorUpdate(sceneId);
+  }, 90);
+};
+Combat.resetViewState = function(sceneId = this.getSceneIdForView(), options = {}) {
+  const view = this.getViewState(sceneId);
+  view.zoom = 1;
+  view.panX = 0;
+  view.panY = 0;
+  this.clampViewState(view, document.getElementById('combat-stage-viewport'));
+  this.applyViewTransform();
+  if (options.persist !== false) this.queueViewStateSave(sceneId);
+  if (options.render) this.render();
+};
+Combat.beginViewDrag = function(event, viewportEl = document.getElementById('combat-stage-viewport')) {
+  if (this.dragState || event.button !== 0) return;
+  const sceneId = this.getSceneIdForView();
+  const view = this.getViewState(sceneId);
+  this.viewDragState = {
+    sceneId,
+    pointerId: event.pointerId,
+    startX: event.clientX,
+    startY: event.clientY,
+    panX: Number(view.panX || 0),
+    panY: Number(view.panY || 0),
+    moved: false
+  };
+  viewportEl?.setPointerCapture?.(event.pointerId);
+};
+Combat.updateViewDrag = function(event, viewportEl = document.getElementById('combat-stage-viewport')) {
+  const drag = this.viewDragState;
+  if (!drag) return;
+  const dx = event.clientX - drag.startX;
+  const dy = event.clientY - drag.startY;
+  const moved = Math.abs(dx) > 3 || Math.abs(dy) > 3;
+  if (moved) drag.moved = true;
+  const view = this.getViewState(drag.sceneId);
+  view.panX = drag.panX + dx;
+  view.panY = drag.panY + dy;
+  this.clampViewState(view, viewportEl);
+  this.applyViewTransform(viewportEl);
+  if (drag.moved) {
+    this.ignoreStageClickUntil = Date.now() + 180;
+    this.queueViewStateSave(drag.sceneId);
+    event.preventDefault();
+  }
+};
+Combat.endViewDrag = function() {
+  const drag = this.viewDragState;
+  if (!drag) return;
+  this.viewDragState = null;
+  this.applyViewTransform();
+  if (drag.moved) {
+    this.ignoreStageClickUntil = Date.now() + 220;
+    this.queueViewStateSave(drag.sceneId);
+  }
+};
+Combat.handleViewWheel = function(event, viewportEl = document.getElementById('combat-stage-viewport')) {
+  const sceneId = this.getSceneIdForView();
+  if (!sceneId) return;
+  const viewport = viewportEl || document.getElementById('combat-stage-viewport');
+  if (!viewport) return;
+  event.preventDefault();
+  this.syncViewportBoardFrame(this.getScene(), viewport);
+  const view = this.getViewState(sceneId);
+  const frame = document.getElementById('combat-stage-board-frame');
+  const rect = (frame || viewport).getBoundingClientRect();
+  const prevZoom = clamp(Number(view.zoom || 1), 0.45, 3.5);
+  const factor = event.deltaY < 0 ? 1.12 : 0.89;
+  const nextZoom = clamp(prevZoom * factor, 0.45, 3.5);
+  if (Math.abs(nextZoom - prevZoom) < 0.0001) return;
+  const localX = event.clientX - rect.left - rect.width / 2 - Number(view.panX || 0);
+  const localY = event.clientY - rect.top - rect.height / 2 - Number(view.panY || 0);
+  const ratio = nextZoom / prevZoom;
+  view.zoom = nextZoom;
+  view.panX = Number(view.panX || 0) - localX * (ratio - 1);
+  view.panY = Number(view.panY || 0) - localY * (ratio - 1);
+  this.clampViewState(view, viewport);
+  this.applyViewTransform(viewport);
+  this.queueViewStateSave(sceneId);
+};
+Combat.lastPlayedPlaybackId = null;
+Combat.transientMarks = {};
+Combat.playerFastSyncTimer = null;
+Combat.ensureSceneShapeState = function(scene = this.getScene()) {
+  if (!scene) return null;
+  scene.templates = Array.isArray(scene.templates) ? scene.templates.map(normalizeCombatTemplate) : [];
+  return scene;
+};
+Combat.getSelectedTemplate = function() {
+  const scene = this.ensureSceneShapeState();
+  if (!scene || this.selectedObject?.kind !== 'template') return null;
+  return scene.templates.find(item => item.id === this.selectedObject.id) || null;
+};
+Combat.canResizeSelected = function() {
+  const kind = this.selectedObject?.kind;
+  if (!kind) return false;
+  if (kind === 'asset' || kind === 'template') return this.isDm();
+  const token = this.getSelectedToken();
+  return Boolean(token && this.canControlToken(token));
+};
+Combat.bumpSceneRevision = function(sceneId = this.getSceneIdForView()) {
+  const scene = sceneId ? Data.getCombatScene(sceneId) : null;
+  if (!scene) return;
+  scene.quickSyncRevision = Math.max(1, Number(scene.quickSyncRevision || 1)) + 1;
+  COMBAT_SCENES[scene.id] = normalizeCombatScene(scene);
+  sortCombatScenes();
+};
+Combat.persistCombatState = async function(notice = '', options = {}) {
+  this.bumpSceneRevision(options.sceneId || this.getSceneIdForView());
+  const commitRemote = Boolean(options.commitRemote || options.quickRemote);
+  return this.persist(notice, { worldChanged: options.worldChanged !== false, commitRemote, silentToast: options.silentToast !== false ? options.silentToast : false });
+};
+Combat.queueActionEvent = function(kind, attacker, target = null, extra = {}) {
+  const runtime = this.getRuntime();
+  if (!runtime) return;
+  const event = {
+    id: `evt_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`,
+    kind,
+    sourceId: attacker?.id || '',
+    targetId: target?.id || '',
+    text: String(extra.text || '').trim(),
+    amount: Number(extra.amount || 0),
+    createdAt: new Date().toISOString()
+  };
+  runtime.turnEvents.unshift(event);
+  runtime.turnEvents = runtime.turnEvents.slice(0, 24);
+  runtime.log.unshift({ id: `log_${Date.now().toString(36)}`, createdAt: event.createdAt, text: event.text || `${attacker?.name || 'Юнит'} выполняет действие.` });
+  runtime.log = runtime.log.slice(0, 40);
+};
+Combat.markTransient = function(tokenId, kind = 'pulse', duration = 900) {
+  if (!tokenId) return;
+  this.transientMarks[tokenId] = { kind, until: Date.now() + duration };
+  setTimeout(() => {
+    if (this.transientMarks[tokenId] && this.transientMarks[tokenId].until <= Date.now()) {
+      delete this.transientMarks[tokenId];
+      if (UI.activeModuleId === 'combat') this.render();
+    }
+  }, duration + 40);
+};
+Combat.playPlaybackIfNeeded = function(runtime = this.getRuntime()) {
+  if (!runtime?.lastPlayback?.id || this.lastPlayedPlaybackId === runtime.lastPlayback.id) return;
+  this.lastPlayedPlaybackId = runtime.lastPlayback.id;
+  const events = Array.isArray(runtime.lastPlayback.events) ? runtime.lastPlayback.events.slice().reverse() : [];
+  events.forEach((entry, index) => {
+    setTimeout(() => {
+      if (entry.sourceId) this.markTransient(entry.sourceId, 'source', 850);
+      if (entry.targetId) this.markTransient(entry.targetId, entry.kind === 'heal' ? 'heal' : 'target', 850);
+      AudioManager.play(entry.kind === 'attack' ? 'success' : 'uiClick', { volume: 0.55 });
+      if (entry.text) Toast.show(entry.text, entry.kind === 'attack' ? 'info' : 'ok');
+      if (UI.activeModuleId === 'combat') this.render();
+    }, index * 260);
+  });
+};
+Combat.startFastPlayerSync = function() {
+  if (this.isDm() || !Sync?.config?.enabled || this.playerFastSyncTimer) return;
+  this.playerFastSyncTimer = setInterval(async () => {
+    if (UI.activeModuleId !== 'combat') return;
+    const result = await Sync.checkForRemoteUpdates('combat-fast-poll', { applyIfNewer: true, silent: true });
+    if (result?.ok !== false && UI.activeModuleId === 'combat') this.render();
+  }, COMBAT_FAST_SYNC_INTERVAL_MS);
+};
+Combat.stopFastPlayerSync = function() {
+  if (!this.playerFastSyncTimer) return;
+  clearInterval(this.playerFastSyncTimer);
+  this.playerFastSyncTimer = null;
+};
+Combat.getBlockingCells = function(scene) {
+  this.ensureSceneShapeState(scene);
+  const blocked = new Set();
+  const addRect = (x, y, w, h) => {
+    const minX = clamp(Math.floor(x), 0, scene.width - 1);
+    const minY = clamp(Math.floor(y), 0, scene.height - 1);
+    const maxX = clamp(Math.ceil(x + w) - 1, 0, scene.width - 1);
+    const maxY = clamp(Math.ceil(y + h) - 1, 0, scene.height - 1);
+    for (let yy = minY; yy <= maxY; yy += 1) for (let xx = minX; xx <= maxX; xx += 1) blocked.add(`${xx}:${yy}`);
+  };
+  (scene.assets || []).filter(item => item.blockSight).forEach(item => addRect(item.x, item.y, item.w, item.h));
+  (scene.templates || []).filter(item => item.blockSight).forEach(item => addRect(item.x, item.y, item.w, item.h));
+  return blocked;
+};
+Combat.hasLineOfSight = function(scene, fromX, fromY, toX, toY, blocked = this.getBlockingCells(scene)) {
+  let x0 = Math.floor(fromX), y0 = Math.floor(fromY), x1 = Math.floor(toX), y1 = Math.floor(toY);
+  let dx = Math.abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
+  let dy = -Math.abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
+  let err = dx + dy;
+  while (!(x0 === x1 && y0 === y1)) {
+    if (!(x0 === Math.floor(fromX) && y0 === Math.floor(fromY)) && blocked.has(`${x0}:${y0}`)) return false;
+    const e2 = 2 * err;
+    if (e2 >= dy) { err += dy; x0 += sx; }
+    if (e2 <= dx) { err += dx; y0 += sy; }
+  }
+  return !blocked.has(`${x1}:${y1}`) || (Math.floor(toX) === Math.floor(fromX) && Math.floor(toY) === Math.floor(fromY));
+};
+const __combatComputeVisibility_v062 = Combat.computeVisibility.bind(Combat);
+Combat.computeVisibility = function(scene, runtime) {
+  if (!scene?.fogEnabled || this.isDm()) return null;
+  const ownTokens = runtime.tokens.filter(token => token.playerId && token.playerId === App.currentUser?.id && !token.hidden);
+  if (!ownTokens.length) return new Set();
+  const visible = new Set();
+  const blocked = this.getBlockingCells(scene);
+  ownTokens.forEach(token => {
+    const radius = Math.max(1, Number(token.visionRadius || scene.visionRadius || COMBAT_DEFAULT_VISION));
+    const centerX = Number(token.x || 0) + Number(token.w || 1) / 2;
+    const centerY = Number(token.y || 0) + Number(token.h || 1) / 2;
+    for (let y = 0; y < scene.height; y += 1) {
+      for (let x = 0; x < scene.width; x += 1) {
+        const dx = x + 0.5 - centerX;
+        const dy = y + 0.5 - centerY;
+        if (Math.sqrt(dx * dx + dy * dy) > radius) continue;
+        if (this.hasLineOfSight(scene, centerX, centerY, x + 0.5, y + 0.5, blocked)) visible.add(`${x}:${y}`);
+      }
+    }
+  });
+  return visible;
+};
+Combat.addTemplate = function(shape = 'circle') {
+  const scene = this.ensureSceneShapeState();
+  if (!scene || !this.isDm()) return;
+  const template = normalizeCombatTemplate({
+    shape,
+    name: shape === 'cone' ? 'Конус' : shape === 'line' ? 'Линия' : shape === 'rect' ? 'Прямоугольник' : 'Круг',
+    x: Math.max(0, Math.floor(scene.width / 2) - 1),
+    y: Math.max(0, Math.floor(scene.height / 2) - 1),
+    w: shape === 'line' ? 6 : 4,
+    h: shape === 'rect' ? 3 : 4,
+    label: ''
+  });
+  scene.templates.push(template);
+  this.selectedObject = { kind: 'template', id: template.id };
+  this.hasUnpublishedChanges = true;
+  this.persistCombatState('Шаблон добавлен', { worldChanged: true, commitRemote: false, silentToast: true });
+};
+Combat.renderTemplateShape = function(template, scene) {
+  const selected = this.selectedObject?.kind === 'template' && this.selectedObject?.id === template.id;
+  const style = `left:${(template.x / scene.width) * 100}%;top:${(template.y / scene.height) * 100}%;width:${(template.w / scene.width) * 100}%;height:${(template.h / scene.height) * 100}%;transform:rotate(${Number(template.rotation || 0)}deg);--template-color:${esc(template.color)};z-index:${Number(template.z || 20)};`;
+  return `
+    <button class="combat-object combat-template ${selected ? 'selected' : ''} shape-${esc(template.shape)}" type="button" data-combat-kind="template" data-combat-id="${esc(template.id)}" style="${style}">
+      ${template.label ? `<span class="combat-template-label">${esc(template.label)}</span>` : ''}
+      ${selected && this.canResizeSelected() ? '<span class="combat-resize-handle" data-combat-resize="1"></span>' : ''}
+    </button>
+  `;
+};
+const __combatRenderSceneEditor_v062 = Combat.renderSceneEditor.bind(Combat);
+Combat.renderSceneEditor = function(scene, runtime) {
+  const html = __combatRenderSceneEditor_v062(scene, runtime);
+  if (!this.isDm() || !scene) return html;
+  return `${html}
+    <div class="card pad18 combat-panel">
+      <div class="section-title">Шаблоны и зоны</div>
+      <div class="row combat-editor-actions combat-template-actions">
+        <button class="secondary" type="button" id="combat-add-template-circle">КРУГ</button>
+        <button class="secondary" type="button" id="combat-add-template-cone">КОНУС</button>
+        <button class="secondary" type="button" id="combat-add-template-line">ЛИНИЯ</button>
+        <button class="secondary" type="button" id="combat-add-template-rect">ПРЯМОУГ.</button>
+      </div>
+      <div class="small-note">Шаблоны можно двигать и масштабировать мышью. При включении “Блокирует обзор” они участвуют в line-of-sight.</div>
+    </div>`;
+};
+const __combatGetSelectionPanel_v062 = Combat.getSelectionPanel.bind(Combat);
+Combat.getSelectionPanel = function(scene, runtime) {
+  const template = this.getSelectedTemplate();
+  if (template && this.isDm()) {
+    return `
+      <form id="combat-template-form" class="form combat-editor-form">
+        <div class="section-title">Выбранный шаблон</div>
+        <div class="field"><label>Название</label><input class="input" name="template_name" value="${esc(template.name)}" /></div>
+        <div class="field"><label>Подпись</label><input class="input" name="template_label" value="${esc(template.label || '')}" /></div>
+        <div class="cols3">
+          <div class="field"><label>X</label><input class="input" type="number" step="0.5" name="template_x" value="${Number(template.x)}" /></div>
+          <div class="field"><label>Y</label><input class="input" type="number" step="0.5" name="template_y" value="${Number(template.y)}" /></div>
+          <div class="field"><label>Поворот</label><input class="input" type="number" step="5" name="template_rotation" value="${Number(template.rotation || 0)}" /></div>
+        </div>
+        <div class="cols3">
+          <div class="field"><label>Ширина</label><input class="input" type="number" step="0.5" name="template_w" value="${Number(template.w)}" /></div>
+          <div class="field"><label>Высота</label><input class="input" type="number" step="0.5" name="template_h" value="${Number(template.h)}" /></div>
+          <div class="field"><label>Цвет</label><input class="input" name="template_color" value="${esc(template.color)}" /></div>
+        </div>
+        <div class="cols2">
+          <div class="field"><label>Форма</label><select class="select" name="template_shape"><option value="circle" ${template.shape==='circle'?'selected':''}>Круг</option><option value="cone" ${template.shape==='cone'?'selected':''}>Конус</option><option value="line" ${template.shape==='line'?'selected':''}>Линия</option><option value="rect" ${template.shape==='rect'?'selected':''}>Прямоуг.</option></select></div>
+          <div class="field"><label>Эффект</label><select class="select" name="template_effect"><option value="">Без эффекта</option><option value="damage" ${template.effectType==='damage'?'selected':''}>Урон</option><option value="heal" ${template.effectType==='heal'?'selected':''}>Лечение</option><option value="difficult" ${template.effectType==='difficult'?'selected':''}>Трудная местность</option></select></div>
+        </div>
+        <div class="field"><label>Формула эффекта</label><input class="input" name="template_damage" value="${esc(template.damage || '')}" placeholder="например 2d6" /></div>
+        <label class="toggle-row"><input type="checkbox" name="template_visible" ${template.visibleToPlayers ? 'checked' : ''} /> Видно игрокам</label>
+        <label class="toggle-row"><input type="checkbox" name="template_block_sight" ${template.blockSight ? 'checked' : ''} /> Блокирует обзор</label>
+        <div class="row combat-editor-actions"><button class="primary" type="submit">СОХРАНИТЬ</button><button class="secondary" id="combat-delete-selection" type="button">УДАЛИТЬ</button></div>
+      </form>`;
+  }
+  const token = this.getSelectedToken();
+  if (token) {
+    const base = __combatGetSelectionPanel_v062(scene, runtime);
+    if (!this.canActWithToken(token)) return base;
+    return base.replace('</form>', `
+      <div class="card pad18 combat-action-card">
+        <div class="section-title">Действия</div>
+        <div class="row combat-editor-actions combat-action-buttons">
+          <button class="secondary" type="button" id="combat-action-dash">РЫВОК</button>
+          <button class="secondary" type="button" id="combat-action-dodge">УКЛОНЕНИЕ</button>
+          <button class="secondary" type="button" id="combat-action-hide">СКРЫТЬСЯ</button>
+          <button class="secondary" type="button" id="combat-action-heal">ЛЕЧЕНИЕ</button>
+          <button class="secondary" type="button" id="combat-action-interact">ВЗАИМОДЕЙСТВИЕ</button>
+        </div>
+      </div>
+    </form>`);
+  }
+  return __combatGetSelectionPanel_v062(scene, runtime);
+};
+Combat.performAction = async function(kind = 'interact') {
+  const runtime = this.getRuntime();
+  const actor = this.getSelectedToken() || this.getControlledTokens(this.getSceneIdForView())[0] || null;
+  const target = runtime?.tokens.find(token => token.id === this.selectedTargetId) || actor;
+  if (!runtime || !actor || !this.canActWithToken(actor)) {
+    Toast.show('Выбери управляемый токен.', 'info');
+    return;
+  }
+  let text = '';
+  if (kind === 'dash') {
+    actor.statuses.dash = true;
+    actor.movedThisTurn = 0;
+    text = `${actor.name} совершает рывок и готов к удвоенному перемещению.`;
+  } else if (kind === 'dodge') {
+    actor.statuses.dodge = true;
+    text = `${actor.name} занимает оборонительную стойку.`;
+  } else if (kind === 'hide') {
+    actor.hidden = !actor.hidden;
+    text = `${actor.name} ${actor.hidden ? 'скрывается' : 'перестаёт скрываться'}.`;
+  } else if (kind === 'heal') {
+    const heal = Math.max(1, rollDice('1d8'));
+    target.hpCurrent = Math.min(Number(target.hpMax || 1), Number(target.hpCurrent || 0) + heal);
+    if (target.type === 'player' && target.playerId && App.state.users[target.playerId]) {
+      const user = normalizePlayerProfileV2(App.state.users[target.playerId]);
+      user.stats.hpCurrent = target.hpCurrent;
+      App.state.users[target.playerId] = user;
+    }
+    text = `${actor.name} лечит ${target.name} на ${heal} HP.`;
+    this.markTransient(target.id, 'heal', 1000);
+  } else {
+    text = `${actor.name} взаимодействует с окружением.`;
+  }
+  this.queueActionEvent(kind, actor, target, { text });
+  await this.persistCombatState('', { worldChanged: false, commitRemote: true, quickRemote: true, silentToast: true });
+  this.render();
+};
+const __combatResolveAttack_v062 = Combat.resolveAttack.bind(Combat);
+Combat.resolveAttack = async function() {
+  const scene = this.getScene();
+  const runtime = this.getRuntime();
+  const attacker = this.getSelectedToken() || this.getControlledTokens(this.getSceneIdForView())[0] || null;
+  const target = runtime?.tokens.find(token => token.id === this.selectedTargetId) || null;
+  if (!scene || !runtime || !attacker || !target) {
+    Toast.show('Выбери свой токен и цель', 'info');
+    return;
+  }
+  if (!this.canActWithToken(attacker)) {
+    Toast.show('Этим токеном нельзя выполнить действие', 'err');
+    return;
+  }
+  const weapon = getCombatTokenWeapon(attacker);
+  const hitRoll = 1 + Math.floor(Math.random() * 20);
+  const damage = parseCombatDamage(weapon.damage || '1d6').roll();
+  target.hpCurrent = Math.max(0, Number(target.hpCurrent || 0) - damage);
+  if (target.type === 'player' && target.playerId && App.state.users[target.playerId]) {
+    const user = normalizePlayerProfileV2(App.state.users[target.playerId]);
+    user.stats.hpCurrent = target.hpCurrent;
+    user.stats.hpMax = Math.max(user.stats.hpMax, target.hpMax);
+    App.state.users[target.playerId] = user;
+  }
+  const text = `${attacker.name} атакует ${target.name} оружием «${weapon.name || 'Атака'}»: бросок ${hitRoll}, урон ${damage}.`;
+  this.queueActionEvent('attack', attacker, target, { text, amount: damage });
+  this.markTransient(attacker.id, 'source', 900);
+  this.markTransient(target.id, 'target', 1100);
+  await this.persistCombatState('', { worldChanged: false, commitRemote: true, quickRemote: true, silentToast: true });
+  this.render();
+};
+const __combatNextTurn_v062 = Combat.nextTurn.bind(Combat);
+Combat.nextTurn = async function() {
+  const runtime = this.getRuntime();
+  if (!runtime || !runtime.initiativeOrder.length) return;
+  runtime.lastPlayback = {
+    id: `play_${Date.now().toString(36)}`,
+    events: Array.isArray(runtime.turnEvents) ? runtime.turnEvents.slice(0, 12) : [],
+    createdAt: new Date().toISOString()
+  };
+  runtime.turnEvents = [];
+  runtime.tokens.forEach(token => {
+    token.movedThisTurn = 0;
+    if (token.statuses) {
+      delete token.statuses.dash;
+      delete token.statuses.dodge;
+    }
+  });
+  runtime.turnIndex = Number(runtime.turnIndex || 0) + 1;
+  if (runtime.turnIndex >= runtime.initiativeOrder.length) {
+    runtime.turnIndex = 0;
+    runtime.round = Number(runtime.round || 1) + 1;
+  }
+  await this.persistCombatState('', { worldChanged: false, commitRemote: true, quickRemote: true, silentToast: true });
+  this.playPlaybackIfNeeded(runtime);
+  this.render();
+};
+Combat.canDragObject = function(kind, id) {
+  if (kind === 'asset' || kind === 'template') return this.isDm();
+  if (kind === 'token') {
+    const token = this.getRuntime()?.tokens.find(item => item.id === id);
+    return Boolean(token && this.canControlToken(token) && !token.locked);
+  }
+  return false;
+};
+Combat.pointerToGrid = function(event, stage, scene) {
+  const rect = stage.getBoundingClientRect();
+  const gx = ((event.clientX - rect.left) / rect.width) * scene.width;
+  const gy = ((event.clientY - rect.top) / rect.height) * scene.height;
+  return { x: clamp(gx, 0, scene.width), y: clamp(gy, 0, scene.height), rect };
+};
+Combat.scheduleRender = function() {
+  if (this._raf) return;
+  this._raf = requestAnimationFrame(() => {
+    this._raf = 0;
+    if (UI.activeModuleId === 'combat') this.render();
+  });
+};
+Combat.beginPointerAction = function(kind, id, event, mode = 'move') {
+  const scene = this.getScene();
+  if (!scene || !this.canDragObject(kind, id)) return;
+  const stage = document.getElementById('combat-stage');
+  if (!stage) return;
+  const point = this.pointerToGrid(event, stage, scene);
+  const asset = kind === 'asset' ? scene.assets.find(item => item.id === id) : null;
+  const token = kind === 'token' ? this.getRuntime(scene.id)?.tokens.find(item => item.id === id) : null;
+  const template = kind === 'template' ? scene.templates.find(item => item.id === id) : null;
+  const obj = asset || token || template;
+  if (!obj) return;
+  this.selectedObject = { kind, id };
+  this.dragState = {
+    kind,
+    id,
+    mode,
+    startedAt: Date.now(),
+    origin: { x: Number(obj.x || 0), y: Number(obj.y || 0), w: Number(obj.w || 1), h: Number(obj.h || 1) },
+    pointerStart: { x: point.x, y: point.y }
+  };
+  event.preventDefault();
+  event.stopPropagation();
+};
+Combat.updatePointerAction = function(event) {
+  const drag = this.dragState;
+  const scene = this.getScene();
+  if (!drag || !scene) return;
+  const stage = document.getElementById('combat-stage');
+  if (!stage) return;
+  const point = this.pointerToGrid(event, stage, scene);
+  const dx = point.x - drag.pointerStart.x;
+  const dy = point.y - drag.pointerStart.y;
+  const asset = drag.kind === 'asset' ? scene.assets.find(item => item.id === drag.id) : null;
+  const token = drag.kind === 'token' ? this.getRuntime(scene.id)?.tokens.find(item => item.id === drag.id) : null;
+  const template = drag.kind === 'template' ? scene.templates.find(item => item.id === drag.id) : null;
+  const obj = asset || token || template;
+  if (!obj) return;
+  if (drag.mode === 'resize') {
+    obj.w = clamp(drag.origin.w + dx, 0.5, drag.kind === 'asset' ? 40 : 20);
+    obj.h = clamp(drag.origin.h + dy, 0.5, drag.kind === 'asset' ? 40 : 20);
+  } else {
+    obj.x = clamp(Math.round((drag.origin.x + dx) * 2) / 2, 0, scene.width - Math.max(0.5, Number(obj.w || 1)));
+    obj.y = clamp(Math.round((drag.origin.y + dy) * 2) / 2, 0, scene.height - Math.max(0.5, Number(obj.h || 1)));
+  }
+  this.hasUnpublishedChanges = this.hasUnpublishedChanges || this.isDm();
+  this.ignoreStageClickUntil = Date.now() + 250;
+  this.scheduleRender();
+};
+Combat.endPointerAction = async function() {
+  const drag = this.dragState;
+  if (!drag) return;
+  this.dragState = null;
+  const isQuick = drag.kind === 'token' && !this.isDm();
+  const worldChanged = drag.kind !== 'token';
+  this.ignoreStageClickUntil = Date.now() + 250;
+  await this.persistCombatState('', { worldChanged, commitRemote: isQuick, quickRemote: isQuick, silentToast: true });
+  this.render();
+};
+const __combatHandleStageClick_v062 = Combat.handleStageClick.bind(Combat);
+Combat.handleStageClick = function(event) {
+  if (Date.now() < Number(this.ignoreStageClickUntil || 0) || this.dragState) return;
+  return __combatHandleStageClick_v062(event);
+};
+const __combatHandleObjectClick_v062 = Combat.handleObjectClick.bind(Combat);
+Combat.handleObjectClick = function(kind, id, event) {
+  if (Date.now() < Number(this.ignoreStageClickUntil || 0)) return;
+  if (kind === 'template') {
+    if (!this.isDm()) return;
+    event.preventDefault();
+    event.stopPropagation();
+    this.selectedObject = { kind, id };
+    this.render();
+    return;
+  }
+  return __combatHandleObjectClick_v062(kind, id, event);
+};
+const __combatMoveSelectedToCell_v062 = Combat.moveSelectedToCell.bind(Combat);
+Combat.moveSelectedToCell = function(cellX, cellY) {
+  const scene = this.ensureSceneShapeState();
+  const template = this.getSelectedTemplate();
+  if (template && this.isDm()) {
+    template.x = clamp(cellX, 0, scene.width - Math.max(1, Math.ceil(template.w)));
+    template.y = clamp(cellY, 0, scene.height - Math.max(1, Math.ceil(template.h)));
+    this.hasUnpublishedChanges = true;
+    this.persistCombatState('', { worldChanged: true, commitRemote: false, silentToast: true });
+    return;
+  }
+  return __combatMoveSelectedToCell_v062(cellX, cellY);
+};
+const __combatRemoveSelectedObject_v062 = Combat.removeSelectedObject.bind(Combat);
+Combat.removeSelectedObject = function() {
+  const scene = this.ensureSceneShapeState();
+  const template = this.getSelectedTemplate();
+  if (template && scene) {
+    scene.templates = scene.templates.filter(item => item.id !== template.id);
+    this.selectedObject = null;
+    this.persistCombatState('Шаблон удалён', { worldChanged: true, commitRemote: false, silentToast: true });
+    return;
+  }
+  return __combatRemoveSelectedObject_v062();
+};
+const __combatUpdateSelectedObjectFromForm_v062 = Combat.updateSelectedObjectFromForm.bind(Combat);
+Combat.updateSelectedObjectFromForm = function(form) {
+  const fd = new FormData(form);
+  const template = this.getSelectedTemplate();
+  if (template) {
+    template.name = String(fd.get('template_name') || template.name).trim() || template.name;
+    template.label = String(fd.get('template_label') || template.label || '').trim();
+    template.x = clamp(Number(fd.get('template_x') || template.x), 0, 200);
+    template.y = clamp(Number(fd.get('template_y') || template.y), 0, 200);
+    template.w = clamp(Number(fd.get('template_w') || template.w), 0.5, 60);
+    template.h = clamp(Number(fd.get('template_h') || template.h), 0.5, 60);
+    template.rotation = Number(fd.get('template_rotation') || template.rotation || 0);
+    template.color = String(fd.get('template_color') || template.color).trim() || template.color;
+    template.shape = String(fd.get('template_shape') || template.shape || 'circle');
+    template.effectType = String(fd.get('template_effect') || template.effectType || '').trim();
+    template.damage = String(fd.get('template_damage') || template.damage || '').trim();
+    template.visibleToPlayers = fd.get('template_visible') === 'on';
+    template.blockSight = fd.get('template_block_sight') === 'on';
+    this.persistCombatState('Шаблон обновлён', { worldChanged: true, commitRemote: false, silentToast: true });
+    return;
+  }
+  return __combatUpdateSelectedObjectFromForm_v062(form);
+};
+const __combatRenderBoard_v062 = Combat.renderBoard.bind(Combat);
+Combat.renderBoard = function(scene, runtime) {
+  this.ensureSceneShapeState(scene);
+  const visibleCells = this.computeVisibility(scene, runtime);
+  const currentTurnToken = this.getCurrentTurnToken();
+  const view = this.getViewState(scene.id);
+  this.playPlaybackIfNeeded(runtime);
+  return `
+    <div class="combat-board-toolbar card pad18">
+      <div>
+        <div class="section-title">${esc(scene.name)}</div>
+        <div class="small-note">${scene.mode === 'combat' ? `Раунд ${runtime.round} · Ход ${esc(currentTurnToken?.name || '—')}` : 'Стандартная сцена'}${this.isDm() && this.hasUnpublishedChanges ? ' · Есть неопубликованные изменения' : ''}</div>
+      </div>
+      <div class="row combat-board-actions">
+        ${this.isDm() ? `<button class="secondary" type="button" id="combat-toolbar-roll">БРОСИТЬ ИНИЦИАТИВУ</button><button class="secondary" type="button" id="combat-toolbar-publish">СИНХР. СЦЕНУ</button><button class="secondary" type="button" id="combat-toolbar-next">ЗАВЕРШИТЬ ХОД</button>` : '<button class="secondary" type="button" id="combat-toolbar-sync-now">ОБНОВИТЬ СЦЕНУ</button>'}
+        <button class="secondary" type="button" id="combat-center-view">СБРОСИТЬ ВЫБОР</button>
+      </div>
+    </div>
+    <div class="combat-stage-shell card">
+      <div class="combat-stage-viewport" id="combat-stage-viewport" data-scene-id="${esc(scene.id)}">
+        <div class="combat-stage-board-frame" id="combat-stage-board-frame" data-scene-id="${esc(scene.id)}">
+          <div class="combat-stage" id="combat-stage" data-scene-id="${esc(scene.id)}" style="--combat-cols:${scene.width};--combat-rows:${scene.height};background:${esc(scene.backgroundColor)};transform:translate(${view.panX.toFixed(1)}px, ${view.panY.toFixed(1)}px) scale(${view.zoom.toFixed(3)});">
+          <div class="combat-stage-bg" style="${scene.backgroundImage ? `background-image:url('${esc(scene.backgroundImage)}');` : ''}"></div>
+          <div class="combat-stage-grid" style="--combat-grid-color:${esc(scene.gridColor)}"></div>
+          <div class="combat-stage-layer combat-assets-layer">
+            ${(scene.assets || []).map(asset => {
+              const selected = this.selectedObject?.kind === 'asset' && this.selectedObject?.id === asset.id;
+              const mark = this.transientMarks[asset.id] || null;
+              return `
+                <button class="combat-object combat-asset ${selected ? 'selected' : ''} ${mark ? `effect-${esc(mark.kind)}` : ''}" type="button" data-combat-kind="asset" data-combat-id="${esc(asset.id)}" style="left:${(asset.x / scene.width) * 100}%;top:${(asset.y / scene.height) * 100}%;width:${(asset.w / scene.width) * 100}%;height:${(asset.h / scene.height) * 100}%;transform:rotate(${Number(asset.rotation || 0)}deg);z-index:${Number(asset.z || 10)};opacity:${Number(asset.opacity || 1)};">
+                  ${asset.image ? `<img src="${esc(asset.image)}" alt="${esc(asset.name)}" />` : `<span>${esc(initials(asset.name, '◫'))}</span>`}
+                  ${asset.label ? `<span class="combat-object-label">${esc(asset.label)}</span>` : ''}
+                  ${selected && this.canResizeSelected() ? '<span class="combat-resize-handle" data-combat-resize="1"></span>' : ''}
+                </button>`;
+            }).join('')}
+          </div>
+          <div class="combat-stage-layer combat-templates-layer">
+            ${(scene.templates || []).filter(template => this.isDm() || template.visibleToPlayers).map(template => this.renderTemplateShape(template, scene)).join('')}
+          </div>
+          <div class="combat-stage-layer combat-tokens-layer">
+            ${runtime.tokens.filter(token => this.isTokenVisibleToUser(token, scene, visibleCells) && !token.hidden).map(token => {
+              const selected = this.selectedObject?.kind === 'token' && this.selectedObject?.id === token.id;
+              const target = this.selectedTargetId === token.id;
+              const currentTurn = currentTurnToken?.id === token.id;
+              const hpPct = clamp((Number(token.hpCurrent || 0) / Math.max(1, Number(token.hpMax || 1))) * 100, 0, 100);
+              const mark = this.transientMarks[token.id] || null;
+              const moveBoost = token.statuses?.dash ? 'status-dash' : token.statuses?.dodge ? 'status-dodge' : '';
+              return `
+                <button class="combat-object combat-token ${selected ? 'selected' : ''} ${target ? 'target' : ''} ${currentTurn ? 'turn' : ''} ${moveBoost} ${mark ? `effect-${esc(mark.kind)}` : ''}" type="button" data-combat-kind="token" data-combat-id="${esc(token.id)}" style="left:${(token.x / scene.width) * 100}%;top:${(token.y / scene.height) * 100}%;width:${(token.w / scene.width) * 100}%;height:${(token.h / scene.height) * 100}%;transform:rotate(${Number(token.rotation || 0)}deg);--token-accent:${esc(token.color || '#7df9ff')};">
+                  ${token.image ? `<img src="${esc(token.image)}" alt="${esc(token.name)}" />` : `<span class="combat-token-fallback">${esc(initials(token.name, '✦'))}</span>`}
+                  <span class="combat-token-name">${esc(token.name)}</span>
+                  <span class="combat-token-hp"><i style="width:${hpPct}%"></i></span>
+                  ${selected && this.canResizeSelected() ? '<span class="combat-resize-handle" data-combat-resize="1"></span>' : ''}
+                </button>`;
+            }).join('')}
+          </div>
+          <div class="combat-stage-layer combat-fog-layer">${this.renderFog(scene, visibleCells)}</div>
+          </div>
+        </div>
+      </div>
+    </div>`;
+};
+const __combatBind_v062 = Combat.bind.bind(Combat);
+Combat.bind = function(root) {
+  __combatBind_v062(root);
+  root.querySelector('#combat-add-template-circle')?.addEventListener('click', () => this.addTemplate('circle'));
+  root.querySelector('#combat-add-template-cone')?.addEventListener('click', () => this.addTemplate('cone'));
+  root.querySelector('#combat-add-template-line')?.addEventListener('click', () => this.addTemplate('line'));
+  root.querySelector('#combat-add-template-rect')?.addEventListener('click', () => this.addTemplate('rect'));
+  root.querySelector('#combat-template-form')?.addEventListener('submit', event => { event.preventDefault(); this.updateSelectedObjectFromForm(event.currentTarget); });
+  root.querySelector('#combat-action-dash')?.addEventListener('click', () => this.performAction('dash'));
+  root.querySelector('#combat-action-dodge')?.addEventListener('click', () => this.performAction('dodge'));
+  root.querySelector('#combat-action-hide')?.addEventListener('click', () => this.performAction('hide'));
+  root.querySelector('#combat-action-heal')?.addEventListener('click', () => this.performAction('heal'));
+  root.querySelector('#combat-action-interact')?.addEventListener('click', () => this.performAction('interact'));
+  root.querySelector('#combat-toolbar-sync-now')?.addEventListener('click', async () => {
+    await Sync.checkForRemoteUpdates('combat-manual-refresh', { applyIfNewer: true, silent: false });
+    this.render();
+  });
+  root.querySelectorAll('[data-combat-kind][data-combat-id]').forEach(button => {
+    if (button.dataset.dragBound === '1') return;
+    button.dataset.dragBound = '1';
+    button.addEventListener('pointerdown', event => {
+      const mode = event.target.closest('[data-combat-resize="1"]') ? 'resize' : 'move';
+      this.beginPointerAction(button.dataset.combatKind, button.dataset.combatId, event, mode);
+    });
+  });
+  const stage = root.querySelector('#combat-stage');
+  const viewport = root.querySelector('#combat-stage-viewport');
+  this.syncViewportBoardFrame(this.getScene(), viewport);
+  viewport?.addEventListener('pointerdown', event => {
+    if (event.target.closest('[data-combat-kind][data-combat-id]')) return;
+    this.beginViewDrag(event, viewport);
+  });
+  viewport?.addEventListener('pointermove', event => this.updateViewDrag(event, viewport));
+  viewport?.addEventListener('pointerup', () => this.endViewDrag());
+  viewport?.addEventListener('pointercancel', () => this.endViewDrag());
+  viewport?.addEventListener('wheel', event => this.handleViewWheel(event, viewport), { passive: false });
+  stage?.addEventListener('pointermove', event => this.updatePointerAction(event));
+  stage?.addEventListener('pointerup', () => this.endPointerAction());
+  stage?.addEventListener('pointerleave', () => this.endPointerAction());
+  window.addEventListener('pointerup', () => { this.endPointerAction(); this.endViewDrag(); }, { once: true });
+  this.applyViewTransform(viewport);
+};
+const __combatRender_v062 = Combat.render.bind(Combat);
+Combat.render = function() {
+  ensureCombatModuleMarkup();
+  const root = document.getElementById('combat-content');
+  if (!root) return;
+  if (App.currentUser) {
+    const button = document.getElementById('open-combat');
+    if (button) button.style.display = 'grid';
+  }
+  __combatRender_v062();
+};
+const __combatStartSync_v062 = Combat.startSync.bind(Combat);
+Combat.startSync = function() {
+  __combatStartSync_v062();
+  this.startFastPlayerSync();
+};
+const __combatStopSync_v062 = Combat.stopSync.bind(Combat);
+Combat.stopSync = function() {
+  __combatStopSync_v062();
+  this.stopFastPlayerSync();
+};
+const __combatUpdateBootView_v062 = App.updateBootView.bind(App);
+App.updateBootView = function() {
+  __combatUpdateBootView_v062();
+  ensureCombatModuleMarkup();
+  const button = document.getElementById('open-combat');
+  if (button) {
+    button.style.display = App.currentUser ? 'grid' : 'none';
+    button.dataset.label = COMBAT_PLAYER_BUTTON_LABEL;
+  }
+};
+
+window.addEventListener('resize', () => {
+  if (UI.activeModuleId === 'combat') {
+    Combat.syncViewportBoardFrame(Combat.getScene(), document.getElementById('combat-stage-viewport'));
+    Combat.applyViewTransform(document.getElementById('combat-stage-viewport'));
+  }
+});
+
+function bindGalaxyMapQuickEditor(systemId) {
+  const form = document.getElementById('galaxy-system-quick-form');
+  if (!form) return;
+  bindDynamicRowEditor(form);
+  bindTypeaheadFields(form);
+  bindSearchableSelects(form);
+  document.getElementById('add-legend-row-btn')?.addEventListener('click', () => {
+    const list = document.getElementById('galaxy-legend-rows');
+    if (!list) return;
+    list.insertAdjacentHTML('beforeend', `<div class="legend-row-editor dynamic-row"><input class="input" data-role="color" value="#7df9ff" placeholder="#7df9ff" /><input class="input" data-role="label" value="" placeholder="Название фракции / обозначения" /><button type="button" class="ghost remove-row-btn">REMOVE</button></div>`);
+    bindDynamicRowEditor(form);
+  });
+  document.getElementById('galaxy-quick-open-config')?.addEventListener('click', () => {
+    Configurator.selectedType = 'systems';
+    Configurator.selectedId = systemId;
+    UI.openModule('config');
+  });
+  form.addEventListener('submit', async event => {
+    event.preventDefault();
+    const system = Data.getSystem(systemId);
+    if (!system) return;
+    const fd = new FormData(form);
+    system.markerLabel = String(fd.get('markerLabel') || system.markerLabel || system.name || '').trim();
+    system.name = String(fd.get('name') || system.name || system.markerLabel || '').trim();
+    system.color = String(fd.get('color') || system.color || '#7df9ff').trim() || '#7df9ff';
+    system.markerStyle = SYSTEM_MARKER_STYLES.some(option => option.id === String(fd.get('markerStyle') || 'orbital').trim()) ? String(fd.get('markerStyle') || 'orbital').trim() : 'orbital';
+    system.pos = { x: Number(clamp(Number(fd.get('posX') || system.pos?.x || 0.5), 0, 1).toFixed(3)), y: Number(clamp(Number(fd.get('posY') || system.pos?.y || 0.5), 0, 1).toFixed(3)) };
+    system.routes = readSystemRouteRows(form);
+    App.state.galaxyLegend = readGalaxyLegendRows(form);
+    const ok = await saveWorldConfigFromMap('Система обновлена с карты');
+    if (ok) {
+      const fresh = Data.getSystem(systemId);
+      if (fresh) {
+        $('#obj-name').textContent = getSystemLabel(fresh).toUpperCase();
+        $('#obj-subname').textContent = fresh.name && fresh.name !== getSystemLabel(fresh) ? fresh.name : 'Приближение к системе';
+        bindGalaxyMapQuickEditor(systemId);
+        renderGalaxyLegendOverlay();
+      }
+    }
+  });
+}
+
+const __uiOpenModule_legend = UI.openModule.bind(UI);
+UI.openModule = function(id, options = {}) {
+  const res = __uiOpenModule_legend(id, options);
+  renderGalaxyLegendOverlay();
+  return res;
+};
+
+const __uiCloseModule_legend = UI.closeModule.bind(UI);
+UI.closeModule = function() {
+  const res = __uiCloseModule_legend();
+  renderGalaxyLegendOverlay();
+  return res;
+};
+
+document.addEventListener('DOMContentLoaded', () => {
+  setTimeout(() => { try { renderGalaxyLegendOverlay(); } catch {} }, 0);
+  try { __bindLocalArticleLinks(document); } catch {}
+});
+
+
+/* v0.7.2 patch: combat runtime sync, dice animation, player display */
+function ensureCombatSyncMeta(state = App.state) {
+  const combat = ensureCombatState(state);
+  combat.remoteRuntimeRevision = Math.max(0, Number(combat.remoteRuntimeRevision || 0));
+  combat.remoteRuntimeUpdatedAt = combat.remoteRuntimeUpdatedAt || null;
+  combat.remoteRuntimeShadowByScene = combat.remoteRuntimeShadowByScene && typeof combat.remoteRuntimeShadowByScene === 'object' ? combat.remoteRuntimeShadowByScene : {};
+  return combat;
+}
+
+function normalizeCombatLogEntryV20(entry = {}) {
+  const out = entry && typeof entry === 'object' ? deep(entry) : { text: String(entry || '') };
+  out.id = String(out.id || `log_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`).trim();
+  out.createdAt = out.createdAt || new Date().toISOString();
+  if (out.diceFx && typeof out.diceFx === 'object') {
+    out.diceFx = {
+      title: String(out.diceFx.title || 'Бросок кубов').trim(),
+      subtitle: String(out.diceFx.subtitle || '').trim(),
+      total: Number(out.diceFx.total || 0),
+      crit: String(out.diceFx.crit || '').trim(),
+      dice: Array.isArray(out.diceFx.dice)
+        ? out.diceFx.dice.slice(0, 10).map(die => ({ kind: String(die?.kind || 'd6').toLowerCase(), value: Math.max(0, Math.floor(Number(die?.value || 0))) }))
+        : []
+    };
+  } else {
+    delete out.diceFx;
+  }
+  return out;
+}
+
+function combatLogKeyV20(entry = {}) {
+  const id = String(entry.id || '').trim();
+  if (id) return `id:${id}`;
+  return `sig:${String(entry.createdAt || '')}|${String(entry.by || '')}|${String(entry.kind || '')}|${String(entry.text || '')}`;
+}
+
+function mergeCombatLogEntriesV20(...lists) {
+  const map = new Map();
+  lists.flat().forEach(raw => {
+    if (!raw || typeof raw !== 'object') return;
+    const entry = normalizeCombatLogEntryV20(raw);
+    const key = combatLogKeyV20(entry);
+    const prev = map.get(key);
+    if (!prev) {
+      map.set(key, entry);
+      return;
+    }
+    map.set(key, {
+      ...prev,
+      ...entry,
+      diceFx: entry.diceFx || prev.diceFx || null
+    });
+  });
+  return Array.from(map.values())
+    .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())
+    .slice(0, 80);
+}
+
+function mergeCombatRuntimeLogsV20(primaryRuntime = {}, secondaryRuntime = {}) {
+  const merged = deep(primaryRuntime || {});
+  merged.log = mergeCombatLogEntriesV20(primaryRuntime?.log || [], secondaryRuntime?.log || []);
+  return merged;
+}
+
+Combat.runtimeListenerUnsub = null;
+Combat.runtimePollTimer = null;
+Combat.displayWindowOpen = false;
+Combat.displayStatusPromise = null;
+Combat.diceAnimation = null;
+
+Combat.initRuntimeBridge = function() {
+  if (this.runtimeListenerUnsub || !window.electronAPI?.onCombatRuntimeEvent) return;
+  this.runtimeListenerUnsub = window.electronAPI.onCombatRuntimeEvent(payload => {
+    const row = payload?.row || null;
+    if (!row) return;
+    const changed = this.applyRemoteRuntimeRow(row, { force: true, render: UI.activeModuleId === 'combat' });
+    if (changed) Persistence.save(App.state).catch(() => {});
+  });
+};
+
+Combat.getRuntimeSceneId = function(preferred = '') {
+  return String(preferred || this.getSceneIdForView() || this.getActiveSceneId() || COMBAT_SCENE_LIST[0]?.id || '').trim();
+};
+
+Combat.buildRemoteRuntimePayload = function(sceneId = this.getRuntimeSceneId()) {
+  const activeSceneId = String(this.getActiveSceneId() || sceneId || '').trim();
+  const resolvedSceneId = String(sceneId || activeSceneId || '').trim();
+  const scene = resolvedSceneId ? Data.getCombatScene(resolvedSceneId) : null;
+  const runtime = resolvedSceneId ? ensureCombatRuntime(resolvedSceneId) : null;
+  const syncMeta = ensureCombatSyncMeta();
+  const remoteShadow = resolvedSceneId ? syncMeta.remoteRuntimeShadowByScene?.[resolvedSceneId] : null;
+  return {
+    baseRevision: Number(syncMeta.remoteRuntimeRevision || 0),
+    updatedBy: App.currentUser?.displayName || App.currentUser?.shortName || Sync?.config?.deviceLabel || App.currentUserId || 'unknown-user',
+    clientUpdatedAt: new Date().toISOString(),
+    activeSceneId: activeSceneId || resolvedSceneId,
+    scene: scene ? deep(scene) : {},
+    runtime: runtime ? mergeCombatRuntimeLogsV20(runtime, remoteShadow) : {}
+  };
+};
+
+Combat.applyRemoteRuntimeRow = function(row, options = {}) {
+  if (!row) return false;
+  const combat = ensureCombatSyncMeta();
+  const revision = Math.max(0, Number(row.revision || 0));
+  if (!options.force && revision && revision <= Number(combat.remoteRuntimeRevision || 0)) return false;
+  const sceneId = String(row.activeSceneId || row.active_scene_id || row?.scene?.id || '').trim();
+  const remoteScene = row.scene || row.scene_json || null;
+  const remoteRuntime = row.runtime || row.runtime_json || null;
+  let nextRuntime = null;
+  let prevLogIds = new Set();
+  if (remoteScene && sceneId) {
+    COMBAT_SCENES[sceneId] = normalizeCombatScene({ ...deep(remoteScene), id: sceneId });
+    sortCombatScenes();
+  }
+  if (sceneId) {
+    const localRuntime = ensureCombatState().scenes[sceneId] || {};
+    prevLogIds = new Set(Array.isArray(localRuntime.log) ? localRuntime.log.map(entry => String(entry?.id || '')).filter(Boolean) : []);
+    ensureCombatState().activeSceneId = sceneId;
+    if (remoteRuntime && typeof remoteRuntime === 'object') {
+      nextRuntime = mergeCombatRuntimeLogsV20(remoteRuntime, localRuntime);
+      ensureCombatState().scenes[sceneId] = deep(nextRuntime);
+      ensureCombatRuntime(sceneId);
+      combat.remoteRuntimeShadowByScene[sceneId] = deep(nextRuntime);
+    }
+  }
+  combat.remoteRuntimeRevision = revision;
+  combat.remoteRuntimeUpdatedAt = row.updatedAt || row.updated_at || combat.remoteRuntimeUpdatedAt || null;
+  if (nextRuntime && Array.isArray(nextRuntime.log)) {
+    const freshDiceEntry = [...nextRuntime.log].reverse().find(entry => entry?.kind === 'dice' && entry?.diceFx && !prevLogIds.has(String(entry.id || '')));
+    if (freshDiceEntry) this.playDiceAnimationFromLogEntry?.(freshDiceEntry);
+  }
+  if (UI.activeModuleId === 'combat' && options.render !== false) this.render();
+  return true;
+};
+
+Combat.pullRemoteRuntime = async function(reason = 'combat-pull', options = {}) {
+  if (!Sync?.config?.enabled || !window.electronAPI?.pullCombatRuntime) return { ok: true, status: 'disabled' };
+  const res = await window.electronAPI.pullCombatRuntime({ reason });
+  if (!res?.ok || !res?.row) return res || { ok: true, status: 'empty' };
+  const combat = ensureCombatSyncMeta();
+  const remoteRevision = Math.max(0, Number(res.row.revision || 0));
+  if (options.force || remoteRevision > Number(combat.remoteRuntimeRevision || 0)) {
+    this.applyRemoteRuntimeRow(res.row, { force: true, render: options.render !== false });
+    await Persistence.save(App.state);
+    return { ...res, applied: true };
+  }
+  return { ...res, applied: false };
+};
+
+Combat.pushRemoteRuntime = async function(reason = 'combat-push', options = {}) {
+  if (!Sync?.config?.enabled || !window.electronAPI?.pushCombatRuntime) return { ok: true, status: 'disabled' };
+  const sceneId = this.getRuntimeSceneId(options.sceneId);
+  if (!sceneId) return { ok: false, status: 'missing_scene', message: 'No combat scene selected' };
+  const localPayload = this.buildRemoteRuntimePayload(sceneId);
+  let res = await window.electronAPI.pushCombatRuntime(localPayload);
+  if (!res?.ok && res?.status === 'conflict' && res?.remote) {
+    const backupScene = deep(localPayload.scene || {});
+    const backupRuntime = deep(localPayload.runtime || {});
+    this.applyRemoteRuntimeRow(res.remote, { force: true, render: false });
+    const retryPayload = {
+      ...localPayload,
+      baseRevision: Number(res.remote?.revision || 0),
+      scene: backupScene,
+      runtime: mergeCombatRuntimeLogsV20(backupRuntime, res.remote?.runtime || res.remote?.runtime_json || {})
+    };
+    res = await window.electronAPI.pushCombatRuntime(retryPayload);
+  }
+  if (res?.ok && res?.row) {
+    this.applyRemoteRuntimeRow(res.row, { force: true, render: options.render !== false });
+    await Persistence.save(App.state);
+  }
+  return res;
+};
+
+Combat.startRuntimeSync = function() {
+  this.initRuntimeBridge();
+  if (this.runtimePollTimer || !Sync?.config?.enabled) return;
+  const tick = async () => {
+    if (UI.activeModuleId !== 'combat') return;
+    try { await this.pullRemoteRuntime('combat-runtime-poll', { render: true }); } catch {}
+  };
+  this.runtimePollTimer = setInterval(tick, 900);
+  tick();
+};
+
+Combat.stopRuntimeSync = function() {
+  if (this.runtimePollTimer) {
+    clearInterval(this.runtimePollTimer);
+    this.runtimePollTimer = null;
+  }
+};
+
+Combat.showDiceAnimation = function(payload = {}) {
+  const dice = Array.isArray(payload.dice) ? payload.dice.slice(0, 12) : [];
+  if (!dice.length) return;
+  const id = `dicefx_${Date.now().toString(36)}`;
+  this.diceAnimation = {
+    id,
+    title: String(payload.title || 'Бросок кубов').trim(),
+    subtitle: String(payload.subtitle || '').trim(),
+    total: Number(payload.total || 0),
+    crit: String(payload.crit || '').trim(),
+    dice,
+    startedAt: Date.now(),
+    settled: false
+  };
+  if (UI.activeModuleId === 'combat') this.render();
+  setTimeout(() => {
+    if (!this.diceAnimation || this.diceAnimation.id !== id) return;
+    this.diceAnimation.settled = true;
+    if (UI.activeModuleId === 'combat') this.render();
+  }, 950);
+  setTimeout(() => {
+    if (!this.diceAnimation || this.diceAnimation.id !== id) return;
+    this.diceAnimation = null;
+    if (UI.activeModuleId === 'combat') this.render();
+  }, 3200);
+};
+
+Combat.renderDiceAnimation = function() {
+  const anim = this.diceAnimation;
+  if (!anim) return '';
+  return `
+    <div class="combat-dice-overlay ${anim.settled ? 'settled' : 'rolling'} ${anim.crit ? `crit-${esc(anim.crit)}` : ''}" data-dice-overlay-id="${esc(anim.id)}">
+      <div class="combat-dice-overlay-card">
+        <div class="combat-dice-overlay-head">
+          <b>${esc(anim.title)}</b>
+          ${anim.subtitle ? `<span>${esc(anim.subtitle)}</span>` : ''}
+        </div>
+        <div class="combat-dice-overlay-grid">
+          ${anim.dice.map((die, index) => `
+            <div class="combat-die-card kind-${esc(die.kind || 'd6')}" style="--dice-delay:${index * 80}ms">
+              <span>${esc(String(die.kind || 'd6').toUpperCase())}</span>
+              <b>${Number(die.value || 0)}</b>
+            </div>
+          `).join('')}
+        </div>
+        <div class="combat-dice-overlay-total ${anim.crit ? `crit-${esc(anim.crit)}` : ''}">Сумма: ${Number(anim.total || 0)}</div>
+      </div>
+    </div>`;
+};
+
+Combat.refreshPlayerDisplayStatus = async function() {
+  if (!window.electronAPI?.getPlayerDisplayStatus) return;
+  const prev = Boolean(this.displayWindowOpen);
+  try {
+    const res = await window.electronAPI.getPlayerDisplayStatus();
+    if (res?.ok) this.displayWindowOpen = Boolean(res.open);
+  } catch {}
+  if (UI.activeModuleId === 'combat' && prev !== Boolean(this.displayWindowOpen)) this.render();
+};
+
+Combat.openPlayerDisplay = async function() {
+  if (!this.isDm() || !window.electronAPI?.openPlayerDisplay) return;
+  const res = await window.electronAPI.openPlayerDisplay();
+  if (!res?.ok) {
+    Toast.show(`Не удалось открыть экран игроков: ${res?.message || 'unknown error'}`, 'err');
+    return;
+  }
+  this.displayWindowOpen = true;
+  this.broadcastPlayerDisplayMirror(this.getSceneIdForView());
+  if (UI.activeModuleId === 'combat') this.render();
+  Toast.show(res.externalDisplay ? 'Экран игроков открыт на втором дисплее' : 'Экран игроков открыт в отдельном окне', 'ok');
+};
+
+Combat.closePlayerDisplay = async function() {
+  if (!window.electronAPI?.closePlayerDisplay) return;
+  const res = await window.electronAPI.closePlayerDisplay();
+  if (!res?.ok) {
+    Toast.show(`Не удалось закрыть экран игроков: ${res?.message || 'unknown error'}`, 'err');
+    return;
+  }
+  this.displayWindowOpen = false;
+  if (UI.activeModuleId === 'combat') this.render();
+};
+
+const __combatPersist_v072 = Combat.persist.bind(Combat);
+Combat.persist = async function(notice = '', options = {}) {
+  const runtimeOnlyRemote = Boolean(options.commitRemote) && options.worldChanged === false;
+  if (!runtimeOnlyRemote) {
+    const result = await __combatPersist_v072(notice, options);
+    if (result?.ok && options.commitRemote) {
+      this.pushRemoteRuntime('combat-followup-runtime', { render: false }).catch(() => {});
+    }
+    return result;
+  }
+  ensureCombatState();
+  mirrorPlayersIntoWorld(App.state);
+  await Persistence.save(App.state);
+  let remoteRes = { ok: true, status: 'disabled' };
+  if (Sync?.config?.enabled) {
+    remoteRes = await this.pushRemoteRuntime('combat-runtime-commit', { render: false });
+    if (!remoteRes?.ok) {
+      if (!options.silentToast) Toast.show(`Не удалось быстро синхронизировать сцену: ${remoteRes?.message || 'unknown error'}`, 'info');
+      if (UI.activeModuleId === 'combat') this.render();
+      return { ok: false, message: remoteRes?.message || 'COMBAT_RUNTIME_SYNC_FAILED' };
+    }
+  }
+  if (UI.activeModuleId === 'combat') this.render();
+  if (notice && !options.silentToast) Toast.show(notice, 'ok');
+  return { ok: true, remote: remoteRes };
+};
+
+const __combatRollSelectedDice_v072 = Combat.rollSelectedDice.bind(Combat);
+Combat.rollSelectedDice = async function() {
+  if (this.isDm()) return __combatRollSelectedDice_v072();
+  const entries = Object.entries(this.diceDraft).filter(([,qty]) => Number(qty) > 0);
+  if (!entries.length) {
+    Toast.show('Выбери хотя бы один куб', 'info');
+    return;
+  }
+  const diceVisual = [];
+  const parts = [];
+  let total = 0;
+  let isCritSuccess = false;
+  let isCritFail = false;
+  entries.forEach(([kind, qty]) => {
+    const sides = Number(String(kind).replace('d', '')) || 6;
+    const rolls = [];
+    for (let i = 0; i < qty; i += 1) {
+      const value = 1 + Math.floor(Math.random() * sides);
+      rolls.push(value);
+      diceVisual.push({ kind, value });
+      total += value;
+      if (kind === 'd20' && value === 20) isCritSuccess = true;
+      if (kind === 'd20' && value === 1) isCritFail = true;
+    }
+    parts.push(`${qty}${kind}: [${rolls.join(', ')}]`);
+  });
+  const actor = App.currentUser?.displayName || App.currentUser?.shortName || App.currentUserId || 'Игрок';
+  const runtime = this.getRuntime();
+  if (!runtime) return;
+  const createdAt = new Date().toISOString();
+  const text = `${actor} бросает кубы: ${parts.join(' · ')} => ${total}`;
+  runtime.log.unshift({ id: `log_${Date.now().toString(36)}`, createdAt, text, kind: 'dice', by: App.currentUserId || 'player' });
+  runtime.log = runtime.log.slice(0, 40);
+  this.lastDiceRoll = { total, parts, crit: isCritSuccess ? 'success' : (isCritFail ? 'fail' : ''), at: createdAt };
+  this.showDiceAnimation({
+    title: actor,
+    subtitle: parts.join(' · '),
+    total,
+    crit: isCritSuccess ? 'success' : (isCritFail ? 'fail' : ''),
+    dice: diceVisual
+  });
+  this.clearDiceDraft();
+  AudioManager.play(isCritSuccess ? 'success' : (isCritFail ? 'fail' : 'uiClick'), { volume: 0.7 });
+  await this.persist('', { worldChanged: false, commitRemote: true, silentToast: true });
+  if (isCritSuccess) Toast.show(`КРИТИЧЕСКИЙ УСПЕХ • ${text}`, 'ok');
+  else if (isCritFail) Toast.show(`КРИТИЧЕСКАЯ НЕУДАЧА • ${text}`, 'err');
+  else Toast.show(text, 'info');
+};
+
+
+/* v0.8.0 patch: stable slot-machine dice overlay */
+const COMBAT_DICE_SETTLE_MS_V080 = 1650;
+const COMBAT_DICE_HIDE_MS_V080 = 4300;
+
+function getSlotDigitsV080(value = 0, width = 1) {
+  const maxDigits = clamp(Number(width || 1), 1, 3);
+  const normalized = String(Math.max(0, Math.floor(Number(value || 0)))).padStart(maxDigits, '0').slice(-maxDigits);
+  return normalized.split('');
+}
+
+function getSlotWidthForDieV080(kind = 'd6', value = 0) {
+  const key = String(kind || '').toLowerCase();
+  if (key === 'd100') return 3;
+  if (key === 'd10' || key === 'd12' || key === 'd20') return 2;
+  if (key === 'dmg') return clamp(String(Math.max(0, Math.floor(Number(value || 0)))).length, 1, 3);
+  return 1;
+}
+
+function buildSlotTrackV080(targetDigit = '0', reelIndex = 0, reelCount = 1) {
+  const digits = [];
+  for (let round = 0; round < 4; round += 1) {
+    for (let digit = 0; digit < 10; digit += 1) digits.push(String(digit));
+  }
+  digits.push(String(targetDigit));
+  const reverseIndex = Math.max(0, reelCount - 1 - reelIndex);
+  const offset = (digits.length - 1) * -1;
+  const delay = reverseIndex * 140;
+  return { html: digits.map(digit => `<span>${digit}</span>`).join(''), offset, delay };
+}
+
+function buildSlotDieHtmlV080(die = {}) {
+  const kind = String(die?.kind || 'd6').toLowerCase();
+  const value = Math.max(0, Math.floor(Number(die?.value || 0)));
+  const width = getSlotWidthForDieV080(kind, value);
+  const digits = getSlotDigitsV080(value, width);
+  const badge = width >= 3 ? String(value).padStart(3, '0') : width === 2 ? String(value).padStart(2, '0') : String(value);
+  return `
+    <div class="combat-slot-machine compact slots-${width}">
+      <div class="combat-slot-toplights"></div>
+      <div class="combat-slot-display slots-${width}">
+        ${digits.map((digit, reelIndex) => {
+          const track = buildSlotTrackV080(digit, reelIndex, digits.length);
+          return `
+            <div class="combat-slot-reel">
+              <div class="combat-slot-track" style="--slot-offset:${track.offset};--slot-delay:${track.delay}ms;">
+                ${track.html}
+              </div>
+            </div>`;
+        }).join('')}
+      </div>
+      <div class="combat-slot-badge">${esc(kind.toUpperCase())} · ${esc(badge)}</div>
+    </div>`;
+}
+
+function renderFloatingDiceOverlayV080(anim = {}) {
+  return `
+    <div class="combat-dice-overlay floating ${anim.settled ? 'settled' : 'rolling'} ${anim.crit ? `crit-${esc(anim.crit)}` : ''}" data-dice-overlay-id="${esc(anim.id)}">
+      <div class="combat-dice-overlay-card slot-only">
+        <div class="combat-dice-overlay-head">
+          <b>${esc(anim.title)}</b>
+          ${anim.subtitle ? `<span>${esc(anim.subtitle)}</span>` : ''}
+        </div>
+        <div class="combat-dice-overlay-grid slot-only">
+          ${anim.dice.map((die, index) => `
+            <div class="combat-die-card thematic slot-only kind-${esc(die.kind || 'd6')}" style="--dice-delay:${index * 90}ms">
+              <div class="combat-die-visual slot-only">${buildSlotDieHtmlV080(die)}</div>
+            </div>`).join('')}
+        </div>
+        <div class="combat-dice-overlay-total ${anim.crit ? `crit-${esc(anim.crit)}` : ''}">Сумма: ${Number(anim.total || 0)}</div>
+      </div>
+    </div>`;
+}
+
+Combat.getDiceOverlayHost = function() {
+  let host = document.getElementById('combat-dice-overlay-floating-host');
+  if (!host) {
+    host = document.createElement('div');
+    host.id = 'combat-dice-overlay-floating-host';
+    document.body.appendChild(host);
+  }
+  return host;
+};
+Combat.clearDiceOverlayTimers = function() {
+  clearTimeout(this._diceOverlaySettleTimer);
+  clearTimeout(this._diceOverlayHideTimer);
+};
+Combat.renderDiceAnimation = function() { return ''; };
+Combat.showDiceAnimation = function(payload = {}) {
+  const dice = Array.isArray(payload.dice) ? payload.dice.slice(0, 10) : [];
+  if (!dice.length) return;
+  const id = `dicefx_${Date.now().toString(36)}`;
+  const anim = {
+    id,
+    title: String(payload.title || 'Бросок кубов').trim(),
+    subtitle: String(payload.subtitle || '').trim(),
+    total: Number(payload.total || 0),
+    crit: String(payload.crit || '').trim(),
+    dice,
+    settled: false
+  };
+  this.diceAnimation = anim;
+  this.clearDiceOverlayTimers();
+  const host = this.getDiceOverlayHost();
+  host.innerHTML = renderFloatingDiceOverlayV080(anim);
+  this._diceOverlaySettleTimer = setTimeout(() => {
+    if (!this.diceAnimation || this.diceAnimation.id !== id) return;
+    this.diceAnimation.settled = true;
+    host.innerHTML = renderFloatingDiceOverlayV080(this.diceAnimation);
+  }, COMBAT_DICE_SETTLE_MS_V080);
+  this._diceOverlayHideTimer = setTimeout(() => {
+    if (!this.diceAnimation || this.diceAnimation.id != id) return;
+    this.diceAnimation = null;
+    host.innerHTML = '';
+  }, COMBAT_DICE_HIDE_MS_V080);
+};
+
+Combat.rollSelectedDice = async function() {
+  const entries = Object.entries(this.diceDraft).filter(([, qty]) => Number(qty) > 0);
+  if (!entries.length) {
+    Toast.show('Выбери хотя бы один куб', 'info');
+    return;
+  }
+  const diceVisual = [];
+  const parts = [];
+  let total = 0;
+  let isCritSuccess = false;
+  let isCritFail = false;
+  entries.forEach(([kind, qty]) => {
+    const sides = Number(String(kind).replace('d', '')) || 6;
+    const rolls = [];
+    for (let i = 0; i < qty; i += 1) {
+      const value = 1 + Math.floor(Math.random() * sides);
+      rolls.push(value);
+      diceVisual.push({ kind, value });
+      total += value;
+      if (kind === 'd20' && value === 20) isCritSuccess = true;
+      if (kind === 'd20' && value === 1) isCritFail = true;
+    }
+    parts.push(`${qty}${kind}: [${rolls.join(', ')}]`);
+  });
+  const actor = App.currentUser?.displayName || App.currentUser?.shortName || App.currentUserId || (this.isDm() ? 'ДМ' : 'Игрок');
+  const runtime = this.getRuntime();
+  if (!runtime) return;
+  const createdAt = new Date().toISOString();
+  const text = `${actor} бросает кубы: ${parts.join(' · ')} => ${total}`;
+  const logEntry = this.makeDiceLogEntry({
+    createdAt,
+    text,
+    by: App.currentUserId || (this.isDm() ? 'dm' : 'player'),
+    title: actor,
+    subtitle: parts.join(' · '),
+    total,
+    crit: isCritSuccess ? 'success' : (isCritFail ? 'fail' : ''),
+    dice: diceVisual
+  });
+  runtime.log = mergeCombatLogEntriesV20([logEntry], runtime.log || []);
+  this.lastDiceRoll = { total, parts, crit: isCritSuccess ? 'success' : (isCritFail ? 'fail' : ''), at: createdAt };
+  this.clearDiceDraft();
+  if (UI.activeModuleId === 'combat') this.render();
+  AudioManager.play(isCritSuccess ? 'success' : (isCritFail ? 'fail' : 'uiClick'), { volume: 0.7 });
+  const persistResult = await this.persist('', { worldChanged: false, commitRemote: true, silentToast: true });
+  if (persistResult?.ok !== false) this.playDiceAnimationFromLogEntry(logEntry);
+  if (isCritSuccess) Toast.show(`КРИТИЧЕСКИЙ УСПЕХ • ${text}`, 'ok');
+  else if (isCritFail) Toast.show(`КРИТИЧЕСКАЯ НЕУДАЧА • ${text}`, 'err');
+  else Toast.show(text, 'info');
+};
+
+const __combatResolveAttack_v080 = Combat.resolveAttack.bind(Combat);
+Combat.resolveAttack = async function() {
+  const before = Date.now();
+  const result = await __combatResolveAttack_v080();
+  if (this.diceAnimation && Date.now() - before < 2000) {
+    const host = this.getDiceOverlayHost();
+    if (!host.innerHTML) host.innerHTML = renderFloatingDiceOverlayV080(this.diceAnimation);
+  }
+  return result;
+};
+
+
+const __combatResolveAttack_v072 = Combat.resolveAttack.bind(Combat);
+Combat.resolveAttack = async function() {
+  const scene = this.getScene();
+  const runtime = this.getRuntime();
+  const attacker = this.getSelectedToken();
+  const target = runtime?.tokens.find(token => token.id === this.selectedTargetId) || null;
+  if (!scene || !runtime || !attacker || !target) return __combatResolveAttack_v072();
+  if (!this.canActWithToken(attacker)) {
+    Toast.show('Сейчас не ход этого токена', 'err');
+    return;
+  }
+  if (attacker.actionUsed) {
+    Toast.show('Действие уже потрачено', 'info');
+    return;
+  }
+  const hitRoll = 1 + Math.floor(Math.random() * 20);
+  const weapon = getCombatTokenWeapon(attacker);
+  const damage = parseCombatDamage(weapon.damage || '1d6').roll();
+  attacker.actionUsed = true;
+  target.hpCurrent = clamp(Number(target.hpCurrent || target.hpMax || 0) - Number(damage || 0), 0, Number(target.hpMax || target.hpCurrent || damage || 0));
+  if (target.type === 'player' && target.playerId && App.state.users[target.playerId]) {
+    const user = normalizePlayerProfileV2(App.state.users[target.playerId]);
+    user.stats.hpCurrent = target.hpCurrent;
+    user.stats.hpMax = Math.max(user.stats.hpMax, target.hpMax);
+    App.state.users[target.playerId] = user;
+  }
+  this.queueActionEvent('attack', attacker, target, {
+    text: `${attacker.name} атакует ${target.name}: d20=${hitRoll}, урон ${damage}.`,
+    amount: Number(damage || 0)
+  });
+  this.showDiceAnimation({
+    title: `${attacker.name} атакует`,
+    subtitle: `${target.name} получает ${damage}`,
+    total: Number(damage || 0),
+    crit: hitRoll === 20 ? 'success' : (hitRoll === 1 ? 'fail' : ''),
+    dice: [{ kind: 'd20', value: hitRoll }, { kind: 'dmg', value: Number(damage || 0) }]
+  });
+  this.markTransient(attacker.id, 'source', 900);
+  this.markTransient(target.id, 'target', 1100);
+  await this.persistCombatState('', { worldChanged: false, commitRemote: true, quickRemote: true, silentToast: true });
+};
+
+
+
+
+const __combatRenderBoard_v072 = Combat.renderBoard.bind(Combat);
+Combat.renderBoard = function(scene, runtime) {
+  const html = __combatRenderBoard_v072(scene, runtime);
+  const dmButtons = this.isDm()
+    ? `<button class="secondary" type="button" id="combat-open-player-display">ЭКРАН ИГРОКОВ</button>${this.displayWindowOpen ? `<button class="secondary" type="button" id="combat-close-player-display">ЗАКРЫТЬ ЭКРАН</button>` : ''}`
+    : '';
+  const withButtons = html.replace(
+    '<button class="secondary" type="button" id="combat-center-view">СБРОСИТЬ ВЫБОР</button>',
+    `${dmButtons}<button class="secondary" type="button" id="combat-center-view">СБРОСИТЬ ВЫБОР</button>`
+  );
+  return withButtons.replace(
+    '</div>\n    </div>',
+    `${this.renderDiceAnimation()}</div>\n    </div>`
+  );
+};
+
+
+const __combatBind_v072 = Combat.bind.bind(Combat);
+Combat.bind = function(root) {
+  __combatBind_v072(root);
+  root.querySelector('#combat-open-player-display')?.addEventListener('click', () => this.openPlayerDisplay());
+  root.querySelector('#combat-close-player-display')?.addEventListener('click', () => this.closePlayerDisplay());
+};
+
+const __combatRender_v072 = Combat.render.bind(Combat);
+Combat.render = function() {
+  this.refreshPlayerDisplayStatus().catch(() => {});
+  return __combatRender_v072();
+};
+
+const __combatStartSync_v072 = Combat.startSync.bind(Combat);
+Combat.startSync = function() {
+  __combatStartSync_v072();
+  this.startRuntimeSync();
+};
+
+const __combatStopSync_v072 = Combat.stopSync.bind(Combat);
+Combat.stopSync = function() {
+  __combatStopSync_v072();
+  this.stopRuntimeSync();
+};
+
+document.addEventListener('DOMContentLoaded', () => {
+  setTimeout(() => {
+    try {
+      Combat.initRuntimeBridge();
+      Combat.refreshPlayerDisplayStatus();
+    } catch {}
+  }, 0);
+});
+
+
+/* v0.7.9 patch: thematic dice animations */
+const COMBAT_CARD_SUITS_V079 = ['♠', '♥', '♦', '♣'];
+const COMBAT_CARD_SUITS_COLOR_V079 = { '♠': 'dark', '♣': 'dark', '♥': 'red', '♦': 'red' };
+const COMBAT_CARD_RANKS_D8_V079 = ['A', '2', '3', '4', '5', '6', '7', '8'];
+const COMBAT_CARD_RANKS_D12_V079 = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q'];
+
+function buildRouletteSegmentsV079(count) {
+  return Array.from({ length: count }, (_, index) => {
+    const angle = (360 / count) * index;
+    return `<span class="combat-wheel-label" style="--wheel-angle:${angle}deg">${index + 1}</span>`;
+  }).join('');
+}
+
+function buildPipsV079(value) {
+  const pipMap = {
+    1: [5],
+    2: [1, 9],
+    3: [1, 5, 9],
+    4: [1, 3, 7, 9],
+    5: [1, 3, 5, 7, 9],
+    6: [1, 3, 4, 6, 7, 9]
+  };
+  const cells = pipMap[clamp(Number(value || 1), 1, 6)] || pipMap[1];
+  return Array.from({ length: 9 }, (_, index) => `<span class="combat-d6-pip ${cells.includes(index + 1) ? 'on' : ''}"></span>`).join('');
+}
+
+function getCardFaceV079(kind, value = 1, index = 0) {
+  const ranks = kind === 'd12' ? COMBAT_CARD_RANKS_D12_V079 : COMBAT_CARD_RANKS_D8_V079;
+  const suit = COMBAT_CARD_SUITS_V079[(Number(value || 1) + Number(index || 0)) % COMBAT_CARD_SUITS_V079.length];
+  const rank = ranks[Math.max(0, Math.min(ranks.length - 1, Number(value || 1) - 1))] || String(value || 1);
+  return { suit, suitTone: COMBAT_CARD_SUITS_COLOR_V079[suit] || 'dark', rank };
+}
+
+function getSlotDigitsV079(value = 1) {
+  const normalized = clamp(Number(value || 1), 1, 100);
+  if (normalized === 100) return ['1', '0', '0'];
+  return ['0', String(Math.floor(normalized / 10)), String(normalized % 10)];
+}
+
+function buildSlotTrackV079(targetDigit = '0') {
+  const digits = [];
+  for (let round = 0; round < 3; round += 1) {
+    for (let digit = 0; digit < 10; digit += 1) digits.push(String(digit));
+  }
+  digits.push(String(targetDigit));
+  return digits.map(digit => `<span>${digit}</span>`).join('');
+}
+
+function buildDieVisualHtmlV079(die, index = 0) {
+  const kind = String(die?.kind || 'd6').toLowerCase();
+  const value = Number(die?.value || 0);
+  if (kind === 'd4') {
+    const rotation = (8 * 360) - ((value - 1) * 90);
+    return `
+      <div class="combat-wheel combat-wheel-d4" style="--wheel-turn:${rotation}deg;--wheel-segments:4;">
+        <div class="combat-wheel-pointer"></div>
+        <div class="combat-wheel-disc">
+          <div class="combat-wheel-surface spinner-four"></div>
+          <div class="combat-wheel-labels">
+            ${buildRouletteSegmentsV079(4)}
+          </div>
+        </div>
+        <div class="combat-wheel-result">${value}</div>
+      </div>`;
+  }
+  if (kind === 'd6') {
+    return `
+      <div class="combat-craps-die" style="--dice-spin:${900 + index * 120}deg">
+        <div class="combat-craps-face">
+          <div class="combat-d6-grid">${buildPipsV079(value)}</div>
+        </div>
+        <div class="combat-craps-shadow"></div>
+      </div>`;
+  }
+  if (kind === 'd8' || kind === 'd12') {
+    const face = getCardFaceV079(kind, value, index);
+    return `
+      <div class="combat-card-flip ${face.suitTone}" style="--card-delay:${index * 70}ms">
+        <div class="combat-card-flip-inner">
+          <div class="combat-card-face combat-card-back">
+            <span>✦</span>
+          </div>
+          <div class="combat-card-face combat-card-front ${face.suitTone}">
+            <div class="combat-card-corner top"><b>${esc(face.rank)}</b><span>${esc(face.suit)}</span></div>
+            <div class="combat-card-center">${esc(face.suit)}</div>
+            <div class="combat-card-corner bottom"><b>${esc(face.rank)}</b><span>${esc(face.suit)}</span></div>
+          </div>
+        </div>
+      </div>`;
+  }
+  if (kind === 'd10' || kind === 'd20') {
+    const count = kind === 'd10' ? 10 : 20;
+    const rotation = (kind === 'd10' ? 10 : 12) * 360 - ((value - 1) * (360 / count));
+    return `
+      <div class="combat-wheel ${kind === 'd10' ? 'combat-wheel-d10' : 'combat-wheel-d20'}" style="--wheel-turn:${rotation}deg;--wheel-segments:${count};">
+        <div class="combat-wheel-pointer"></div>
+        <div class="combat-wheel-disc">
+          <div class="combat-wheel-surface ${kind === 'd10' ? 'roulette-ten' : 'roulette-twenty'}"></div>
+          <div class="combat-wheel-labels">
+            ${buildRouletteSegmentsV079(count)}
+          </div>
+        </div>
+        <div class="combat-wheel-result">${value}</div>
+      </div>`;
+  }
+  if (kind === 'd100') {
+    const digits = getSlotDigitsV079(value);
+    return `
+      <div class="combat-slot-machine">
+        <div class="combat-slot-toplights"></div>
+        <div class="combat-slot-display">
+          ${digits.map((digit, reelIndex) => `
+            <div class="combat-slot-reel">
+              <div class="combat-slot-track" style="--slot-offset:${(20 + reelIndex * 4 + Number(digit || 0)) * -1};--slot-delay:${reelIndex * 90}ms">
+                ${buildSlotTrackV079(digit)}
+              </div>
+            </div>
+          `).join('')}
+        </div>
+        <div class="combat-slot-badge">${String(value).padStart(3, '0')}</div>
+      </div>`;
+  }
+  return `<div class="combat-dmg-chip"><span>${esc(kind.toUpperCase())}</span><b>${value}</b></div>`;
+}
+
+Combat.showDiceAnimation = function(payload = {}) {
+  const dice = Array.isArray(payload.dice) ? payload.dice.slice(0, 10) : [];
+  if (!dice.length) return;
+  const id = `dicefx_${Date.now().toString(36)}`;
+  this.diceAnimation = {
+    id,
+    title: String(payload.title || 'Бросок кубов').trim(),
+    subtitle: String(payload.subtitle || '').trim(),
+    total: Number(payload.total || 0),
+    crit: String(payload.crit || '').trim(),
+    dice,
+    startedAt: Date.now(),
+    settled: false
+  };
+  if (UI.activeModuleId === 'combat') this.render();
+  setTimeout(() => {
+    if (!this.diceAnimation || this.diceAnimation.id !== id) return;
+    this.diceAnimation.settled = true;
+    if (UI.activeModuleId === 'combat') this.render();
+  }, 1500);
+  setTimeout(() => {
+    if (!this.diceAnimation || this.diceAnimation.id !== id) return;
+    this.diceAnimation = null;
+    if (UI.activeModuleId === 'combat') this.render();
+  }, 4200);
+};
+
+Combat.renderDiceAnimation = function() {
+  const anim = this.diceAnimation;
+  if (!anim) return '';
+  return `
+    <div class="combat-dice-overlay ${anim.settled ? 'settled' : 'rolling'} ${anim.crit ? `crit-${esc(anim.crit)}` : ''}" data-dice-overlay-id="${esc(anim.id)}">
+      <div class="combat-dice-overlay-card">
+        <div class="combat-dice-overlay-head">
+          <b>${esc(anim.title)}</b>
+          ${anim.subtitle ? `<span>${esc(anim.subtitle)}</span>` : ''}
+        </div>
+        <div class="combat-dice-overlay-grid thematic">
+          ${anim.dice.map((die, index) => `
+            <div class="combat-die-card thematic kind-${esc(die.kind || 'd6')}" style="--dice-delay:${index * 90}ms">
+              <span>${esc(String(die.kind || 'd6').toUpperCase())}</span>
+              <div class="combat-die-visual">${buildDieVisualHtmlV079(die, index)}</div>
+              <b>${Number(die.value || 0)}</b>
+            </div>
+          `).join('')}
+        </div>
+        <div class="combat-dice-overlay-total ${anim.crit ? `crit-${esc(anim.crit)}` : ''}">Сумма: ${Number(anim.total || 0)}</div>
+      </div>
+    </div>`;
+};
+
+Combat.rollSelectedDice = async function() {
+  const entries = Object.entries(this.diceDraft).filter(([,qty]) => Number(qty) > 0);
+  if (!entries.length) {
+    Toast.show('Выбери хотя бы один куб', 'info');
+    return;
+  }
+  const diceVisual = [];
+  const parts = [];
+  let total = 0;
+  let isCritSuccess = false;
+  let isCritFail = false;
+  entries.forEach(([kind, qty]) => {
+    const sides = Number(String(kind).replace('d', '')) || 6;
+    const rolls = [];
+    for (let i = 0; i < qty; i += 1) {
+      const value = 1 + Math.floor(Math.random() * sides);
+      rolls.push(value);
+      diceVisual.push({ kind, value });
+      total += value;
+      if (kind === 'd20' && value === 20) isCritSuccess = true;
+      if (kind === 'd20' && value === 1) isCritFail = true;
+    }
+    parts.push(`${qty}${kind}: [${rolls.join(', ')}]`);
+  });
+  const actor = App.currentUser?.displayName || App.currentUser?.shortName || App.currentUserId || (this.isDm() ? 'ДМ' : 'Игрок');
+  const runtime = this.getRuntime();
+  if (!runtime) return;
+  const createdAt = new Date().toISOString();
+  const text = `${actor} бросает кубы: ${parts.join(' · ')} => ${total}`;
+  runtime.log.unshift({ id: `log_${Date.now().toString(36)}`, createdAt, text, kind: 'dice', by: App.currentUserId || (this.isDm() ? 'dm' : 'player') });
+  runtime.log = runtime.log.slice(0, 40);
+  this.lastDiceRoll = { total, parts, crit: isCritSuccess ? 'success' : (isCritFail ? 'fail' : ''), at: createdAt };
+  this.showDiceAnimation({
+    title: actor,
+    subtitle: parts.join(' · '),
+    total,
+    crit: isCritSuccess ? 'success' : (isCritFail ? 'fail' : ''),
+    dice: diceVisual
+  });
+  this.clearDiceDraft();
+  AudioManager.play(isCritSuccess ? 'success' : (isCritFail ? 'fail' : 'uiClick'), { volume: 0.7 });
+  await this.persist('', { worldChanged: false, commitRemote: true, silentToast: true });
+  if (isCritSuccess) Toast.show(`КРИТИЧЕСКИЙ УСПЕХ • ${text}`, 'ok');
+  else if (isCritFail) Toast.show(`КРИТИЧЕСКАЯ НЕУДАЧА • ${text}`, 'err');
+  else Toast.show(text, 'info');
+};
+
+/* v0.8.1 patch: final slot-machine dice override */
+Combat.renderDiceAnimation = function() { return ''; };
+Combat.showDiceAnimation = function(payload = {}) {
+  const dice = Array.isArray(payload.dice) ? payload.dice.slice(0, 10) : [];
+  if (!dice.length) return;
+  const id = `dicefx_${Date.now().toString(36)}`;
+  const anim = {
+    id,
+    title: String(payload.title || 'Бросок кубов').trim(),
+    subtitle: String(payload.subtitle || '').trim(),
+    total: Number(payload.total || 0),
+    crit: String(payload.crit || '').trim(),
+    dice,
+    settled: false
+  };
+  this.diceAnimation = anim;
+  this.clearDiceOverlayTimers?.();
+  const host = this.getDiceOverlayHost ? this.getDiceOverlayHost() : null;
+  if (!host) return;
+  host.innerHTML = renderFloatingDiceOverlayV080(anim);
+  this._diceOverlaySettleTimer = setTimeout(() => {
+    if (!this.diceAnimation || this.diceAnimation.id !== id) return;
+    this.diceAnimation.settled = true;
+    host.innerHTML = renderFloatingDiceOverlayV080(this.diceAnimation);
+  }, COMBAT_DICE_SETTLE_MS_V080);
+  this._diceOverlayHideTimer = setTimeout(() => {
+    if (!this.diceAnimation || this.diceAnimation.id !== id) return;
+    this.diceAnimation = null;
+    host.innerHTML = '';
+  }, COMBAT_DICE_HIDE_MS_V080);
+};
+Combat.rollSelectedDice = async function() {
+  const entries = Object.entries(this.diceDraft).filter(([, qty]) => Number(qty) > 0);
+  if (!entries.length) {
+    Toast.show('Выбери хотя бы один куб', 'info');
+    return;
+  }
+  const diceVisual = [];
+  const parts = [];
+  let total = 0;
+  let isCritSuccess = false;
+  let isCritFail = false;
+  entries.forEach(([kind, qty]) => {
+    const sides = Number(String(kind).replace('d', '')) || 6;
+    const rolls = [];
+    for (let i = 0; i < qty; i += 1) {
+      const value = 1 + Math.floor(Math.random() * sides);
+      rolls.push(value);
+      diceVisual.push({ kind, value });
+      total += value;
+      if (kind === 'd20' && value === 20) isCritSuccess = true;
+      if (kind === 'd20' && value === 1) isCritFail = true;
+    }
+    parts.push(`${qty}${kind}: [${rolls.join(', ')}]`);
+  });
+  const actor = App.currentUser?.displayName || App.currentUser?.shortName || App.currentUserId || (this.isDm() ? 'ДМ' : 'Игрок');
+  const runtime = this.getRuntime();
+  if (!runtime) return;
+  const createdAt = new Date().toISOString();
+  const text = `${actor} бросает кубы: ${parts.join(' · ')} => ${total}`;
+  runtime.log.unshift({ id: `log_${Date.now().toString(36)}`, createdAt, text, kind: 'dice', by: App.currentUserId || (this.isDm() ? 'dm' : 'player') });
+  runtime.log = runtime.log.slice(0, 40);
+  this.lastDiceRoll = { total, parts, crit: isCritSuccess ? 'success' : (isCritFail ? 'fail' : ''), at: createdAt };
+  this.showDiceAnimation({
+    title: actor,
+    subtitle: parts.join(' · '),
+    total,
+    crit: isCritSuccess ? 'success' : (isCritFail ? 'fail' : ''),
+    dice: diceVisual
+  });
+  this.clearDiceDraft();
+  if (UI.activeModuleId === 'combat') this.render();
+  AudioManager.play(isCritSuccess ? 'success' : (isCritFail ? 'fail' : 'uiClick'), { volume: 0.7 });
+  await this.persist('', { worldChanged: false, commitRemote: true, silentToast: true });
+  if (isCritSuccess) Toast.show(`КРИТИЧЕСКИЙ УСПЕХ • ${text}`, 'ok');
+  else if (isCritFail) Toast.show(`КРИТИЧЕСКАЯ НЕУДАЧА • ${text}`, 'err');
+  else Toast.show(text, 'info');
+};
+
+
+/* v0.8.2 patch: local-only combat camera, deduped dice overlay, local article links */
+const __persistNormalize_localCamera_v082 = Persistence.normalize.bind(Persistence);
+Persistence.normalize = function(candidate) {
+  const state = __persistNormalize_localCamera_v082(candidate);
+  try {
+    const localCamera = sanitizeCombatCameraMapV19(JSON.parse(localStorage.getItem(COMBAT_CAMERA_LOCAL_STORAGE_KEY) || '{}'));
+    const combat = ensureCombatState(state);
+    combat.cameraByScene = { ...(combat.cameraByScene || {}), ...localCamera };
+    Combat._localCameraCache = sanitizeCombatCameraMapV19(combat.cameraByScene || {});
+  } catch {}
+  return state;
+};
+
+function stripLocalOnlyStateForSaveV082(state = makeDefaultState()) {
+  const outgoing = deep(state || makeDefaultState());
+  const combat = outgoing?.toolState?.[COMBAT_STATE_KEY];
+  if (combat && typeof combat === 'object' && combat.cameraByScene) delete combat.cameraByScene;
+  if (combat && typeof combat === 'object' && combat.remoteRuntimeShadowByScene) delete combat.remoteRuntimeShadowByScene;
+  return outgoing;
+}
+
+Persistence.save = async function(state) {
+  const stamp = new Date().toISOString();
+  if (state?.meta) state.meta.lastUpdatedAt = stamp;
+  const outgoing = stripLocalOnlyStateForSaveV082(state);
+  if (outgoing?.meta) outgoing.meta.lastUpdatedAt = stamp;
+  if (window.electronAPI?.saveState) {
+    const res = await window.electronAPI.saveState(outgoing);
+    if (!res?.ok) {
+      localStorage.setItem(FALLBACK_STATE_KEY, JSON.stringify(outgoing));
+      return { ok: true, fallback: true };
+    }
+    return res;
+  }
+  localStorage.setItem(FALLBACK_STATE_KEY, JSON.stringify(outgoing));
+  return { ok: true, fallback: true };
+};
+
+const __buildSharedStateSnapshot_localCamera_v082 = buildSharedStateSnapshot;
+buildSharedStateSnapshot = function(state = App?.state || makeDefaultState()) {
+  const snap = __buildSharedStateSnapshot_localCamera_v082(state);
+  const combat = snap?.toolState?.[COMBAT_STATE_KEY];
+  if (combat && typeof combat === 'object' && combat.cameraByScene) delete combat.cameraByScene;
+  if (combat && typeof combat === 'object' && combat.remoteRuntimeShadowByScene) delete combat.remoteRuntimeShadowByScene;
+  return snap;
+};
+
+Combat.getDiceOverlayHost = function() {
+  document.querySelectorAll('#combat-dice-overlay-floating-host').forEach((node, index) => {
+    if (index > 0) node.remove();
+  });
+  let host = document.getElementById('combat-dice-overlay-floating-host');
+  if (!host) {
+    host = document.createElement('div');
+    host.id = 'combat-dice-overlay-floating-host';
+    document.body.appendChild(host);
+  }
+  host.replaceChildren();
+  return host;
+};
+
+Combat.makeDiceLogEntry = function(payload = {}) {
+  const entry = normalizeCombatLogEntryV20({
+    id: payload.id || `log_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`,
+    createdAt: payload.createdAt || new Date().toISOString(),
+    text: String(payload.text || '').trim(),
+    kind: 'dice',
+    by: payload.by || App.currentUserId || (this.isDm() ? 'dm' : 'player'),
+    diceFx: {
+      title: String(payload.title || 'Бросок кубов').trim(),
+      subtitle: String(payload.subtitle || '').trim(),
+      total: Number(payload.total || 0),
+      crit: String(payload.crit || '').trim(),
+      dice: Array.isArray(payload.dice) ? payload.dice : []
+    }
+  });
+  return entry;
+};
+
+Combat.playDiceAnimationFromLogEntry = function(entry = {}) {
+  const logId = String(entry?.id || '').trim();
+  if (!logId || !entry?.diceFx) return;
+  const now = Date.now();
+  if (this._lastAnimatedDiceLogId === logId && now - Number(this._lastAnimatedDiceLogAt || 0) < 8000) return;
+  this._lastAnimatedDiceLogId = logId;
+  this._lastAnimatedDiceLogAt = now;
+  this.showDiceAnimation({ ...entry.diceFx, logId });
+};
+
+Combat.showDiceAnimation = function(payload = {}) {
+  const dice = Array.isArray(payload.dice) ? payload.dice.slice(0, 10) : [];
+  if (!dice.length) return;
+  const normalizedPayload = {
+    title: String(payload.title || 'Бросок кубов').trim(),
+    subtitle: String(payload.subtitle || '').trim(),
+    total: Number(payload.total || 0),
+    crit: String(payload.crit || '').trim(),
+    dice: dice.map(die => ({ kind: String(die?.kind || 'd6').toLowerCase(), value: Math.max(0, Math.floor(Number(die?.value || 0))) }))
+  };
+  const logId = String(payload.logId || '').trim();
+  const signature = JSON.stringify(normalizedPayload);
+  const now = Date.now();
+  if (logId && this._activeDiceAnimationLogId === logId && now - Number(this._activeDiceAnimationLogAt || 0) < 8000) return;
+  if (!logId && this._lastDiceAnimationSignature === signature && now - Number(this._lastDiceAnimationAt || 0) < 450) return;
+  if (logId) {
+    this._activeDiceAnimationLogId = logId;
+    this._activeDiceAnimationLogAt = now;
+  }
+  this._lastDiceAnimationSignature = signature;
+  this._lastDiceAnimationAt = now;
+  const id = `dicefx_${now.toString(36)}`;
+  const anim = { id, logId, ...normalizedPayload, settled: false };
+  this.diceAnimation = anim;
+  this.clearDiceOverlayTimers?.();
+  const host = this.getDiceOverlayHost();
+  host.innerHTML = renderFloatingDiceOverlayV080(anim);
+  this._diceOverlaySettleTimer = setTimeout(() => {
+    if (!this.diceAnimation || this.diceAnimation.id !== id) return;
+    this.diceAnimation.settled = true;
+    host.innerHTML = renderFloatingDiceOverlayV080(this.diceAnimation);
+  }, COMBAT_DICE_SETTLE_MS_V080);
+  this._diceOverlayHideTimer = setTimeout(() => {
+    if (!this.diceAnimation || this.diceAnimation.id !== id) return;
+    this.diceAnimation = null;
+    host.innerHTML = '';
+  }, COMBAT_DICE_HIDE_MS_V080);
+};
+
+window.addEventListener('beforeunload', () => {
+  try { Combat.persistLocalCameraCache(); } catch {}
+});
+
+
+/* v0.8.3 patch: final dice log id dedupe + reliable runtime log merge */
+Combat.rollSelectedDice = async function() {
+  const entries = Object.entries(this.diceDraft).filter(([, qty]) => Number(qty) > 0);
+  if (!entries.length) {
+    Toast.show('Выбери хотя бы один куб', 'info');
+    return;
+  }
+  const diceVisual = [];
+  const parts = [];
+  let total = 0;
+  let isCritSuccess = false;
+  let isCritFail = false;
+  entries.forEach(([kind, qty]) => {
+    const sides = Number(String(kind).replace('d', '')) || 6;
+    const rolls = [];
+    for (let i = 0; i < qty; i += 1) {
+      const value = 1 + Math.floor(Math.random() * sides);
+      rolls.push(value);
+      diceVisual.push({ kind, value });
+      total += value;
+      if (kind === 'd20' && value === 20) isCritSuccess = true;
+      if (kind === 'd20' && value === 1) isCritFail = true;
+    }
+    parts.push(`${qty}${kind}: [${rolls.join(', ')}]`);
+  });
+  const actor = App.currentUser?.displayName || App.currentUser?.shortName || App.currentUserId || (this.isDm() ? 'ДМ' : 'Игрок');
+  const runtime = this.getRuntime();
+  if (!runtime) return;
+  const createdAt = new Date().toISOString();
+  const text = `${actor} бросает кубы: ${parts.join(' · ')} => ${total}`;
+  const logEntry = this.makeDiceLogEntry({
+    createdAt,
+    text,
+    by: App.currentUserId || (this.isDm() ? 'dm' : 'player'),
+    title: actor,
+    subtitle: parts.join(' · '),
+    total,
+    crit: isCritSuccess ? 'success' : (isCritFail ? 'fail' : ''),
+    dice: diceVisual
+  });
+  runtime.log = mergeCombatLogEntriesV20([logEntry], runtime.log || []);
+  this.lastDiceRoll = { total, parts, crit: isCritSuccess ? 'success' : (isCritFail ? 'fail' : ''), at: createdAt };
+  this.clearDiceDraft();
+  if (UI.activeModuleId === 'combat') this.render();
+  AudioManager.play(isCritSuccess ? 'success' : (isCritFail ? 'fail' : 'uiClick'), { volume: 0.7 });
+  const persistResult = await this.persist('', { worldChanged: false, commitRemote: true, silentToast: true });
+  if (persistResult?.ok !== false) this.playDiceAnimationFromLogEntry(logEntry);
+  if (isCritSuccess) Toast.show(`КРИТИЧЕСКИЙ УСПЕХ • ${text}`, 'ok');
+  else if (isCritFail) Toast.show(`КРИТИЧЕСКАЯ НЕУДАЧА • ${text}`, 'err');
+  else Toast.show(text, 'info');
+};
+
+/* v0.8.4 patch: combat runtime event dedupe + keep runtime out of snapshot + single floating dice overlay */
+function combatRuntimeRowFingerprintV084(row = {}) {
+  const sceneId = String(row?.activeSceneId || row?.active_scene_id || row?.scene?.id || '').trim();
+  const revision = Math.max(0, Number(row?.revision || 0));
+  const updatedAt = String(row?.updatedAt || row?.updated_at || row?.clientUpdatedAt || row?.client_updated_at || '').trim();
+  return `${sceneId}|${revision}|${updatedAt}`;
+}
+
+Combat.renderDiceAnimation = function() {
+  return '';
+};
+
+Combat.initRuntimeBridge = function() {
+  if (this.runtimeListenerUnsub || !window.electronAPI?.onCombatRuntimeEvent) return;
+  this._seenRuntimeFingerprints = this._seenRuntimeFingerprints && typeof this._seenRuntimeFingerprints === 'object' ? this._seenRuntimeFingerprints : {};
+  this.runtimeListenerUnsub = window.electronAPI.onCombatRuntimeEvent(payload => {
+    const row = payload?.row || null;
+    if (!row) return;
+    const fp = combatRuntimeRowFingerprintV084(row);
+    const now = Date.now();
+    const seenAt = Number(this._seenRuntimeFingerprints[fp] || 0);
+    if (fp && seenAt && now - seenAt < 15000) return;
+    if (fp) this._seenRuntimeFingerprints[fp] = now;
+    const changed = this.applyRemoteRuntimeRow(row, { render: UI.activeModuleId === 'combat' });
+    if (changed) Persistence.save(App.state).catch(() => {});
+    for (const [key, stamp] of Object.entries(this._seenRuntimeFingerprints)) {
+      if (now - Number(stamp || 0) > 30000) delete this._seenRuntimeFingerprints[key];
+    }
+  });
+};
+
+const __combatApplyRemoteRuntimeRow_v084 = Combat.applyRemoteRuntimeRow.bind(Combat);
+Combat.applyRemoteRuntimeRow = function(row, options = {}) {
+  const combat = ensureCombatSyncMeta();
+  const revision = Math.max(0, Number(row?.revision || 0));
+  const fingerprint = combatRuntimeRowFingerprintV084(row);
+  if (!options.force) {
+    if (fingerprint && combat._lastAppliedRuntimeFingerprint === fingerprint) return false;
+    if (revision && revision <= Number(combat.remoteRuntimeRevision || 0)) return false;
+  }
+  const changed = __combatApplyRemoteRuntimeRow_v084(row, options);
+  if (changed && fingerprint) combat._lastAppliedRuntimeFingerprint = fingerprint;
+  return changed;
+};
+
+const __buildSharedStateSnapshot_v084 = buildSharedStateSnapshot;
+buildSharedStateSnapshot = function(state = App?.state || makeDefaultState()) {
+  const snap = __buildSharedStateSnapshot_v084(state);
+  const combat = snap?.toolState?.[COMBAT_STATE_KEY];
+  if (combat && typeof combat === 'object') {
+    delete combat.scenes;
+    delete combat.activeSceneId;
+    delete combat.remoteRuntimeRevision;
+    delete combat.remoteRuntimeUpdatedAt;
+    delete combat.remoteRuntimeShadowByScene;
+    delete combat._lastAppliedRuntimeFingerprint;
+  }
+  return snap;
+};
+
+function cloneCombatRuntimeSnapshotV084(state = App?.state) {
+  const combat = state?.toolState?.[COMBAT_STATE_KEY];
+  if (!combat || typeof combat !== 'object') return null;
+  return {
+    scenes: deep(combat.scenes || {}),
+    activeSceneId: String(combat.activeSceneId || '').trim(),
+    remoteRuntimeRevision: Math.max(0, Number(combat.remoteRuntimeRevision || 0)),
+    remoteRuntimeUpdatedAt: combat.remoteRuntimeUpdatedAt || null,
+    remoteRuntimeShadowByScene: deep(combat.remoteRuntimeShadowByScene || {}),
+    _lastAppliedRuntimeFingerprint: String(combat._lastAppliedRuntimeFingerprint || '').trim()
+  };
+}
+
+function mergeCombatRuntimeSnapshotsV22(beforeSnapshot = null, afterSnapshot = null) {
+  if (!beforeSnapshot && !afterSnapshot) return null;
+  const before = beforeSnapshot || {};
+  const after = afterSnapshot || {};
+  const sceneIds = new Set([
+    ...Object.keys(before.scenes || {}),
+    ...Object.keys(after.scenes || {}),
+    ...Object.keys(before.remoteRuntimeShadowByScene || {}),
+    ...Object.keys(after.remoteRuntimeShadowByScene || {})
+  ]);
+  const mergedScenes = {};
+  const mergedShadows = {};
+  const mergeRuntime = (earlierRuntime = {}, laterRuntime = {}) => {
+    const earlier = earlierRuntime && typeof earlierRuntime === 'object' ? deep(earlierRuntime) : {};
+    const later = laterRuntime && typeof laterRuntime === 'object' ? deep(laterRuntime) : {};
+    const merged = { ...earlier, ...later };
+    merged.tokens = Array.isArray(later.tokens) && later.tokens.length ? deep(later.tokens) : deep(earlier.tokens || []);
+    merged.initiativeOrder = Array.isArray(later.initiativeOrder) && later.initiativeOrder.length ? deep(later.initiativeOrder) : deep(earlier.initiativeOrder || []);
+    merged.turnIndex = Number.isFinite(Number(later.turnIndex)) ? Number(later.turnIndex) : Number(earlier.turnIndex || 0);
+    merged.round = Number.isFinite(Number(later.round)) ? Number(later.round) : Number(earlier.round || 1);
+    merged.log = mergeCombatLogEntriesV20(earlier.log || [], later.log || []);
+    return merged;
+  };
+  sceneIds.forEach(sceneId => {
+    const beforeScene = before.scenes?.[sceneId] || {};
+    const afterScene = after.scenes?.[sceneId] || {};
+    const runtime = mergeRuntime(beforeScene, afterScene);
+    if (Object.keys(runtime).length) mergedScenes[sceneId] = runtime;
+    const beforeShadow = before.remoteRuntimeShadowByScene?.[sceneId] || {};
+    const afterShadow = after.remoteRuntimeShadowByScene?.[sceneId] || {};
+    const shadow = mergeRuntime(beforeShadow, afterShadow);
+    if (Object.keys(shadow).length) mergedShadows[sceneId] = shadow;
+  });
+  return {
+    scenes: mergedScenes,
+    activeSceneId: String(after.activeSceneId || before.activeSceneId || '').trim(),
+    remoteRuntimeRevision: Math.max(0, Number(before.remoteRuntimeRevision || 0), Number(after.remoteRuntimeRevision || 0)),
+    remoteRuntimeUpdatedAt: after.remoteRuntimeUpdatedAt || before.remoteRuntimeUpdatedAt || null,
+    remoteRuntimeShadowByScene: mergedShadows,
+    _lastAppliedRuntimeFingerprint: String(after._lastAppliedRuntimeFingerprint || before._lastAppliedRuntimeFingerprint || '').trim()
+  };
+}
+
+function restoreCombatRuntimeSnapshotV084(snapshot = null, state = App?.state) {
+  if (!snapshot || !state) return;
+  const combat = ensureCombatSyncMeta(state);
+  combat.scenes = deep(snapshot.scenes || combat.scenes || {});
+  combat.activeSceneId = String(snapshot.activeSceneId || combat.activeSceneId || '').trim();
+  combat.remoteRuntimeRevision = Math.max(Number(combat.remoteRuntimeRevision || 0), Number(snapshot.remoteRuntimeRevision || 0));
+  combat.remoteRuntimeUpdatedAt = snapshot.remoteRuntimeUpdatedAt || combat.remoteRuntimeUpdatedAt || null;
+  combat.remoteRuntimeShadowByScene = deep(snapshot.remoteRuntimeShadowByScene || combat.remoteRuntimeShadowByScene || {});
+  if (snapshot._lastAppliedRuntimeFingerprint) combat._lastAppliedRuntimeFingerprint = snapshot._lastAppliedRuntimeFingerprint;
+  const validSceneIds = new Set(COMBAT_SCENE_LIST.map(scene => String(scene?.id || '').trim()).filter(Boolean));
+  Object.keys(combat.scenes || {}).forEach(sceneId => {
+    if (validSceneIds.size && !validSceneIds.has(String(sceneId || '').trim())) delete combat.scenes[sceneId];
+    else ensureCombatRuntime(sceneId, state);
+  });
+  if (combat.activeSceneId && validSceneIds.size && !validSceneIds.has(combat.activeSceneId)) combat.activeSceneId = '';
+}
+
+const __syncApplyRemoteSnapshot_combatRuntime_v084 = Sync.applyRemoteSnapshot.bind(Sync);
+Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}) {
+  const combatBefore = cloneCombatRuntimeSnapshotV084(App.state);
+  const res = await __syncApplyRemoteSnapshot_combatRuntime_v084(payload, remoteMeta, options);
+  const combatAfter = cloneCombatRuntimeSnapshotV084(App.state);
+  const mergedCombatRuntime = mergeCombatRuntimeSnapshotsV22(combatBefore, combatAfter);
+  restoreCombatRuntimeSnapshotV084(mergedCombatRuntime, App.state);
+  if (UI.activeModuleId === 'combat') {
+    try { Combat.render(); } catch {}
+  }
+  return res;
+};
+
+/* v0.8.6 patch: local-only dice animation, preserve combat runtime across snapshot apply, restore UI state */
+function stripCombatFromRemoteSnapshotV086(payload = {}) {
+  const next = deep(payload || {});
+  if (next?.state?.toolState && typeof next.state.toolState === 'object' && next.state.toolState[COMBAT_STATE_KEY]) {
+    delete next.state.toolState[COMBAT_STATE_KEY];
+  }
+  return next;
+}
+
+function captureUiStateV086() {
+  return {
+    activeModuleId: UI?.activeModuleId || null,
+    selectedPlanetId: UI?.selectedPlanetId || null,
+    selectedSystemId: UI?.selectedSystemId || null,
+    wikiCurrentView: deep(Wiki?.currentView || null),
+    config: typeof Configurator === 'object' ? {
+      selectedType: Configurator.selectedType || null,
+      selectedId: Configurator.selectedId || null,
+      searchQuery: Configurator.searchQuery || ''
+    } : null,
+    messages: typeof MessagesUI === 'object' ? {
+      selectedPlayerKind: MessagesUI.selectedPlayerKind || null,
+      selectedPlayerKey: MessagesUI.selectedPlayerKey || null,
+      selectedGmKind: MessagesUI.selectedGmKind || null,
+      selectedGmKey: MessagesUI.selectedGmKey || null
+    } : null,
+    combat: typeof Combat === 'object' ? {
+      selectedSceneId: Combat.selectedSceneId || null,
+      selectedObject: deep(Combat.selectedObject || null),
+      selectedTargetId: Combat.selectedTargetId || null,
+      diceDraft: deep(Combat.diceDraft || null),
+      lastDiceRoll: deep(Combat.lastDiceRoll || null)
+    } : null
+  };
+}
+
+function restoreUiStateV086(snapshot = null) {
+  if (!snapshot) return;
+  if (UI) {
+    UI.selectedPlanetId = snapshot.selectedPlanetId || null;
+    UI.selectedSystemId = snapshot.selectedSystemId || null;
+  }
+  if (snapshot.wikiCurrentView && typeof Wiki === 'object') {
+    Wiki.currentView = deep(snapshot.wikiCurrentView);
+  }
+  if (snapshot.config && typeof Configurator === 'object') {
+    Configurator.selectedType = snapshot.config.selectedType || Configurator.selectedType || 'players';
+    Configurator.selectedId = snapshot.config.selectedId || null;
+    Configurator.searchQuery = snapshot.config.searchQuery || '';
+  }
+  if (snapshot.messages && typeof MessagesUI === 'object') {
+    MessagesUI.selectedPlayerKind = snapshot.messages.selectedPlayerKind || null;
+    MessagesUI.selectedPlayerKey = snapshot.messages.selectedPlayerKey || null;
+    MessagesUI.selectedGmKind = snapshot.messages.selectedGmKind || null;
+    MessagesUI.selectedGmKey = snapshot.messages.selectedGmKey || null;
+  }
+  if (snapshot.combat && typeof Combat === 'object') {
+    Combat.selectedSceneId = snapshot.combat.selectedSceneId || null;
+    Combat.selectedObject = deep(snapshot.combat.selectedObject || null);
+    Combat.selectedTargetId = snapshot.combat.selectedTargetId || null;
+    if (snapshot.combat.diceDraft) Combat.diceDraft = deep(snapshot.combat.diceDraft);
+    Combat.lastDiceRoll = deep(snapshot.combat.lastDiceRoll || null);
+  }
+}
+
+function rerenderActiveModuleV086(snapshot = null) {
+  const activeModuleId = snapshot?.activeModuleId || UI?.activeModuleId || null;
+  if (!activeModuleId) {
+    try { App.renderLive(); } catch {}
+    return;
+  }
+  try {
+    if (activeModuleId === 'market') UI.renderMarket();
+    else if (activeModuleId === 'config') Configurator.render();
+    else if (activeModuleId === 'sync') Sync.render();
+    else if (activeModuleId === 'wiki' && Wiki?.currentView) Wiki.showEntity(Wiki.currentView.type, Wiki.currentView.id);
+    else if (activeModuleId === 'tool') Tooling.render();
+    else if (activeModuleId === 'messages') MessagesUI.render();
+    else if (activeModuleId === 'combat') Combat.render();
+    else App.renderLive();
+  } catch {}
+}
+
+Combat.playDiceAnimationFromLogEntry = function(entry = {}) {
+  const logId = String(entry?.id || '').trim();
+  if (!logId || !entry?.diceFx) return;
+  const allowedLogId = String(this._allowNextDiceAnimationLogId || '').trim();
+  if (!allowedLogId || allowedLogId !== logId) return;
+  this._allowNextDiceAnimationLogId = '';
+  const now = Date.now();
+  if (this._lastAnimatedDiceLogId === logId && now - Number(this._lastAnimatedDiceLogAt || 0) < 8000) return;
+  this._lastAnimatedDiceLogId = logId;
+  this._lastAnimatedDiceLogAt = now;
+  this.showDiceAnimation({ ...entry.diceFx, logId });
+};
+
+const __combatRollSelectedDice_v086 = Combat.rollSelectedDice.bind(Combat);
+Combat.rollSelectedDice = async function() {
+  const entries = Object.entries(this.diceDraft).filter(([, qty]) => Number(qty) > 0);
+  if (!entries.length) {
+    Toast.show('Выбери хотя бы один куб', 'info');
+    return;
+  }
+  const diceVisual = [];
+  const parts = [];
+  let total = 0;
+  let isCritSuccess = false;
+  let isCritFail = false;
+  entries.forEach(([kind, qty]) => {
+    const sides = Number(String(kind).replace('d', '')) || 6;
+    const rolls = [];
+    for (let i = 0; i < qty; i += 1) {
+      const value = 1 + Math.floor(Math.random() * sides);
+      rolls.push(value);
+      diceVisual.push({ kind, value });
+      total += value;
+      if (kind === 'd20' && value === 20) isCritSuccess = true;
+      if (kind === 'd20' && value === 1) isCritFail = true;
+    }
+    parts.push(`${qty}${kind}: [${rolls.join(', ')}]`);
+  });
+  const actor = App.currentUser?.displayName || App.currentUser?.shortName || App.currentUserId || (this.isDm() ? 'ДМ' : 'Игрок');
+  const runtime = this.getRuntime();
+  if (!runtime) return;
+  const createdAt = new Date().toISOString();
+  const text = `${actor} бросает кубы: ${parts.join(' · ')} => ${total}`;
+  const logEntry = this.makeDiceLogEntry({
+    createdAt,
+    text,
+    by: App.currentUserId || (this.isDm() ? 'dm' : 'player'),
+    title: actor,
+    subtitle: parts.join(' · '),
+    total,
+    crit: isCritSuccess ? 'success' : (isCritFail ? 'fail' : ''),
+    dice: diceVisual
+  });
+  runtime.log = mergeCombatLogEntriesV20([logEntry], runtime.log || []);
+  this.lastDiceRoll = { total, parts, crit: isCritSuccess ? 'success' : (isCritFail ? 'fail' : ''), at: createdAt };
+  this.clearDiceDraft();
+  if (UI.activeModuleId === 'combat') this.render();
+  AudioManager.play(isCritSuccess ? 'success' : (isCritFail ? 'fail' : 'uiClick'), { volume: 0.7 });
+  this._allowNextDiceAnimationLogId = logEntry.id;
+  const persistResult = await this.persist('', { worldChanged: false, commitRemote: true, silentToast: true });
+  if (persistResult?.ok !== false) this.playDiceAnimationFromLogEntry(logEntry);
+  else this._allowNextDiceAnimationLogId = '';
+  if (isCritSuccess) Toast.show(`КРИТИЧЕСКИЙ УСПЕХ • ${text}`, 'ok');
+  else if (isCritFail) Toast.show(`КРИТИЧЕСКАЯ НЕУДАЧА • ${text}`, 'err');
+  else Toast.show(text, 'info');
+};
+
+const __combatApplyRemoteRuntimeRow_v086 = Combat.applyRemoteRuntimeRow.bind(Combat);
+Combat.applyRemoteRuntimeRow = function(row, options = {}) {
+  if (Sync?._applyingRemoteSnapshot) {
+    this._queuedRuntimeRowsDuringSnapshot = Array.isArray(this._queuedRuntimeRowsDuringSnapshot) ? this._queuedRuntimeRowsDuringSnapshot : [];
+    this._queuedRuntimeRowsDuringSnapshot.push(deep(row || {}));
+    return false;
+  }
+  return __combatApplyRemoteRuntimeRow_v086(row, options);
+};
+
+const __syncApplyRemoteSnapshot_v086 = Sync.applyRemoteSnapshot.bind(Sync);
+Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}) {
+  const localUiState = captureUiStateV086();
+  const localCombatRuntime = cloneCombatRuntimeSnapshotV084(App.state);
+  const sanitizedPayload = stripCombatFromRemoteSnapshotV086(payload);
+  const queuedBefore = Array.isArray(Combat._queuedRuntimeRowsDuringSnapshot) ? Combat._queuedRuntimeRowsDuringSnapshot.slice() : [];
+  Combat._queuedRuntimeRowsDuringSnapshot = [];
+  Sync._applyingRemoteSnapshot = true;
+  try {
+    const res = await __syncApplyRemoteSnapshot_v086(sanitizedPayload, remoteMeta, options);
+    restoreCombatRuntimeSnapshotV084(localCombatRuntime, App.state);
+    const queuedRows = [...queuedBefore, ...(Array.isArray(Combat._queuedRuntimeRowsDuringSnapshot) ? Combat._queuedRuntimeRowsDuringSnapshot : [])]
+      .filter(row => row && typeof row === 'object')
+      .sort((a, b) => Math.max(0, Number(a?.revision || 0)) - Math.max(0, Number(b?.revision || 0)));
+    Combat._queuedRuntimeRowsDuringSnapshot = [];
+    for (const row of queuedRows) {
+      try { __combatApplyRemoteRuntimeRow_v086.call(Combat, row, { force: true, render: false }); } catch {}
+    }
+    restoreUiStateV086(localUiState);
+    rerenderActiveModuleV086(localUiState);
+    return res;
+  } finally {
+    Sync._applyingRemoteSnapshot = false;
+  }
+};
+
+
+/* v30 desktop restore: navigation config + add system map button */
+
+(function(){
+  function getGalaxyLegendSnapshotSourceV30(options = {}) {
+    const preferState = Boolean(options.preferState);
+    const stateLegend = Array.isArray(App?.state?.galaxyLegend) ? App.state.galaxyLegend : [];
+    const worldLegend = Array.isArray(worldData?.ui?.galaxyLegend) ? worldData.ui.galaxyLegend : [];
+    const stateHas = stateLegend.length > 0;
+    const worldHas = worldLegend.length > 0;
+    if (preferState) return deep(stateHas ? stateLegend : worldLegend);
+    if (worldHas) return deep(worldLegend);
+    if (stateHas) return deep(stateLegend);
+    return deep([]);
+  }
+
+  function syncGalaxyLegendStateFromWorldV30() {
+    if (!App?.state) return;
+    App.state.galaxyLegend = getGalaxyLegendSnapshotSourceV30();
+  }
+
+  const __makeDefaultState_v30 = makeDefaultState;
+  makeDefaultState = function() {
+    const state = __makeDefaultState_v30();
+    state.galaxyLegend = Array.isArray(state.galaxyLegend) ? state.galaxyLegend : [];
+    return state;
+  };
+
+  const __buildSharedStateSnapshot_v30 = buildSharedStateSnapshot;
+  buildSharedStateSnapshot = function(state = App?.state || makeDefaultState()) {
+    const snap = __buildSharedStateSnapshot_v30(state);
+    snap.galaxyLegend = deep(state?.galaxyLegend || []);
+    return snap;
+  };
+
+  const __persistenceNormalize_v30 = Persistence.normalize.bind(Persistence);
+  Persistence.normalize = function(candidate) {
+    const state = __persistenceNormalize_v30(candidate);
+    state.galaxyLegend = Array.isArray(candidate?.galaxyLegend)
+      ? deep(candidate.galaxyLegend)
+      : (Array.isArray(worldData?.ui?.galaxyLegend) ? deep(worldData.ui.galaxyLegend) : []);
+    return state;
+  };
+
+  const __applyWorldData_v30 = applyWorldData;
+  applyWorldData = function(payload = {}) {
+    __applyWorldData_v30(payload);
+    if (!worldData.ui || typeof worldData.ui !== 'object') worldData.ui = {};
+    if (!Array.isArray(worldData.ui.galaxyLegend)) worldData.ui.galaxyLegend = [];
+    syncGalaxyLegendStateFromWorldV30();
+  };
+
+  const __buildWorldSnapshot_v30 = buildWorldSnapshot;
+  buildWorldSnapshot = function() {
+    const snap = __buildWorldSnapshot_v30();
+    if (!snap.ui || typeof snap.ui !== 'object') snap.ui = {};
+    snap.ui.galaxyLegend = getGalaxyLegendSnapshotSourceV30({ preferState: true });
+    return snap;
+  };
+
+  saveWorldConfigFromMap = async function(message = 'Изменения на карте сохранены') {
+    if (!worldData.ui || typeof worldData.ui !== 'object') worldData.ui = {};
+    worldData.ui.galaxyLegend = getGalaxyLegendSnapshotSourceV30({ preferState: true });
+    const snapshot = buildWorldSnapshot();
+    const res = await window.electronAPI.saveWorldData(snapshot);
+    if (!res?.ok || !res.world) {
+      Toast.show(`Ошибка записи мира: ${res?.message || 'unknown'}`, 'err');
+      return false;
+    }
+    worldData = res.world;
+    applyWorldData(res.world);
+    syncGalaxyLegendStateFromWorldV30();
+    Sync.markLocalDirty('WORLD_MAP_EDITOR_PENDING_SYNC');
+    await Persistence.save(App.state);
+    await Sync.pushCurrentSnapshot('world-map-editor-save', { silent: true });
+    App.state = await Persistence.load();
+    syncGalaxyLegendStateFromWorldV30();
+    App.renderLive();
+    Toast.show(message, 'ok');
+    return true;
+  };
+
+  renderGalaxyLegendEditor = function(options = {}) {
+    const entries = ensureGalaxyLegend();
+    const rows = entries.length ? entries : [{ color: '#7df9ff', label: 'Новая фракция' }];
+    const rowsId = String(options.rowsId || 'galaxy-legend-rows');
+    const addButtonId = String(options.addButtonId || 'add-legend-row-btn');
+    const label = String(options.label || 'Цветовые обозначения');
+    return `
+      <div class="field">
+        <label>${esc(label)}</label>
+        <div id="${esc(rowsId)}" class="dynamic-list" data-kind="galaxy-legend">
+          ${rows.map(entry => `
+            <div class="legend-row-editor dynamic-row">
+              <input class="input" data-role="color" value="${esc(entry.color || '#7df9ff')}" placeholder="#7df9ff" />
+              <input class="input" data-role="label" value="${esc(entry.label || '')}" placeholder="Название фракции / обозначения" />
+              <button type="button" class="ghost remove-row-btn">REMOVE</button>
+            </div>
+          `).join('')}
+        </div>
+        <button id="${esc(addButtonId)}" class="secondary" type="button">ADD_LEGEND_ENTRY</button>
+      </div>
+    `;
+  };
+
+  function renderGalaxyLegendConfigPanelV30() {
+    return `
+      <section id="galaxy-legend-config-panel" class="card pad18" style="margin-bottom:18px">
+        <div class="row" style="justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:12px">
+          <div>
+            <div class="section-title">НАВИГАЦИЯ ГАЛАКТИЧЕСКОЙ КАРТЫ</div>
+            <div class="small-note">Глобальные цветовые обозначения карты. Этот раздел хранится отдельно от систем и не должен сбрасываться при их редактировании.</div>
+          </div>
+          <button id="save-galaxy-legend-btn" class="primary" type="button">SAVE_NAVIGATION_LEGEND</button>
+        </div>
+        ${renderGalaxyLegendEditor({ rowsId: 'config-galaxy-legend-rows', addButtonId: 'add-config-legend-row-btn', label: 'Цветовые обозначения' })}
+      </section>
+    `;
+  }
+
+  function bindGalaxyLegendConfigPanelV30() {
+    const panel = document.getElementById('galaxy-legend-config-panel');
+    if (!panel) return;
+    if (panel.dataset.boundGalaxyLegendPanel === '1') {
+      bindDynamicRowEditor(panel);
+      return;
+    }
+    panel.dataset.boundGalaxyLegendPanel = '1';
+    bindDynamicRowEditor(panel);
+    panel.querySelector('#add-config-legend-row-btn')?.addEventListener('click', () => {
+      const list = panel.querySelector('#config-galaxy-legend-rows');
+      if (!list) return;
+      list.insertAdjacentHTML('beforeend', `<div class="legend-row-editor dynamic-row"><input class="input" data-role="color" value="#7df9ff" placeholder="#7df9ff" /><input class="input" data-role="label" value="" placeholder="Название фракции / обозначения" /><button type="button" class="ghost remove-row-btn">REMOVE</button></div>`);
+      bindDynamicRowEditor(panel);
+    });
+    panel.querySelector('#save-galaxy-legend-btn')?.addEventListener('click', async () => {
+      App.state.galaxyLegend = readGalaxyLegendRows(panel);
+      if (!worldData.ui || typeof worldData.ui !== 'object') worldData.ui = {};
+      worldData.ui.galaxyLegend = deep(App.state.galaxyLegend);
+      await Configurator.persistAll('Цветовые обозначения навигации сохранены');
+      renderGalaxyLegendOverlay();
+    });
+  }
+
+  renderGalaxyMapSystemQuickEditor = function(system) {
+    const editableRoutes = renderSystemRoutesEditor(system.routes || [], system.id);
+    return `
+      <form id="galaxy-system-quick-form" class="form">
+        <div class="section-title">БЫСТРЫЙ РЕДАКТОР СИСТЕМЫ</div>
+        <div class="cols2">
+          <div class="field"><label>Метка на карте</label><input class="input" name="markerLabel" value="${esc(system.markerLabel || system.name || '')}" /></div>
+          <div class="field"><label>Внутреннее название</label><input class="input" name="name" value="${esc(system.name || '')}" /></div>
+        </div>
+        <div class="cols4 cols-responsive-4">
+          <div class="field"><label>Цвет системы</label><input class="input" name="color" value="${esc(system.color || '#7df9ff')}" /></div>
+          <div class="field"><label>Вид метки</label><select class="select" name="markerStyle">${SYSTEM_MARKER_STYLES.map(option => `<option value="${option.id}" ${option.id === (system.markerStyle || 'orbital') ? 'selected' : ''}>${esc(option.label)}</option>`).join('')}</select></div>
+          <div class="field"><label>Pos X (0..1)</label><input class="input" type="number" step="0.001" min="0" max="1" name="posX" value="${Number(system.pos?.x ?? 0.5)}" /></div>
+          <div class="field"><label>Pos Y (0..1)</label><input class="input" type="number" step="0.001" min="0" max="1" name="posY" value="${Number(system.pos?.y ?? 0.5)}" /></div>
+        </div>
+        <div class="field"><label>Маршруты</label>${editableRoutes}</div>
+        <div class="row" style="justify-content:flex-end;gap:10px">
+          <button class="secondary" type="button" id="galaxy-quick-open-config">OPEN_WORLD_CONFIG</button>
+          <button class="primary" type="submit">SAVE_SYSTEM</button>
+        </div>
+      </form>
+    `;
+  };
+
+  bindGalaxyMapQuickEditor = function(systemId) {
+    const form = document.getElementById('galaxy-system-quick-form');
+    if (!form) return;
+    bindDynamicRowEditor(form);
+    bindTypeaheadFields(form);
+    bindSearchableSelects(form);
+    document.getElementById('galaxy-quick-open-config')?.addEventListener('click', () => {
+      Configurator.selectedType = 'systems';
+      Configurator.selectedId = systemId;
+      UI.openModule('config');
+    });
+    form.addEventListener('submit', async event => {
+      event.preventDefault();
+      const system = Data.getSystem(systemId);
+      if (!system) return;
+      const fd = new FormData(form);
+      system.markerLabel = String(fd.get('markerLabel') || system.markerLabel || system.name || '').trim();
+      system.name = String(fd.get('name') || system.name || system.markerLabel || '').trim();
+      system.color = String(fd.get('color') || system.color || '#7df9ff').trim() || '#7df9ff';
+      system.markerStyle = SYSTEM_MARKER_STYLES.some(option => option.id === String(fd.get('markerStyle') || 'orbital').trim()) ? String(fd.get('markerStyle') || 'orbital').trim() : 'orbital';
+      system.pos = { x: Number(clamp(Number(fd.get('posX') || system.pos?.x || 0.5), 0, 1).toFixed(3)), y: Number(clamp(Number(fd.get('posY') || system.pos?.y || 0.5), 0, 1).toFixed(3)) };
+      system.routes = readSystemRouteRows(form);
+      const ok = await saveWorldConfigFromMap('Система обновлена с карты');
+      if (ok) {
+        const fresh = Data.getSystem(systemId);
+        if (fresh) {
+          $('#obj-name').textContent = getSystemLabel(fresh).toUpperCase();
+          $('#obj-subname').textContent = fresh.name && fresh.name !== getSystemLabel(fresh) ? fresh.name : 'Приближение к системе';
+          bindGalaxyMapQuickEditor(systemId);
+          renderGalaxyLegendOverlay();
+        }
+      }
+    });
+  };
+
+  WORLD_SECTIONS.navigation = { label: 'Навигация карты', special: true };
+
+  const __configGetItems_v30 = Configurator.getItems.bind(Configurator);
+  Configurator.getItems = function(type) {
+    if (type === 'navigation') return [{ id: 'galaxy_navigation', name: 'Навигация карты', title: 'Навигация карты', label: 'Навигация карты' }];
+    return __configGetItems_v30(type);
+  };
+
+  Configurator.renderNavigationEditor = function() {
+    return `
+      <div class="form" data-entity-type="navigation">
+        <div class="row" style="justify-content:space-between;align-items:flex-start;margin-bottom:18px;gap:12px">
+          <div>
+            <div class="section-title">Конфигуратор мира</div>
+            <h2 style="margin:0 0 6px">Навигация галактической карты</h2>
+            <div class="small-note">Отдельный глобальный раздел мира. Цветовые обозначения сохраняются независимо от систем и не сбрасываются при их редактировании.</div>
+          </div>
+        </div>
+        ${renderGalaxyLegendConfigPanelV30()}
+      </div>
+    `;
+  };
+
+  const __configRenderEditor_v30 = Configurator.renderEditor.bind(Configurator);
+  Configurator.renderEditor = function(entity) {
+    if (this.selectedType === 'navigation') return this.renderNavigationEditor(entity);
+    return __configRenderEditor_v30(entity);
+  };
+
+  const __configRender_v30 = Configurator.render.bind(Configurator);
+  Configurator.render = function() {
+    __configRender_v30();
+    if (this.selectedType !== 'navigation') return;
+    this.selectedId = 'galaxy_navigation';
+    const root = document.getElementById('config-content');
+    if (!root) return;
+    root.querySelector('#config-add-btn')?.remove();
+    const searchField = root.querySelector('#config-search-input')?.closest('.field');
+    if (searchField) searchField.remove();
+    const labelNote = root.querySelector('.config-side .small-note');
+    if (labelNote) labelNote.textContent = 'Глобальный раздел';
+    const list = root.querySelector('.config-entity-list');
+    if (list) {
+      list.innerHTML = `<div class="player-chip config-chip active" data-config-id="galaxy_navigation"><div><b>Навигация галактики</b><div class="subtle" style="margin-top:4px">Глобальные обозначения карты</div></div></div>`;
+      list.querySelector('[data-config-id="galaxy_navigation"]')?.addEventListener('click', () => {
+        this.selectedId = 'galaxy_navigation';
+        this.render();
+      });
+    }
+    bindGalaxyLegendConfigPanelV30();
+  };
+
+  const __configCreateNew_v30 = Configurator.createNew.bind(Configurator);
+  Configurator.createNew = function() {
+    if (this.selectedType === 'navigation') {
+      Toast.show('Этот раздел глобальный и не поддерживает создание дополнительных элементов', 'info');
+      return;
+    }
+    return __configCreateNew_v30.call(this);
+  };
+
+  const __configDuplicateSelected_v30 = Configurator.duplicateSelected.bind(Configurator);
+  Configurator.duplicateSelected = function() {
+    if (this.selectedType === 'navigation') {
+      Toast.show('Навигация карты хранится как один глобальный раздел', 'info');
+      return;
+    }
+    return __configDuplicateSelected_v30.call(this);
+  };
+
+  const __configDeleteSelected_v30 = Configurator.deleteSelected.bind(Configurator);
+  Configurator.deleteSelected = function() {
+    if (this.selectedType === 'navigation') {
+      Toast.show('Глобальный раздел навигации нельзя удалить', 'err');
+      return;
+    }
+    return __configDeleteSelected_v30.call(this);
+  };
+
+  const __isMapInteractionBlocked_v30 = isMapInteractionBlocked;
+  isMapInteractionBlocked = function(target = null) {
+    if (!target) return __isMapInteractionBlocked_v30(target);
+    if (target.closest?.('#add-system-map-btn')) return true;
+    return __isMapInteractionBlocked_v30(target);
+  };
+
+  const __finishLogin_v30 = App.finishLogin.bind(App);
+  App.finishLogin = function() {
+    __finishLogin_v30();
+    GalaxyMap.refreshActionButtons?.();
+  };
+
+  const __logout_v30 = App.logout.bind(App);
+  App.logout = function() {
+    GalaxyMap.cancelAddSystemMode?.();
+    const res = __logout_v30();
+    GalaxyMap.refreshActionButtons?.();
+    return res;
+  };
+
+  const __renderLive_v30 = App.renderLive.bind(App);
+  App.renderLive = function() {
+    __renderLive_v30();
+    GalaxyMap.refreshActionButtons?.();
+    renderGalaxyLegendOverlay();
+  };
+
+  const __galaxyBind_v30 = GalaxyMap.bind.bind(GalaxyMap);
+  GalaxyMap.bind = function() {
+    __galaxyBind_v30();
+    window.addEventListener('keydown', event => {
+      if (event.key === 'Escape' && this.state.addSystemMode) this.cancelAddSystemMode();
+    });
+  };
+
+  GalaxyMap.state = { ...GalaxyMap.state, addSystemMode: Boolean(GalaxyMap.state?.addSystemMode) };
+  GalaxyMap.screenToWorld = function(sx, sy) {
+    return {
+      x: clamp(((sx - this.W / 2) / (Math.max(0.0001, this.state.zoom) * this.W)) + this.state.cx, 0, 1),
+      y: clamp(((sy - this.H / 2) / (Math.max(0.0001, this.state.zoom) * this.H)) + this.state.cy, 0, 1)
+    };
+  };
+  GalaxyMap.refreshActionButtons = function() {
+    const addButton = document.getElementById('add-system-map-btn');
+    if (!addButton) return;
+    const canAdd = App.currentUser?.role === 'gm' && this.state.viewMode === 'galaxy';
+    addButton.style.display = canAdd ? 'block' : 'none';
+    addButton.classList.toggle('active', Boolean(canAdd && this.state.addSystemMode));
+    addButton.textContent = this.state.addSystemMode ? '✕ ОТМЕНИТЬ ДОБАВЛЕНИЕ' : '✚ ДОБАВИТЬ СИСТЕМУ';
+    document.body.classList.toggle('galaxy-add-system-mode', Boolean(canAdd && this.state.addSystemMode));
+  };
+  GalaxyMap.toggleAddSystemMode = function(forceValue = null) {
+    if (App.currentUser?.role !== 'gm' || this.state.viewMode !== 'galaxy') return;
+    this.state.addSystemMode = typeof forceValue === 'boolean' ? forceValue : !this.state.addSystemMode;
+    this.refreshActionButtons();
+    Toast.show(this.state.addSystemMode ? 'Кликни по галактической карте, чтобы добавить новую систему.' : 'Режим добавления системы отключён.', 'info');
+  };
+  GalaxyMap.cancelAddSystemMode = function() {
+    if (!this.state.addSystemMode) {
+      this.refreshActionButtons();
+      return;
+    }
+    this.state.addSystemMode = false;
+    this.refreshActionButtons();
+  };
+  GalaxyMap.createSystemAtScreen = async function(clientX, clientY) {
+    if (App.currentUser?.role !== 'gm') return false;
+    const px = clientX * this.DPR;
+    const py = clientY * this.DPR;
+    for (const system of getVisibleSystems()) {
+      const point = this.worldToScreen(system.pos.x, system.pos.y);
+      if (Math.hypot(point.sx - px, point.sy - py) < 36 * this.DPR) {
+        Toast.show('Слишком близко к существующей системе. Выбери другую точку.', 'info');
+        return false;
+      }
+    }
+    const pos = this.screenToWorld(px, py);
+    const entity = createBlankEntity('systems');
+    while (Data.getSystem(entity.id)) entity.id = `system_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+    const systemIndex = SYSTEMS.length + 1;
+    entity.name = `Новая система ${systemIndex}`;
+    entity.markerLabel = `Система ${systemIndex}`;
+    entity.pos = { x: Number(pos.x.toFixed(3)), y: Number(pos.y.toFixed(3)) };
+    SYSTEMS.push(entity);
+    Data.systems = SYSTEMS;
+    this.state.addSystemMode = false;
+    this.refreshActionButtons();
+    const ok = await saveWorldConfigFromMap('Новая система добавлена на карту');
+    if (!ok) {
+      const index = SYSTEMS.findIndex(item => item.id === entity.id);
+      if (index >= 0) SYSTEMS.splice(index, 1);
+      Data.systems = SYSTEMS;
+      return false;
+    }
+    this.enterSystem(entity.id);
+    return true;
+  };
+
+  const __galaxyEnterSystem_v30 = GalaxyMap.enterSystem.bind(GalaxyMap);
+  GalaxyMap.enterSystem = function(systemId) {
+    this.cancelAddSystemMode();
+    const res = __galaxyEnterSystem_v30(systemId);
+    this.refreshActionButtons();
+    return res;
+  };
+
+  const __galaxyExitSystem_v30 = GalaxyMap.exitSystem.bind(GalaxyMap);
+  GalaxyMap.exitSystem = function(preserveView = true) {
+    const res = __galaxyExitSystem_v30(preserveView);
+    this.refreshActionButtons();
+    return res;
+  };
+
+  const __galaxyRecenter_v30 = GalaxyMap.recenterGalaxy.bind(GalaxyMap);
+  GalaxyMap.recenterGalaxy = function() {
+    this.cancelAddSystemMode();
+    const res = __galaxyRecenter_v30();
+    this.refreshActionButtons();
+    return res;
+  };
+
+  const __galaxyHandleClick_v30 = GalaxyMap.handleClick.bind(GalaxyMap);
+  GalaxyMap.handleClick = function(mx, my) {
+    if (this.state.viewMode === 'galaxy' && this.state.addSystemMode && App.currentUser?.role === 'gm') {
+      void this.createSystemAtScreen(mx, my);
+      return;
+    }
+    return __galaxyHandleClick_v30(mx, my);
+  };
+
+  document.addEventListener('DOMContentLoaded', () => {
+    document.getElementById('add-system-map-btn')?.addEventListener('click', () => GalaxyMap.toggleAddSystemMode());
+    setTimeout(() => {
+      try {
+        syncGalaxyLegendStateFromWorldV30();
+        GalaxyMap.refreshActionButtons?.();
+        renderGalaxyLegendOverlay();
+      } catch {}
+    }, 0);
+  });
+})();
+
+
+/* v31.1 desktop refresh: save-folder access, robust navigation, combat token framing, celestial auto-links */
+(function(){
+  const PLANET_TYPE_OPTIONS_V311 = [
+    'Терранская','Океаническая','Пустынная','Ледяная','Вулканическая','Газовый гигант','Суперземля','Карликовая','Болотная','Тундровая','Лесная','Токсичная','Разрушенная','Искусственная','Колония-станция'
+  ];
+  const ATMOSPHERE_OPTIONS_V311 = [
+    'Отсутствует','Кислородная','Азотно-кислородная','Разреженная','Плотная','Углекислая','Метановая','Аммиачная','Сернистая','Токсичная','Коррозионная','Ионизированная','Искусственно поддерживаемая','Переменная','Непригодна для дыхания'
+  ];
+  const GALAXY_ARM_NAMES_V311 = ['Орионский рукав','Персеев рукав','Лебединый рукав','Сагиттарский рукав','Кентаврийский рукав'];
+
+  function uniqueStringsV311(values = []) {
+    return Array.from(new Set((Array.isArray(values) ? values : []).map(value => String(value || '').trim()).filter(Boolean)));
+  }
+
+  function inferGalaxyArmByPosV311(pos = {}) {
+    const x = clamp(Number(pos?.x ?? 0.5), 0, 1);
+    const y = clamp(Number(pos?.y ?? 0.5), 0, 1);
+    const dx = x - 0.5;
+    const dy = y - 0.5;
+    const r = Math.hypot(dx, dy);
+    if (r < 0.11) return 'Центральный сектор';
+    const angle = (Math.atan2(dy, dx) + Math.PI * 2) % (Math.PI * 2);
+    const twisted = (angle + r * 7.4) % (Math.PI * 2);
+    const index = Math.max(0, Math.min(GALAXY_ARM_NAMES_V311.length - 1, Math.floor((twisted / (Math.PI * 2)) * GALAXY_ARM_NAMES_V311.length)));
+    return GALAXY_ARM_NAMES_V311[index] || 'Внешний рукав';
+  }
+
+  function getSystemDisplayNameV311(system = {}) {
+    return String(system?.name || system?.markerLabel || system?.id || '').trim();
+  }
+
+  function normalizeCelestialLinksV311() {
+    const systems = Array.isArray(SYSTEMS) ? SYSTEMS : [];
+    const systemsById = new Map(systems.map(system => [String(system.id || '').trim(), system]).filter(entry => entry[0]));
+    const planetsById = new Map(Object.values(PLANETS || {}).map(planet => [String(planet.id || '').trim(), planet]).filter(entry => entry[0]));
+
+    systems.forEach(system => {
+      system.location = system.location && typeof system.location === 'object' ? { ...system.location } : {};
+      system.arm = inferGalaxyArmByPosV311(system.pos || {});
+      system.location.arm = system.arm;
+      system.location.system = getSystemDisplayNameV311(system);
+      system.location.node = String(system.location.node || system.markerLabel || system.name || '').trim();
+      system.planetIds = uniqueStringsV311(system.planetIds).filter(id => planetsById.has(id));
+    });
+
+    const assignment = new Map();
+    systems.forEach(system => {
+      system.planetIds.forEach(planetId => {
+        if (!assignment.has(planetId)) assignment.set(planetId, system.id);
+      });
+    });
+    planetsById.forEach((planet) => {
+      const explicitSystemId = String(planet.systemId || '').trim();
+      if (explicitSystemId && systemsById.has(explicitSystemId)) assignment.set(planet.id, explicitSystemId);
+    });
+
+    systems.forEach(system => { system.planetIds = []; });
+    assignment.forEach((systemId, planetId) => {
+      const system = systemsById.get(systemId);
+      if (!system) return;
+      system.planetIds.push(planetId);
+    });
+
+    systems.forEach(system => {
+      system.planetIds = uniqueStringsV311(system.planetIds).sort((a, b) => {
+        const pa = planetsById.get(a);
+        const pb = planetsById.get(b);
+        return String(pa?.name || a).localeCompare(String(pb?.name || b), 'ru');
+      });
+    });
+
+    planetsById.forEach(planet => {
+      const systemId = assignment.get(planet.id) || '';
+      const system = systemId ? systemsById.get(systemId) : null;
+      planet.systemId = system?.id || '';
+      planet.location = planet.location && typeof planet.location === 'object' ? { ...planet.location } : {};
+      if (system) {
+        planet.location.arm = String(system.arm || inferGalaxyArmByPosV311(system.pos || {}));
+        planet.location.system = getSystemDisplayNameV311(system);
+        planet.location.node = String(system.location?.node || system.markerLabel || system.name || '').trim();
+      } else {
+        planet.location.arm = '';
+        planet.location.system = '';
+      }
+      if (!planet.location.obj) planet.location.obj = planet.name || planet.code || planet.id;
+    });
+
+    Data.systems = SYSTEMS;
+    Data.planets = PLANETS;
+  }
+
+  const __applyWorldData_v311 = applyWorldData;
+  applyWorldData = function(payload = {}) {
+    __applyWorldData_v311(payload);
+    normalizeCelestialLinksV311();
+  };
+
+  const __buildWorldSnapshot_v311 = buildWorldSnapshot;
+  buildWorldSnapshot = function() {
+    normalizeCelestialLinksV311();
+    return __buildWorldSnapshot_v311();
+  };
+
+  const __createBlankEntity_v311 = createBlankEntity;
+  createBlankEntity = function(type) {
+    const entity = __createBlankEntity_v311(type);
+    if (type === 'systems') {
+      entity.arm = inferGalaxyArmByPosV311(entity.pos || {});
+      entity.location = entity.location && typeof entity.location === 'object' ? entity.location : {};
+      entity.location.arm = entity.arm;
+      entity.location.system = entity.name || entity.markerLabel || entity.id;
+    }
+    if (type === 'planets') {
+      entity.systemId = '';
+    }
+    return entity;
+  };
+
+  const __configCollectEntity_v311 = Configurator.collectEntity.bind(Configurator);
+  Configurator.collectEntity = function(type, formEl, formData = new FormData(formEl)) {
+    const entity = __configCollectEntity_v311(type, formEl, formData);
+    if (type === 'systems') {
+      entity.arm = inferGalaxyArmByPosV311(entity.pos || {});
+      entity.location = entity.location && typeof entity.location === 'object' ? entity.location : {};
+      entity.location.arm = entity.arm;
+      entity.location.system = getSystemDisplayNameV311(entity);
+      entity.location.node = String(entity.location.node || entity.markerLabel || entity.name || '').trim();
+      entity.summary = String(formData.get('summary') || entity.summary || '').trim();
+      entity.body = String(formData.get('body') || entity.body || '').trim();
+    }
+    if (type === 'planets') {
+      entity.systemId = String(formData.get('systemId') || formData.get('loc_system_id') || entity.systemId || '').trim();
+      entity.location = entity.location && typeof entity.location === 'object' ? entity.location : {};
+      entity.location.obj = String(formData.get('loc_obj') || entity.location.obj || entity.name || entity.code || '').trim();
+      const system = entity.systemId ? Data.getSystem(entity.systemId) : null;
+      if (system) {
+        entity.location.arm = String(system.arm || inferGalaxyArmByPosV311(system.pos || {}));
+        entity.location.system = getSystemDisplayNameV311(system);
+        entity.location.node = String(system.location?.node || system.markerLabel || system.name || '').trim();
+      }
+    }
+    return entity;
+  };
+
+  const __configReplaceEntity_v311 = Configurator.replaceEntity.bind(Configurator);
+  Configurator.replaceEntity = function(type, oldId, entity) {
+    __configReplaceEntity_v311(type, oldId, entity);
+    normalizeCelestialLinksV311();
+  };
+
+  const __configPersistAll_v311 = Configurator.persistAll.bind(Configurator);
+  Configurator.persistAll = async function(message, options = {}) {
+    normalizeCelestialLinksV311();
+    return __configPersistAll_v311.call(this, message, options);
+  };
+
+  function renderSelectOptionsV311(items = [], current = '') {
+    return items.map(value => `<option value="${esc(value)}" ${String(current || '') === String(value) ? 'selected' : ''}>${esc(value)}</option>`).join('');
+  }
+
+  Configurator.renderSystemEditor = function(system) {
+    const arm = system.arm || inferGalaxyArmByPosV311(system.pos || {});
+    return `
+      <form id="config-editor-form" class="form" data-entity-type="systems">
+        ${Configurator.renderHeader(system, 'Система управляет точкой на галактической карте и набором планет внутри. Рукав определяется автоматически по координатам.')}
+        ${imageFieldMarkup(system, 'Изображение системы')}
+        <div class="cols2">
+          <div class="field"><label>ID</label><input class="input" name="id" value="${esc(system.id)}" /></div>
+          <div class="field"><label>Внутренний код точки</label><input class="input" value="${esc(system.id)}" disabled /></div>
+        </div>
+        <div class="cols4 cols-responsive-4">
+          <div class="field"><label>Pos X (0..1)</label><input class="input" type="number" step="0.001" min="0" max="1" name="posX" value="${Number(system.pos?.x ?? 0.5)}" /></div>
+          <div class="field"><label>Pos Y (0..1)</label><input class="input" type="number" step="0.001" min="0" max="1" name="posY" value="${Number(system.pos?.y ?? 0.5)}" /></div>
+          <div class="field"><label>Цвет системы</label><input class="input" name="color" value="${esc(system.color || '#7df9ff')}" placeholder="#7df9ff" /></div>
+          <div class="field"><label>Внешний вид метки</label><select class="select" name="markerStyle">${SYSTEM_MARKER_STYLES.map(option => `<option value="${option.id}" ${option.id === (system.markerStyle || 'orbital') ? 'selected' : ''}>${esc(option.label)}</option>`).join('')}</select></div>
+        </div>
+        <div class="cols3">
+          <div class="field"><label>Рукав</label><input class="input" name="system_arm_readonly" value="${esc(arm)}" readonly /><div class="small-note">Определяется автоматически по положению на галактической карте.</div></div>
+          <div class="field"><label>Метка на карте</label><input class="input" name="markerLabel" value="${esc(system.markerLabel || system.name || '')}" placeholder="Узел кривопространства / Точка интереса" /></div>
+          <div class="field"><label>Внутреннее название</label><input class="input" name="name" value="${esc(system.name || '')}" placeholder="Cassilia Binary" /></div>
+        </div>
+        <div class="field"><label>Планеты в системе</label>${renderCheckboxSelector('planetIds', Object.values(PLANETS), system.planetIds || [], 'planet', 'Нет планет')}</div>
+        <div class="field"><label>Маршруты</label>${renderSystemRoutesEditor(system.routes || [], system.id)}</div>
+        <div class="field"><label>Краткое описание</label><textarea class="area" name="summary">${esc(system.summary || '')}</textarea>${__htmlHint}</div>
+        <div class="field"><label>Развёрнутый текст</label><textarea class="area article-body-editor" name="body">${esc(system.body || '')}</textarea>${__htmlHint}</div>
+        ${Configurator.renderVisibilityField(system)}
+        <div class="field"><label>Связанные статьи</label>${renderRelatedArticlesEditor(system.relatedArticleIds || [])}</div>
+        <button class="primary" type="submit">SAVE_SYSTEM</button>
+      </form>
+    `;
+  };
+
+  Configurator.renderPlanetEditor = function(planet) {
+    const linkedSystem = String(planet.systemId || '').trim() ? Data.getSystem(String(planet.systemId || '').trim()) : Data.getSystemForPlanet(planet.id);
+    const arm = linkedSystem?.arm || inferGalaxyArmByPosV311(linkedSystem?.pos || {});
+    const systemOptions = `<option value="">Не привязана</option>${SYSTEMS.map(system => `<option value="${esc(system.id)}" ${system.id === (linkedSystem?.id || planet.systemId || '') ? 'selected' : ''}>${esc(getSystemDisplayNameV311(system))}</option>`).join('')}`;
+    return `
+      <form id="config-editor-form" class="form" data-entity-type="planets">
+        ${Configurator.renderHeader(planet, 'Полный редактор планеты. Рукав и система подтягиваются автоматически от связанной звёздной системы.')}
+        ${imageFieldMarkup(planet, 'Изображение планеты')}
+        <div class="cols3">
+          <div class="field"><label>ID</label><input class="input" name="id" value="${esc(planet.id)}" /></div>
+          <div class="field"><label>Название</label><input class="input" name="name" value="${esc(planet.name || '')}" /></div>
+          <div class="field"><label>Код</label><input class="input" name="code" value="${esc(planet.code || '')}" /></div>
+        </div>
+        <div class="cols4 cols-responsive-4">
+          <div class="field"><label>Цвет</label><input class="input" name="color" value="${esc(planet.color || '#7df9ff')}" /></div>
+          <div class="field"><label>Dist</label><input class="input" type="number" name="dist" value="${Number(planet.dist || 0)}" /></div>
+          <div class="field"><label>Speed</label><input class="input" type="number" step="0.0001" name="speed" value="${Number(planet.speed || 0)}" /></div>
+          <div class="field"><label>Size</label><input class="input" type="number" name="size" value="${Number(planet.size || 0)}" /></div>
+        </div>
+        ${Configurator.renderVisibilityField(planet)}
+        <div class="section-title">Локация</div>
+        <div class="cols2">
+          <div class="field"><label>Система</label><select class="select" name="systemId" id="planet-system-select">${systemOptions}</select><div class="small-note">Список систем и планет синхронизируется взаимно.</div></div>
+          <div class="field"><label>Рукав</label><input class="input" name="loc_arm" value="${esc(planet.location?.arm || arm || '')}" readonly /></div>
+          <div class="field"><label>Узел</label><input class="input" name="loc_node" value="${esc(planet.location?.node || linkedSystem?.markerLabel || linkedSystem?.name || '')}" readonly /></div>
+          <div class="field"><label>Название системы</label><input class="input" name="loc_system" value="${esc(planet.location?.system || linkedSystem?.name || '')}" readonly /></div>
+          <div class="field"><label>Объект</label><input class="input" name="loc_obj" value="${esc(planet.location?.obj || planet.name || planet.code || '')}" /></div>
+        </div>
+        <div class="section-title">Физика</div>
+        <div class="cols2">
+          <div class="field"><label>Тип</label><select class="select" name="phy_type"><option value="">Не указан</option>${renderSelectOptionsV311(PLANET_TYPE_OPTIONS_V311, planet.physics?.type || '')}</select></div>
+          <div class="field"><label>Масса</label><input class="input" name="phy_mass" value="${esc(planet.physics?.mass || '')}" /></div>
+          <div class="field"><label>Радиус</label><input class="input" name="phy_radius" value="${esc(planet.physics?.radius || '')}" /></div>
+          <div class="field"><label>Гравитация</label><input class="input" name="phy_gravity" value="${esc(planet.physics?.gravity || '')}" /></div>
+          <div class="field"><label>Климат</label><input class="input" name="phy_climate" value="${esc(planet.physics?.climate || '')}" /></div>
+          <div class="field"><label>Температура</label><input class="input" name="phy_temp" value="${esc(planet.physics?.temp || '')}" /></div>
+        </div>
+        <div class="field"><label>Атмосфера</label><select class="select" name="phy_atm"><option value="">Не указана</option>${renderSelectOptionsV311(ATMOSPHERE_OPTIONS_V311, planet.physics?.atm || '')}</select></div>
+        <div class="section-title">Социум</div>
+        <div class="cols2">
+          <div class="field"><label>Население</label><input class="input" name="soc_pop" value="${esc(planet.socio?.pop || '')}" /></div>
+          <div class="field"><label>Столица</label><input class="input" name="soc_capital" value="${esc(planet.socio?.capital || '')}" /></div>
+          <div class="field"><label>Правление</label><input class="input" name="soc_gov" value="${esc(planet.socio?.gov || '')}" /></div>
+          <div class="field"><label>Правовой режим</label><input class="input" name="soc_law" value="${esc(planet.socio?.law || '')}" /></div>
+        </div>
+        <div class="section-title">Текстовые блоки планеты</div>
+        <div class="field"><label>Справка</label><textarea class="area" name="pilot_reference">${esc(getPlanetReference(planet))}</textarea>${__htmlHint}</div>
+        <div class="field"><label>Информация</label><textarea class="area article-body-editor" name="pilot_info">${esc(getPlanetInfo(planet))}</textarea>${__htmlHint}</div>
+        <div class="field"><label>Предупреждение</label><textarea class="area" name="pilot_warning">${esc(planet.pilot?.warning || '')}</textarea>${__htmlHint}</div>
+        <div class="field"><label>Ключевые NPC</label>${renderCheckboxSelector('npcIds', Object.values(NPCS), planet.npcIds || [], 'npc', 'Нет NPC')}</div>
+        <div class="field"><label>Флора</label>${renderCheckboxSelector('floraIds', Object.values(FLORA), planet.floraIds || [], 'flora', 'Нет флоры')}</div>
+        <div class="field"><label>Фауна</label>${renderCheckboxSelector('faunaIds', Object.values(FAUNA), planet.faunaIds || [], 'fauna', 'Нет фауны')}</div>
+        <div class="field"><label>Рынок</label><div id="market-rows" class="dynamic-list" data-kind="market">${renderMarketRows(planet.market)}</div><button id="add-market-row" class="secondary" type="button">ADD_MARKET_ITEM</button></div>
+        <div class="field"><label>Связанные статьи</label>${renderRelatedArticlesEditor(planet.relatedArticleIds || [])}</div>
+        <button class="primary" type="submit">SAVE_PLANET</button>
+      </form>
+    `;
+  };
+
+  function bindPlanetAutoFieldsV311(root = document) {
+    const form = root.querySelector('#config-editor-form[data-entity-type="planets"]');
+    if (!form) return;
+    const select = form.querySelector('#planet-system-select');
+    if (!select || select.dataset.boundPlanetAuto === '1') return;
+    select.dataset.boundPlanetAuto = '1';
+    const armField = form.querySelector('input[name="loc_arm"]');
+    const nodeField = form.querySelector('input[name="loc_node"]');
+    const systemField = form.querySelector('input[name="loc_system"]');
+    const refresh = () => {
+      const system = Data.getSystem(select.value);
+      if (!system) {
+        if (armField) armField.value = '';
+        if (nodeField) nodeField.value = '';
+        if (systemField) systemField.value = '';
+        return;
+      }
+      const arm = system.arm || inferGalaxyArmByPosV311(system.pos || {});
+      if (armField) armField.value = arm;
+      if (nodeField) nodeField.value = String(system.location?.node || system.markerLabel || system.name || '').trim();
+      if (systemField) systemField.value = getSystemDisplayNameV311(system);
+    };
+    select.addEventListener('change', refresh);
+    refresh();
+  }
+
+  const __configRender_v311 = Configurator.render.bind(Configurator);
+  Configurator.render = function() {
+    __configRender_v311();
+    bindPlanetAutoFieldsV311(document);
+  };
+
+  const __wikiShowEntity_v311 = Wiki.showEntity.bind(Wiki);
+  Wiki.showEntity = function(type, id, autoOpen = false) {
+    __wikiShowEntity_v311(type, id, autoOpen);
+    const target = document.getElementById('wiki-detail');
+    if (!target) return;
+    if (type === 'system') {
+      const entity = Data.getSystem(id);
+      if (!entity) return;
+      const hero = target.querySelector('.wiki-hero .subtle');
+      if (hero && !hero.textContent.includes('Рукав')) hero.textContent = `${hero.textContent} · Рукав: ${entity.arm || inferGalaxyArmByPosV311(entity.pos || {})}`;
+    }
+  };
+
+  function ensureWorldFolderButtonV311() {
+    return `<button class="secondary" type="button" id="open-save-folder-btn">ОТКРЫТЬ ПАПКУ СОХРАНЕНИЙ</button>`;
+  }
+
+  const __renderProfile_v311 = UI.renderProfile.bind(UI);
+  UI.renderProfile = function() {
+    __renderProfile_v311();
+    const form = document.getElementById('profile-edit-form');
+    if (form && !document.getElementById('open-save-folder-btn') && window.electronAPI?.openWorldDataDir) {
+      form.insertAdjacentHTML('beforeend', `<div class="row" style="justify-content:flex-start;gap:10px;margin-top:10px">${ensureWorldFolderButtonV311()}</div>`);
+      document.getElementById('open-save-folder-btn')?.addEventListener('click', async () => {
+        const res = await window.electronAPI.openWorldDataDir();
+        if (!res?.ok) Toast.show(`Не удалось открыть папку сохранений: ${res?.message || 'unknown error'}`, 'err');
+        else Toast.show(`Открыта папка сохранений: ${res.path}`, 'ok');
+      });
+    }
+  };
+
+  function ensureCustomTokenModalV311() {
+    let modal = document.getElementById('combat-custom-token-modal');
+    if (modal) return modal;
+    modal = document.createElement('div');
+    modal.id = 'combat-custom-token-modal';
+    modal.className = 'modal';
+    modal.innerHTML = `
+      <div class="login-box card combat-custom-token-modal-box">
+        <div class="section-title">Кастомный юнит</div>
+        <div class="small-note" style="margin-bottom:14px">Создай entity с собственным изображением для сцены.</div>
+        <form id="combat-custom-token-form" class="form">
+          <div class="field"><label>Название</label><input class="input" name="name" value="Новый юнит" /></div>
+          <div class="cols2">
+            <div class="field"><label>HP</label><input class="input" type="number" min="1" max="999" name="hpMax" value="12" /></div>
+            <div class="field"><label>Акцент</label><input class="input" name="color" value="#e0aaff" /></div>
+          </div>
+          <div class="field"><label>Изображение</label><div class="row" style="gap:10px"><button class="secondary" type="button" id="combat-custom-token-pick-image">ВЫБРАТЬ ИЗОБРАЖЕНИЕ</button><span id="combat-custom-token-image-label" class="small-note">Не выбрано</span></div><input type="hidden" name="image" value="" /></div>
+          <div class="row" style="justify-content:flex-end;gap:10px;margin-top:10px"><button class="secondary" type="button" id="combat-custom-token-cancel">ОТМЕНА</button><button class="primary" type="submit">ДОБАВИТЬ ЮНИТ</button></div>
+        </form>
+      </div>`;
+    document.body.appendChild(modal);
+    modal.addEventListener('click', event => {
+      if (event.target === modal) modal.classList.remove('open');
+    });
+    modal.querySelector('#combat-custom-token-cancel')?.addEventListener('click', () => modal.classList.remove('open'));
+    modal.querySelector('#combat-custom-token-pick-image')?.addEventListener('click', async () => {
+      const scene = Combat.getScene();
+      const url = await Combat.requestImage(`combat_token_${scene?.id || 'scene'}`);
+      const hidden = modal.querySelector('input[name="image"]');
+      const label = modal.querySelector('#combat-custom-token-image-label');
+      if (hidden) hidden.value = url || '';
+      if (label) label.textContent = url ? 'Изображение выбрано' : 'Не выбрано';
+    });
+    modal.querySelector('#combat-custom-token-form')?.addEventListener('submit', async event => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const fd = new FormData(form);
+      const scene = Combat.getScene();
+      if (!scene || !Combat.isDm()) return;
+      const hpMax = clamp(Number(fd.get('hpMax') || 12), 1, 999);
+      const token = createCustomCombatToken({
+        name: String(fd.get('name') || 'Юнит').trim() || 'Юнит',
+        hpMax,
+        hpCurrent: hpMax,
+        image: String(fd.get('image') || '').trim(),
+        color: String(fd.get('color') || '#e0aaff').trim() || '#e0aaff'
+      });
+      token.x = Math.max(0, Math.floor(scene.width / 2));
+      token.y = Math.max(0, Math.floor(scene.height / 2));
+      const runtime = Combat.getRuntime(scene.id);
+      runtime.tokens.push(token);
+      Combat.selectedObject = { kind: 'token', id: token.id };
+      Combat.syncInitiative(scene.id, true);
+      modal.classList.remove('open');
+      form.reset();
+      const hidden = form.querySelector('input[name="image"]');
+      if (hidden) hidden.value = '';
+      const label = form.querySelector('#combat-custom-token-image-label');
+      if (label) label.textContent = 'Не выбрано';
+      await Combat.persist('Юнит добавлен', { worldChanged: false, commitRemote: false, silentToast: true });
+    });
+    return modal;
+  }
+
+  Combat.openCustomTokenModal = function() {
+    if (!this.isDm()) return;
+    const modal = ensureCustomTokenModalV311();
+    modal.classList.add('open');
+    modal.querySelector('input[name="name"]')?.focus();
+  };
+
+  Combat.addCustomToken = async function() {
+    this.openCustomTokenModal();
+  };
+
+  const __normalizeCombatTemplate_v311 = normalizeCombatTemplate;
+  normalizeCombatTemplate = function(template = {}) {
+    const next = __normalizeCombatTemplate_v311(template);
+    if (String(template.shape || '').trim() === 'square') next.shape = 'square';
+    if (next.shape === 'square') next.h = next.w;
+    return next;
+  };
+
+  const __combatAddTemplate_v311 = Combat.addTemplate.bind(Combat);
+  Combat.addTemplate = function(shape = 'circle') {
+    if (shape === 'square') {
+      const scene = this.ensureSceneShapeState();
+      if (!scene || !this.isDm()) return;
+      const template = normalizeCombatTemplate({
+        shape: 'square',
+        name: 'Квадрат',
+        x: Math.max(0, Math.floor(scene.width / 2) - 1),
+        y: Math.max(0, Math.floor(scene.height / 2) - 1),
+        w: 4,
+        h: 4,
+        label: ''
+      });
+      scene.templates.push(template);
+      this.selectedObject = { kind: 'template', id: template.id };
+      this.hasUnpublishedChanges = true;
+      this.persistCombatState('Шаблон добавлен', { worldChanged: true, commitRemote: false, silentToast: true });
+      return;
+    }
+    return __combatAddTemplate_v311(shape);
+  };
+
+  const __combatRenderSceneEditor_v311 = Combat.renderSceneEditor.bind(Combat);
+  Combat.renderSceneEditor = function(scene, runtime) {
+    let html = __combatRenderSceneEditor_v311(scene, runtime);
+    html = html.replace('id="combat-add-template-cone">КОНУС</button>', 'id="combat-add-template-cone">КОНУС</button>\n        <button class="secondary" type="button" id="combat-add-template-square">КВАДРАТ</button>');
+    return html;
+  };
+
+  const __combatBind_v311 = Combat.bind.bind(Combat);
+  Combat.bind = function(root) {
+    __combatBind_v311(root);
+    root.querySelector('#combat-add-template-square')?.addEventListener('click', () => this.addTemplate('square'));
+  };
+
+
+  const __renderTemplateShape_v311 = Combat.renderTemplateShape.bind(Combat);
+  Combat.renderTemplateShape = function(template, scene) {
+    if (String(template.shape || '') === 'square') {
+      const selected = this.selectedObject?.kind === 'template' && this.selectedObject?.id === template.id;
+      const style = `left:${(template.x / scene.width) * 100}%;top:${(template.y / scene.height) * 100}%;width:${(template.w / scene.width) * 100}%;height:${(template.w / scene.height) * 100}%;transform:rotate(${Number(template.rotation || 0)}deg);--template-color:${esc(template.color)};z-index:${Number(template.z || 20)};`;
+      return `<button class="combat-object combat-template ${selected ? 'selected' : ''} shape-square" type="button" data-combat-kind="template" data-combat-id="${esc(template.id)}" style="${style}">${template.label ? `<span class="combat-template-label">${esc(template.label)}</span>` : ''}${selected && this.canResizeSelected() ? '<span class="combat-resize-handle" data-combat-resize="1"></span>' : ''}</button>`;
+    }
+    return __renderTemplateShape_v311(template, scene);
+  };
+})();
+
+(function(){
+  const __combatGetSelectionPanel_v311b = Combat.getSelectionPanel.bind(Combat);
+  Combat.getSelectionPanel = function(scene, runtime) {
+    const html = __combatGetSelectionPanel_v311b(scene, runtime);
+    const template = this.getSelectedTemplate();
+    if (!template || !this.isDm()) return html;
+    const option = `<option value="square" ${template.shape==='square'?'selected':''}>Квадрат</option>`;
+    if (html.includes('value="square"')) return html;
+    return html.replace('<option value="rect"', `${option}<option value="rect"`);
+  };
+
+  const __combatUpdateSelectedObjectFromForm_v311b = Combat.updateSelectedObjectFromForm.bind(Combat);
+  Combat.updateSelectedObjectFromForm = function(form) {
+    __combatUpdateSelectedObjectFromForm_v311b(form);
+    const template = this.getSelectedTemplate();
+    if (template && String(template.shape || '') === 'square') {
+      template.h = template.w;
+      this.persistCombatState('Шаблон обновлён', { worldChanged: true, commitRemote: false, silentToast: true });
+    }
+  };
+})();
+
+
+/* v33 final audit: stable system-planet linking, safer profile save, and reliable combat editor controls */
+(function(){
+  function uniqueStringsV33(values = []) {
+    return Array.from(new Set((Array.isArray(values) ? values : []).map(value => String(value || '').trim()).filter(Boolean)));
+  }
+
+  function inferGalaxyArmByPosV33(pos = {}) {
+    const x = clamp(Number(pos?.x ?? 0.5), 0, 1);
+    const y = clamp(Number(pos?.y ?? 0.5), 0, 1);
+    const dx = x - 0.5;
+    const dy = y - 0.5;
+    const r = Math.hypot(dx, dy);
+    if (r < 0.11) return 'Центральный сектор';
+    const armNames = ['Орионский рукав','Персеев рукав','Лебединый рукав','Сагиттарский рукав','Кентаврийский рукав'];
+    const angle = (Math.atan2(dy, dx) + Math.PI * 2) % (Math.PI * 2);
+    const twisted = (angle + r * 7.4) % (Math.PI * 2);
+    const index = Math.max(0, Math.min(armNames.length - 1, Math.floor((twisted / (Math.PI * 2)) * armNames.length)));
+    return armNames[index] || 'Внешний рукав';
+  }
+
+  function getSystemDisplayNameV33(system = {}) {
+    return String(system?.name || system?.markerLabel || system?.id || '').trim();
+  }
+
+  function getPlanetTypeOptionsV33() {
+    return [
+      'Терранская','Океаническая','Пустынная','Ледяная','Вулканическая','Газовый гигант','Суперземля','Карликовая','Болотная','Тундровая','Лесная','Токсичная','Разрушенная','Искусственная','Колония-станция'
+    ];
+  }
+
+  function getAtmosphereOptionsV33() {
+    return [
+      'Отсутствует','Кислородная','Азотно-кислородная','Разреженная','Плотная','Углекислая','Метановая','Аммиачная','Сернистая','Токсичная','Коррозионная','Ионизированная','Искусственно поддерживаемая','Переменная','Непригодна для дыхания'
+    ];
+  }
+
+  function normalizeCelestialLinksV33() {
+    const systems = Array.isArray(SYSTEMS) ? SYSTEMS : [];
+    const planetsRecord = PLANETS && typeof PLANETS === 'object' ? PLANETS : {};
+    const planetsById = new Map(Object.values(planetsRecord).map(planet => [String(planet?.id || '').trim(), planet]).filter(entry => entry[0]));
+    const systemsById = new Map(systems.map(system => [String(system?.id || '').trim(), system]).filter(entry => entry[0]));
+    const assignment = new Map();
+
+    systems.forEach(system => {
+      system.location = system.location && typeof system.location === 'object' ? { ...system.location } : {};
+      system.arm = inferGalaxyArmByPosV33(system.pos || {});
+      system.location.arm = system.arm;
+      system.location.system = getSystemDisplayNameV33(system);
+      system.location.node = String(system.location.node || system.markerLabel || system.name || '').trim();
+      system.planetIds = uniqueStringsV33(system.planetIds).filter(id => planetsById.has(id));
+      system.planetIds.forEach(planetId => {
+        if (!assignment.has(planetId)) assignment.set(planetId, system.id);
+      });
+    });
+
+    // One-time legacy fallback: if an old planet still carries systemId and no system claims it yet, keep the link.
+    planetsById.forEach(planet => {
+      const explicitSystemId = String(planet?.systemId || '').trim();
+      if (!assignment.has(planet.id) && explicitSystemId && systemsById.has(explicitSystemId)) {
+        assignment.set(planet.id, explicitSystemId);
+      }
+    });
+
+    systems.forEach(system => { system.planetIds = []; });
+    assignment.forEach((systemId, planetId) => {
+      const system = systemsById.get(systemId);
+      if (!system) return;
+      system.planetIds.push(planetId);
+    });
+    systems.forEach(system => {
+      system.planetIds = uniqueStringsV33(system.planetIds).sort((a, b) => {
+        const pa = planetsById.get(a);
+        const pb = planetsById.get(b);
+        return String(pa?.name || a).localeCompare(String(pb?.name || b), 'ru');
+      });
+    });
+
+    planetsById.forEach(planet => {
+      const systemId = assignment.get(planet.id) || '';
+      const system = systemId ? systemsById.get(systemId) : null;
+      planet.systemId = system?.id || '';
+      planet.location = planet.location && typeof planet.location === 'object' ? { ...planet.location } : {};
+      if (system) {
+        planet.location.arm = String(system.arm || inferGalaxyArmByPosV33(system.pos || {}));
+        planet.location.system = getSystemDisplayNameV33(system);
+        planet.location.node = String(system.location?.node || system.markerLabel || system.name || '').trim();
+      } else {
+        planet.location.arm = '';
+        planet.location.system = '';
+        planet.location.node = '';
+      }
+      planet.location.obj = String(planet.location.obj || planet.name || planet.code || planet.id || '').trim();
+    });
+
+    Data.systems = SYSTEMS;
+    Data.planets = PLANETS;
+  }
+
+  const __applyWorldData_v33 = applyWorldData;
+  applyWorldData = function(payload = {}) {
+    __applyWorldData_v33(payload);
+    normalizeCelestialLinksV33();
+  };
+
+  const __buildWorldSnapshot_v33 = buildWorldSnapshot;
+  buildWorldSnapshot = function() {
+    normalizeCelestialLinksV33();
+    return __buildWorldSnapshot_v33();
+  };
+
+  const __configReplaceEntity_v33 = Configurator.replaceEntity.bind(Configurator);
+  Configurator.replaceEntity = function(type, oldId, entity) {
+    __configReplaceEntity_v33(type, oldId, entity);
+    if (type === 'systems' || type === 'planets') normalizeCelestialLinksV33();
+  };
+
+  function renderSelectOptionsV33(items = [], current = '') {
+    return items.map(value => `<option value="${esc(value)}" ${String(current || '') === String(value) ? 'selected' : ''}>${esc(value)}</option>`).join('');
+  }
+
+  Configurator.renderSystemEditor = function(system) {
+    const arm = system.arm || inferGalaxyArmByPosV33(system.pos || {});
+    const planetPool = sortEntitiesForList(Object.values(PLANETS || {}));
+    return `
+      <form id="config-editor-form" class="form" data-entity-type="systems">
+        ${Configurator.renderHeader(system, 'Система управляет точкой на галактической карте и набором планет внутри. Планеты привязываются только здесь, а в редакторе планеты связь показывается автоматически.')}
+        ${imageFieldMarkup(system, 'Изображение системы')}
+        <div class="cols2">
+          <div class="field"><label>ID</label><input class="input" name="id" value="${esc(system.id)}" /></div>
+          <div class="field"><label>Внутренний код точки</label><input class="input" value="${esc(system.id)}" disabled /></div>
+        </div>
+        <div class="cols4 cols-responsive-4">
+          <div class="field"><label>Pos X (0..1)</label><input class="input" type="number" step="0.001" min="0" max="1" name="posX" value="${Number(system.pos?.x ?? 0.5)}" /></div>
+          <div class="field"><label>Pos Y (0..1)</label><input class="input" type="number" step="0.001" min="0" max="1" name="posY" value="${Number(system.pos?.y ?? 0.5)}" /></div>
+          <div class="field"><label>Цвет системы</label><input class="input" name="color" value="${esc(system.color || '#7df9ff')}" placeholder="#7df9ff" /></div>
+          <div class="field"><label>Внешний вид метки</label><select class="select" name="markerStyle">${SYSTEM_MARKER_STYLES.map(option => `<option value="${option.id}" ${option.id === (system.markerStyle || 'orbital') ? 'selected' : ''}>${esc(option.label)}</option>`).join('')}</select></div>
+        </div>
+        <div class="cols3">
+          <div class="field"><label>Рукав</label><input class="input" name="system_arm_readonly" value="${esc(arm)}" readonly /><div class="small-note">Определяется автоматически по положению на галактической карте.</div></div>
+          <div class="field"><label>Метка на карте</label><input class="input" name="markerLabel" value="${esc(system.markerLabel || system.name || '')}" placeholder="Узел кривопространства / Точка интереса" /></div>
+          <div class="field"><label>Внутреннее название</label><input class="input" name="name" value="${esc(system.name || '')}" placeholder="Cassilia Binary" /></div>
+        </div>
+        <div class="field"><label>Планеты в системе</label>${renderCheckboxSelector('planetIds', planetPool, system.planetIds || [], 'planet', 'Нет планет')}<div class="small-note">Связи система ↔ планеты редактируются только здесь.</div></div>
+        <div class="field"><label>Маршруты</label>${renderSystemRoutesEditor(system.routes || [], system.id)}</div>
+        <div class="field"><label>Краткое описание</label><textarea class="area" name="summary">${esc(system.summary || '')}</textarea>${typeof __htmlHint !== 'undefined' ? __htmlHint : ''}</div>
+        <div class="field"><label>Развёрнутый текст</label><textarea class="area article-body-editor" name="body">${esc(system.body || '')}</textarea>${typeof __htmlHint !== 'undefined' ? __htmlHint : ''}</div>
+        ${Configurator.renderVisibilityField(system)}
+        <div class="field"><label>Связанные статьи</label>${renderRelatedArticlesEditor(system.relatedArticleIds || [])}</div>
+        <button class="primary" type="submit">SAVE_SYSTEM</button>
+      </form>
+    `;
+  };
+
+  Configurator.renderPlanetEditor = function(planet) {
+    const linkedSystem = Data.getSystemForPlanet(planet.id) || (String(planet.systemId || '').trim() ? Data.getSystem(String(planet.systemId || '').trim()) : null);
+    const linkedSystemName = linkedSystem ? getSystemDisplayNameV33(linkedSystem) : '';
+    const arm = linkedSystem?.arm || (linkedSystem ? inferGalaxyArmByPosV33(linkedSystem.pos || {}) : '');
+    return `
+      <form id="config-editor-form" class="form" data-entity-type="planets">
+        ${Configurator.renderHeader(planet, 'Редактор планеты. Система и рукав подтягиваются автоматически от той системы, в которую планета включена в разделе «Системы».')}
+        ${imageFieldMarkup(planet, 'Изображение планеты')}
+        <div class="cols3">
+          <div class="field"><label>ID</label><input class="input" name="id" value="${esc(planet.id)}" /></div>
+          <div class="field"><label>Название</label><input class="input" name="name" value="${esc(planet.name || '')}" /></div>
+          <div class="field"><label>Код</label><input class="input" name="code" value="${esc(planet.code || '')}" /></div>
+        </div>
+        <div class="cols4 cols-responsive-4">
+          <div class="field"><label>Цвет</label><input class="input" name="color" value="${esc(planet.color || '#7df9ff')}" /></div>
+          <div class="field"><label>Dist</label><input class="input" type="number" name="dist" value="${Number(planet.dist || 0)}" /></div>
+          <div class="field"><label>Speed</label><input class="input" type="number" step="0.0001" name="speed" value="${Number(planet.speed || 0)}" /></div>
+          <div class="field"><label>Size</label><input class="input" type="number" name="size" value="${Number(planet.size || 0)}" /></div>
+        </div>
+        ${Configurator.renderVisibilityField(planet)}
+        <div class="section-title">Локация</div>
+        <div class="cols2">
+          <div class="field"><label>Система</label><input class="input" value="${esc(linkedSystemName || 'Не привязана')}" readonly /><div class="small-note">Привязка меняется только в разделе «Системы».</div></div>
+          <div class="field"><label>Рукав</label><input class="input" name="loc_arm" value="${esc(planet.location?.arm || arm || '')}" readonly /></div>
+          <div class="field"><label>Узел</label><input class="input" name="loc_node" value="${esc(planet.location?.node || linkedSystem?.markerLabel || linkedSystem?.name || '')}" readonly /></div>
+          <div class="field"><label>Название системы</label><input class="input" name="loc_system" value="${esc(planet.location?.system || linkedSystemName || '')}" readonly /></div>
+          <div class="field"><label>Объект</label><input class="input" name="loc_obj" value="${esc(planet.location?.obj || planet.name || planet.code || '')}" /></div>
+        </div>
+        <div class="section-title">Физика</div>
+        <div class="cols2">
+          <div class="field"><label>Тип</label><select class="select" name="phy_type"><option value="">Не указан</option>${renderSelectOptionsV33(getPlanetTypeOptionsV33(), planet.physics?.type || '')}</select></div>
+          <div class="field"><label>Масса</label><input class="input" name="phy_mass" value="${esc(planet.physics?.mass || '')}" /></div>
+          <div class="field"><label>Радиус</label><input class="input" name="phy_radius" value="${esc(planet.physics?.radius || '')}" /></div>
+          <div class="field"><label>Гравитация</label><input class="input" name="phy_gravity" value="${esc(planet.physics?.gravity || '')}" /></div>
+          <div class="field"><label>Климат</label><input class="input" name="phy_climate" value="${esc(planet.physics?.climate || '')}" /></div>
+          <div class="field"><label>Температура</label><input class="input" name="phy_temp" value="${esc(planet.physics?.temp || '')}" /></div>
+        </div>
+        <div class="field"><label>Атмосфера</label><select class="select" name="phy_atm"><option value="">Не указана</option>${renderSelectOptionsV33(getAtmosphereOptionsV33(), planet.physics?.atm || '')}</select></div>
+        <div class="section-title">Социум</div>
+        <div class="cols2">
+          <div class="field"><label>Население</label><input class="input" name="soc_pop" value="${esc(planet.socio?.pop || '')}" /></div>
+          <div class="field"><label>Столица</label><input class="input" name="soc_capital" value="${esc(planet.socio?.capital || '')}" /></div>
+          <div class="field"><label>Правление</label><input class="input" name="soc_gov" value="${esc(planet.socio?.gov || '')}" /></div>
+          <div class="field"><label>Правовой режим</label><input class="input" name="soc_law" value="${esc(planet.socio?.law || '')}" /></div>
+        </div>
+        <div class="section-title">Текстовые блоки планеты</div>
+        <div class="field"><label>Справка</label><textarea class="area" name="pilot_reference">${esc(getPlanetReference(planet))}</textarea>${typeof __htmlHint !== 'undefined' ? __htmlHint : ''}</div>
+        <div class="field"><label>Информация</label><textarea class="area article-body-editor" name="pilot_info">${esc(getPlanetInfo(planet))}</textarea>${typeof __htmlHint !== 'undefined' ? __htmlHint : ''}</div>
+        <div class="field"><label>Предупреждение</label><textarea class="area" name="pilot_warning">${esc(planet.pilot?.warning || '')}</textarea>${typeof __htmlHint !== 'undefined' ? __htmlHint : ''}</div>
+        <div class="field"><label>Ключевые NPC</label>${renderCheckboxSelector('npcIds', Object.values(NPCS), planet.npcIds || [], 'npc', 'Нет NPC')}</div>
+        <div class="field"><label>Флора</label>${renderCheckboxSelector('floraIds', Object.values(FLORA), planet.floraIds || [], 'flora', 'Нет флоры')}</div>
+        <div class="field"><label>Фауна</label>${renderCheckboxSelector('faunaIds', Object.values(FAUNA), planet.faunaIds || [], 'fauna', 'Нет фауны')}</div>
+        <div class="field"><label>Рынок</label><div id="market-rows" class="dynamic-list" data-kind="market">${renderMarketRows(planet.market)}</div><button id="add-market-row" class="secondary" type="button">ADD_MARKET_ITEM</button></div>
+        <div class="field"><label>Связанные статьи</label>${renderRelatedArticlesEditor(planet.relatedArticleIds || [])}</div>
+        <button class="primary" type="submit">SAVE_PLANET</button>
+      </form>
+    `;
+  };
+
+  const __configCollectEntity_v33 = Configurator.collectEntity.bind(Configurator);
+  Configurator.collectEntity = function(type, formEl, formData = new FormData(formEl)) {
+    const entity = __configCollectEntity_v33(type, formEl, formData);
+    if (type === 'systems') {
+      entity.location = entity.location && typeof entity.location === 'object' ? entity.location : {};
+      entity.arm = inferGalaxyArmByPosV33(entity.pos || {});
+      entity.location.arm = entity.arm;
+      entity.location.system = getSystemDisplayNameV33(entity);
+      entity.location.node = String(entity.location.node || entity.markerLabel || entity.name || '').trim();
+      entity.summary = String(formData.get('summary') || entity.summary || '').trim();
+      entity.body = String(formData.get('body') || entity.body || '').trim();
+      entity.planetIds = uniqueStringsV33(getCheckedValues(formEl, 'planetIds'));
+    }
+    if (type === 'planets') {
+      const currentPlanet = this.getSelectedEntity?.() || null;
+      const linkedSystem = (currentPlanet && Data.getSystemForPlanet(currentPlanet.id)) || (currentPlanet?.systemId ? Data.getSystem(currentPlanet.systemId) : null);
+      entity.systemId = linkedSystem?.id || currentPlanet?.systemId || entity.systemId || '';
+      entity.location = entity.location && typeof entity.location === 'object' ? entity.location : {};
+      if (linkedSystem) {
+        entity.location.arm = String(linkedSystem.arm || inferGalaxyArmByPosV33(linkedSystem.pos || {}));
+        entity.location.system = getSystemDisplayNameV33(linkedSystem);
+        entity.location.node = String(linkedSystem.location?.node || linkedSystem.markerLabel || linkedSystem.name || '').trim();
+      }
+      entity.location.obj = String(formData.get('loc_obj') || entity.location.obj || currentPlanet?.location?.obj || entity.name || entity.code || '').trim();
+    }
+    return entity;
+  };
+
+  bindSearchableSelects = function(root) {
+    root?.querySelectorAll('select.select').forEach(select => {
+      const options = Array.from(select.options || []).filter(option => option.value);
+      if (options.length < 8 || select.dataset.boundSearchSelect === '1') return;
+      select.dataset.boundSearchSelect = '1';
+      const host = select.parentNode;
+      if (!host || (host.querySelector && host.querySelector('[data-select-filter]'))) return;
+      const input = document.createElement('input');
+      input.className = 'input select-filter-input';
+      input.type = 'text';
+      input.placeholder = 'Поиск по списку...';
+      input.setAttribute('data-select-filter', '1');
+      host.insertBefore(input, select);
+      const sync = () => {
+        const query = String(input.value || '').trim().toLowerCase();
+        Array.from(select.options || []).forEach(option => {
+          if (!option.value) return;
+          const hay = `${option.textContent || ''} ${option.value || ''}`.toLowerCase();
+          option.hidden = Boolean(query) && !hay.includes(query);
+        });
+      };
+      input.addEventListener('input', sync);
+      sync();
+    });
+  };
+
+  const __combatAddTemplate_v33 = Combat.addTemplate.bind(Combat);
+  Combat.addTemplate = function(shape = 'circle') {
+    const result = __combatAddTemplate_v33(shape);
+    if (UI.activeModuleId === 'combat') this.render();
+    return result;
+  };
+
+  const __combatPersistCombatState_v33 = Combat.persistCombatState.bind(Combat);
+  Combat.persistCombatState = async function(notice = '', options = {}) {
+    if (UI.activeModuleId === 'combat') this.render();
+    return __combatPersistCombatState_v33(notice, options);
+  };
+
+  if (!window.__combatEditorDelegationV33) {
+    window.__combatEditorDelegationV33 = true;
+    document.addEventListener('click', event => {
+      const button = event.target.closest('#combat-add-template-circle, #combat-add-template-cone, #combat-add-template-line, #combat-add-template-rect, #combat-add-template-square, #combat-add-custom-token');
+      if (!button) return;
+      event.preventDefault();
+      if (button.id === 'combat-add-template-circle') Combat.addTemplate('circle');
+      else if (button.id === 'combat-add-template-cone') Combat.addTemplate('cone');
+      else if (button.id === 'combat-add-template-line') Combat.addTemplate('line');
+      else if (button.id === 'combat-add-template-rect') Combat.addTemplate('rect');
+      else if (button.id === 'combat-add-template-square') Combat.addTemplate('square');
+      else if (button.id === 'combat-add-custom-token') Combat.addCustomToken();
+    }, true);
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    try { normalizeCelestialLinksV33(); } catch {}
+  });
+})();
+
+
+/* v34 final stabilization: preserve current world sections, reliable system save, visible save-path buttons, and fallback combat shape insertion */
+(function(){
+  function uniqueStringsV34(values = []) {
+    return Array.from(new Set((Array.isArray(values) ? values : []).map(value => String(value || '').trim()).filter(Boolean)));
+  }
+
+  function inferGalaxyArmByPosV34(pos = {}) {
+    const x = clamp(Number(pos?.x ?? 0.5), 0, 1);
+    const y = clamp(Number(pos?.y ?? 0.5), 0, 1);
+    const dx = x - 0.5;
+    const dy = y - 0.5;
+    const r = Math.hypot(dx, dy);
+    if (r < 0.11) return 'Центральный сектор';
+    const armNames = ['Орионский рукав','Персеев рукав','Лебединый рукав','Сагиттарский рукав','Кентаврийский рукав'];
+    const angle = (Math.atan2(dy, dx) + Math.PI * 2) % (Math.PI * 2);
+    const twisted = (angle + r * 7.4) % (Math.PI * 2);
+    const index = Math.max(0, Math.min(armNames.length - 1, Math.floor((twisted / (Math.PI * 2)) * armNames.length)));
+    return armNames[index] || 'Внешний рукав';
+  }
+
+  function getSystemDisplayNameV34(system = {}) {
+    return String(system?.name || system?.markerLabel || system?.id || '').trim();
+  }
+
+  function normalizeCelestialLinksV34(options = {}) {
+    const systems = Array.isArray(SYSTEMS) ? SYSTEMS : [];
+    const planetsRecord = PLANETS && typeof PLANETS === 'object' ? PLANETS : {};
+    const planetsById = new Map(Object.values(planetsRecord).map(planet => [String(planet?.id || '').trim(), planet]).filter(entry => entry[0]));
+    const systemsById = new Map(systems.map(system => [String(system?.id || '').trim(), system]).filter(entry => entry[0]));
+    const assignment = new Map();
+    let directClaims = 0;
+
+    systems.forEach(system => {
+      system.location = system.location && typeof system.location === 'object' ? { ...system.location } : {};
+      system.arm = inferGalaxyArmByPosV34(system.pos || {});
+      system.location.arm = system.arm;
+      system.location.system = getSystemDisplayNameV34(system);
+      system.location.node = String(system.location.node || system.markerLabel || system.name || '').trim();
+      system.planetIds = uniqueStringsV34(system.planetIds).filter(id => planetsById.has(id));
+      directClaims += system.planetIds.length;
+      system.planetIds.forEach(planetId => {
+        if (!assignment.has(planetId)) assignment.set(planetId, system.id);
+      });
+    });
+
+    const allowLegacyBootstrap = Boolean(options.allowLegacyBootstrap) && directClaims === 0;
+    if (allowLegacyBootstrap) {
+      planetsById.forEach(planet => {
+        const explicitSystemId = String(planet?.systemId || '').trim();
+        if (!assignment.has(planet.id) && explicitSystemId && systemsById.has(explicitSystemId)) {
+          assignment.set(planet.id, explicitSystemId);
+        }
+      });
+    }
+
+    systems.forEach(system => { system.planetIds = []; });
+    assignment.forEach((systemId, planetId) => {
+      const system = systemsById.get(systemId);
+      if (!system) return;
+      system.planetIds.push(planetId);
+    });
+    systems.forEach(system => {
+      system.planetIds = uniqueStringsV34(system.planetIds).sort((a, b) => {
+        const pa = planetsById.get(a);
+        const pb = planetsById.get(b);
+        return String(pa?.name || a).localeCompare(String(pb?.name || b), 'ru');
+      });
+    });
+
+    planetsById.forEach(planet => {
+      const systemId = assignment.get(planet.id) || '';
+      const system = systemId ? systemsById.get(systemId) : null;
+      planet.systemId = system?.id || '';
+      planet.location = planet.location && typeof planet.location === 'object' ? { ...planet.location } : {};
+      if (system) {
+        planet.location.arm = String(system.arm || inferGalaxyArmByPosV34(system.pos || {}));
+        planet.location.system = getSystemDisplayNameV34(system);
+        planet.location.node = String(system.location?.node || system.markerLabel || system.name || '').trim();
+      } else {
+        planet.location.arm = '';
+        planet.location.system = '';
+        planet.location.node = '';
+      }
+      planet.location.obj = String(planet.location.obj || planet.name || planet.code || planet.id || '').trim();
+    });
+
+    Data.systems = SYSTEMS;
+    Data.planets = PLANETS;
+  }
+
+  const __applyWorldData_v34 = applyWorldData;
+  applyWorldData = function(payload = {}) {
+    __applyWorldData_v34(payload);
+    normalizeCelestialLinksV34({ allowLegacyBootstrap: true });
+  };
+
+  const __buildWorldSnapshot_v34 = buildWorldSnapshot;
+  buildWorldSnapshot = function() {
+    normalizeCelestialLinksV34({ allowLegacyBootstrap: false });
+    const snapshot = __buildWorldSnapshot_v34();
+    if (!snapshot.news && worldData?.news) snapshot.news = deep(worldData.news);
+    if (!snapshot.tasks && worldData?.tasks) snapshot.tasks = deep(worldData.tasks);
+    if (!snapshot.combatScenes && worldData?.combatScenes) snapshot.combatScenes = deep(worldData.combatScenes);
+    if (!snapshot.ui && worldData?.ui) snapshot.ui = deep(worldData.ui);
+    return snapshot;
+  };
+
+  const __configCollectEntity_v34 = Configurator.collectEntity.bind(Configurator);
+  Configurator.collectEntity = function(type, formEl, formData = new FormData(formEl)) {
+    const entity = __configCollectEntity_v34(type, formEl, formData);
+    if (type === 'systems') {
+      entity.planetIds = uniqueStringsV34(getCheckedValues(formEl, 'planetIds'));
+      entity.arm = inferGalaxyArmByPosV34(entity.pos || {});
+      entity.location = entity.location && typeof entity.location === 'object' ? entity.location : {};
+      entity.location.arm = entity.arm;
+      entity.location.system = getSystemDisplayNameV34(entity);
+      entity.location.node = String(entity.location.node || entity.markerLabel || entity.name || '').trim();
+    }
+    if (type === 'planets') {
+      const currentPlanet = this.getSelectedEntity?.() || null;
+      const linkedSystem = (currentPlanet && Data.getSystemForPlanet(currentPlanet.id)) || (currentPlanet?.systemId ? Data.getSystem(currentPlanet.systemId) : null);
+      entity.systemId = linkedSystem?.id || currentPlanet?.systemId || '';
+      entity.location = entity.location && typeof entity.location === 'object' ? entity.location : {};
+      if (linkedSystem) {
+        entity.location.arm = String(linkedSystem.arm || inferGalaxyArmByPosV34(linkedSystem.pos || {}));
+        entity.location.system = getSystemDisplayNameV34(linkedSystem);
+        entity.location.node = String(linkedSystem.location?.node || linkedSystem.markerLabel || linkedSystem.name || '').trim();
+      }
+      entity.location.obj = String(formData.get('loc_obj') || entity.location.obj || currentPlanet?.location?.obj || entity.name || entity.code || '').trim();
+    }
+    return entity;
+  };
+
+  const __configPersistAll_v34 = Configurator.persistAll.bind(Configurator);
+  Configurator.persistAll = async function(message, options = {}) {
+    normalizeCelestialLinksV34({ allowLegacyBootstrap: false });
+    return __configPersistAll_v34.call(this, message, options);
+  };
+
+  function profileStorageButtonsMarkupV34() {
+    return `
+      <div class="row profile-storage-actions" style="justify-content:flex-start;gap:10px;flex-wrap:wrap;margin-top:12px">
+        <button class="secondary" type="button" id="open-save-folder-btn">ОТКРЫТЬ ПАПКУ СОХРАНЕНИЙ</button>
+        <button class="ghost" type="button" id="show-save-paths-btn">ПОКАЗАТЬ ПУТИ</button>
+        <button class="ghost" type="button" id="backup-world-data-btn">СДЕЛАТЬ БЭКАП КАМПАНИИ</button>
+      </div>
+    `;
+  }
+
+  async function ensureProfileStorageButtonsV34() {
+    const form = document.getElementById('profile-edit-form');
+    if (!form) return;
+    if (App.currentUser?.role !== 'gm') {
+      form.querySelector('.profile-storage-actions')?.remove();
+      return;
+    }
+    if (!form.querySelector('.profile-storage-actions')) {
+      form.insertAdjacentHTML('beforeend', profileStorageButtonsMarkupV34());
+    }
+    if (form.dataset.storageButtonsBound === '1') return;
+    form.dataset.storageButtonsBound = '1';
+    form.querySelector('#open-save-folder-btn')?.addEventListener('click', async () => {
+      const res = await window.electronAPI?.openWorldDataDir?.();
+      if (!res?.ok) Toast.show(`Не удалось открыть папку сохранений: ${res?.message || 'unknown error'}`, 'err');
+      else Toast.show(`Открыта папка сохранений: ${res.path}`, 'ok');
+    });
+    form.querySelector('#show-save-paths-btn')?.addEventListener('click', async () => {
+      const paths = await window.electronAPI?.getPaths?.();
+      if (!paths) {
+        Toast.show('Не удалось получить пути сохранений', 'err');
+        return;
+      }
+      Toast.show(`WORLD: ${paths.worldDataDir || 'n/a'} | STATE: ${paths.stateFile || 'n/a'}`, 'info');
+      const info = document.getElementById('state-path');
+      if (info) info.textContent = `STATE_FILE: ${paths.stateFile || 'n/a'} // WORLD_DATA: ${paths.worldDataDir || 'n/a'} // SYNC_CFG: ${paths.syncConfigFile || 'n/a'}`;
+    });
+    form.querySelector('#backup-world-data-btn')?.addEventListener('click', async () => {
+      const res = await window.electronAPI?.backupWorldData?.();
+      if (res?.cancelled) return;
+      if (!res?.ok) {
+        Toast.show(`Не удалось создать бэкап: ${res?.message || 'unknown error'}`, 'err');
+        return;
+      }
+      Toast.show(`Бэкап сохранён: ${res.backupDir}`, 'ok');
+    });
+  }
+
+  const __renderProfile_v34 = UI.renderProfile.bind(UI);
+  UI.renderProfile = function() {
+    __renderProfile_v34();
+    ensureProfileStorageButtonsV34().catch(() => {});
+  };
+
+  const __combatAddTemplate_v34 = Combat.addTemplate.bind(Combat);
+  Combat.addTemplate = function(shape = 'circle') {
+    const scene = this.ensureSceneShapeState?.() || this.getScene?.();
+    const before = Array.isArray(scene?.templates) ? scene.templates.length : 0;
+    const result = __combatAddTemplate_v34(shape);
+    const after = Array.isArray(scene?.templates) ? scene.templates.length : 0;
+    if (this.isDm?.() && scene && after === before) {
+      scene.templates = Array.isArray(scene.templates) ? scene.templates : [];
+      const template = normalizeCombatTemplate({
+        shape,
+        name: shape === 'cone' ? 'Конус' : shape === 'line' ? 'Линия' : shape === 'rect' ? 'Прямоугольник' : shape === 'square' ? 'Квадрат' : 'Круг',
+        x: Math.max(0, Math.floor(scene.width / 2) - 1),
+        y: Math.max(0, Math.floor(scene.height / 2) - 1),
+        w: shape === 'line' ? 6 : 4,
+        h: shape === 'rect' ? 3 : 4,
+        label: ''
+      });
+      if (shape === 'square') template.h = template.w;
+      scene.templates.push(template);
+      this.selectedObject = { kind: 'template', id: template.id };
+      this.hasUnpublishedChanges = true;
+      this.render?.();
+      this.persistCombatState?.('Шаблон добавлен', { worldChanged: true, commitRemote: false, silentToast: true });
+    }
+    return result;
+  };
+
+  document.addEventListener('DOMContentLoaded', () => {
+    try { normalizeCelestialLinksV34({ allowLegacyBootstrap: true }); } catch {}
+    ensureProfileStorageButtonsV34().catch(() => {});
+  });
+})();
+
+/* v37 combat interface overhaul: cinematic window animations, DM tactical topbar, local scene sounds */
+(function(){
+  const COMBAT_AUDIO_STORAGE_KEY_V37 = 'combat-local-audio-library-v37';
+  const COMBAT_TEMPLATE_THROTTLE_MS_V37 = 260;
+  const COMBAT_AUDIO_DEFAULT_SECTION_V37 = 'default';
+
+  const safeListV37 = value => Array.isArray(value) ? value : [];
+  const makeIdV37 = prefix => `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+
+  function readCombatAudioLibraryV37() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(COMBAT_AUDIO_STORAGE_KEY_V37) || 'null');
+      if (parsed && typeof parsed === 'object') {
+        parsed.sections = safeListV37(parsed.sections).map(section => ({
+          id: String(section.id || makeIdV37('sound_section')),
+          name: String(section.name || 'Раздел'),
+          sounds: safeListV37(section.sounds).map(sound => ({
+            id: String(sound.id || makeIdV37('sound')),
+            name: String(sound.name || 'Звук'),
+            url: String(sound.url || ''),
+            file: String(sound.file || ''),
+            createdAt: sound.createdAt || new Date().toISOString()
+          })).filter(sound => sound.url)
+        }));
+        parsed.sceneAmbient = parsed.sceneAmbient && typeof parsed.sceneAmbient === 'object' ? parsed.sceneAmbient : {};
+        if (!parsed.sections.length) parsed.sections.push({ id: COMBAT_AUDIO_DEFAULT_SECTION_V37, name: 'Общее', sounds: [] });
+        return parsed;
+      }
+    } catch {}
+    return { sections: [{ id: COMBAT_AUDIO_DEFAULT_SECTION_V37, name: 'Общее', sounds: [] }], sceneAmbient: {} };
+  }
+
+  const CombatAudioV37 = {
+    state: readCombatAudioLibraryV37(),
+    ambientNode: null,
+    ambientKey: '',
+    save() {
+      localStorage.setItem(COMBAT_AUDIO_STORAGE_KEY_V37, JSON.stringify(this.state));
+    },
+    get sections() { return this.state.sections; },
+    findSection(sectionId) {
+      return this.sections.find(section => section.id === sectionId) || this.sections[0] || null;
+    },
+    findSound(soundId) {
+      for (const section of this.sections) {
+        const sound = section.sounds.find(item => item.id === soundId);
+        if (sound) return { section, sound };
+      }
+      return null;
+    },
+    addSection(name) {
+      const clean = String(name || '').trim();
+      if (!clean) return;
+      this.sections.push({ id: makeIdV37('sound_section'), name: clean, sounds: [] });
+      this.save();
+      Combat.render();
+    },
+    deleteSection(sectionId) {
+      if (this.sections.length <= 1) {
+        Toast.show('Нельзя удалить последний раздел звуков.', 'info');
+        return;
+      }
+      this.state.sections = this.sections.filter(section => section.id !== sectionId);
+      Object.entries(this.state.sceneAmbient || {}).forEach(([sceneId, soundId]) => {
+        if (!this.findSound(soundId)) delete this.state.sceneAmbient[sceneId];
+      });
+      this.save();
+      Combat.render();
+    },
+    async addSound(sectionId) {
+      const section = this.findSection(sectionId);
+      if (!section) return;
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'audio/*';
+      input.addEventListener('change', async event => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = async () => {
+          try {
+            const dataUrl = String(reader.result || '');
+            const stem = file.name.replace(/\.[^.]+$/, '') || 'sound';
+            let url = dataUrl;
+            let localFile = '';
+            if (window.electronAPI?.saveCombatSound) {
+              const result = await window.electronAPI.saveCombatSound({ dataUrl, preferredStem: stem, name: file.name });
+              if (!result?.ok) throw new Error(result?.message || 'Не удалось сохранить звук');
+              url = result.url || result.localUrl || dataUrl;
+              localFile = result.file || '';
+            }
+            section.sounds.push({ id: makeIdV37('sound'), name: stem, url, file: localFile, createdAt: new Date().toISOString() });
+            this.save();
+            Combat.render();
+            Toast.show('Звук добавлен локально. В облако он не синхронизируется.', 'ok');
+          } catch (error) {
+            Toast.show(`Ошибка добавления звука: ${error?.message || error}`, 'err');
+          }
+        };
+        reader.readAsDataURL(file);
+      }, { once: true });
+      input.click();
+    },
+    deleteSound(sectionId, soundId) {
+      const section = this.findSection(sectionId);
+      if (!section) return;
+      section.sounds = section.sounds.filter(sound => sound.id !== soundId);
+      Object.entries(this.state.sceneAmbient || {}).forEach(([sceneId, id]) => {
+        if (id === soundId) delete this.state.sceneAmbient[sceneId];
+      });
+      if (this.ambientKey.endsWith(`:${soundId}`)) this.stopAmbient();
+      this.save();
+      Combat.render();
+    },
+    play(soundId, options = {}) {
+      const found = this.findSound(soundId);
+      if (!found?.sound?.url) return;
+      try {
+        const audio = new Audio(found.sound.url);
+        audio.volume = clamp(Number(options.volume ?? 0.75), 0, 1);
+        audio.preload = 'auto';
+        audio.play().catch(() => {});
+      } catch {}
+    },
+    playRandom(sectionId) {
+      const section = this.findSection(sectionId);
+      if (!section?.sounds?.length) {
+        Toast.show('В разделе нет звуков.', 'info');
+        return;
+      }
+      const sound = section.sounds[Math.floor(Math.random() * section.sounds.length)];
+      this.play(sound.id);
+    },
+    setAmbient(sceneId, soundId) {
+      if (!sceneId) return;
+      if (!soundId) delete this.state.sceneAmbient[sceneId];
+      else this.state.sceneAmbient[sceneId] = soundId;
+      this.save();
+      this.startAmbient(sceneId, { restart: true });
+      Combat.render();
+    },
+    stopAmbient() {
+      if (!this.ambientNode) return;
+      try { this.ambientNode.pause(); this.ambientNode.currentTime = 0; } catch {}
+      this.ambientNode = null;
+      this.ambientKey = '';
+    },
+    startAmbient(sceneId, options = {}) {
+      const soundId = this.state.sceneAmbient?.[sceneId] || '';
+      if (!soundId) {
+        this.stopAmbient();
+        return;
+      }
+      const found = this.findSound(soundId);
+      if (!found?.sound?.url) return;
+      const key = `${sceneId}:${soundId}`;
+      if (!options.restart && this.ambientKey === key && this.ambientNode) return;
+      this.stopAmbient();
+      try {
+        AudioManager.stopAmbient?.();
+        const audio = new Audio(found.sound.url);
+        audio.loop = true;
+        audio.volume = 0.34;
+        audio.preload = 'auto';
+        this.ambientNode = audio;
+        this.ambientKey = key;
+        audio.play().catch(() => {});
+      } catch {}
+    },
+    render(scene) {
+      const ambientId = this.state.sceneAmbient?.[scene?.id] || '';
+      return `
+        <div class="combat-sound-panel-v37">
+          <div class="small-note">Звуки хранятся локально в renderer/assets/audio и не синхронизируются в облако. Эмбиент сцены играет отдельным loop-каналом.</div>
+          <div class="row combat-editor-actions">
+            <input class="input" id="combat-sound-section-name" placeholder="Новый раздел звуков" />
+            <button class="secondary" type="button" id="combat-sound-add-section">ДОБАВИТЬ РАЗДЕЛ</button>
+            <button class="ghost" type="button" id="combat-sound-stop-ambient">СТОП ЭМБИЕНТ</button>
+            <button class="ghost" type="button" id="combat-sound-stop-all">СТОП ВСЁ</button>
+          </div>
+          <div class="combat-sound-sections-v37">
+            ${this.sections.map(section => `
+              <div class="combat-sound-section-v37" data-sound-section="${esc(section.id)}">
+                <div class="combat-sound-section-head-v37">
+                  <b>${esc(section.name)}</b>
+                  <div class="row combat-editor-actions">
+                    <button class="secondary" type="button" data-sound-add="${esc(section.id)}">ДОБАВИТЬ ФАЙЛ</button>
+                    <button class="secondary" type="button" data-sound-random="${esc(section.id)}">СЛУЧАЙНЫЙ</button>
+                    <button class="ghost" type="button" data-sound-delete-section="${esc(section.id)}">УДАЛИТЬ РАЗДЕЛ</button>
+                  </div>
+                </div>
+                <div class="combat-sound-list-v37">
+                  ${section.sounds.map(sound => `
+                    <div class="combat-sound-row-v37">
+                      <span>${esc(sound.name)}</span>
+                      <div class="row combat-editor-actions">
+                        <button class="ghost" type="button" data-sound-play="${esc(sound.id)}">PLAY</button>
+                        <button class="ghost" type="button" data-sound-stop="${esc(sound.id)}">STOP</button>
+                        <button class="ghost ${ambientId === sound.id ? 'active' : ''}" type="button" data-sound-ambient="${esc(sound.id)}">AMBIENT</button>
+                        <button class="ghost" type="button" data-sound-delete="${esc(section.id)}:${esc(sound.id)}">DEL</button>
+                      </div>
+                    </div>
+                  `).join('') || '<div class="small-note">В этом разделе пока нет файлов.</div>'}
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        </div>`;
+    },
+    bind(root, scene) {
+      root.querySelector('#combat-sound-add-section')?.addEventListener('click', () => this.addSection(root.querySelector('#combat-sound-section-name')?.value));
+      root.querySelector('#combat-sound-stop-ambient')?.addEventListener('click', () => this.stopAmbient());
+      root.querySelectorAll('[data-sound-add]').forEach(btn => btn.addEventListener('click', () => this.addSound(btn.dataset.soundAdd)));
+      root.querySelectorAll('[data-sound-random]').forEach(btn => btn.addEventListener('click', () => this.playRandom(btn.dataset.soundRandom)));
+      root.querySelectorAll('[data-sound-play]').forEach(btn => btn.addEventListener('click', () => this.play(btn.dataset.soundPlay)));
+      root.querySelectorAll('[data-sound-ambient]').forEach(btn => btn.addEventListener('click', () => this.setAmbient(scene?.id, btn.dataset.soundAmbient)));
+      root.querySelectorAll('[data-sound-delete-section]').forEach(btn => btn.addEventListener('click', () => this.deleteSection(btn.dataset.soundDeleteSection)));
+      root.querySelectorAll('[data-sound-delete]').forEach(btn => btn.addEventListener('click', () => {
+        const [sectionId, soundId] = String(btn.dataset.soundDelete || '').split(':');
+        this.deleteSound(sectionId, soundId);
+      }));
+    }
+  };
+
+  window.CombatAudioV37 = CombatAudioV37;
+
+  function combatScenePanelV37(scene, runtime) {
+    const active = Combat.getActiveSceneId() === scene.id;
+    return `
+      <div class="combat-pop-grid-v37">
+        <div class="combat-scene-list combat-scene-list-v37">
+          ${COMBAT_SCENE_LIST.map(entry => `
+            <button class="combat-scene-btn ${entry.id === scene.id ? 'active' : ''}" type="button" data-combat-scene="${esc(entry.id)}"><b>${esc(entry.name)}</b><span>${entry.mode === 'combat' ? 'Бой' : 'Сцена'}</span></button>
+          `).join('') || '<div class="small-note">Сцен пока нет.</div>'}
+        </div>
+        <div class="row combat-editor-actions">
+          <button class="primary" type="button" id="combat-create-scene">НОВАЯ СЦЕНА</button>
+          <button class="secondary" type="button" id="combat-duplicate-scene">ДУБЛИКАТ</button>
+          <button class="secondary" type="button" id="combat-delete-scene">УДАЛИТЬ</button>
+        </div>
+        <form id="combat-scene-form" class="form combat-panel-form-v37">
+          <div class="cols2">
+            <div class="field"><label>Название</label><input class="input" name="scene_name" value="${esc(scene.name)}" /></div>
+            <div class="field"><label>Тип сцены</label><select class="select" name="scene_mode"><option value="combat" ${scene.mode === 'combat' ? 'selected' : ''}>Боевая сцена</option><option value="standard" ${scene.mode === 'standard' ? 'selected' : ''}>Стандартная сцена</option></select></div>
+            <div class="field"><label>Ширина</label><input class="input" type="number" name="scene_width" value="${Number(scene.width)}" min="8" max="80" /></div>
+            <div class="field"><label>Высота</label><input class="input" type="number" name="scene_height" value="${Number(scene.height)}" min="8" max="80" /></div>
+            <div class="field"><label>Цвет фона</label><input class="input" name="scene_background_color" value="${esc(scene.backgroundColor)}" /></div>
+            <div class="field"><label>Цвет сетки</label><input class="input" name="scene_grid_color" value="${esc(scene.gridColor)}" /></div>
+          </div>
+          <div class="cols2">
+            <div class="field"><label>Fog of War</label><label class="toggle-row"><input type="checkbox" name="scene_fog" ${scene.fogEnabled ? 'checked' : ''} /> Включён</label></div>
+            <div class="field"><label>Радиус обзора</label><input class="input" type="number" name="scene_vision_radius" value="${Number(scene.visionRadius)}" min="1" max="24" /></div>
+          </div>
+          <div class="field"><label>Заметки ДМа</label><textarea class="area" name="scene_notes">${esc(scene.notes || '')}</textarea></div>
+          <div class="row combat-editor-actions">
+            <button class="primary" type="submit">СОХРАНИТЬ СЦЕНУ</button>
+            <button class="secondary" type="button" id="combat-upload-background">ФОН</button>
+            ${scene.backgroundImage ? '<button class="secondary" type="button" id="combat-clear-background">УБРАТЬ ФОН</button>' : ''}
+            <button class="secondary" type="button" id="combat-activate-scene">${active ? 'ОСТАНОВИТЬ ПОКАЗ' : 'ПОКАЗАТЬ ИГРОКАМ'}</button>
+            <button class="secondary" type="button" id="combat-publish-scene">СИНХР. СЦЕНУ</button>
+            <button class="secondary" type="button" id="combat-open-player-display">ЭКРАН ИГРОКОВ</button>
+            ${Combat.displayWindowOpen ? '<button class="secondary" type="button" id="combat-close-player-display">ЗАКРЫТЬ ЭКРАН</button>' : ''}
+          </div>
+        </form>
+      </div>`;
+  }
+
+  function combatUnitsPanelV37(scene, runtime) {
+    const playerOptions = playerEntities().map(player => `<option value="${esc(player.id)}">${esc(player.displayName || player.name || player.id)}</option>`).join('');
+    const npcOptions = NPC_LIST.map(npc => `<option value="${esc(npc.id)}">${esc(npc.name || npc.id)}</option>`).join('');
+    return `
+      <div class="combat-pop-grid-v37">
+        <div class="row combat-editor-actions">
+          <button class="secondary" type="button" id="combat-add-asset">ДОБАВИТЬ АССЕТ</button>
+          <button class="secondary" type="button" id="combat-add-custom-token">ДОБАВИТЬ ЮНИТ</button>
+        </div>
+        <div class="cols2">
+          <div class="field"><label>Токен игрока</label><select class="select" id="combat-player-select"><option value="">Выбери игрока</option>${playerOptions}</select><button class="secondary" type="button" id="combat-add-player-token">ДОБАВИТЬ ИГРОКА</button></div>
+          <div class="field"><label>Токен NPC</label><select class="select" id="combat-npc-select"><option value="">Выбери NPC</option>${npcOptions}</select><button class="secondary" type="button" id="combat-add-npc-token">ДОБАВИТЬ NPC</button></div>
+        </div>
+      </div>`;
+  }
+
+  function combatBattlePanelV37(scene, runtime) {
+    const currentTurn = Combat.getCurrentTurnToken();
+    return `
+      <div class="combat-pop-grid-v37">
+        <div class="row combat-editor-actions">
+          <button class="secondary" type="button" id="combat-roll-initiative">БРОСИТЬ ИНИЦИАТИВУ</button>
+          <button class="secondary" type="button" id="combat-next-turn">СЛЕДУЮЩИЙ ХОД</button>
+          <button class="secondary" type="button" id="combat-toolbar-next">ЗАВЕРШИТЬ ХОД</button>
+          <button class="secondary" type="button" id="combat-toolbar-publish">СИНХР. СЦЕНУ</button>
+        </div>
+        <div class="chip">Раунд ${Number(runtime.round || 1)} · Ход: ${esc(currentTurn?.name || '—')}</div>
+        <div class="combat-initiative-list combat-initiative-list-v37">
+          ${runtime.initiativeOrder.length ? runtime.initiativeOrder.map((tokenId, index) => {
+            const token = runtime.tokens.find(item => item.id === tokenId);
+            if (!token) return '';
+            return `<div class="combat-init-row ${index === Number(runtime.turnIndex || 0) ? 'active' : ''}"><b>${esc(token.name)}</b><span>${Number(token.initiative || 0)}</span></div>`;
+          }).join('') : '<div class="small-note">Инициатива ещё не брошена.</div>'}
+        </div>
+      </div>`;
+  }
+
+  function combatZonesPanelV37() {
+    return `
+      <div class="combat-pop-grid-v37">
+        <div class="row combat-editor-actions combat-template-actions-v37">
+          <button class="secondary" type="button" data-zone-template="circle">КРУГ</button>
+          <button class="secondary" type="button" data-zone-template="square">КВАДРАТ</button>
+          <button class="secondary" type="button" data-zone-template="rect">ПРЯМОУГ.</button>
+          <button class="secondary" type="button" data-zone-template="cone">КОНУС</button>
+          <button class="secondary" type="button" data-zone-template="line">ЛИНИЯ</button>
+        </div>
+        <div class="small-note">Зоны создаются один раз за клик. Выбери зону на карте, чтобы настроить цвет, размер, эффект и видимость игрокам.</div>
+      </div>`;
+  }
+
+  function combatToolbarV37(scene, runtime) {
+    const panels = [
+      ['scene', 'Сцена', combatScenePanelV37(scene, runtime)],
+      ['units', 'Юниты', combatUnitsPanelV37(scene, runtime)],
+      ['battle', 'Битва', combatBattlePanelV37(scene, runtime)],
+      ['zones', 'Зоны', combatZonesPanelV37(scene, runtime)],
+      ['sounds', 'Звуки', CombatAudioV37.render(scene)],
+      ['props', 'Свойства', Combat.getSelectionPanel(scene, runtime)]
+    ];
+    return `
+      <div class="combat-topbar-v37 card">
+        <div class="combat-title-v37"><span>TACTICAL_EDITOR</span><b>${esc(scene.name)}</b></div>
+        <div class="combat-menu-v37">
+          ${panels.map(([id, label, html]) => `
+            <div class="combat-menu-item-v37" data-combat-menu="${id}">
+              <button class="combat-menu-button-v37" type="button">${esc(label)}</button>
+              <div class="combat-popover-v37 card">${html}</div>
+            </div>
+          `).join('')}
+        </div>
+      </div>`;
+  }
+
+  const __combatRenderV37 = Combat.render.bind(Combat);
+  Combat.render = function() {
+    if (!this.isDm()) return __combatRenderV37();
+    ensureCombatModuleMarkup();
+    this.refreshPlayerDisplayStatus?.().catch(() => {});
+    const root = document.getElementById('combat-content');
+    if (!root) return;
+    const scene = this.getScene();
+    if (this.isDm() && !this.selectedSceneId && COMBAT_SCENE_LIST[0]?.id) this.selectedSceneId = COMBAT_SCENE_LIST[0].id;
+    if (!scene) return __combatRenderV37();
+    const runtime = this.getRuntime(scene.id);
+    root.innerHTML = `
+      <div class="combat-layout-v37">
+        ${combatToolbarV37(scene, runtime)}
+        <section class="combat-map-v37">${this.renderBoard(scene, runtime)}</section>
+      </div>`;
+    this.bind(root);
+    this.bindV37(root, scene, runtime);
+    CombatAudioV37.startAmbient(scene.id);
+  };
+
+  Combat.bindV37 = function(root, scene, runtime) {
+    CombatAudioV37.bind(root, scene);
+    root.querySelectorAll('[data-zone-template]').forEach(button => {
+      button.addEventListener('click', event => {
+        event.preventDefault();
+        event.stopPropagation();
+        this.addTemplateOnceV37(button.dataset.zoneTemplate || 'circle');
+      });
+    });
+  };
+
+  Combat.addTemplateOnceV37 = function(shape = 'circle') {
+    const key = `${shape}:${this.getSceneIdForView()}`;
+    const stamp = performance.now();
+    if (this._lastTemplateAddV37?.key === key && stamp - this._lastTemplateAddV37.at < COMBAT_TEMPLATE_THROTTLE_MS_V37) return;
+    this._lastTemplateAddV37 = { key, at: stamp };
+    return this.addTemplate(shape);
+  };
+
+  const __combatAddTemplateV37 = Combat.addTemplate.bind(Combat);
+  Combat.addTemplate = function(shape = 'circle') {
+    const stamp = performance.now();
+    const key = `${shape}:${this.getSceneIdForView()}`;
+    if (this._templateAddGuardV37?.key === key && stamp - this._templateAddGuardV37.at < COMBAT_TEMPLATE_THROTTLE_MS_V37) return;
+    this._templateAddGuardV37 = { key, at: stamp };
+    return __combatAddTemplateV37(shape === 'square' ? 'square' : shape);
+  };
+
+  const __normalizeCombatTemplateV37 = normalizeCombatTemplate;
+  normalizeCombatTemplate = function(template = {}) {
+    const next = __normalizeCombatTemplateV37(template);
+    if (String(template.shape || '') === 'square') {
+      next.shape = 'square';
+      next.h = next.w;
+      next.name = next.name === 'Шаблон' ? 'Квадрат' : next.name;
+    }
+    return next;
+  };
+
+  const __combatRenderTemplateShapeV37 = Combat.renderTemplateShape.bind(Combat);
+  Combat.renderTemplateShape = function(template, scene) {
+    if (String(template.shape || '') === 'square') {
+      const selected = this.selectedObject?.kind === 'template' && this.selectedObject?.id === template.id;
+      const style = `left:${(template.x / scene.width) * 100}%;top:${(template.y / scene.height) * 100}%;width:${(template.w / scene.width) * 100}%;height:${(template.w / scene.height) * 100}%;transform:rotate(${Number(template.rotation || 0)}deg);--template-color:${esc(template.color)};z-index:${Number(template.z || 20)};`;
+      return `<button class="combat-object combat-template ${selected ? 'selected' : ''} shape-square" type="button" data-combat-kind="template" data-combat-id="${esc(template.id)}" style="${style}">${template.label ? `<span class="combat-template-label">${esc(template.label)}</span>` : ''}${selected && this.canResizeSelected() ? '<span class="combat-resize-handle" data-combat-resize="1"></span>' : ''}</button>`;
+    }
+    return __combatRenderTemplateShapeV37(template, scene);
+  };
+
+  const __uiOpenModuleV37 = UI.openModule.bind(UI);
+  UI.openModule = function(id, options = {}) {
+    const result = __uiOpenModuleV37(id, options);
+    const mod = document.getElementById(`mod-${id}`);
+    if (mod) {
+      mod.classList.remove('window-enter-v37');
+      void mod.offsetWidth;
+      mod.classList.add('window-enter-v37');
+    }
+    return result;
+  };
+})();
+
+
+/* v40 combat sound and popover fixes: viewport-safe scene panel, stop controls, renderer/assets/audio storage */
+(function(){
+  if (!window.CombatAudioV37) return;
+  const audioApi = window.CombatAudioV37;
+  audioApi.activeNodes = Array.isArray(audioApi.activeNodes) ? audioApi.activeNodes : [];
+
+  const __playV40 = audioApi.play.bind(audioApi);
+  audioApi.play = function(soundId, options = {}) {
+    const found = this.findSound(soundId);
+    if (!found?.sound?.url) return __playV40(soundId, options);
+    try {
+      const audio = new Audio(found.sound.url);
+      audio.volume = clamp(Number(options.volume ?? 0.75), 0, 1);
+      audio.preload = 'auto';
+      const node = { soundId, audio };
+      this.activeNodes.push(node);
+      const cleanup = () => {
+        this.activeNodes = this.activeNodes.filter(item => item !== node);
+      };
+      audio.addEventListener('ended', cleanup, { once: true });
+      audio.addEventListener('pause', () => {
+        if (audio.currentTime === 0 || audio.ended) cleanup();
+      });
+      audio.play().catch(cleanup);
+      return audio;
+    } catch {
+      return __playV40(soundId, options);
+    }
+  };
+
+  audioApi.stopSound = function(soundId = '') {
+    const id = String(soundId || '').trim();
+    this.activeNodes = (this.activeNodes || []).filter(node => {
+      if (id && node.soundId !== id) return true;
+      try { node.audio.pause(); node.audio.currentTime = 0; } catch {}
+      return false;
+    });
+  };
+
+  audioApi.stopSounds = function() {
+    this.stopSound('');
+  };
+
+  audioApi.stopAll = function() {
+    this.stopSounds();
+    this.stopAmbient();
+  };
+
+  const __deleteSoundV40 = audioApi.deleteSound.bind(audioApi);
+  audioApi.deleteSound = function(sectionId, soundId) {
+    this.stopSound(soundId);
+    return __deleteSoundV40(sectionId, soundId);
+  };
+
+  const __deleteSectionV40 = audioApi.deleteSection.bind(audioApi);
+  audioApi.deleteSection = function(sectionId) {
+    const section = this.findSection(sectionId);
+    (section?.sounds || []).forEach(sound => this.stopSound(sound.id));
+    return __deleteSectionV40(sectionId);
+  };
+
+  const __addSectionV40 = audioApi.addSection.bind(audioApi);
+  audioApi.addSection = function(name) {
+    const before = this.sections.length;
+    const clean = String(name || '').trim();
+    if (!clean) {
+      Toast.show('Введите название раздела звуков.', 'info');
+      return;
+    }
+    __addSectionV40(clean);
+    if (this.sections.length === before) {
+      this.sections.push({ id: `sound_section_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`, name: clean, sounds: [] });
+      this.save();
+      Combat.render();
+    }
+  };
+
+  const __combatDeleteSceneV40 = Combat.deleteScene.bind(Combat);
+  Combat.deleteScene = function(sceneId) {
+    if (audioApi.state?.sceneAmbient?.[sceneId]) delete audioApi.state.sceneAmbient[sceneId];
+    audioApi.stopAll();
+    audioApi.save();
+    return __combatDeleteSceneV40(sceneId);
+  };
+
+  const __uiCloseModuleV40 = UI.closeModule.bind(UI);
+  UI.closeModule = function() {
+    const wasCombat = this.activeModuleId === 'combat';
+    const result = __uiCloseModuleV40();
+    if (wasCombat) audioApi.stopAll();
+    return result;
+  };
+
+  if (!window.__combatSoundDelegationV40) {
+    window.__combatSoundDelegationV40 = true;
+    document.addEventListener('click', event => {
+      const target = event.target.closest('#combat-sound-add-section,#combat-sound-stop-ambient,#combat-sound-stop-all,[data-sound-add],[data-sound-random],[data-sound-play],[data-sound-stop],[data-sound-ambient],[data-sound-delete-section],[data-sound-delete]');
+      if (!target || !document.getElementById('mod-combat')?.contains(target)) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      const scene = Combat.getScene?.();
+      if (target.id === 'combat-sound-add-section') {
+        const input = document.getElementById('combat-sound-section-name');
+        audioApi.addSection(input?.value || '');
+        if (input) input.value = '';
+      } else if (target.id === 'combat-sound-stop-ambient') {
+        audioApi.stopAmbient();
+      } else if (target.id === 'combat-sound-stop-all') {
+        audioApi.stopAll();
+      } else if (target.dataset.soundAdd) {
+        audioApi.addSound(target.dataset.soundAdd);
+      } else if (target.dataset.soundRandom) {
+        audioApi.playRandom(target.dataset.soundRandom);
+      } else if (target.dataset.soundPlay) {
+        audioApi.play(target.dataset.soundPlay);
+      } else if (target.dataset.soundStop) {
+        audioApi.stopSound(target.dataset.soundStop);
+      } else if (target.dataset.soundAmbient) {
+        audioApi.setAmbient(scene?.id, target.dataset.soundAmbient);
+      } else if (target.dataset.soundDeleteSection) {
+        audioApi.deleteSection(target.dataset.soundDeleteSection);
+      } else if (target.dataset.soundDelete) {
+        const [sectionId, soundId] = String(target.dataset.soundDelete || '').split(':');
+        audioApi.deleteSound(sectionId, soundId);
+      }
+    }, true);
+  }
+})();
+
+/* v41 combat menu behavior: click-pinned popovers instead of hover/focus auto-close */
+(function(){
+  function getCombatMenuItemsV41() {
+    return Array.from(document.querySelectorAll('#mod-combat .combat-menu-item-v37'));
+  }
+
+  function applyCombatMenuStateV41() {
+    const activeId = String(Combat.activeMenuV41 || '').trim();
+    getCombatMenuItemsV41().forEach(item => {
+      const isOpen = Boolean(activeId && item.dataset.combatMenu === activeId);
+      item.classList.toggle('is-open-v41', isOpen);
+      item.querySelector('.combat-menu-button-v37')?.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+    });
+  }
+
+  function closeCombatMenuV41() {
+    Combat.activeMenuV41 = '';
+    applyCombatMenuStateV41();
+  }
+
+  function toggleCombatMenuV41(menuId) {
+    const id = String(menuId || '').trim();
+    if (!id) return;
+    Combat.activeMenuV41 = Combat.activeMenuV41 === id ? '' : id;
+    applyCombatMenuStateV41();
+  }
+
+  window.closeCombatMenuV41 = closeCombatMenuV41;
+  window.applyCombatMenuStateV41 = applyCombatMenuStateV41;
+
+  if (!window.__combatMenuClickPinnedV41) {
+    window.__combatMenuClickPinnedV41 = true;
+    document.addEventListener('click', event => {
+      const menuButton = event.target.closest('#mod-combat .combat-menu-button-v37');
+      if (menuButton) {
+        event.preventDefault();
+        event.stopPropagation();
+        const item = menuButton.closest('.combat-menu-item-v37');
+        toggleCombatMenuV41(item?.dataset.combatMenu || '');
+        return;
+      }
+
+      const popover = event.target.closest('#mod-combat .combat-popover-v37');
+      if (popover) {
+        // Actions inside the popover must not close the active section.
+        event.stopPropagation();
+      }
+    }, true);
+  }
+
+  const __combatRenderV41 = Combat.render.bind(Combat);
+  Combat.render = function() {
+    const result = __combatRenderV41();
+    requestAnimationFrame(() => applyCombatMenuStateV41());
+    return result;
+  };
+
+  const __uiCloseModuleV41 = UI.closeModule.bind(UI);
+  UI.closeModule = function(...args) {
+    if (this.activeModuleId === 'combat') closeCombatMenuV41();
+    return __uiCloseModuleV41(...args);
+  };
+
+  const __uiOpenModuleV41 = UI.openModule.bind(UI);
+  UI.openModule = function(id, options = {}) {
+    if (id !== 'combat') closeCombatMenuV41();
+    const result = __uiOpenModuleV41(id, options);
+    if (id === 'combat') requestAnimationFrame(() => applyCombatMenuStateV41());
+    return result;
+  };
+})();
+
+/* v42: multi-sound import, sound rename, archive cleanup/sort */
+(function(){
+  function v42ReadFileAsDataUrl(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ''));
+      reader.onerror = () => reject(reader.error || new Error('FileReader failed'));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  if (window.CombatAudioV37) {
+    const audioApi = window.CombatAudioV37;
+
+    audioApi.renameSound = function(sectionId, soundId, name) {
+      const section = this.findSection(sectionId);
+      const sound = section?.sounds?.find(item => item.id === soundId);
+      if (!sound) return;
+      const clean = String(name || '').trim();
+      if (!clean || clean === sound.name) return;
+      sound.name = clean;
+      this.save();
+      Toast.show('Название звука обновлено.', 'ok');
+    };
+
+    audioApi.addSound = async function(sectionId) {
+      const section = this.findSection(sectionId);
+      if (!section) return;
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'audio/*';
+      input.multiple = true;
+      input.addEventListener('change', async event => {
+        const files = Array.from(event.target.files || []).filter(file => file && /^audio\//.test(file.type || 'audio/'));
+        if (!files.length) return;
+        let added = 0;
+        for (const file of files) {
+          try {
+            const dataUrl = await v42ReadFileAsDataUrl(file);
+            const stem = file.name.replace(/\.[^.]+$/, '') || 'sound';
+            let url = dataUrl;
+            let localFile = '';
+            if (window.electronAPI?.saveCombatSound) {
+              const result = await window.electronAPI.saveCombatSound({ dataUrl, preferredStem: stem, name: file.name });
+              if (!result?.ok) throw new Error(result?.message || 'Не удалось сохранить звук');
+              url = result.url || result.localUrl || dataUrl;
+              localFile = result.file || '';
+            }
+            section.sounds.push({
+              id: `sound_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`,
+              name: stem,
+              url,
+              file: localFile,
+              createdAt: new Date().toISOString()
+            });
+            added += 1;
+          } catch (error) {
+            Toast.show(`Ошибка добавления звука ${file.name}: ${error?.message || error}`, 'err');
+          }
+        }
+        if (added) {
+          this.save();
+          Combat.render();
+          Toast.show(`Добавлено звуков: ${added}.`, 'ok');
+        }
+      }, { once: true });
+      input.click();
+    };
+
+    const __renderAudioV42 = audioApi.render.bind(audioApi);
+    audioApi.render = function(scene) {
+      const ambientId = this.state.sceneAmbient?.[scene?.id] || '';
+      return `
+        <div class="combat-sound-panel-v37">
+          <div class="small-note">Звуки хранятся локально в renderer/assets/audio и не синхронизируются в облако. Можно выбрать несколько файлов сразу. Название звука редактируется прямо в списке.</div>
+          <div class="row combat-editor-actions">
+            <input class="input" id="combat-sound-section-name" placeholder="Новый раздел звуков" />
+            <button class="secondary" type="button" id="combat-sound-add-section">ДОБАВИТЬ РАЗДЕЛ</button>
+            <button class="ghost" type="button" id="combat-sound-stop-ambient">СТОП ЭМБИЕНТ</button>
+            <button class="ghost" type="button" id="combat-sound-stop-all">СТОП ВСЁ</button>
+          </div>
+          <div class="combat-sound-sections-v37">
+            ${this.sections.map(section => `
+              <div class="combat-sound-section-v37" data-sound-section="${esc(section.id)}">
+                <div class="combat-sound-section-head-v37">
+                  <b>${esc(section.name)}</b>
+                  <div class="row combat-editor-actions">
+                    <button class="secondary" type="button" data-sound-add="${esc(section.id)}">ДОБАВИТЬ ФАЙЛЫ</button>
+                    <button class="secondary" type="button" data-sound-random="${esc(section.id)}">СЛУЧАЙНЫЙ</button>
+                    <button class="ghost" type="button" data-sound-delete-section="${esc(section.id)}">УДАЛИТЬ РАЗДЕЛ</button>
+                  </div>
+                </div>
+                <div class="combat-sound-list-v37">
+                  ${section.sounds.map(sound => `
+                    <div class="combat-sound-row-v37">
+                      <input class="combat-sound-name-input-v42" value="${esc(sound.name)}" data-sound-rename="${esc(section.id)}:${esc(sound.id)}" title="Название звука" />
+                      <div class="row combat-editor-actions">
+                        <button class="ghost" type="button" data-sound-play="${esc(sound.id)}">PLAY</button>
+                        <button class="ghost" type="button" data-sound-stop="${esc(sound.id)}">STOP</button>
+                        <button class="ghost ${ambientId === sound.id ? 'active' : ''}" type="button" data-sound-ambient="${esc(sound.id)}">AMBIENT</button>
+                        <button class="ghost" type="button" data-sound-delete="${esc(section.id)}:${esc(sound.id)}">DEL</button>
+                      </div>
+                    </div>
+                  `).join('') || '<div class="small-note">В этом разделе пока нет файлов.</div>'}
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        </div>`;
+    };
+
+    if (!window.__combatSoundRenameDelegationV42) {
+      window.__combatSoundRenameDelegationV42 = true;
+      document.addEventListener('change', event => {
+        const input = event.target.closest?.('[data-sound-rename]');
+        if (!input || !document.getElementById('mod-combat')?.contains(input)) return;
+        const [sectionId, soundId] = String(input.dataset.soundRename || '').split(':');
+        audioApi.renameSound(sectionId, soundId, input.value);
+        event.stopPropagation();
+      }, true);
+      document.addEventListener('keydown', event => {
+        const input = event.target.closest?.('[data-sound-rename]');
+        if (!input) return;
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          input.blur();
+        }
+      }, true);
+    }
+  }
+
+  const ARCHIVE_ARTICLE_READ_KEY_V42 = 'GRI_ARCHIVE_ARTICLE_READ_V42';
+  function archiveUserKeyV42() {
+    if (App?.currentUser?.role === 'gm') return 'gm';
+    return String(App?.currentUserId || App?.currentUser?.id || 'guest');
+  }
+  function readArticleMapV42() {
+    try { return JSON.parse(localStorage.getItem(ARCHIVE_ARTICLE_READ_KEY_V42) || '{}') || {}; }
+    catch { return {}; }
+  }
+  function writeArticleMapV42(map) {
+    try { localStorage.setItem(ARCHIVE_ARTICLE_READ_KEY_V42, JSON.stringify(map || {})); } catch {}
+  }
+  function isArticleUnreadV42(article) {
+    if (!article?.id) return false;
+    const map = readArticleMapV42();
+    const bucket = map[archiveUserKeyV42()] || [];
+    return !bucket.map(String).includes(String(article.id));
+  }
+  function markArticleReadV42(id) {
+    if (!id) return;
+    const map = readArticleMapV42();
+    const key = archiveUserKeyV42();
+    const set = new Set((map[key] || []).map(String));
+    set.add(String(id));
+    map[key] = Array.from(set);
+    writeArticleMapV42(map);
+  }
+  function archiveSortScoreV42(hit) {
+    if (hit.type === 'article' && isArticleUnreadV42(hit.entity)) return 0;
+    if (hit.type === 'article') return 1;
+    return 2;
+  }
+  function sortArchiveHitsV42(hits) {
+    return (Array.isArray(hits) ? hits : []).sort((a, b) =>
+      archiveSortScoreV42(a) - archiveSortScoreV42(b)
+      || String(titleForEntity(a.type, a.entity)).localeCompare(String(titleForEntity(b.type, b.entity)), 'ru')
+    );
+  }
+  function renderWikiHitsV42(hits, emptyHtml) {
+    const target = $('#wiki-results');
+    const sorted = sortArchiveHitsV42(hits);
+    target.innerHTML = sorted.map(hit => {
+      const unread = hit.type === 'article' && isArticleUnreadV42(hit.entity);
+      return `
+        <div class="wiki-hit wiki-hit-rich ${unread ? 'wiki-hit-unread-v42' : ''}" data-entity="${esc(hit.type)}" data-id="${esc(hit.entity.id)}">
+          ${renderThumb(hit.entity, { size: 'sm', type: hit.type })}
+          <div>
+            <div><b>${esc(titleForEntity(hit.type, hit.entity))}</b>${unread ? '<span class="wiki-unread-pill-v42">NEW</span>' : ''}</div>
+            <div class="subtle">${esc(hit.summary)}</div>
+          </div>
+        </div>`;
+    }).join('') || emptyHtml;
+    target.querySelectorAll('.wiki-hit').forEach(node => {
+      node.addEventListener('click', () => Wiki.showEntity(node.dataset.entity, node.dataset.id));
+    });
+    return sorted;
+  }
+
+  Wiki.entityPool = function() {
+    const pool = [];
+    Object.values(Data.planets).filter(entity => isEntityVisible(entity)).forEach(planet => pool.push({ type: 'planet', entity: planet, summary: planet.location?.system || planet.code || 'Планета' }));
+    Object.values(Data.npcs).filter(entity => isEntityVisible(entity)).forEach(npc => pool.push({ type: 'npc', entity: npc, summary: npc.role || npc.location || 'NPC' }));
+    Object.values(Data.equipment).filter(entity => isEntityVisible(entity)).forEach(item => pool.push({ type: 'item', entity: item, summary: `${item.type || 'предмет'} · ${item.rarity || ''}` }));
+    Object.values(Data.flora).filter(entity => isEntityVisible(entity)).forEach(flora => pool.push({ type: 'flora', entity: flora, summary: flora.habitat || 'Флора' }));
+    Object.values(Data.fauna).filter(entity => isEntityVisible(entity)).forEach(fauna => pool.push({ type: 'fauna', entity: fauna, summary: fauna.habitat || 'Фауна' }));
+    Object.values(Data.articles).filter(entity => isEntityVisible(entity)).forEach(article => pool.push({ type: 'article', entity: article, summary: article.category || article.summary || 'Статья архива' }));
+    return sortArchiveHitsV42(pool);
+  };
+
+  Wiki.prime = function() {
+    const hits = this.entityPool().slice(0, 10);
+    const sorted = renderWikiHitsV42(hits, '<div class="subtle">Нет доступных записей.</div>');
+    if (sorted[0]) this.showEntity(sorted[0].type, sorted[0].entity.id);
+  };
+
+  Wiki.search = function(query) {
+    const q = String(query || '').trim().toLowerCase();
+    if (!q) return this.prime();
+    const results = this.entityPool().filter(hit => {
+      const entity = hit.entity;
+      const hay = [
+        entity.id,
+        entity.name,
+        entity.displayName,
+        hit.summary,
+        entity.summary,
+        entity.desc,
+        entity.location,
+        entity.role,
+        entity.habitat,
+        entity.code,
+        getPlanetReference(entity),
+        getPlanetInfo(entity),
+        entity.use,
+        entity.behavior,
+        entity.body,
+        entity.category
+      ].filter(Boolean).join(' ').toLowerCase();
+      return hay.includes(q);
+    });
+    const sorted = renderWikiHitsV42(results, '<div class="subtle">Ничего не найдено в пределах твоего доступа.</div>');
+    if (sorted[0]) this.showEntity(sorted[0].type, sorted[0].entity.id);
+  };
+
+  const __wikiShowEntityV42 = Wiki.showEntity.bind(Wiki);
+  Wiki.showEntity = function(type, id, autoOpen = false) {
+    const result = __wikiShowEntityV42(type, id, autoOpen);
+    if (type === 'article') markArticleReadV42(id);
+    return result;
+  };
+})();
+
+/* v43: robust combat scene action delegation after v42 UI changes */
+(function(){
+  if (window.__combatSceneDelegationV43) return;
+  window.__combatSceneDelegationV43 = true;
+
+  function combatRootV43() {
+    return document.getElementById('mod-combat');
+  }
+
+  function isInsideCombatV43(node) {
+    const root = combatRootV43();
+    return Boolean(root && node && root.contains(node));
+  }
+
+  function runCombatSceneActionV43(target) {
+    const sceneId = Combat.getSceneIdForView?.() || Combat.getScene?.()?.id || '';
+    if (target.id === 'combat-create-scene') return Combat.createScene?.();
+    if (target.id === 'combat-duplicate-scene') return Combat.duplicateScene?.(sceneId);
+    if (target.id === 'combat-delete-scene') return Combat.deleteScene?.(sceneId);
+    if (target.id === 'combat-activate-scene') return Combat.activateScene?.(Combat.getActiveSceneId?.() === sceneId ? '' : sceneId);
+    if (target.id === 'combat-publish-scene') return Combat.publishSceneState?.();
+    if (target.id === 'combat-upload-background') return Combat.uploadSceneBackground?.();
+    if (target.id === 'combat-clear-background') return Combat.clearSceneBackground?.();
+    if (target.id === 'combat-open-player-display') return Combat.openPlayerDisplay?.();
+    if (target.id === 'combat-close-player-display') return Combat.closePlayerDisplay?.();
+    if (target.dataset?.combatScene) return Combat.selectScene?.(target.dataset.combatScene);
+    return undefined;
+  }
+
+  document.addEventListener('click', event => {
+    const target = event.target.closest?.('[data-combat-scene],#combat-create-scene,#combat-duplicate-scene,#combat-delete-scene,#combat-activate-scene,#combat-publish-scene,#combat-upload-background,#combat-clear-background,#combat-open-player-display,#combat-close-player-display');
+    if (!target || !isInsideCombatV43(target)) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    runCombatSceneActionV43(target);
+    requestAnimationFrame(() => window.applyCombatMenuStateV41?.());
+  }, true);
+
+  document.addEventListener('submit', event => {
+    const form = event.target.closest?.('#combat-scene-form');
+    if (!form || !isInsideCombatV43(form)) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    Combat.updateSceneFromForm?.(form);
+    requestAnimationFrame(() => window.applyCombatMenuStateV41?.());
+  }, true);
+})();
+
+/* v44: defensive wheel scroll fallback for fullscreen modules after animation rollback */
+(function(){
+  if (window.__fsModuleWheelScrollV44) return;
+  window.__fsModuleWheelScrollV44 = true;
+  const isScrollable = node => {
+    if (!node || node === document || node === window) return false;
+    const style = window.getComputedStyle(node);
+    const overflowY = style.overflowY || style.overflow;
+    if (!/(auto|scroll)/.test(overflowY)) return false;
+    return node.scrollHeight > node.clientHeight + 2;
+  };
+  const canScrollDelta = (node, deltaY) => {
+    if (!isScrollable(node)) return false;
+    if (deltaY > 0) return node.scrollTop + node.clientHeight < node.scrollHeight - 2;
+    if (deltaY < 0) return node.scrollTop > 2;
+    return false;
+  };
+  document.addEventListener('wheel', event => {
+    const mod = event.target?.closest?.('.fs-module.open');
+    if (!mod || mod.id === 'mod-combat') return;
+    let node = event.target;
+    while (node && node !== mod) {
+      if (canScrollDelta(node, event.deltaY)) return;
+      node = node.parentElement;
+    }
+    if (!isScrollable(mod)) return;
+    event.preventDefault();
+    mod.scrollTop += event.deltaY;
+  }, { capture:true, passive:false });
+})();
+
+
+/* v45 network realtime optimization: chat IPC events + slower fallback polling */
+(function(){
+  if (typeof ChatSync !== 'undefined') {
+    ChatSync.realtimeUnsub = ChatSync.realtimeUnsub || null;
+    ChatSync._seenRealtimeKeys = ChatSync._seenRealtimeKeys || {};
+    ChatSync.initRealtimeBridge = function() {
+      if (this.realtimeUnsub || !window.electronAPI?.onChatEvent) return;
+      this.realtimeUnsub = window.electronAPI.onChatEvent(async payload => {
+        const row = payload?.row || null;
+        if (!row?.message_id) return;
+        const key = `${row.message_id}|${row.updated_at || row.client_updated_at || row.deleted_at || ''}`;
+        const now = Date.now();
+        if (this._seenRealtimeKeys[key] && now - this._seenRealtimeKeys[key] < 15000) return;
+        this._seenRealtimeKeys[key] = now;
+        try {
+          const changed = this.applyRemoteRows([row]);
+          if (changed) {
+            await this.persistLocal('chat-realtime-event');
+            await this.refreshUiAfterIncoming('chat-realtime-event');
+          }
+        } catch (error) {
+          try { Debug.error('CHAT_REALTIME_APPLY_FAILED', { message: error?.message || String(error) }); } catch {}
+        }
+        for (const [seenKey, stamp] of Object.entries(this._seenRealtimeKeys)) {
+          if (now - Number(stamp || 0) > 30000) delete this._seenRealtimeKeys[seenKey];
+        }
+      });
+    };
+    ChatSync.stopRealtimeBridge = function() {
+      if (this.realtimeUnsub) {
+        try { this.realtimeUnsub(); } catch {}
+        this.realtimeUnsub = null;
+      }
+    };
+    const __chatStartPolling_v45 = ChatSync.startPolling.bind(ChatSync);
+    ChatSync.startPolling = function() {
+      this.stopPolling();
+      this.initRealtimeBridge();
+      if (!this.isEnabled()) return;
+      // Realtime carries normal traffic; polling remains as a healing fallback.
+      this.pollTimer = setInterval(() => {
+        this.flushOutbox('poll').catch(error => {
+          try { Debug.error('CHAT_POLL_FLUSH_FAILED', { message: error?.message || String(error) }); } catch {}
+        });
+        this.pull('poll', { limit: CHAT_POLL_LIMIT }).catch(error => {
+          try { Debug.error('CHAT_POLL_FAILED', { message: error?.message || String(error) }); } catch {}
+        });
+      }, Math.max(7000, Number(Sync?.config?.chatPollMs || 7000)));
+    };
+    const __chatStopPolling_v45 = ChatSync.stopPolling.bind(ChatSync);
+    ChatSync.stopPolling = function() {
+      __chatStopPolling_v45();
+      // Keep IPC bridge while sync is enabled; remove it only on logout/disabled config wrappers below.
+    };
+    const __appLogout_chatRealtime_v45 = App.logout.bind(App);
+    App.logout = function() {
+      try { ChatSync.stopRealtimeBridge(); } catch {}
+      return __appLogout_chatRealtime_v45();
+    };
+  }
+
+  if (typeof Combat !== 'undefined') {
+    const __combatStartRuntimeSync_v45 = Combat.startRuntimeSync?.bind(Combat);
+    Combat.startRuntimeSync = function() {
+      this.initRuntimeBridge?.();
+      if (this.runtimePollTimer || !Sync?.config?.enabled) return;
+      const tick = async () => {
+        if (UI.activeModuleId !== 'combat') return;
+        try { await this.pullRemoteRuntime('combat-runtime-fallback-poll', { render: true }); } catch {}
+      };
+      this.runtimePollTimer = setInterval(tick, Math.max(1800, Number(Sync?.config?.combatRuntimePollMs || 2200)));
+      tick();
+    };
+  }
+})();
+
+/* v46 combat popover action bridge: keep pinned popovers while restoring unit/asset/zone buttons */
+(function(){
+  function combatActionRootV46(target) {
+    return target?.closest?.('#mod-combat');
+  }
+
+  function readCombatSelectValueV46(selector) {
+    const root = document.getElementById('mod-combat') || document;
+    return String(root.querySelector(selector)?.value || '').trim();
+  }
+
+  async function runCombatPopoverActionV46(target) {
+    if (!Combat?.isDm?.()) return false;
+
+    const zoneButton = target.closest?.('[data-zone-template]');
+    if (zoneButton && combatActionRootV46(zoneButton)) {
+      const shape = String(zoneButton.dataset.zoneTemplate || 'circle').trim() || 'circle';
+      if (typeof Combat.addTemplateOnceV37 === 'function') Combat.addTemplateOnceV37(shape);
+      else Combat.addTemplate(shape);
+      return true;
+    }
+
+    const button = target.closest?.('#combat-add-asset,#combat-add-player-token,#combat-add-npc-token');
+    if (!button || !combatActionRootV46(button)) return false;
+
+    if (button.id === 'combat-add-asset') {
+      button.disabled = true;
+      try {
+        await Combat.addAsset();
+        Combat.render?.();
+      } finally {
+        button.disabled = false;
+      }
+      return true;
+    }
+
+    if (button.id === 'combat-add-player-token') {
+      const playerId = readCombatSelectValueV46('#combat-player-select');
+      if (!playerId) Toast.show('Выбери игрока для добавления токена.', 'info');
+      else {
+        Combat.addPlayerToken(playerId);
+        Combat.render?.();
+      }
+      return true;
+    }
+
+    if (button.id === 'combat-add-npc-token') {
+      const npcId = readCombatSelectValueV46('#combat-npc-select');
+      if (!npcId) Toast.show('Выбери NPC для добавления токена.', 'info');
+      else {
+        Combat.addNpcToken(npcId);
+        Combat.render?.();
+      }
+      return true;
+    }
+
+    return false;
+  }
+
+  if (!window.__combatPopoverActionBridgeV46) {
+    window.__combatPopoverActionBridgeV46 = true;
+    document.addEventListener('click', event => {
+      const target = event.target;
+      const maybeAction = target?.closest?.('#combat-add-asset,#combat-add-player-token,#combat-add-npc-token,[data-zone-template]');
+      if (!maybeAction || !combatActionRootV46(maybeAction)) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      void runCombatPopoverActionV46(target);
+    }, true);
+  }
+})();
+
+/* v47 combat properties delete bridge: pinned popovers must not swallow DELETE */
+(function(){
+  if (window.__combatDeleteSelectionBridgeV47) return;
+  window.__combatDeleteSelectionBridgeV47 = true;
+
+  function isInsideCombatV47(node) {
+    const root = document.getElementById('mod-combat');
+    return Boolean(root && node && root.contains(node));
+  }
+
+  document.addEventListener('click', event => {
+    const target = event.target?.closest?.('#combat-delete-selection');
+    if (!target || !isInsideCombatV47(target)) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    Combat.removeSelectedObject?.();
+    requestAnimationFrame(() => {
+      Combat.render?.();
+      window.applyCombatMenuStateV41?.();
+    });
+  }, true);
+})();
+
+
+/* v48 organizations + news stock ticker */
+(function(){
+  if (window.__organizationsTickerV48) return;
+  window.__organizationsTickerV48 = true;
+
+  let ORGANIZATIONS = {};
+  let ORGANIZATION_LIST = [];
+  WORLD_SECTIONS.organizations = { label: 'Организации', mapKey: 'ORGANIZATIONS', listKey: 'ORGANIZATION_LIST' };
+  Data.organizations = ORGANIZATIONS;
+  Data.getOrganization = function(id) { return this.organizations?.[id] || null; };
+
+  function normalizeOrganizationV48(entity = {}) {
+    const id = slugifyId(entity.id || entity.ticker || entity.name || '', 'org');
+    const ticker = String(entity.ticker || entity.symbol || id.replace(/^org_/, '').slice(0, 5) || 'ORG').trim().toUpperCase();
+    const price = Math.max(0, Number(entity.stockPrice ?? entity.price ?? entity.basePrice ?? 100));
+    const dayChange = Number(entity.dayChange ?? entity.change ?? 0);
+    const volatility = Math.max(0, Math.min(25, Number(entity.volatility ?? 3)));
+    return {
+      id,
+      name: String(entity.name || entity.title || ticker || id).trim(),
+      ticker,
+      sector: String(entity.sector || entity.category || '').trim(),
+      description: String(entity.description || entity.body || '').trim(),
+      stockPrice: Number(price.toFixed(2)),
+      dayChange: Number(dayChange.toFixed(2)),
+      volatility: Number(volatility.toFixed(2)),
+      marketCap: String(entity.marketCap || '').trim(),
+      color: String(entity.color || '#7df9ff').trim() || '#7df9ff',
+      image: String(entity.image || '').trim(),
+      imageLocal: String(entity.imageLocal || '').trim(),
+      imageStoragePath: String(entity.imageStoragePath || '').trim(),
+      relatedArticleIds: Array.isArray(entity.relatedArticleIds) ? entity.relatedArticleIds.map(String).filter(Boolean) : [],
+      visibility: entity.visibility && typeof entity.visibility === 'object' ? { playerIds: Array.isArray(entity.visibility.playerIds) ? entity.visibility.playerIds.map(String) : [] } : { playerIds: [] }
+    };
+  }
+
+  function normalizeOrganizationsRecordV48(record = {}, list = []) {
+    const out = {};
+    if (record && typeof record === 'object') {
+      Object.values(record).forEach(entry => {
+        const org = normalizeOrganizationV48(entry);
+        if (org.id) out[org.id] = org;
+      });
+    }
+    if (Array.isArray(list)) {
+      list.forEach(entry => {
+        const org = normalizeOrganizationV48(entry);
+        if (org.id && !out[org.id]) out[org.id] = org;
+      });
+    }
+    return out;
+  }
+
+  function getVisibleOrganizationsV48() {
+    return sortEntitiesForList(Object.values(ORGANIZATIONS || {}).filter(org => isEntityVisible(org))).sort((a, b) => String(a.ticker || a.name || '').localeCompare(String(b.ticker || b.name || ''), 'ru'));
+  }
+
+  function tickerPhaseV48(org) {
+    const key = String(org.id || org.ticker || org.name || 'org');
+    let seed = 0;
+    for (let i = 0; i < key.length; i++) seed = (seed * 31 + key.charCodeAt(i)) >>> 0;
+    const t = Date.now() / 1000;
+    return Math.sin(t / 7 + seed % 17) + Math.sin(t / 3.7 + seed % 31) * 0.35;
+  }
+
+  function organizationQuoteV48(org) {
+    const base = Math.max(0, Number(org.stockPrice || 0));
+    const volatility = Math.max(0, Number(org.volatility || 0));
+    const dayChange = Number(org.dayChange || 0);
+    const swing = tickerPhaseV48(org) * volatility * 0.12;
+    const percent = dayChange + swing;
+    const price = Math.max(0.01, base * (1 + percent / 100));
+    return { price, percent };
+  }
+
+  function formatQuotePriceV48(value) {
+    return Number(value || 0).toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  function renderOrganizationTickerV48() {
+    const orgs = getVisibleOrganizationsV48();
+    if (!orgs.length) return '';
+    const row = orgs.map(org => {
+      const q = organizationQuoteV48(org);
+      const up = q.percent >= 0;
+      return `<span class="org-ticker-item ${up ? 'up' : 'down'}" data-org-quote-id="${esc(org.id)}"><b>${esc(org.ticker || org.name)}</b><span>${formatQuotePriceV48(q.price)}</span><em>${up ? '▲' : '▼'} ${Math.abs(q.percent).toFixed(2)}%</em></span>`;
+    }).join('');
+    return `<div class="org-market-ticker card" aria-label="Котировки организаций"><div class="org-ticker-label">ORG MARKET</div><div class="org-ticker-track"><div class="org-ticker-line">${row}${row}</div></div></div>`;
+  }
+
+  function refreshOrganizationTickerV48() {
+    document.querySelectorAll('[data-org-quote-id]').forEach(node => {
+      const org = ORGANIZATIONS?.[node.dataset.orgQuoteId];
+      if (!org) return;
+      const q = organizationQuoteV48(org);
+      const up = q.percent >= 0;
+      node.classList.toggle('up', up);
+      node.classList.toggle('down', !up);
+      const spans = node.querySelectorAll('span, em');
+      if (spans[0]) spans[0].textContent = formatQuotePriceV48(q.price);
+      if (spans[1]) spans[1].textContent = `${up ? '▲' : '▼'} ${Math.abs(q.percent).toFixed(2)}%`;
+    });
+  }
+
+  if (!window.__orgTickerIntervalV48) {
+    window.__orgTickerIntervalV48 = setInterval(refreshOrganizationTickerV48, 2000);
+  }
+
+  const __applyWorldData_org_v48 = applyWorldData;
+  applyWorldData = function(payload = {}) {
+    __applyWorldData_org_v48(payload);
+    const section = payload.organizations && typeof payload.organizations === 'object' ? payload.organizations : {};
+    ORGANIZATIONS = normalizeOrganizationsRecordV48(section.ORGANIZATIONS || {}, section.ORGANIZATION_LIST || []);
+    ORGANIZATION_LIST = Object.values(ORGANIZATIONS);
+    if (worldData && typeof worldData === 'object') {
+      worldData.organizations = serializeWorldSection('organizations', ORGANIZATIONS);
+    }
+    Data.organizations = ORGANIZATIONS;
+  };
+
+  const __buildWorldSnapshot_org_v48 = buildWorldSnapshot;
+  buildWorldSnapshot = function() {
+    const snap = __buildWorldSnapshot_org_v48();
+    snap.organizations = serializeWorldSection('organizations', ORGANIZATIONS);
+    return snap;
+  };
+
+  const __createBlankEntity_org_v48 = createBlankEntity;
+  createBlankEntity = function(type) {
+    if (type === 'organizations') {
+      const stamp = Date.now().toString().slice(-6);
+      return normalizeOrganizationV48({
+        id: `org_${stamp}`,
+        name: 'Новая организация',
+        ticker: `ORG${stamp.slice(-2)}`,
+        sector: 'Корпоративный сектор',
+        stockPrice: 100,
+        dayChange: 0,
+        volatility: 3,
+        color: '#7df9ff',
+        visibility: { playerIds: [] }
+      });
+    }
+    return __createBlankEntity_org_v48(type);
+  };
+
+  const __entityByType_org_v48 = entityByType;
+  entityByType = function(type, id) {
+    if (type === 'organizations') return Data.getOrganization(id);
+    return __entityByType_org_v48(type, id);
+  };
+
+  const __titleForEntity_org_v48 = titleForEntity;
+  titleForEntity = function(type, entity) {
+    if (type === 'organizations') return entity?.name || entity?.ticker || entity?.id || 'Организация';
+    return __titleForEntity_org_v48(type, entity);
+  };
+
+  const __configGetItems_org_v48 = Configurator.getItems.bind(Configurator);
+  Configurator.getItems = function(type) {
+    if (type === 'organizations') return sortEntitiesForList(Object.values(ORGANIZATIONS || {}));
+    return __configGetItems_org_v48(type);
+  };
+
+  Configurator.renderOrganizationEditor = function(org) {
+    org = normalizeOrganizationV48(org);
+    return `
+      <form id="config-editor-form" class="form" data-entity-type="organizations">
+        ${this.renderHeader(org, 'Организация кампании. Данные используются для имитации биржевой строки во вкладке «Новости».')}
+        ${imageFieldMarkup(org, 'Логотип / знак организации')}
+        <div class="cols3">
+          <div class="field"><label>ID</label><input class="input" name="id" value="${esc(org.id)}" /></div>
+          <div class="field"><label>Название</label><input class="input" name="name" value="${esc(org.name || '')}" /></div>
+          <div class="field"><label>Тикер</label><input class="input" name="ticker" value="${esc(org.ticker || '')}" maxlength="8" /></div>
+        </div>
+        <div class="cols4 cols-responsive-4">
+          <div class="field"><label>Сектор</label><input class="input" name="sector" value="${esc(org.sector || '')}" placeholder="Транспорт / Добыча / Безопасность" /></div>
+          <div class="field"><label>Цена акции</label><input class="input" type="number" min="0" step="0.01" name="stockPrice" value="${Number(org.stockPrice || 0)}" /></div>
+          <div class="field"><label>Дневное изменение %</label><input class="input" type="number" step="0.01" name="dayChange" value="${Number(org.dayChange || 0)}" /></div>
+          <div class="field"><label>Волатильность</label><input class="input" type="number" min="0" max="25" step="0.1" name="volatility" value="${Number(org.volatility || 0)}" /></div>
+        </div>
+        <div class="cols2">
+          <div class="field"><label>Капитализация / масштаб</label><input class="input" name="marketCap" value="${esc(org.marketCap || '')}" placeholder="2.4T / Доминирующий дом / Средний актив" /></div>
+          <div class="field"><label>Цвет</label><input class="input" name="color" value="${esc(org.color || '#7df9ff')}" /></div>
+        </div>
+        ${this.renderVisibilityField(org)}
+        <div class="field"><label>Описание</label><textarea class="area" name="description">${esc(org.description || '')}</textarea></div>
+        <div class="field"><label>Связанные статьи</label>${renderRelatedArticlesEditor(org.relatedArticleIds || [])}</div>
+        <button class="primary" type="submit">SAVE_ORGANIZATION</button>
+      </form>
+    `;
+  };
+
+  const __configRenderEditor_org_v48 = Configurator.renderEditor.bind(Configurator);
+  Configurator.renderEditor = function(entity) {
+    if (this.selectedType === 'organizations') return this.renderOrganizationEditor(entity);
+    return __configRenderEditor_org_v48(entity);
+  };
+
+  const __configInsertEntity_org_v48 = Configurator.insertEntity.bind(Configurator);
+  Configurator.insertEntity = function(type, entity) {
+    if (type === 'organizations') {
+      const org = normalizeOrganizationV48(entity);
+      ORGANIZATIONS[org.id] = org;
+      ORGANIZATION_LIST = Object.values(ORGANIZATIONS);
+      if (worldData && typeof worldData === 'object') worldData.organizations = serializeWorldSection('organizations', ORGANIZATIONS);
+      Data.organizations = ORGANIZATIONS;
+      return;
+    }
+    return __configInsertEntity_org_v48(type, entity);
+  };
+
+  const __configRemoveEntity_org_v48 = Configurator.removeEntity.bind(Configurator);
+  Configurator.removeEntity = function(type, id) {
+    if (type === 'organizations') {
+      delete ORGANIZATIONS[id];
+      ORGANIZATION_LIST = Object.values(ORGANIZATIONS);
+      if (worldData && typeof worldData === 'object') worldData.organizations = serializeWorldSection('organizations', ORGANIZATIONS);
+      Data.organizations = ORGANIZATIONS;
+      return;
+    }
+    return __configRemoveEntity_org_v48(type, id);
+  };
+
+  const __configBuildPayload_org_v48 = Configurator.buildPayload.bind(Configurator);
+  Configurator.buildPayload = function(type) {
+    if (type === 'organizations') return serializeWorldSection('organizations', ORGANIZATIONS);
+    return __configBuildPayload_org_v48(type);
+  };
+
+  const __configCollectEntity_org_v48 = Configurator.collectEntity.bind(Configurator);
+  Configurator.collectEntity = function(type, formEl, formData = new FormData(formEl)) {
+    if (type === 'organizations') {
+      const mediaField = formEl.querySelector('.media-field');
+      const image = String(formEl.querySelector('input[name="imageData"]')?.value || formData.get('imageData') || mediaField?.dataset?.savedImageValue || mediaField?.dataset?.pendingImageValue || '').trim();
+      return normalizeOrganizationV48({
+        id: slugifyId(formData.get('id') || formData.get('name') || formData.get('ticker') || '', 'org'),
+        name: String(formData.get('name') || '').trim(),
+        ticker: String(formData.get('ticker') || '').trim().toUpperCase(),
+        sector: String(formData.get('sector') || '').trim(),
+        description: String(formData.get('description') || '').trim(),
+        stockPrice: Number(formData.get('stockPrice') || 0),
+        dayChange: Number(formData.get('dayChange') || 0),
+        volatility: Number(formData.get('volatility') || 0),
+        marketCap: String(formData.get('marketCap') || '').trim(),
+        color: String(formData.get('color') || '#7df9ff').trim() || '#7df9ff',
+        image,
+        relatedArticleIds: getCheckedValues(formEl, 'relatedArticleIds'),
+        visibility: { playerIds: getCheckedValues(formEl, 'visibilityPlayerIds') }
+      });
+    }
+    return __configCollectEntity_org_v48(type, formEl, formData);
+  };
+
+  const __configRemapReferences_org_v48 = Configurator.remapReferences.bind(Configurator);
+  Configurator.remapReferences = function(type, oldId, newId) {
+    if (type === 'organizations') {
+      if (oldId !== newId && ORGANIZATIONS[oldId]) {
+        ORGANIZATIONS[newId] = { ...ORGANIZATIONS[oldId], id: newId };
+        delete ORGANIZATIONS[oldId];
+      }
+      return;
+    }
+    return __configRemapReferences_org_v48(type, oldId, newId);
+  };
+
+  const __uiRenderNews_org_v48 = UI.renderNews.bind(UI);
+  UI.renderNews = function() {
+    __uiRenderNews_org_v48();
+    const root = document.getElementById('news-content');
+    if (!root || root.querySelector('.org-market-ticker')) return;
+    const ticker = renderOrganizationTickerV48();
+    if (ticker) root.insertAdjacentHTML('afterbegin', ticker);
+    refreshOrganizationTickerV48();
+  };
+
+  const __openModule_org_v48 = UI.openModule.bind(UI);
+  UI.openModule = function(id, options = {}) {
+    const result = __openModule_org_v48(id, options);
+    if (id === 'news') setTimeout(refreshOrganizationTickerV48, 50);
+    return result;
+  };
+})();
+
+
+/* v49 profile download links */
+(function(){
+  const DOWNLOAD_PAGE_URL = 'https://app.grpg-sync.ru';
+  const WEB_CLIENT_URL = 'https://app.grpg-sync.ru/app/';
+  const WINDOWS_DOWNLOAD_URL = 'https://app.grpg-sync.ru/downloads/GRPGI-Setup-latest.exe';
+
+  function renderDownloadPanel() {
+    const form = document.getElementById('profile-edit-form');
+    if (!form) return;
+    let panel = document.getElementById('updater-profile-panel');
+    if (!panel) {
+      panel = document.createElement('div');
+      panel.id = 'updater-profile-panel';
+      panel.className = 'card pad18 updater-profile-panel download-profile-panel';
+      form.insertAdjacentElement('afterend', panel);
+    }
+    panel.innerHTML = `
+      <div class="section-title">Загрузка приложения</div>
+      <div class="small-note updater-status-text" style="margin-bottom:12px">Автообновление заменено страницей загрузки на домене кампании. Скачивание выполняется вручную, без фонового updater-процесса.</div>
+      <div class="row" style="justify-content:flex-start;gap:10px;flex-wrap:wrap">
+        <a class="secondary download-link-btn" href="${DOWNLOAD_PAGE_URL}" target="_blank" rel="noopener noreferrer">СТРАНИЦА ЗАГРУЗКИ</a>
+        <a class="secondary download-link-btn" href="${WINDOWS_DOWNLOAD_URL}" target="_blank" rel="noopener noreferrer">СКАЧАТЬ ПК-ВЕРСИЮ</a>
+        <a class="primary download-link-btn" href="${WEB_CLIENT_URL}" target="_blank" rel="noopener noreferrer">ОТКРЫТЬ ВЕБ-ВЕРСИЮ</a>
+      </div>
+    `;
+  }
+
+  const __renderProfileDownloadsV49 = UI.renderProfile.bind(UI);
+  UI.renderProfile = function() {
+    __renderProfileDownloadsV49();
+    renderDownloadPanel();
+  };
+
+  document.addEventListener('DOMContentLoaded', () => {
+    setTimeout(renderDownloadPanel, 0);
+  });
+})();
+
+/* v50 profile reputation + skills + world organizations */
+(function(){
+  if (window.__profileReputationSkillsV50) return;
+  window.__profileReputationSkillsV50 = true;
+
+  const ABILITY_MODEL_V50 = [
+    { key: 'strength', label: 'Сила', short: 'СИЛ', legacy: ['str'] },
+    { key: 'dexterity', label: 'Ловкость', short: 'ЛОВ', legacy: ['dex'] },
+    { key: 'intelligence', label: 'Интеллект', short: 'ИНТ', legacy: ['int'] },
+    { key: 'endurance', label: 'Выносливость', short: 'ВЫН', legacy: ['con'] },
+    { key: 'will', label: 'Воля', short: 'ВОЛ', legacy: ['wis'] },
+    { key: 'glory', label: 'Слава', short: 'СЛА', legacy: ['cha'] }
+  ];
+  const ABILITY_BY_KEY_V50 = Object.fromEntries(ABILITY_MODEL_V50.map(item => [item.key, item]));
+  const ABILITY_MAX_V53 = 5;
+  const SKILL_TYPE_SKILL_V55 = 'skill';
+  const SKILL_TYPE_SPECIALIZATION_V55 = 'specialization';
+  let SKILL_TREE_FOCUS_V53 = null;
+  let FACTIONS_V50 = {};
+  let FACTION_LIST_V50 = [];
+  let SKILLS_V50 = {};
+  let SKILL_LIST_V50 = [];
+
+  WORLD_SECTIONS.organizations = { ...(WORLD_SECTIONS.organizations || { mapKey: 'ORGANIZATIONS', listKey: 'ORGANIZATION_LIST' }), label: 'Кампании' };
+  WORLD_SECTIONS.factions = { label: 'Организации', mapKey: 'FACTIONS', listKey: 'FACTION_LIST' };
+  WORLD_SECTIONS.skills = { label: 'Навыки', mapKey: 'SKILLS', listKey: 'SKILL_LIST' };
+
+  function numberOrFallbackV50(value, fallback = 0) {
+    const num = Number(value);
+    return Number.isFinite(num) ? num : fallback;
+  }
+
+  function normalizeAbilityValueV53(value, fallback = 0) {
+    return Math.max(0, Math.min(ABILITY_MAX_V53, numberOrFallbackV50(value, fallback)));
+  }
+
+  function normalizeAbilitiesV50(source = {}) {
+    const raw = source && typeof source === 'object' ? source : {};
+    const out = {};
+    for (const item of ABILITY_MODEL_V50) {
+      let value = raw[item.key];
+      if (value === undefined) {
+        const legacyKey = item.legacy.find(key => raw[key] !== undefined);
+        if (legacyKey) value = raw[legacyKey];
+      }
+      out[item.key] = normalizeAbilityValueV53(value, 0);
+    }
+    return out;
+  }
+
+  function abilityLabelV50(key) {
+    return ABILITY_BY_KEY_V50[key]?.label || key || 'Характеристика';
+  }
+
+  function normalizeSkillTypeV55(value = '') {
+    const text = String(value || '').trim().toLowerCase();
+    if (['specialization', 'specialisation', 'secondary', 'secondary_ability', 'secondaryAbility', 'spec', 'специализация', 'вторичная характеристика'].includes(text)) return SKILL_TYPE_SPECIALIZATION_V55;
+    return SKILL_TYPE_SKILL_V55;
+  }
+
+  function isSpecializationV55(entity = {}) {
+    return normalizeSkillTypeV55(entity.skillType || entity.type) === SKILL_TYPE_SPECIALIZATION_V55;
+  }
+
+  function isLearnableSkillV55(entity = {}) {
+    return normalizeSkillTypeV55(entity.skillType || entity.type) === SKILL_TYPE_SKILL_V55;
+  }
+
+  function normalizeSpecializationValuesV55(value = {}) {
+    const raw = value && typeof value === 'object' ? value : {};
+    const out = {};
+    Object.entries(raw).forEach(([id, entry]) => {
+      const key = String(id || '').trim();
+      if (!key) return;
+      out[key] = Math.max(0, Math.floor(numberOrFallbackV50(entry, 0)));
+    });
+    return out;
+  }
+
+  function normalizeSpecializationIncreaseIdsV55(value) {
+    return normalizeSkillIdArrayV50(value);
+  }
+
+  function specializationLabelV55(id) {
+    const item = Data.getSkill?.(id);
+    return item?.name || id || 'Специализация';
+  }
+
+  function normalizeSkillIdArrayV50(value) {
+    if (!Array.isArray(value)) return [];
+    return Array.from(new Set(value.map(entry => {
+      if (typeof entry === 'string') return entry;
+      if (entry && typeof entry === 'object') return entry.id || entry.skillId || entry.key || '';
+      return '';
+    }).map(String).map(v => v.trim()).filter(Boolean)));
+  }
+
+  function normalizeReputationRowsV50(value, legacyOrgs = []) {
+    const rows = [];
+    const push = entry => {
+      if (!entry) return;
+      if (typeof entry === 'string') {
+        const text = entry.trim();
+        if (text) rows.push({ orgId: '', name: text, value: 0, status: text, note: '' });
+        return;
+      }
+      if (typeof entry !== 'object') return;
+      const orgId = String(entry.orgId || entry.factionId || entry.id || '').trim();
+      const name = String(entry.name || entry.organization || entry.faction || '').trim();
+      const value = numberOrFallbackV50(entry.value ?? entry.score ?? entry.reputation, 0);
+      const status = String(entry.status || entry.rank || '').trim();
+      const note = String(entry.note || entry.notes || entry.description || '').trim();
+      if (orgId || name || status || note || value) rows.push({ orgId, name, value, status, note });
+    };
+    if (Array.isArray(value)) value.forEach(push);
+    else if (value && typeof value === 'object') Object.entries(value).forEach(([orgId, entry]) => push({ ...(entry && typeof entry === 'object' ? entry : { value: entry }), orgId }));
+    if (!rows.length && Array.isArray(legacyOrgs)) legacyOrgs.forEach(push);
+    const seen = new Set();
+    return rows.filter(row => {
+      const key = row.orgId || `name:${row.name}`;
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+
+  function normalizeAbilityRequirementsV52(value, legacyAbility = '', legacyValue = 0) {
+    const rows = [];
+    const push = entry => {
+      if (!entry) return;
+      if (typeof entry === 'string') {
+        const key = entry.trim();
+        if (ABILITY_BY_KEY_V50[key]) rows.push({ key, value: 1 });
+        return;
+      }
+      if (Array.isArray(entry)) {
+        const [key, rawValue] = entry;
+        if (ABILITY_BY_KEY_V50[key]) rows.push({ key, value: Math.max(0, numberOrFallbackV50(rawValue, 0)) });
+        return;
+      }
+      if (typeof entry !== 'object') return;
+      const key = String(entry.key || entry.ability || entry.requiredAbility || entry.id || '').trim();
+      if (!ABILITY_BY_KEY_V50[key]) return;
+      const value = Math.max(0, numberOrFallbackV50(entry.value ?? entry.min ?? entry.minimum ?? entry.requiredAbilityValue ?? entry.abilityMin, 0));
+      if (value > 0) rows.push({ key, value });
+    };
+    if (Array.isArray(value)) value.forEach(push);
+    else if (value && typeof value === 'object') Object.entries(value).forEach(([key, raw]) => {
+      if (raw && typeof raw === 'object') push({ ...raw, key: raw.key || raw.ability || key });
+      else push({ key, value: raw });
+    });
+    const legacyKey = String(legacyAbility || '').trim();
+    const legacyMin = Math.max(0, numberOrFallbackV50(legacyValue, 0));
+    if (ABILITY_BY_KEY_V50[legacyKey] && legacyMin > 0) rows.push({ key: legacyKey, value: legacyMin });
+    const merged = new Map();
+    rows.forEach(row => {
+      const key = String(row.key || '').trim();
+      if (!ABILITY_BY_KEY_V50[key]) return;
+      const value = Math.max(0, numberOrFallbackV50(row.value, 0));
+      if (value <= 0) return;
+      merged.set(key, Math.max(value, merged.get(key) || 0));
+    });
+    return ABILITY_MODEL_V50.map(item => merged.has(item.key) ? { key: item.key, value: merged.get(item.key) } : null).filter(Boolean);
+  }
+
+  function abilityRequirementsMapV52(skill = {}) {
+    return Object.fromEntries(normalizeAbilityRequirementsV52(skill.requiredAbilities || skill.abilityRequirements || {}, skill.requiredAbility, skill.requiredAbilityValue).map(row => [row.key, row.value]));
+  }
+
+  const __normalizePlayerProfileV50 = normalizePlayerProfileV2;
+  normalizePlayerProfileV2 = function(user = {}) {
+    const next = __normalizePlayerProfileV50(user);
+    next.abilities = normalizeAbilitiesV50(user.abilities || next.abilities || {});
+    next.specializations = normalizeSpecializationValuesV55(user.specializations || user.secondaryAbilities || next.specializations || {});
+    next.skillPoints = Math.max(0, numberOrFallbackV50(user.skillPoints ?? user.upgradePoints ?? user.improvementPoints, 0));
+    next.skills = normalizeSkillIdArrayV50(user.skills || user.skillIds || []).filter(id => !Data.getSkill || !isSpecializationV55(Data.getSkill(id) || {}));
+    next.social = {
+      ...(next.social || {}),
+      npcIds: Array.isArray(next.social?.npcIds) ? next.social.npcIds : [],
+      orgs: Array.isArray(next.social?.orgs) ? next.social.orgs : [],
+      reputation: normalizeReputationRowsV50(user.social?.reputation || next.social?.reputation, user.social?.orgs || next.social?.orgs || [])
+    };
+    return next;
+  };
+
+  function normalizeFactionV50(entity = {}) {
+    const id = slugifyId(entity.id || entity.name || entity.title || '', 'org');
+    return {
+      id,
+      name: String(entity.name || entity.title || 'Новая организация').trim(),
+      type: String(entity.type || entity.category || '').trim(),
+      influence: String(entity.influence || entity.scale || '').trim(),
+      reputationScale: String(entity.reputationScale || '').trim(),
+      description: String(entity.description || entity.summary || entity.body || '').trim(),
+      color: String(entity.color || '#7df9ff').trim() || '#7df9ff',
+      image: String(entity.image || '').trim(),
+      imageLocal: String(entity.imageLocal || '').trim(),
+      imageStoragePath: String(entity.imageStoragePath || '').trim(),
+      relatedArticleIds: Array.isArray(entity.relatedArticleIds) ? entity.relatedArticleIds.map(String).filter(Boolean) : [],
+      visibility: entity.visibility && typeof entity.visibility === 'object' ? { playerIds: Array.isArray(entity.visibility.playerIds) ? entity.visibility.playerIds.map(String) : [] } : { playerIds: [] }
+    };
+  }
+
+  function normalizeSkillV50(entity = {}) {
+    const id = slugifyId(entity.id || entity.name || entity.title || '', 'skill');
+    const skillType = normalizeSkillTypeV55(entity.skillType || entity.type || entity.kind || '');
+    const requiredAbilities = normalizeAbilityRequirementsV52(entity.requiredAbilities || entity.abilityRequirements || entity.requiredAbilityMap, entity.requiredAbility || entity.ability || '', entity.requiredAbilityValue ?? entity.abilityMin ?? 0);
+    const firstAbilityReq = requiredAbilities[0] || { key: '', value: 0 };
+    return {
+      id,
+      skillType,
+      type: skillType,
+      name: String(entity.name || entity.title || (skillType === SKILL_TYPE_SPECIALIZATION_V55 ? 'Новая специализация' : 'Новый навык')).trim(),
+      category: String(entity.category || 'Общее').trim() || 'Общее',
+      description: String(entity.description || entity.summary || entity.body || '').trim(),
+      cost: Math.max(0, numberOrFallbackV50(entity.cost ?? entity.pointCost, 1)),
+      requiredAbilities,
+      requiredAbility: firstAbilityReq.key,
+      requiredAbilityValue: firstAbilityReq.value,
+      requiredSkillIds: normalizeSkillIdArrayV50(entity.requiredSkillIds || entity.prerequisites || []),
+      specializationIncreases: normalizeSpecializationIncreaseIdsV55(entity.specializationIncreases || entity.specializationIncreaseIds || entity.secondaryAbilityIncreases || []),
+      color: String(entity.color || '#7df9ff').trim() || '#7df9ff',
+      image: String(entity.image || '').trim(),
+      imageLocal: String(entity.imageLocal || '').trim(),
+      imageStoragePath: String(entity.imageStoragePath || '').trim(),
+      relatedArticleIds: Array.isArray(entity.relatedArticleIds) ? entity.relatedArticleIds.map(String).filter(Boolean) : [],
+      visibility: entity.visibility && typeof entity.visibility === 'object' ? { playerIds: Array.isArray(entity.visibility.playerIds) ? entity.visibility.playerIds.map(String) : [] } : { playerIds: [] }
+    };
+  }
+
+  function normalizeRecordFromSectionV50(section = {}, mapKey, listKey, normalizeFn) {
+    const source = section && typeof section === 'object' ? section : {};
+    const record = source[mapKey] && typeof source[mapKey] === 'object' ? source[mapKey] : {};
+    const list = Array.isArray(source[listKey]) ? source[listKey] : [];
+    const out = {};
+    Object.entries(record).forEach(([fallbackId, entry]) => {
+      const normalized = normalizeFn({ ...(entry && typeof entry === 'object' ? entry : {}), id: entry?.id || fallbackId });
+      if (normalized.id) out[normalized.id] = normalized;
+    });
+    list.forEach(entry => {
+      const normalized = normalizeFn(entry);
+      if (normalized.id && !out[normalized.id]) out[normalized.id] = normalized;
+    });
+    return out;
+  }
+
+  function syncFactionsWorldDataV50() {
+    FACTION_LIST_V50 = sortEntitiesForList(Object.values(FACTIONS_V50));
+    if (worldData && typeof worldData === 'object') worldData.factions = serializeWorldSection('factions', FACTIONS_V50);
+    Data.factions = FACTIONS_V50;
+  }
+
+  function syncSkillsWorldDataV50() {
+    SKILL_LIST_V50 = sortEntitiesForList(Object.values(SKILLS_V50));
+    if (worldData && typeof worldData === 'object') worldData.skills = serializeWorldSection('skills', SKILLS_V50);
+    Data.skills = SKILLS_V50;
+  }
+
+  Data.factions = FACTIONS_V50;
+  Data.skills = SKILLS_V50;
+  Data.getFaction = function(id) { return this.factions?.[id] || null; };
+  Data.getSkill = function(id) { return this.skills?.[id] || null; };
+
+  const __applyWorldDataV50 = applyWorldData;
+  applyWorldData = function(payload = {}) {
+    __applyWorldDataV50(payload);
+    FACTIONS_V50 = normalizeRecordFromSectionV50(payload.factions || {}, 'FACTIONS', 'FACTION_LIST', normalizeFactionV50);
+    SKILLS_V50 = normalizeRecordFromSectionV50(payload.skills || {}, 'SKILLS', 'SKILL_LIST', normalizeSkillV50);
+    syncFactionsWorldDataV50();
+    syncSkillsWorldDataV50();
+    PLAYER_TEMPLATES = Object.fromEntries(Object.entries(PLAYER_TEMPLATES || {}).map(([id, player]) => [id, normalizePlayerProfileV2(player)]));
+    PLAYER_LIST = sortEntitiesForList(Object.values(PLAYER_TEMPLATES));
+    if (App?.state?.users) {
+      App.state.users = Object.fromEntries(Object.entries(App.state.users || {}).map(([id, player]) => [id, normalizePlayerProfileV2(player)]));
+    }
+  };
+
+  const __buildWorldSnapshotV50 = buildWorldSnapshot;
+  buildWorldSnapshot = function() {
+    const snap = __buildWorldSnapshotV50();
+    snap.factions = serializeWorldSection('factions', FACTIONS_V50);
+    snap.skills = serializeWorldSection('skills', SKILLS_V50);
+    return snap;
+  };
+
+  const __createBlankEntityV50 = createBlankEntity;
+  createBlankEntity = function(type) {
+    const stamp = Date.now().toString().slice(-6);
+    if (type === 'factions') return normalizeFactionV50({ id: `org_${stamp}`, name: 'Новая организация', type: 'Фракция', influence: 'Локальное влияние', color: '#7df9ff' });
+    if (type === 'skills') return normalizeSkillV50({ id: `skill_${stamp}`, name: 'Новый навык', skillType: SKILL_TYPE_SKILL_V55, category: 'Общее', cost: 1, description: '' });
+    const entity = __createBlankEntityV50(type);
+    if (type === 'players') return normalizePlayerProfileV2({ ...entity, skillPoints: 0, skills: [], abilities: normalizeAbilitiesV50(entity.abilities || {}) });
+    return entity;
+  };
+
+  const __entityByTypeV50 = entityByType;
+  entityByType = function(type, id) {
+    if (type === 'faction' || type === 'organization') return Data.getFaction(id);
+    if (type === 'skill') return Data.getSkill(id);
+    return __entityByTypeV50(type, id);
+  };
+
+  const __titleForEntityV50 = titleForEntity;
+  titleForEntity = function(type, entity) {
+    if (type === 'faction' || type === 'organization') return entity?.name || entity?.id || 'Организация';
+    if (type === 'skill') return entity?.name || entity?.id || 'Навык';
+    return __titleForEntityV50(type, entity);
+  };
+
+  function getVisibleFactionsV50(user = App.currentUser) {
+    return sortEntitiesForList(Object.values(FACTIONS_V50 || {}).filter(item => isEntityVisible(item, user)));
+  }
+
+  function getVisibleSkillsV50(user = App.currentUser) {
+    return sortEntitiesForList(Object.values(SKILLS_V50 || {}).filter(item => isEntityVisible(item, user)));
+  }
+
+  function getVisibleLearnableSkillsV55(user = App.currentUser) {
+    return sortEntitiesForList(getVisibleSkillsV50(user).filter(isLearnableSkillV55));
+  }
+
+  function getVisibleSpecializationsV55(user = App.currentUser) {
+    return sortEntitiesForList(getVisibleSkillsV50(user).filter(isSpecializationV55));
+  }
+
+  function getVisibleSkillTreeItemsV56(user = App.currentUser) {
+    return sortEntitiesForList(getVisibleSkillsV50(user).filter(item => isLearnableSkillV55(item) || isSpecializationV55(item)));
+  }
+
+  function isSkillRequirementMetV56(user, skillId) {
+    user = normalizePlayerProfileV2(user || {});
+    const reqSkill = Data.getSkill?.(skillId);
+    if (reqSkill && isSpecializationV55(reqSkill)) return Number(user.specializations?.[skillId] || 0) > 0;
+    return new Set(user.skills || []).has(skillId);
+  }
+
+  function skillRequirementNameV56(skillId) {
+    const reqSkill = Data.getSkill?.(skillId);
+    if (!reqSkill) return skillId || 'Навык';
+    return `${reqSkill.name || skillId}${isSpecializationV55(reqSkill) ? ' [специализация]' : ''}`;
+  }
+
+  function specializationTilesMarkupV55(user) {
+    const specs = getVisibleSpecializationsV55(user);
+    if (!specs.length) return '';
+    const values = normalizeSpecializationValuesV55(user?.specializations || {});
+    return `<div class="profile-specializations-wrap-v55"><div class="profile-specializations-title-v55">Специализации</div><div class="profile-specializations-grid-v55">${specs.map(spec => `<div class="ability profile-specialization-tile-v55" title="${esc(spec.name)}">${renderThumb(spec, { size: 'sm', type: 'skill', glyph: initials(spec.name, 'SP') })}<span>${esc(spec.name)}</span><b>${Number(values[spec.id] || 0)}</b></div>`).join('')}</div></div>`;
+  }
+
+  function abilityTilesMarkupV50(user) {
+    const abilities = normalizeAbilitiesV50(user?.abilities || {});
+    return ABILITY_MODEL_V50.map(item => `<div class="ability profile-ability-compact" title="${esc(item.label)}"><span>${esc(item.label)}</span><b>${esc(abilities[item.key])}</b></div>`).join('') + specializationTilesMarkupV55(user);
+  }
+
+  function reputationForFactionV50(user, faction) {
+    const rows = normalizeReputationRowsV50(user?.social?.reputation || [], user?.social?.orgs || []);
+    return rows.find(row => row.orgId && row.orgId === faction.id) || rows.find(row => row.name && row.name.toLowerCase() === String(faction.name || '').toLowerCase()) || null;
+  }
+
+  function skillStatusV50(user, skill) {
+    user = normalizePlayerProfileV2(user);
+    skill = normalizeSkillV50(skill);
+    const isSpec = isSpecializationV55(skill);
+    const owned = new Set(user.skills || []);
+    if (isSpec) {
+      const value = Number(user.specializations?.[skill.id] || 0);
+      if (value > 0) return { state: 'specialization-owned', ok: false, reasons: ['Специализация уже изучена'], value };
+    } else if (owned.has(skill.id)) {
+      return { state: 'owned', ok: false, reasons: ['Навык уже изучен'] };
+    }
+    const reasons = [];
+    if (Number(user.skillPoints || 0) < Number(skill.cost || 0)) reasons.push(`Нужно очков улучшения: ${skill.cost}`);
+    for (const req of skill.requiredAbilities || []) {
+      const current = Number(user.abilities?.[req.key] || 0);
+      if (current < Number(req.value || 0)) reasons.push(`${abilityLabelV50(req.key)} ${current}/${req.value}`);
+    }
+    for (const reqId of skill.requiredSkillIds || []) {
+      const reqSkill = Data.getSkill?.(reqId);
+      if (reqSkill && isSpecializationV55(reqSkill)) {
+        const current = Number(user.specializations?.[reqId] || 0);
+        if (current < 1) reasons.push(`Нужна специализация: ${reqSkill.name || reqId} ${current}/1`);
+      } else if (!owned.has(reqId)) {
+        reasons.push(`Нужен навык: ${Data.getSkill(reqId)?.name || reqId}`);
+      }
+    }
+    return { state: reasons.length ? 'locked' : 'available', ok: !reasons.length, reasons, value: isSpec ? Number(user.specializations?.[skill.id] || 0) : undefined };
+  }
+
+  function skillSortBucketV50(user, skill) {
+    const status = skillStatusV50(user, skill).state;
+    if (status === 'available') return 0;
+    if (status === 'owned' || status === 'specialization-owned') return 1;
+    return 2;
+  }
+
+  function ensureProfileModalV50() {
+    let modal = document.getElementById('profile-extra-modal-v50');
+    if (modal) return modal;
+    modal = document.createElement('div');
+    modal.id = 'profile-extra-modal-v50';
+    modal.className = 'modal profile-extra-modal-v50';
+    modal.innerHTML = `
+      <div class="login-box card profile-extra-modal-box-v50">
+        <div class="row" style="justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:14px">
+          <div><div class="section-title" id="profile-extra-modal-kicker-v50">Профиль</div><h2 id="profile-extra-modal-title-v50" style="margin:0">Окно профиля</h2></div>
+          <button class="ghost" type="button" id="profile-extra-modal-close-v50">ЗАКРЫТЬ</button>
+        </div>
+        <div id="profile-extra-modal-body-v50"></div>
+      </div>`;
+    document.body.appendChild(modal);
+    modal.addEventListener('click', event => { if (event.target === modal) modal.classList.remove('open'); });
+    modal.querySelector('#profile-extra-modal-close-v50')?.addEventListener('click', () => modal.classList.remove('open'));
+    return modal;
+  }
+
+  function openProfileModalV50(title, kicker, html) {
+    const modal = ensureProfileModalV50();
+    modal.querySelector('#profile-extra-modal-title-v50').textContent = title;
+    modal.querySelector('#profile-extra-modal-kicker-v50').textContent = kicker;
+    modal.querySelector('#profile-extra-modal-body-v50').innerHTML = html;
+    modal.classList.add('open');
+    return modal;
+  }
+
+  function reputationModalMarkupV50(user) {
+    user = normalizePlayerProfileV2(user);
+    const factions = getVisibleFactionsV50(user);
+    const legacyRows = normalizeReputationRowsV50(user.social?.reputation || [], user.social?.orgs || []).filter(row => !row.orgId && row.name);
+    const cards = factions.map(faction => {
+      const rep = reputationForFactionV50(user, faction);
+      const value = rep ? numberOrFallbackV50(rep.value, 0) : 0;
+      const status = rep?.status || (rep ? 'Контакт установлен' : 'Нет данных');
+      const note = rep?.note || faction.description || '';
+      return `<div class="profile-rep-card-v50">
+        ${renderThumb(faction, { size: 'md', type: 'organization', glyph: initials(faction.name, 'ORG') })}
+        <div>
+          <div class="row" style="justify-content:space-between;gap:10px;align-items:flex-start"><b>${esc(faction.name)}</b><span class="chip">${esc(value > 0 ? `+${value}` : value)}</span></div>
+          <div class="small-note">${esc([faction.type, faction.influence].filter(Boolean).join(' · ') || 'Организация мира')}</div>
+          <div class="small-note" style="margin-top:6px">${esc(status)}</div>
+          ${note ? `<div style="margin-top:8px">${esc(note)}</div>` : ''}
+        </div>
+      </div>`;
+    }).join('');
+    const legacy = legacyRows.length ? `<div class="section-title" style="margin-top:16px">Старые записи</div><div class="tags">${legacyRows.map(row => `<span class="tag">${esc(row.status || row.name)}</span>`).join('')}</div>` : '';
+    return `<div class="small-note" style="margin-bottom:12px">Репутация берётся из профиля персонажа, а список организаций задаётся в World Config → Организации.</div><div class="result-stack">${cards || '<div class="small-note">В World Config пока нет организаций.</div>'}</div>${legacy}`;
+  }
+
+  function treeNodeIdV51(type, id) {
+    return `${type}:${String(id || '').trim()}`;
+  }
+
+  function treeNodePartsV53(nodeId = '') {
+    const text = String(nodeId || '');
+    const splitAt = text.indexOf(':');
+    if (splitAt < 0) return { type: '', id: text };
+    return { type: text.slice(0, splitAt), id: text.slice(splitAt + 1) };
+  }
+
+  function skillTreeDepthV51(skill, memo = {}, stack = new Set()) {
+    skill = normalizeSkillV50(skill);
+    if (!skill.id) return 1;
+    if (memo[skill.id]) return memo[skill.id];
+    if (stack.has(skill.id)) return 1;
+    stack.add(skill.id);
+    let depth = 1;
+    for (const reqId of skill.requiredSkillIds || []) {
+      const reqSkill = Data.getSkill(reqId);
+      if (reqSkill && reqId !== skill.id) depth = Math.max(depth, skillTreeDepthV51(reqSkill, memo, stack) + 1);
+    }
+    stack.delete(skill.id);
+    memo[skill.id] = depth;
+    return depth;
+  }
+
+  function skillRootColumnsV51(skill, memo = {}, stack = new Set()) {
+    skill = normalizeSkillV50(skill);
+    if (!skill.id) return [];
+    if (memo[skill.id]) return memo[skill.id];
+    if (stack.has(skill.id)) return [];
+    stack.add(skill.id);
+    const roots = [];
+    for (const req of skill.requiredAbilities || []) {
+      if (ABILITY_BY_KEY_V50[req.key]) roots.push(ABILITY_MODEL_V50.findIndex(item => item.key === req.key));
+    }
+    for (const reqId of skill.requiredSkillIds || []) {
+      const reqSkill = Data.getSkill(reqId);
+      if (reqSkill && reqId !== skill.id) roots.push(...skillRootColumnsV51(reqSkill, memo, stack));
+    }
+    stack.delete(skill.id);
+    const clean = Array.from(new Set(roots.filter(index => Number.isFinite(index) && index >= 0)));
+    memo[skill.id] = clean;
+    return clean;
+  }
+
+  function fallbackSkillColumnV51(skill, index = 0) {
+    const seed = String(skill.category || skill.name || skill.id || '') + String(index);
+    let hash = 0;
+    for (let i = 0; i < seed.length; i += 1) hash = ((hash << 5) - hash + seed.charCodeAt(i)) | 0;
+    return Math.abs(hash) % ABILITY_MODEL_V50.length;
+  }
+
+  function preferredAbilityForSkillV53(skill, index = 0) {
+    skill = normalizeSkillV50(skill);
+    const directAbility = (skill.requiredAbilities || []).find(req => ABILITY_BY_KEY_V50[req.key]);
+    if (directAbility) return directAbility.key;
+    const roots = skillRootColumnsV51(skill, {}, new Set());
+    if (roots.length) return ABILITY_MODEL_V50[roots[0]]?.key || ABILITY_MODEL_V50[0].key;
+    return ABILITY_MODEL_V50[fallbackSkillColumnV51(skill, index)]?.key || ABILITY_MODEL_V50[0].key;
+  }
+
+  function buildSpecializationGrantParentMapV56(skills) {
+    const byId = new Map(skills.map(skill => [skill.id, normalizeSkillV50(skill)]));
+    const parentBySpecId = new Map();
+    skills.map(skill => normalizeSkillV50(skill)).forEach(skill => {
+      if (!isLearnableSkillV55(skill)) return;
+      for (const specId of normalizeSpecializationIncreaseIdsV55(skill.specializationIncreases || [])) {
+        const spec = byId.get(specId);
+        if (!spec || !isSpecializationV55(spec) || specId === skill.id || parentBySpecId.has(specId)) continue;
+        parentBySpecId.set(specId, skill.id);
+      }
+    });
+    return parentBySpecId;
+  }
+
+  function buildPrimaryParentMapV53(skills) {
+    const byId = new Map(skills.map(skill => [skill.id, skill]));
+    const indexById = new Map(skills.map((skill, index) => [skill.id, index]));
+    const parentBySkillId = new Map();
+    skills.forEach((skill, index) => {
+      const reqSkill = normalizeSkillIdArrayV50(skill.requiredSkillIds || []).find(id => id !== skill.id && byId.has(id));
+      if (reqSkill) parentBySkillId.set(skill.id, treeNodeIdV51('skill', reqSkill));
+      else parentBySkillId.set(skill.id, treeNodeIdV51('ability', preferredAbilityForSkillV53(skill, index)));
+    });
+    const createsCycle = (childId, parentNodeId) => {
+      const seen = new Set([childId]);
+      let current = parentNodeId;
+      for (let guard = 0; guard < skills.length + 4; guard += 1) {
+        const parts = treeNodePartsV53(current);
+        if (parts.type !== 'skill') return false;
+        if (seen.has(parts.id)) return true;
+        seen.add(parts.id);
+        current = parentBySkillId.get(parts.id);
+        if (!current) return false;
+      }
+      return true;
+    };
+    skills.forEach(skill => {
+      const parent = parentBySkillId.get(skill.id);
+      if (createsCycle(skill.id, parent)) {
+        parentBySkillId.set(skill.id, treeNodeIdV51('ability', preferredAbilityForSkillV53(skill, indexById.get(skill.id) || 0)));
+      }
+    });
+    return parentBySkillId;
+  }
+
+  function addSkillTreeEdgeV53(edges, seen, from, to, kind = 'skill') {
+    if (!from || !to || from === to) return;
+    const key = `${from}>${to}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    edges.push({ from, to, kind });
+  }
+
+  function skillAncestorRequiresAbilityV54(skill, abilityKey, byId, stack = new Set()) {
+    skill = normalizeSkillV50(skill);
+    if (!skill.id || stack.has(skill.id)) return false;
+    stack.add(skill.id);
+    for (const reqId of skill.requiredSkillIds || []) {
+      const parent = byId.get(reqId);
+      if (!parent || reqId === skill.id) continue;
+      const normalizedParent = normalizeSkillV50(parent);
+      if ((normalizedParent.requiredAbilities || []).some(req => req.key === abilityKey)) return true;
+      if (skillAncestorRequiresAbilityV54(normalizedParent, abilityKey, byId, stack)) return true;
+    }
+    return false;
+  }
+
+  function primaryAncestorRequiresAbilityV56(skillId, abilityKey, primaryParentBySkillId = new Map(), byId = new Map()) {
+    const seen = new Set([skillId]);
+    let current = primaryParentBySkillId.get(skillId);
+    for (let guard = 0; guard < byId.size + 8; guard += 1) {
+      const parts = treeNodePartsV53(current || '');
+      if (parts.type !== 'skill' || !parts.id || seen.has(parts.id)) return false;
+      seen.add(parts.id);
+      const parent = normalizeSkillV50(byId.get(parts.id) || {});
+      if ((parent.requiredAbilities || []).some(req => req.key === abilityKey)) return true;
+      current = primaryParentBySkillId.get(parts.id);
+    }
+    return false;
+  }
+
+  function buildSkillTreeEdgesV53(skills, primaryParentBySkillId = new Map()) {
+    skills = skills.map(skill => normalizeSkillV50(skill));
+    const byId = new Map(skills.map(skill => [skill.id, skill]));
+    const skillIds = new Set(skills.map(skill => skill.id));
+    const edges = [];
+    const seen = new Set();
+
+    skills.forEach(skill => {
+      const to = treeNodeIdV51('skill', skill.id);
+      const primaryParent = primaryParentBySkillId.get(skill.id);
+      if (primaryParent) {
+        const parentParts = treeNodePartsV53(primaryParent);
+        addSkillTreeEdgeV53(edges, seen, primaryParent, to, parentParts.type === 'skill' ? 'primary' : 'ability');
+      }
+    });
+
+    skills.forEach(skill => {
+      const to = treeNodeIdV51('skill', skill.id);
+      const primaryParent = primaryParentBySkillId.get(skill.id);
+      for (const req of skill.requiredAbilities || []) {
+        if (!ABILITY_BY_KEY_V50[req.key]) continue;
+        if (skillAncestorRequiresAbilityV54(skill, req.key, byId) || primaryAncestorRequiresAbilityV56(skill.id, req.key, primaryParentBySkillId, byId)) continue;
+        const from = treeNodeIdV51('ability', req.key);
+        addSkillTreeEdgeV53(edges, seen, from, to, from === primaryParent ? 'ability' : 'ability-extra');
+      }
+      for (const reqId of skill.requiredSkillIds || []) {
+        if (!skillIds.has(reqId) || reqId === skill.id) continue;
+        const from = treeNodeIdV51('skill', reqId);
+        addSkillTreeEdgeV53(edges, seen, from, to, from === primaryParent ? 'primary' : 'secondary');
+      }
+      // Навыки могут повышать специализации как бонус, но это не является
+      // требованием дерева и не рисуется отдельной пунктирной связью.
+    });
+    return edges;
+  }
+
+  function graphReachableV53(startId, edges, direction = 'down') {
+    const out = new Set();
+    const stack = [startId];
+    while (stack.length) {
+      const current = stack.pop();
+      for (const edge of edges) {
+        const next = direction === 'up' ? (edge.to === current ? edge.from : '') : (edge.from === current ? edge.to : '');
+        if (!next || out.has(next)) continue;
+        out.add(next);
+        stack.push(next);
+      }
+    }
+    return out;
+  }
+
+  function skillTreeVisibleSetsV53(layout) {
+    const abilities = new Set(ABILITY_MODEL_V50.map(item => treeNodeIdV51('ability', item.key)));
+    const skills = new Set();
+    const focus = SKILL_TREE_FOCUS_V53;
+    if (!focus?.type || !focus?.id) return { abilities, skills, selected: '' };
+    const startId = treeNodeIdV51(focus.type, focus.id);
+    const selected = startId;
+    if (focus.type === 'ability') {
+      graphReachableV53(startId, layout.edges, 'down').forEach(id => { if (treeNodePartsV53(id).type === 'skill') skills.add(id); });
+    } else if (focus.type === 'skill') {
+      skills.add(startId);
+      graphReachableV53(startId, layout.edges, 'up').forEach(id => {
+        const parts = treeNodePartsV53(id);
+        if (parts.type === 'skill') skills.add(id);
+        if (parts.type === 'ability') abilities.add(id);
+      });
+      graphReachableV53(startId, layout.edges, 'down').forEach(id => { if (treeNodePartsV53(id).type === 'skill') skills.add(id); });
+    }
+    return { abilities, skills, selected };
+  }
+
+  function rootAbilityForNodeV54(nodeId, primaryParentBySkillId = new Map(), byId = new Map()) {
+    const parts = treeNodePartsV53(nodeId);
+    if (parts.type === 'ability') return parts.id;
+    if (parts.type !== 'skill') return '';
+    let current = nodeId;
+    const seen = new Set();
+    for (let guard = 0; guard < byId.size + 8; guard += 1) {
+      if (!current || seen.has(current)) break;
+      seen.add(current);
+      const nodeParts = treeNodePartsV53(current);
+      if (nodeParts.type === 'ability') return nodeParts.id;
+      if (nodeParts.type !== 'skill') break;
+      const parent = primaryParentBySkillId.get(nodeParts.id);
+      if (!parent) {
+        const skill = byId.get(nodeParts.id);
+        return skill ? preferredAbilityForSkillV53(skill, 0) : '';
+      }
+      const parentParts = treeNodePartsV53(parent);
+      if (parentParts.type === 'ability') return parentParts.id;
+      current = parent;
+    }
+    return '';
+  }
+
+  function expandedAbilityKeysV54(skills, rawEdges, primaryParentBySkillId, byId) {
+    const expanded = new Set();
+    const focus = SKILL_TREE_FOCUS_V53;
+    if (!focus?.type || !focus?.id) return expanded;
+    const selected = treeNodeIdV51(focus.type, focus.id);
+    if (focus.type === 'ability') {
+      if (ABILITY_BY_KEY_V50[focus.id]) expanded.add(focus.id);
+      return expanded;
+    }
+    const related = new Set([selected, ...graphReachableV53(selected, rawEdges, 'up'), ...graphReachableV53(selected, rawEdges, 'down')]);
+    related.forEach(nodeId => {
+      const root = rootAbilityForNodeV54(nodeId, primaryParentBySkillId, byId);
+      if (root && ABILITY_BY_KEY_V50[root]) expanded.add(root);
+    });
+    return expanded;
+  }
+
+  function buildSkillTreeLayoutV51(user) {
+    user = normalizePlayerProfileV2(user);
+    const depthMemo = {};
+    const skills = getVisibleSkillTreeItemsV56(user).map(skill => normalizeSkillV50(skill)).sort((a, b) => {
+      const da = skillTreeDepthV51(a, depthMemo);
+      const db = skillTreeDepthV51(b, depthMemo);
+      if (da !== db) return da - db;
+      const ca = String(a.category || '').localeCompare(String(b.category || ''), 'ru');
+      if (ca) return ca;
+      return String(a.name || '').localeCompare(String(b.name || ''), 'ru');
+    });
+    const skillById = new Map(skills.map(skill => [skill.id, skill]));
+    const primaryParentBySkillId = buildPrimaryParentMapV53(skills);
+    const rawEdges = buildSkillTreeEdgesV53(skills, primaryParentBySkillId);
+    const expandedRoots = expandedAbilityKeysV54(skills, rawEdges, primaryParentBySkillId, skillById);
+    const children = new Map();
+    const pushChild = (parent, skill) => {
+      if (!parent) return;
+      if (!children.has(parent)) children.set(parent, []);
+      children.get(parent).push(skill);
+    };
+    skills.forEach(skill => pushChild(primaryParentBySkillId.get(skill.id), skill));
+    for (const list of children.values()) {
+      list.sort((a, b) => {
+        const ad = skillTreeDepthV51(a, depthMemo);
+        const bd = skillTreeDepthV51(b, depthMemo);
+        if (ad !== bd) return ad - bd;
+        const bucket = skillSortBucketV50(user, a) - skillSortBucketV50(user, b);
+        if (bucket) return bucket;
+        const cat = String(a.category || '').localeCompare(String(b.category || ''), 'ru');
+        if (cat) return cat;
+        return String(a.name || '').localeCompare(String(b.name || ''), 'ru');
+      });
+    }
+
+    const NODE_W = 154;
+    const ABILITY_W = 158;
+    const SKILL_H = 80;
+    const ABILITY_H = 86;
+    const SIBLING_GAP = 34;
+    const ROOT_GAP_COMPACT = 26;
+    const ROOT_GAP_EXPANDED = 72;
+    const ROW_GAP = 126;
+    const PAD_X = 34;
+    const PAD_TOP = 18;
+    const rowByNode = new Map();
+    const widthMemo = new Map();
+    const positions = new Map();
+    const depthRowMemo = new Map();
+
+    const nodeDepthFromPrimaryParent = (nodeId, stack = new Set()) => {
+      if (depthRowMemo.has(nodeId)) return depthRowMemo.get(nodeId);
+      const parts = treeNodePartsV53(nodeId);
+      if (parts.type === 'ability') {
+        depthRowMemo.set(nodeId, 0);
+        return 0;
+      }
+      if (parts.type !== 'skill' || stack.has(nodeId)) return 1;
+      stack.add(nodeId);
+      const parent = primaryParentBySkillId.get(parts.id);
+      let depth = 1;
+      if (parent) {
+        const parentParts = treeNodePartsV53(parent);
+        depth = parentParts.type === 'ability' ? 1 : nodeDepthFromPrimaryParent(parent, stack) + 1;
+      } else {
+        depth = Math.max(1, skillTreeDepthV51(skillById.get(parts.id), depthMemo));
+      }
+      stack.delete(nodeId);
+      depthRowMemo.set(nodeId, depth);
+      return depth;
+    };
+
+    const nodeChildren = nodeId => children.get(nodeId) || [];
+    const isRootNodeExpanded = nodeId => {
+      const parts = treeNodePartsV53(nodeId);
+      return parts.type !== 'ability' || expandedRoots.has(parts.id);
+    };
+    const subtreeWidth = nodeId => {
+      if (widthMemo.has(nodeId)) return widthMemo.get(nodeId);
+      const parts = treeNodePartsV53(nodeId);
+      const isAbility = parts.type === 'ability';
+      const selfWidth = isAbility ? ABILITY_W : NODE_W;
+      if (isAbility && !expandedRoots.has(parts.id)) {
+        widthMemo.set(nodeId, selfWidth);
+        return selfWidth;
+      }
+      const kids = nodeChildren(nodeId);
+      if (!kids.length) {
+        widthMemo.set(nodeId, selfWidth);
+        return selfWidth;
+      }
+      const childWidth = kids.reduce((sum, child, index) => sum + subtreeWidth(treeNodeIdV51('skill', child.id)) + (index ? SIBLING_GAP : 0), 0);
+      const width = Math.max(selfWidth, childWidth);
+      widthMemo.set(nodeId, width);
+      return width;
+    };
+
+    const placeNode = (nodeId, left) => {
+      const parts = treeNodePartsV53(nodeId);
+      const width = subtreeWidth(nodeId);
+      const isAbility = parts.type === 'ability';
+      const selfW = isAbility ? ABILITY_W : NODE_W;
+      let row = 0;
+      if (parts.type === 'skill') row = Math.max(1, nodeDepthFromPrimaryParent(nodeId));
+      rowByNode.set(nodeId, row);
+      positions.set(nodeId, {
+        x: left + width / 2 - selfW / 2,
+        y: PAD_TOP + row * ROW_GAP,
+        w: selfW,
+        h: isAbility ? ABILITY_H : SKILL_H,
+        row
+      });
+      if (isAbility && !isRootNodeExpanded(nodeId)) return;
+      const kids = nodeChildren(nodeId);
+      if (!kids.length) return;
+      const totalChildrenWidth = kids.reduce((sum, child, index) => sum + subtreeWidth(treeNodeIdV51('skill', child.id)) + (index ? SIBLING_GAP : 0), 0);
+      let childLeft = left + Math.max(0, (width - totalChildrenWidth) / 2);
+      kids.forEach(child => {
+        const childId = treeNodeIdV51('skill', child.id);
+        placeNode(childId, childLeft);
+        childLeft += subtreeWidth(childId) + SIBLING_GAP;
+      });
+    };
+
+    let cursorX = PAD_X;
+    ABILITY_MODEL_V50.forEach((item, index) => {
+      const rootId = treeNodeIdV51('ability', item.key);
+      const width = subtreeWidth(rootId);
+      placeNode(rootId, cursorX);
+      const gap = expandedRoots.has(item.key) ? ROOT_GAP_EXPANDED : ROOT_GAP_COMPACT;
+      cursorX += width + (index === ABILITY_MODEL_V50.length - 1 ? 0 : gap);
+    });
+
+    skills.forEach((skill, index) => {
+      const nodeId = treeNodeIdV51('skill', skill.id);
+      if (positions.has(nodeId)) return;
+      const rootKey = rootAbilityForNodeV54(nodeId, primaryParentBySkillId, skillById) || preferredAbilityForSkillV53(skill, index);
+      const rootPos = positions.get(treeNodeIdV51('ability', rootKey));
+      const row = Math.max(1, nodeDepthFromPrimaryParent(nodeId));
+      const siblingOffset = offsetFromIndexV51(index % 5, 5, NODE_W + 18);
+      rowByNode.set(nodeId, row);
+      positions.set(nodeId, {
+        x: Math.max(PAD_X, (rootPos?.x || PAD_X) + (rootPos?.w || ABILITY_W) / 2 - NODE_W / 2 + siblingOffset),
+        y: PAD_TOP + row * ROW_GAP,
+        w: NODE_W,
+        h: SKILL_H,
+        row
+      });
+    });
+
+    const visibleForBounds = new Set(ABILITY_MODEL_V50.map(item => treeNodeIdV51('ability', item.key)));
+    const focus = SKILL_TREE_FOCUS_V53;
+    if (focus?.type && focus?.id) {
+      const selected = treeNodeIdV51(focus.type, focus.id);
+      visibleForBounds.add(selected);
+      if (focus.type === 'ability') graphReachableV53(selected, rawEdges, 'down').forEach(id => visibleForBounds.add(id));
+      else {
+        graphReachableV53(selected, rawEdges, 'up').forEach(id => visibleForBounds.add(id));
+        graphReachableV53(selected, rawEdges, 'down').forEach(id => visibleForBounds.add(id));
+      }
+    }
+    const boundsPositions = Array.from(positions.entries()).filter(([nodeId]) => visibleForBounds.has(nodeId)).map(([, pos]) => pos);
+    const maxRight = Math.max(PAD_X + ABILITY_W, ...boundsPositions.map(pos => pos.x + pos.w));
+    const maxBottom = Math.max(PAD_TOP + ABILITY_H, ...boundsPositions.map(pos => pos.y + pos.h));
+    const canvasWidth = Math.max(760, maxRight + PAD_X);
+    const canvasHeight = Math.max(210, maxBottom + 52);
+    const edges = rawEdges.map(edge => ({
+      ...edge,
+      fromRow: rowByNode.get(edge.from) ?? 0,
+      toRow: rowByNode.get(edge.to) ?? 0
+    }));
+    return { skills, positions, edges, primaryParentBySkillId, canvasWidth, canvasHeight };
+  }
+
+  function skillRequirementTextV51(skill) {
+    skill = normalizeSkillV50(skill);
+    const reqs = [];
+    for (const req of skill.requiredAbilities || []) reqs.push(`${abilityLabelV50(req.key)} ≥ ${req.value}`);
+    if ((skill.requiredSkillIds || []).length) reqs.push(...(skill.requiredSkillIds || []).map(id => Data.getSkill(id)?.name || id));
+    return reqs.join(' · ');
+  }
+
+  function styleFromTreePosV53(pos = {}) {
+    return `left:${Number(pos.x || 0).toFixed(1)}px;top:${Number(pos.y || 0).toFixed(1)}px;width:${Number(pos.w || 154).toFixed(1)}px;`;
+  }
+
+  function abilityTreeNodeMarkupV51(user, item, layout, visibleSets) {
+    const abilities = normalizeAbilitiesV50(user?.abilities || {});
+    const value = normalizeAbilityValueV53(abilities[item.key] || 0, 0);
+    const points = Number(user?.skillPoints || 0);
+    const state = value >= ABILITY_MAX_V53 ? 'maxed' : points > 0 ? 'available' : 'locked';
+    const canUpgrade = state === 'available';
+    const nodeId = treeNodeIdV51('ability', item.key);
+    const pos = layout.positions.get(nodeId) || { x: 0, y: 0, w: 168, row: 0 };
+    const selected = visibleSets.selected === nodeId ? 'focus-selected' : '';
+    return `<div class="profile-skill-node-v51 profile-ability-node-v51 ${esc(state)} ${selected}" data-tree-node-id="${esc(nodeId)}" data-tree-kind="ability" data-tree-id="${esc(item.key)}" data-tree-row="0" style="${styleFromTreePosV53(pos)}" title="Показать ветку: ${esc(item.label)}">
+      <div class="profile-skill-node-head-v51"><span>${esc(item.short)}</span><b>${esc(item.label)}</b></div>
+      <div class="profile-skill-node-value-v51">${Number(value)}</div>
+      ${canUpgrade ? `<button class="secondary profile-upgrade-ability-btn-v51" type="button" data-ability-key="${esc(item.key)}">+1</button>` : `<button class="secondary profile-upgrade-ability-btn-v51" type="button" disabled>${value >= ABILITY_MAX_V53 ? String(ABILITY_MAX_V53) : 'НЕТ ОЧКОВ'}</button>`}
+    </div>`;
+  }
+
+  function skillTreeNodeMarkupV51(user, skill, layout, visibleSets) {
+    skill = normalizeSkillV50(skill);
+    user = normalizePlayerProfileV2(user);
+    const isSpec = isSpecializationV55(skill);
+    const status = skillStatusV50(user, skill);
+    const isOwned = status.state === 'owned' || status.state === 'specialization-owned';
+    const actionLabel = isOwned ? 'ИЗУЧЕНО' : Number(user?.skillPoints || 0) < Number(skill.cost || 0) ? 'НЕТ ОЧКОВ' : 'ТРЕБОВАНИЯ';
+    const nodeId = treeNodeIdV51('skill', skill.id);
+    const pos = layout.positions.get(nodeId) || { x: 0, y: 0, w: 154, row: 1 };
+    const hidden = visibleSets.skills.has(nodeId) ? '' : 'is-hidden';
+    const selected = visibleSets.selected === nodeId ? 'focus-selected' : '';
+    const specValue = Number(user.specializations?.[skill.id] || 0);
+    const typeClass = isSpec ? 'profile-specialization-node-v56' : '';
+    const glyph = initials(skill.name, isSpec ? 'SP' : 'SK');
+    const learnButton = status.state === 'available'
+      ? `<button class="primary profile-learn-skill-btn-v50" type="button" data-skill-id="${esc(skill.id)}">ПРОКАЧАТЬ</button>`
+      : `<button class="secondary profile-learn-skill-btn-v50" type="button" disabled>${esc(actionLabel)}</button>`;
+    const actions = `<button class="ghost profile-skill-info-btn-v52" type="button" data-skill-id="${esc(skill.id)}" title="Описание и требования">i</button>${isSpec ? `<span class="profile-specialization-node-value-v56" title="Значение специализации">${Number(specValue)}</span>` : ''}${learnButton}`;
+    return `<div class="profile-skill-node-v51 profile-skill-card-v50 ${esc(status.state)} ${hidden} ${selected} ${typeClass}" data-tree-node-id="${esc(nodeId)}" data-tree-kind="skill" data-tree-id="${esc(skill.id)}" data-tree-row="${Number(pos.row || 1)}" data-skill-card-id="${esc(skill.id)}" style="${styleFromTreePosV53(pos)}">
+      <div class="profile-skill-node-thumb-v51">${renderThumb(skill, { size: 'sm', type: 'skill', glyph })}</div>
+      <div class="profile-skill-node-main-v51">
+        <div class="profile-skill-node-title-v51"><b>${esc(skill.name)}</b>${isSpec ? '<span class="profile-specialization-node-kicker-v56">специализация</span>' : ''}</div>
+        <div class="profile-skill-node-actions-v52">${actions}</div>
+      </div>
+    </div>`;
+  }
+
+  function skillTreeEdgesV51(skills) {
+    return buildSkillTreeEdgesV53(skills.map(skill => normalizeSkillV50(skill)), buildPrimaryParentMapV53(skills.map(skill => normalizeSkillV50(skill))));
+  }
+
+  function skillsModalMarkupV50(user) {
+    user = normalizePlayerProfileV2(user);
+    const layout = buildSkillTreeLayoutV51(user);
+    const visibleSets = skillTreeVisibleSetsV53(layout);
+    const abilityNodes = ABILITY_MODEL_V50.map(item => abilityTreeNodeMarkupV51(user, item, layout, visibleSets)).join('');
+    const skillNodes = layout.skills.map(skill => skillTreeNodeMarkupV51(user, skill, layout, visibleSets)).join('');
+    return `<div class="profile-skill-tree-toolbar-v51">
+      <div class="chip">ОЧКИ УЛУЧШЕНИЯ: ${Number(user.skillPoints || 0)}</div>
+    </div>
+    <div class="profile-skill-tree-scroll-v51">
+      <div class="profile-skill-tree-canvas-v51" data-skill-tree="1" data-skill-tree-edges="${esc(JSON.stringify(layout.edges))}" style="width:${Number(layout.canvasWidth).toFixed(1)}px;height:${Number(layout.canvasHeight).toFixed(1)}px;">
+        <svg class="profile-skill-lines-v51" aria-hidden="true"></svg>
+        ${abilityNodes}${skillNodes || '<div class="small-note profile-skill-empty-v53">В World Config пока нет навыков или специализаций.</div>'}
+      </div>
+    </div>`;
+  }
+
+  function skillDetailsMarkupV52(user, skillId) {
+    user = normalizePlayerProfileV2(user);
+    const skill = normalizeSkillV50(Data.getSkill(skillId) || {});
+    if (!skill.id) return '<div class="small-note">Навык не найден.</div>';
+    const status = skillStatusV50(user, skill);
+    const abilityReqs = (skill.requiredAbilities || []).map(req => `<li>${esc(abilityLabelV50(req.key))}: ${Number(user.abilities?.[req.key] || 0)} / ${Number(req.value || 0)}</li>`).join('');
+    const skillReqs = (skill.requiredSkillIds || []).map(id => {
+      const reqSkill = Data.getSkill?.(id);
+      if (reqSkill && isSpecializationV55(reqSkill)) {
+        const value = Number(user.specializations?.[id] || 0);
+        return `<li>${esc(reqSkill.name || id)} [специализация]: ${value} / 1${value >= 1 ? ' ✓' : ''}</li>`;
+      }
+      return `<li>${esc(Data.getSkill(id)?.name || id)}${(user.skills || []).includes(id) ? ' ✓' : ''}</li>`;
+    }).join('');
+    const increaseReqs = isLearnableSkillV55(skill) ? normalizeSpecializationIncreaseIdsV55(skill.specializationIncreases || []).map(id => `<li>${esc(specializationLabelV55(id))} +1</li>`).join('') : '';
+    const missing = status.reasons.length ? `<div class="profile-skill-detail-warning-v52">${esc(status.reasons.join(' · '))}</div>` : '';
+    return `<div class="profile-skill-detail-v52">
+      <div class="profile-skill-detail-head-v52">
+        ${renderThumb(skill, { size: 'md', type: 'skill', glyph: initials(skill.name, 'SK') })}
+        <div><b>${esc(skill.name)}</b><div class="small-note">${esc(skill.category || 'Общее')} · ${isSpecializationV55(skill) ? `Специализация · ${Number(skill.cost || 0)} ОУ` : `${Number(skill.cost || 0)} ОУ`}</div></div>
+      </div>
+      ${skill.description ? `<div class="profile-skill-detail-description-v52">${esc(skill.description)}</div>` : '<div class="small-note">Описание не задано.</div>'}
+      <div class="section-title">Требования</div>
+      ${abilityReqs || skillReqs ? `<ul class="profile-skill-detail-reqs-v52">${abilityReqs}${skillReqs}</ul>` : (isSpecializationV55(skill) ? '<div class="small-note">Это вторичная характеристика персонажа. В дереве она может быть узлом зависимости для других навыков.</div>' : '<div class="small-note">Нет требований.</div>')}
+      ${increaseReqs ? `<div class="section-title">Повышает</div><ul class="profile-skill-detail-reqs-v52">${increaseReqs}</ul>` : ''}
+      ${missing}
+    </div>`;
+  }
+
+  function ensureSkillInfoModalV52() {
+    let modal = document.getElementById('profile-skill-info-modal-v52');
+    if (modal) return modal;
+    modal = document.createElement('div');
+    modal.id = 'profile-skill-info-modal-v52';
+    modal.className = 'modal profile-skill-info-modal-v52';
+    modal.innerHTML = `<div class="login-box card profile-skill-info-box-v52">
+      <div class="row" style="justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:14px">
+        <div><div class="section-title">Навык</div><h2 id="profile-skill-info-title-v52" style="margin:0">Описание</h2></div>
+        <button class="ghost" type="button" id="profile-skill-info-close-v52">ЗАКРЫТЬ</button>
+      </div>
+      <div id="profile-skill-info-body-v52"></div>
+    </div>`;
+    document.body.appendChild(modal);
+    modal.addEventListener('click', event => { if (event.target === modal) modal.classList.remove('open'); });
+    modal.querySelector('#profile-skill-info-close-v52')?.addEventListener('click', () => modal.classList.remove('open'));
+    return modal;
+  }
+
+  function openSkillDetailsV52(skillId) {
+    const skill = normalizeSkillV50(Data.getSkill(skillId) || {});
+    const modal = ensureSkillInfoModalV52();
+    modal.querySelector('#profile-skill-info-title-v52').textContent = skill.name || 'Описание';
+    modal.querySelector('#profile-skill-info-body-v52').innerHTML = skillDetailsMarkupV52(App.state.users[App.currentUserId] || App.currentUser || {}, skillId);
+    modal.classList.add('open');
+  }
+
+  function applySkillSpecializationIncreasesV55(values = {}, skill = {}) {
+    const next = normalizeSpecializationValuesV55(values);
+    for (const specId of normalizeSpecializationIncreaseIdsV55(skill.specializationIncreases || [])) {
+      if (!specId || !isSpecializationV55(Data.getSkill?.(specId) || {})) continue;
+      next[specId] = Math.max(0, Math.floor(numberOrFallbackV50(next[specId], 0))) + 1;
+    }
+    return next;
+  }
+
+  function applyNewlyGrantedSkillBonusesV55(values = {}, oldSkillIds = [], nextSkillIds = []) {
+    let out = normalizeSpecializationValuesV55(values);
+    const oldSet = new Set(normalizeSkillIdArrayV50(oldSkillIds));
+    for (const skillId of normalizeSkillIdArrayV50(nextSkillIds)) {
+      if (oldSet.has(skillId)) continue;
+      const skill = Data.getSkill?.(skillId);
+      if (!skill || !isLearnableSkillV55(skill)) continue;
+      out = applySkillSpecializationIncreasesV55(out, skill);
+    }
+    return out;
+  }
+
+  async function learnSkillV50(skillId) {
+    const current = normalizePlayerProfileV2(App.state.users[App.currentUserId] || App.currentUser || {});
+    const skill = Data.getSkill(skillId);
+    if (!current?.id || !skill) return;
+    const normalizedSkill = normalizeSkillV50(skill);
+    const isSpec = isSpecializationV55(normalizedSkill);
+    const status = skillStatusV50(current, normalizedSkill);
+    if (!status.ok) {
+      Toast.show(status.reasons.join(' · ') || (isSpec ? 'Специализация недоступна' : 'Навык недоступен'), 'err');
+      return;
+    }
+    if (!window.confirm(`Вы уверены что хотите взять «${normalizedSkill.name}»?`)) return;
+    if (isSpec) {
+      current.specializations = normalizeSpecializationValuesV55(current.specializations || {});
+      current.specializations[normalizedSkill.id] = Math.max(1, Number(current.specializations[normalizedSkill.id] || 0) + 1);
+    } else {
+      current.skills = normalizeSkillIdArrayV50([...(current.skills || []), normalizedSkill.id]);
+      current.specializations = applySkillSpecializationIncreasesV55(current.specializations || {}, normalizedSkill);
+    }
+    current.skillPoints = Math.max(0, Number(current.skillPoints || 0) - Number(normalizedSkill.cost || 0));
+    App.state.users[current.id] = normalizePlayerProfileV2(current);
+    PLAYER_TEMPLATES[current.id] = deep(App.state.users[current.id]);
+    await App.writeLocalMirrors();
+    const patch = { skills: App.state.users[current.id].skills, skillPoints: App.state.users[current.id].skillPoints, specializations: App.state.users[current.id].specializations };
+    const syncRes = await PlayerSync.pushPlayerPatch(current.id, patch, { notice: `${isSpec ? 'Специализация повышена' : 'Навык изучен'}: ${normalizedSkill.name}`, rerender: true });
+    if (!syncRes?.ok && syncRes?.status !== 'disabled') Toast.show(`${isSpec ? 'Специализация сохранена' : 'Навык сохранён'} локально, но облако не обновилось: ${syncRes?.message || 'unknown error'}`, 'info');
+    const modal = ensureProfileModalV50();
+    modal.querySelector('#profile-extra-modal-body-v50').innerHTML = skillsModalMarkupV50(App.state.users[current.id]);
+    bindProfileModalActionsV50(modal);
+    UI.renderProfile();
+  }
+
+  function offsetFromIndexV51(index, total, step = 8) {
+    if (total <= 1) return 0;
+    return (index - (total - 1) / 2) * step;
+  }
+
+  function rectIntersectsVerticalV52(rect, x, y1, y2) {
+    return x > rect.left && x < rect.right && Math.max(y1, rect.top) < Math.min(y2, rect.bottom);
+  }
+
+  function findClearVerticalLaneX_V52(x, y1, y2, obstacles, preferredDirection = 1, minX = 0, maxX = 1) {
+    let laneX = Math.max(minX, Math.min(maxX, x));
+    const dir = preferredDirection >= 0 ? 1 : -1;
+    const candidates = [laneX];
+    for (let step = 1; step <= 34; step += 1) {
+      candidates.push(x + step * 18 * dir, x - step * 18 * dir);
+    }
+    for (const candidate of candidates) {
+      laneX = Math.max(minX, Math.min(maxX, candidate));
+      const hit = obstacles.some(rect => rectIntersectsVerticalV52(rect, laneX, y1, y2));
+      if (!hit) return laneX;
+    }
+    return Math.max(minX, Math.min(maxX, x));
+  }
+
+  function setSkillTreeHoverV53(tree, nodeId = '') {
+    const nodes = Array.from(tree.querySelectorAll('[data-tree-node-id]'));
+    const paths = Array.from(tree.querySelectorAll('.profile-skill-edge-v51'));
+    nodes.forEach(node => node.classList.remove('is-hovered', 'is-dependency', 'is-dependent', 'is-dimmed'));
+    paths.forEach(path => path.classList.remove('is-hovered', 'is-dependency', 'is-dependent', 'is-dimmed'));
+    if (!nodeId) return;
+    let edges = [];
+    try { edges = JSON.parse(tree.dataset.skillTreeEdges || '[]'); } catch { edges = []; }
+    const upstream = graphReachableV53(nodeId, edges, 'up');
+    const downstream = graphReachableV53(nodeId, edges, 'down');
+    const related = new Set([nodeId, ...upstream, ...downstream]);
+    nodes.forEach(node => {
+      const id = node.dataset.treeNodeId;
+      if (!related.has(id)) {
+        node.classList.add('is-dimmed');
+      } else if (id === nodeId) {
+        node.classList.add('is-hovered');
+      } else if (upstream.has(id)) {
+        node.classList.add('is-dependency');
+      } else if (downstream.has(id)) {
+        node.classList.add('is-dependent');
+      }
+    });
+    paths.forEach(path => {
+      const from = path.dataset.edgeFrom;
+      const to = path.dataset.edgeTo;
+      if (!related.has(from) || !related.has(to)) {
+        path.classList.add('is-dimmed');
+      } else if ((from === nodeId && downstream.has(to)) || (to === nodeId && upstream.has(from))) {
+        path.classList.add('is-hovered');
+      } else if (upstream.has(from) && (upstream.has(to) || to === nodeId)) {
+        path.classList.add('is-dependency');
+      } else if ((from === nodeId || downstream.has(from)) && downstream.has(to)) {
+        path.classList.add('is-dependent');
+      }
+    });
+  }
+
+  function applySkillTreeFocusV53(root = document) {
+    const trees = Array.from(root.querySelectorAll?.('[data-skill-tree="1"]') || []);
+    trees.forEach(tree => {
+      let edges = [];
+      try { edges = JSON.parse(tree.dataset.skillTreeEdges || '[]'); } catch { edges = []; }
+      const focus = SKILL_TREE_FOCUS_V53;
+      const selected = focus?.type && focus?.id ? treeNodeIdV51(focus.type, focus.id) : '';
+      const visibleSkills = new Set();
+      if (selected) {
+        if (focus.type === 'ability') {
+          graphReachableV53(selected, edges, 'down').forEach(id => { if (treeNodePartsV53(id).type === 'skill') visibleSkills.add(id); });
+        } else if (focus.type === 'skill') {
+          visibleSkills.add(selected);
+          graphReachableV53(selected, edges, 'up').forEach(id => { if (treeNodePartsV53(id).type === 'skill') visibleSkills.add(id); });
+          graphReachableV53(selected, edges, 'down').forEach(id => { if (treeNodePartsV53(id).type === 'skill') visibleSkills.add(id); });
+        }
+      }
+      tree.querySelectorAll('[data-tree-node-id]').forEach(node => {
+        const nodeId = node.dataset.treeNodeId;
+        const kind = node.dataset.treeKind;
+        node.classList.toggle('focus-selected', Boolean(selected && selected === nodeId));
+        if (kind === 'skill') node.classList.toggle('is-hidden', !visibleSkills.has(nodeId));
+        else node.classList.remove('is-hidden');
+      });
+      setSkillTreeHoverV53(tree, '');
+    });
+  }
+
+  function setSkillTreeFocusV53(type, id, root = document) {
+    const next = type && id ? { type, id } : null;
+    if (next && SKILL_TREE_FOCUS_V53?.type === next.type && SKILL_TREE_FOCUS_V53?.id === next.id) SKILL_TREE_FOCUS_V53 = null;
+    else SKILL_TREE_FOCUS_V53 = next;
+    const scope = root?.querySelector ? root : document;
+    const body = scope.querySelector('#profile-extra-modal-body-v50') || document.querySelector('#profile-extra-modal-body-v50');
+    if (body?.querySelector?.('[data-skill-tree="1"]')) {
+      const scroll = body.querySelector('.profile-skill-tree-scroll-v51');
+      const scrollLeft = scroll?.scrollLeft || 0;
+      const scrollTop = scroll?.scrollTop || 0;
+      const current = normalizePlayerProfileV2(App.state.users[App.currentUserId] || App.currentUser || {});
+      body.innerHTML = skillsModalMarkupV50(current);
+      bindProfileModalActionsV50(body);
+      const nextScroll = body.querySelector('.profile-skill-tree-scroll-v51');
+      if (nextScroll) {
+        nextScroll.scrollLeft = scrollLeft;
+        nextScroll.scrollTop = scrollTop;
+      }
+      scheduleSkillTreeLinesV51(body);
+      return;
+    }
+    applySkillTreeFocusV53(root);
+    scheduleSkillTreeLinesV51(root);
+  }
+
+  function drawSkillTreeLinesV51(root = document) {
+    const trees = Array.from(root.querySelectorAll?.('[data-skill-tree="1"]') || []);
+    trees.forEach(tree => {
+      applySkillTreeFocusV53(tree.parentElement || root);
+      const svg = tree.querySelector('.profile-skill-lines-v51');
+      if (!svg) return;
+      let edges = [];
+      try { edges = JSON.parse(tree.dataset.skillTreeEdges || '[]'); } catch { edges = []; }
+      const treeRect = tree.getBoundingClientRect();
+      if (!treeRect.width || !treeRect.height) return;
+      const nodes = new Map(Array.from(tree.querySelectorAll('[data-tree-node-id]')).filter(node => !node.classList.contains('is-hidden')).map(node => [node.dataset.treeNodeId, node]));
+      const obstaclePadding = 14;
+      const rectForNode = node => {
+        const rect = node.getBoundingClientRect();
+        return {
+          left: rect.left - treeRect.left,
+          right: rect.right - treeRect.left,
+          top: rect.top - treeRect.top,
+          bottom: rect.bottom - treeRect.top,
+          width: rect.width,
+          height: rect.height
+        };
+      };
+      const drawable = edges.map((edge, index) => {
+        const fromNode = nodes.get(edge.from);
+        const toNode = nodes.get(edge.to);
+        if (!fromNode || !toNode) return null;
+        const fromRect = rectForNode(fromNode);
+        const toRect = rectForNode(toNode);
+        const fromRow = Number(edge.fromRow ?? fromNode.dataset.treeRow ?? 0);
+        const toRow = Number(edge.toRow ?? toNode.dataset.treeRow ?? 0);
+        return { edge, index, fromNode, toNode, fromRect, toRect, fromRow, toRow };
+      }).filter(Boolean);
+      const allVisibleNodes = Array.from(nodes.values());
+      const sourceGroups = new Map();
+      const targetGroups = new Map();
+      const bandGroups = new Map();
+      drawable.forEach(item => {
+        if (!sourceGroups.has(item.edge.from)) sourceGroups.set(item.edge.from, []);
+        if (!targetGroups.has(item.edge.to)) targetGroups.set(item.edge.to, []);
+        const band = `${item.fromRow}:${item.toRow}`;
+        if (!bandGroups.has(band)) bandGroups.set(band, []);
+        sourceGroups.get(item.edge.from).push(item);
+        targetGroups.get(item.edge.to).push(item);
+        bandGroups.get(band).push(item);
+      });
+      const sourceIndex = new Map();
+      const targetIndex = new Map();
+      const bandIndex = new Map();
+      for (const list of sourceGroups.values()) list.sort((a, b) => (a.toRect.left + a.toRect.width / 2) - (b.toRect.left + b.toRect.width / 2)).forEach((item, i) => sourceIndex.set(item.index, { i, total: list.length }));
+      for (const list of targetGroups.values()) list.sort((a, b) => (a.fromRect.left + a.fromRect.width / 2) - (b.fromRect.left + b.fromRect.width / 2)).forEach((item, i) => targetIndex.set(item.index, { i, total: list.length }));
+      for (const list of bandGroups.values()) list.sort((a, b) => ((a.fromRect.left + a.toRect.left) / 2) - ((b.fromRect.left + b.toRect.left) / 2)).forEach((item, i) => bandIndex.set(item.index, { i, total: list.length }));
+      const maxX = Math.max(1, tree.scrollWidth || treeRect.width);
+      const maxY = Math.max(1, tree.scrollHeight || treeRect.height);
+      const paths = [];
+      drawable.forEach(item => {
+        const src = sourceIndex.get(item.index) || { i: 0, total: 1 };
+        const dst = targetIndex.get(item.index) || { i: 0, total: 1 };
+        const band = bandIndex.get(item.index) || { i: 0, total: 1 };
+        const fromCx = item.fromRect.left + item.fromRect.width / 2;
+        const toCx = item.toRect.left + item.toRect.width / 2;
+        const fromParts = treeNodePartsV53(item.edge.from);
+        const direction = toCx >= fromCx ? 1 : -1;
+        const sx = fromCx + offsetFromIndexV51(src.i, src.total, item.edge.kind === 'primary' ? 3 : 7);
+        const sy = item.fromRect.bottom;
+        const tx = toCx + offsetFromIndexV51(dst.i, dst.total, item.edge.kind === 'primary' ? 3 : 7);
+        const ty = item.toRect.top;
+        const isPrimarySkillLine = item.edge.kind === 'primary' && fromParts.type === 'skill';
+        const isPrimaryAbilityLine = item.edge.kind === 'ability' && fromParts.type === 'ability';
+        if (isPrimarySkillLine || isPrimaryAbilityLine) {
+          const d = `M ${sx.toFixed(1)} ${sy.toFixed(1)} L ${tx.toFixed(1)} ${ty.toFixed(1)}`;
+          paths.push(`<path class="profile-skill-edge-v51 ${esc(item.edge.kind || 'skill')}" data-edge-from="${esc(item.edge.from)}" data-edge-to="${esc(item.edge.to)}" d="${d}"/>`);
+          return;
+        }
+        let startGapY = sy + 18 + offsetFromIndexV51(src.i, src.total, 5);
+        let endGapY = ty - 18 + offsetFromIndexV51(dst.i, dst.total, 5);
+        if (endGapY <= startGapY + 16) {
+          const mid = (sy + ty) / 2;
+          startGapY = mid - 10;
+          endGapY = mid + 10;
+        }
+        let preferredLaneX = (sx + tx) / 2 + offsetFromIndexV51(band.i, band.total, 22);
+        if (Math.abs(tx - sx) < 54) preferredLaneX = sx + direction * (54 + Math.abs(offsetFromIndexV51(band.i, band.total, 14)));
+        const obstacles = allVisibleNodes
+          .filter(node => node !== item.fromNode && node !== item.toNode)
+          .map(node => {
+            const rect = rectForNode(node);
+            return {
+              left: rect.left - obstaclePadding,
+              right: rect.right + obstaclePadding,
+              top: rect.top - obstaclePadding,
+              bottom: rect.bottom + obstaclePadding
+            };
+          });
+        const laneX = findClearVerticalLaneX_V52(preferredLaneX, Math.min(startGapY, endGapY), Math.max(startGapY, endGapY), obstacles, direction, 10, Math.max(10, maxX - 10));
+        const d = `M ${sx.toFixed(1)} ${sy.toFixed(1)} L ${sx.toFixed(1)} ${startGapY.toFixed(1)} L ${laneX.toFixed(1)} ${startGapY.toFixed(1)} L ${laneX.toFixed(1)} ${endGapY.toFixed(1)} L ${tx.toFixed(1)} ${endGapY.toFixed(1)} L ${tx.toFixed(1)} ${ty.toFixed(1)}`;
+        paths.push(`<path class="profile-skill-edge-v51 ${esc(item.edge.kind || 'skill')}" data-edge-from="${esc(item.edge.from)}" data-edge-to="${esc(item.edge.to)}" d="${d}"/>`);
+      });
+      svg.setAttribute('viewBox', `0 0 ${maxX} ${maxY}`);
+      svg.setAttribute('width', String(maxX));
+      svg.setAttribute('height', String(maxY));
+      svg.innerHTML = paths.join('');
+    });
+  }
+
+  let skillTreeRafV51 = 0;
+  function scheduleSkillTreeLinesV51(root = document) {
+    if (skillTreeRafV51) cancelAnimationFrame(skillTreeRafV51);
+    skillTreeRafV51 = requestAnimationFrame(() => {
+      skillTreeRafV51 = requestAnimationFrame(() => {
+        skillTreeRafV51 = 0;
+        drawSkillTreeLinesV51(root);
+      });
+    });
+  }
+
+  async function upgradeAbilityV51(abilityKey) {
+    const ability = ABILITY_BY_KEY_V50[abilityKey];
+    const current = normalizePlayerProfileV2(App.state.users[App.currentUserId] || App.currentUser || {});
+    if (!current?.id || !ability) return;
+    const abilities = normalizeAbilitiesV50(current.abilities || {});
+    const value = Number(abilities[abilityKey] || 0);
+    if (value >= ABILITY_MAX_V53) {
+      Toast.show(`${ability.label} уже на максимуме ${ABILITY_MAX_V53}`, 'info');
+      return;
+    }
+    if (Number(current.skillPoints || 0) < 1) {
+      Toast.show('Не хватает очков улучшения', 'err');
+      return;
+    }
+    if (!window.confirm(`Улучшить «${ability.label}» до ${Math.min(ABILITY_MAX_V53, value + 1)} за 1 очко улучшения?`)) return;
+    abilities[abilityKey] = Math.min(ABILITY_MAX_V53, value + 1);
+    current.abilities = abilities;
+    current.skillPoints = Math.max(0, Number(current.skillPoints || 0) - 1);
+    App.state.users[current.id] = normalizePlayerProfileV2(current);
+    PLAYER_TEMPLATES[current.id] = deep(App.state.users[current.id]);
+    await App.writeLocalMirrors();
+    const patch = { abilities: App.state.users[current.id].abilities, skillPoints: App.state.users[current.id].skillPoints };
+    const syncRes = await PlayerSync.pushPlayerPatch(current.id, patch, { notice: `${ability.label} улучшена`, rerender: true });
+    if (!syncRes?.ok && syncRes?.status !== 'disabled') Toast.show(`Характеристика сохранена локально, но облако не обновилось: ${syncRes?.message || 'unknown error'}`, 'info');
+    const modal = ensureProfileModalV50();
+    modal.querySelector('#profile-extra-modal-body-v50').innerHTML = skillsModalMarkupV50(App.state.users[current.id]);
+    bindProfileModalActionsV50(modal);
+    UI.renderProfile();
+  }
+
+  function bindSkillTreePanV57(root = document) {
+    const scrolls = Array.from(root.querySelectorAll?.('.profile-skill-tree-scroll-v51') || []);
+    scrolls.forEach(scroll => {
+      if (scroll.dataset.panBoundV57 === '1') return;
+      scroll.dataset.panBoundV57 = '1';
+      let active = false;
+      let moved = false;
+      let startX = 0;
+      let startY = 0;
+      let startLeft = 0;
+      let startTop = 0;
+      const stop = () => {
+        if (!active) return;
+        active = false;
+        scroll.classList.remove('is-panning-v57');
+        document.removeEventListener('mousemove', move);
+        document.removeEventListener('mouseup', stop);
+        if (moved) {
+          scroll.dataset.suppressClickV57 = '1';
+          setTimeout(() => { delete scroll.dataset.suppressClickV57; }, 80);
+        }
+      };
+      const move = event => {
+        if (!active) return;
+        const dx = event.clientX - startX;
+        const dy = event.clientY - startY;
+        if (Math.abs(dx) > 3 || Math.abs(dy) > 3) moved = true;
+        scroll.scrollLeft = startLeft - dx;
+        scroll.scrollTop = startTop - dy;
+      };
+      scroll.addEventListener('mousedown', event => {
+        if (event.button !== 0) return;
+        if (event.target?.closest?.('button,input,select,textarea,a,label')) return;
+        active = true;
+        moved = false;
+        startX = event.clientX;
+        startY = event.clientY;
+        startLeft = scroll.scrollLeft;
+        startTop = scroll.scrollTop;
+        scroll.classList.add('is-panning-v57');
+        document.addEventListener('mousemove', move);
+        document.addEventListener('mouseup', stop);
+        event.preventDefault();
+      });
+    });
+  }
+
+  function bindProfileModalActionsV50(root = document) {
+    root.querySelectorAll('.profile-learn-skill-btn-v50').forEach(button => {
+      if (button.dataset.boundV50 === '1') return;
+      button.dataset.boundV50 = '1';
+      button.addEventListener('click', () => learnSkillV50(button.dataset.skillId));
+    });
+    root.querySelectorAll('.profile-upgrade-ability-btn-v51').forEach(button => {
+      if (button.dataset.boundV51 === '1') return;
+      button.dataset.boundV51 = '1';
+      button.addEventListener('click', () => upgradeAbilityV51(button.dataset.abilityKey));
+    });
+    root.querySelectorAll('.profile-skill-info-btn-v52').forEach(button => {
+      if (button.dataset.boundV52 === '1') return;
+      button.dataset.boundV52 = '1';
+      button.addEventListener('click', () => openSkillDetailsV52(button.dataset.skillId));
+    });
+    root.querySelectorAll('[data-skill-tree="1"] [data-tree-node-id]').forEach(node => {
+      if (node.dataset.boundTreeV53 === '1') return;
+      node.dataset.boundTreeV53 = '1';
+      node.addEventListener('click', event => {
+        if (event.target?.closest?.('button')) return;
+        const scroll = node.closest('.profile-skill-tree-scroll-v51');
+        if (scroll?.dataset?.suppressClickV57 === '1') {
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
+        const kind = node.dataset.treeKind;
+        const id = node.dataset.treeId;
+        if (kind && id) setSkillTreeFocusV53(kind, id, root);
+      });
+      node.addEventListener('mouseenter', () => {
+        const tree = node.closest('[data-skill-tree="1"]');
+        if (tree) setSkillTreeHoverV53(tree, node.dataset.treeNodeId);
+      });
+      node.addEventListener('mouseleave', () => {
+        const tree = node.closest('[data-skill-tree="1"]');
+        if (tree) setSkillTreeHoverV53(tree, '');
+      });
+    });
+    bindSkillTreePanV57(root);
+    applySkillTreeFocusV53(root);
+    scheduleSkillTreeLinesV51(root);
+  }
+
+  function enhanceRenderedProfileV50() {
+    const root = document.getElementById('profile-content');
+    const user = normalizePlayerProfileV2(App.currentUser);
+    if (!root || !user) return;
+    const abilitiesCard = Array.from(root.querySelectorAll('.profile-card')).find(card => Array.from(card.querySelectorAll('.section-title')).some(title => title.textContent.trim() === 'Характеристики'));
+    const abilitiesNode = abilitiesCard?.querySelector('.abilities');
+    if (abilitiesNode) {
+      abilitiesNode.classList.add('profile-abilities-grid-v50');
+      abilitiesNode.innerHTML = abilityTilesMarkupV50(user);
+    }
+    const socialCard = Array.from(root.querySelectorAll('.profile-card')).find(card => Array.from(card.querySelectorAll('.section-title')).some(title => title.textContent.trim() === 'Социальные связи'));
+    if (socialCard && !socialCard.querySelector('.profile-social-actions-v50')) {
+      const titles = Array.from(socialCard.querySelectorAll('.section-title'));
+      const orgTitle = titles.find(title => title.textContent.trim() === 'Организации');
+      if (orgTitle) {
+        const next = orgTitle.nextElementSibling;
+        orgTitle.remove();
+        if (next) next.remove();
+      }
+      socialCard.insertAdjacentHTML('beforeend', `<div class="profile-social-actions-v50"><button class="secondary" type="button" id="open-reputation-v50">РЕПУТАЦИЯ</button><button class="secondary" type="button" id="open-skills-v50">НАВЫКИ</button></div>`);
+      socialCard.querySelector('#open-reputation-v50')?.addEventListener('click', () => {
+        openProfileModalV50('Репутация', user.displayName || 'Профиль', reputationModalMarkupV50(normalizePlayerProfileV2(App.currentUser)));
+      });
+      socialCard.querySelector('#open-skills-v50')?.addEventListener('click', () => {
+        const modal = openProfileModalV50('Навыки', user.displayName || 'Профиль', skillsModalMarkupV50(normalizePlayerProfileV2(App.currentUser)));
+        bindProfileModalActionsV50(modal);
+      });
+    }
+  }
+
+  const __renderProfileV50 = UI.renderProfile.bind(UI);
+  UI.renderProfile = function() {
+    const result = __renderProfileV50();
+    enhanceRenderedProfileV50();
+    return result;
+  };
+
+  function renderAbilityInputsV50(user) {
+    const abilities = normalizeAbilitiesV50(user.abilities || {});
+    return `<div class="cols3">${ABILITY_MODEL_V50.map(item => `<div class="field"><label>${esc(item.label)}</label><input class="input" type="number" min="0" max="${ABILITY_MAX_V53}" name="ability_${esc(item.key)}" value="${Number(abilities[item.key] || 0)}" /></div>`).join('')}</div>`;
+  }
+
+  function renderReputationRowsEditorV50(rows = []) {
+    const normalizedRows = normalizeReputationRowsV50(rows);
+    const options = getVisibleFactionsV50({ role: 'gm' });
+    const rowMarkup = row => `<div class="reputation-editor-row-v50">
+      <select class="select" name="rep_orgId"><option value="">Свободная запись</option>${options.map(org => `<option value="${esc(org.id)}" ${org.id === row.orgId ? 'selected' : ''}>${esc(org.name)}</option>`).join('')}</select>
+      <input class="input" name="rep_name" value="${esc(row.name || '')}" placeholder="Название, если нет в списке" />
+      <input class="input" type="number" name="rep_value" value="${Number(row.value || 0)}" placeholder="Репутация" />
+      <input class="input" name="rep_status" value="${esc(row.status || '')}" placeholder="Статус / ранг" />
+      <input class="input" name="rep_note" value="${esc(row.note || '')}" placeholder="Заметка" />
+      <button class="ghost" type="button" data-remove-rep-row-v50>×</button>
+    </div>`;
+    return `<div class="reputation-editor-v50" data-reputation-editor-v50>${(normalizedRows.length ? normalizedRows : [{ orgId: '', name: '', value: 0, status: '', note: '' }]).map(rowMarkup).join('')}</div><button class="secondary" type="button" data-add-rep-row-v50>ADD_REPUTATION</button>`;
+  }
+
+  function readReputationRowsEditorV50(formEl) {
+    return Array.from(formEl.querySelectorAll('.reputation-editor-row-v50')).map(row => ({
+      orgId: String(row.querySelector('[name="rep_orgId"]')?.value || '').trim(),
+      name: String(row.querySelector('[name="rep_name"]')?.value || '').trim(),
+      value: numberOrFallbackV50(row.querySelector('[name="rep_value"]')?.value, 0),
+      status: String(row.querySelector('[name="rep_status"]')?.value || '').trim(),
+      note: String(row.querySelector('[name="rep_note"]')?.value || '').trim()
+    })).filter(row => row.orgId || row.name || row.value || row.status || row.note);
+  }
+
+  function bindReputationRowsEditorV50(root = document) {
+    root.querySelectorAll('[data-add-rep-row-v50]').forEach(button => {
+      if (button.dataset.boundV50 === '1') return;
+      button.dataset.boundV50 = '1';
+      button.addEventListener('click', () => {
+        const editor = button.previousElementSibling;
+        if (!editor?.matches('[data-reputation-editor-v50]')) return;
+        editor.insertAdjacentHTML('beforeend', renderReputationRowsEditorV50([{ orgId: '', name: '', value: 0, status: '', note: '' }]).match(/<div class="reputation-editor-v50"[^>]*>([\s\S]*)<\/div><button/)?.[1] || '');
+        bindReputationRowsEditorV50(root);
+      });
+    });
+    root.querySelectorAll('[data-remove-rep-row-v50]').forEach(button => {
+      if (button.dataset.boundV50 === '1') return;
+      button.dataset.boundV50 = '1';
+      button.addEventListener('click', () => button.closest('.reputation-editor-row-v50')?.remove());
+    });
+  }
+
+  function renderAbilityRequirementsEditorV52(skill) {
+    const values = abilityRequirementsMapV52(skill);
+    return `<div class="skill-ability-req-grid-v52">${ABILITY_MODEL_V50.map(item => `<div class="field"><label>${esc(item.label)}</label><input class="input" type="number" min="0" max="${ABILITY_MAX_V53}" name="requiredAbility_${esc(item.key)}" value="${Number(values[item.key] || 0)}" placeholder="0" /></div>`).join('')}</div>`;
+  }
+
+  function renderSkillSelectorV50(selected = []) {
+    return renderCheckboxSelector('skillIds', getVisibleLearnableSkillsV55({ role: 'gm' }), normalizeSkillIdArrayV50(selected), 'skill', 'Нет навыков');
+  }
+
+  function renderSpecializationSelectorV55(name, selected = []) {
+    return renderCheckboxSelector(name, getVisibleSpecializationsV55({ role: 'gm' }), normalizeSkillIdArrayV50(selected), 'skill', 'Нет специализаций');
+  }
+
+  function renderSpecializationInputsV55(user) {
+    const specs = getVisibleSpecializationsV55({ role: 'gm' });
+    const values = normalizeSpecializationValuesV55(user.specializations || {});
+    if (!specs.length) return '<div class="small-note">Специализации ещё не созданы в World Config → Навыки.</div>';
+    return `<div class="skill-ability-req-grid-v52 specialization-value-grid-v55">${specs.map(spec => `<div class="field"><label>${esc(spec.name)}</label><input class="input" type="number" min="0" name="specialization_${esc(spec.id)}" value="${Number(values[spec.id] || 0)}" /></div>`).join('')}</div>`;
+  }
+
+  function readSpecializationInputsV55(formEl) {
+    const out = {};
+    getVisibleSpecializationsV55({ role: 'gm' }).forEach(spec => {
+      out[spec.id] = Math.max(0, Math.floor(numberOrFallbackV50(formEl.querySelector(`[name="specialization_${CSS.escape(spec.id)}"]`)?.value, 0)));
+    });
+    return out;
+  }
+
+  Configurator.renderFactionEditor = function(entity) {
+    const faction = normalizeFactionV50(entity);
+    return `<form id="config-editor-form" class="form" data-entity-type="factions">
+      ${this.renderHeader(faction, 'Организация мира: фракция, институт, клан, культ, корпорация или другая сила для репутации персонажей.')}
+      ${imageFieldMarkup(faction, 'Эмблема / изображение организации')}
+      <div class="cols3"><div class="field"><label>ID</label><input class="input" name="id" value="${esc(faction.id)}" /></div><div class="field"><label>Название</label><input class="input" name="name" value="${esc(faction.name)}" /></div><div class="field"><label>Тип</label><input class="input" name="type" value="${esc(faction.type)}" placeholder="Фракция / Дом / Культ" /></div></div>
+      <div class="cols3"><div class="field"><label>Влияние</label><input class="input" name="influence" value="${esc(faction.influence)}" placeholder="Локальное / Системное / Секторальное" /></div><div class="field"><label>Шкала репутации</label><input class="input" name="reputationScale" value="${esc(faction.reputationScale)}" placeholder="-100..100 / ранги / статусы" /></div><div class="field"><label>Цвет</label><input class="input" name="color" value="${esc(faction.color)}" /></div></div>
+      ${this.renderVisibilityField(faction)}
+      <div class="field"><label>Описание</label><textarea class="area" name="description">${esc(faction.description)}</textarea>${typeof __htmlHint !== 'undefined' ? __htmlHint : ''}</div>
+      <div class="field"><label>Связанные статьи</label>${renderRelatedArticlesEditor(faction.relatedArticleIds || [])}</div>
+      <button class="primary" type="submit">SAVE_ORGANIZATION</button>
+    </form>`;
+  };
+
+  Configurator.renderSkillEditor = function(entity) {
+    const skill = normalizeSkillV50(entity);
+    return `<form id="config-editor-form" class="form" data-entity-type="skills">
+      ${this.renderHeader(skill, 'Навык или специализация. Навык игрок изучает за очки улучшения, а специализация отображается в профиле как вторичная характеристика.')}
+      ${imageFieldMarkup(skill, 'Иконка навыка')}
+      <div class="cols3"><div class="field"><label>ID</label><input class="input" name="id" value="${esc(skill.id)}" /></div><div class="field"><label>Название</label><input class="input" name="name" value="${esc(skill.name)}" /></div><div class="field"><label>Тип</label><select class="select" name="skillType"><option value="skill" ${skill.skillType === SKILL_TYPE_SKILL_V55 ? 'selected' : ''}>Навык</option><option value="specialization" ${skill.skillType === SKILL_TYPE_SPECIALIZATION_V55 ? 'selected' : ''}>Вторичная характеристика / специализация</option></select></div></div>
+      <div class="field"><label>Категория</label><input class="input" name="category" value="${esc(skill.category)}" /></div>
+      <div class="cols2"><div class="field"><label>Стоимость в очках улучшения</label><input class="input" type="number" min="0" name="cost" value="${Number(skill.cost || 0)}" /></div><div class="field"><label>Цвет</label><input class="input" name="color" value="${esc(skill.color)}" /></div></div>
+      <div class="field"><label>Условия: характеристики</label>${renderAbilityRequirementsEditorV52(skill)}<div class="small-note">0 означает, что требования по этой характеристике нет.</div></div>
+      <div class="field"><label>Условие: навыки и специализации</label>${renderCheckboxSelector('requiredSkillIds', getVisibleSkillTreeItemsV56({ role: 'gm' }).filter(item => item.id !== skill.id), skill.requiredSkillIds || [], 'skill', 'Нет навыков или специализаций')}</div>
+      <div class="field"><label>Повышает специализации на 1 при изучении</label>${renderSpecializationSelectorV55('specializationIncreaseIds', skill.specializationIncreases || [])}<div class="small-note">Работает для типа «Навык». Отмеченные специализации увеличиваются на 1 после изучения навыка игроком.</div></div>
+      ${this.renderVisibilityField(skill)}
+      <div class="field"><label>Описание</label><textarea class="area" name="description">${esc(skill.description)}</textarea>${typeof __htmlHint !== 'undefined' ? __htmlHint : ''}</div>
+      <div class="field"><label>Связанные статьи</label>${renderRelatedArticlesEditor(skill.relatedArticleIds || [])}</div>
+      <button class="primary" type="submit">SAVE_SKILL</button>
+    </form>`;
+  };
+
+  const __renderPlayerEditorV50 = Configurator.renderPlayerEditor.bind(Configurator);
+  Configurator.renderPlayerEditor = function(user) {
+    user = normalizePlayerProfileV2(user);
+    const primaryOptions = typeof getWeaponOptionsBySlotV2 === 'function' ? getWeaponOptionsBySlotV2('primary') : WEAPON_OPTIONS;
+    const secondaryOptions = typeof getWeaponOptionsBySlotV2 === 'function' ? getWeaponOptionsBySlotV2('secondary') : WEAPON_OPTIONS;
+    const armorOptions = typeof getArmorOptionsV2 === 'function' ? getArmorOptionsV2() : ARMOR_OPTIONS;
+    return `<form id="config-editor-form" class="form" data-entity-type="players">
+      ${this.renderHeader(user, 'Шаблон персонажа: здоровье, экипировка, характеристики, репутация, очки улучшения и навыки.')}
+      ${imageFieldMarkup(user, 'Портрет персонажа')}
+      <div class="cols3"><div class="field"><label>ID</label><input class="input" name="id" value="${esc(user.id)}" /></div><div class="field"><label>Короткое имя</label><input class="input" name="shortName" value="${esc(user.shortName || '')}" /></div><div class="field"><label>Роль</label><select class="select" name="role"><option value="player" ${user.role === 'player' ? 'selected' : ''}>player</option><option value="gm" ${user.role === 'gm' ? 'selected' : ''}>gm</option></select></div></div>
+      <div class="cols3"><div class="field"><label>Отображаемое имя</label><input class="input" name="displayName" value="${esc(user.displayName)}" /></div><div class="field"><label>Ранг</label><input class="input" name="rank" value="${esc(user.rank || '')}" /></div><div class="field"><label>Глиф</label><input class="input" name="avatarGlyph" value="${esc(user.avatarGlyph || '')}" /></div></div>
+      <div class="cols3"><div class="field"><label>Пароль</label><input class="input" name="pass" value="${esc(user.pass || '')}" /></div><div class="field"><label>Кредиты</label><input class="input" type="number" name="credits" value="${Number(user.credits || 0)}" /></div><div class="field"><label>Текущая планета</label><select class="select" name="currentPlanetId"><option value="">Не задана</option>${Object.values(PLANETS).map(option => `<option value="${option.id}" ${option.id === (user.currentPlanetId || '') ? 'selected' : ''}>${esc(option.name)}</option>`).join('')}</select></div></div>
+      <div class="cols3"><div class="field"><label>Текущее здоровье</label><input class="input" type="number" name="hpCurrent" value="${Number(user.stats.hpCurrent || 0)}" /></div><div class="field"><label>Макс. здоровье</label><input class="input" type="number" name="hpMax" value="${Number(user.stats.hpMax || 0)}" /></div><div class="field"><label>Энергия (текущая)</label><input class="input" type="number" name="energyCurrent" value="${Number(user.stats.energyCurrent || 0)}" /></div></div>
+      <div class="cols3"><div class="field"><label>Текущий щит</label><input class="input" type="number" name="shieldCurrent" value="${Number(user.stats.shieldCurrent || 0)}" /></div><div class="field"><label>Макс. щит</label><input class="input" type="number" name="shieldMax" value="${Number(user.stats.shieldMax || 0)}" /></div><div class="field"><label>Энергия (базовый максимум)</label><input class="input" type="number" name="energyMax" value="${Number(user.stats.energyMax || 1)}" /></div></div>
+      <div class="section-title">Характеристики</div>${renderAbilityInputsV50(user)}
+      <div class="section-title">Специализации</div>${renderSpecializationInputsV55(user)}
+      <div class="cols3"><div class="field"><label>Основное оружие</label><select class="select" name="primaryWeapon"><option value="">—</option>${primaryOptions.map(option => `<option value="${option.id}" ${option.id === (user.equipmentSlots?.primaryWeapon || '') ? 'selected' : ''}>${esc(option.name)}</option>`).join('')}</select></div><div class="field"><label>Вторичное оружие</label><select class="select" name="secondaryWeapon"><option value="">—</option>${secondaryOptions.map(option => `<option value="${option.id}" ${option.id === (user.equipmentSlots?.secondaryWeapon || '') ? 'selected' : ''}>${esc(option.name)}</option>`).join('')}</select></div><div class="field"><label>Броня</label><select class="select" name="armor"><option value="">—</option>${armorOptions.map(option => `<option value="${option.id}" ${option.id === (user.equipmentSlots?.armor || '') ? 'selected' : ''}>${esc(option.name)}</option>`).join('')}</select></div></div>
+      <div class="field"><label>Лор</label><textarea class="area" name="lore">${esc(user.lore || '')}</textarea>${typeof __htmlHint !== 'undefined' ? __htmlHint : ''}</div>
+      <div class="field"><label>Заметки</label><textarea class="area" name="notes">${esc(user.notes || '')}</textarea>${typeof __htmlHint !== 'undefined' ? __htmlHint : ''}</div>
+      <div class="field"><label>Инвентарь</label>${renderInventoryRowsEditor(user.inventory || [])}</div>
+      <div class="field"><label>Импланты (name|energyCost|description)</label><textarea class="area inv-editor" name="implants">${esc(typeof implantsAdvancedTextV2 === 'function' ? implantsAdvancedTextV2(user.implants) : implantsText(user.implants))}</textarea></div>
+      <div class="field"><label>NPC-связи</label>${renderCheckboxSelector('npcIds', Object.values(NPCS), user.social?.npcIds || [], 'npc', 'Нет NPC')}</div>
+      <div class="field"><label>Репутация</label>${renderReputationRowsEditorV50(user.social?.reputation || [])}<div class="small-note">Выдаётся ведущим. Формирует окно «Репутация» в профиле.</div></div>
+      <div class="cols2"><div class="field"><label>Очки улучшения</label><input class="input" type="number" min="0" name="skillPoints" value="${Number(user.skillPoints || 0)}" /></div><div class="field"><label>Навыки персонажа</label>${renderSkillSelectorV50(user.skills || [])}<div class="small-note">Ведущий может выдать любой навык, даже если условия не соблюдены.</div></div></div>
+      <div class="field"><label>Связанные статьи</label>${renderRelatedArticlesEditor(user.relatedArticleIds || [])}</div>
+      <button class="primary" type="submit">SAVE_PLAYER</button>
+    </form>`;
+  };
+
+  const __configGetItemsV50 = Configurator.getItems.bind(Configurator);
+  Configurator.getItems = function(type) {
+    if (type === 'factions') return sortEntitiesForList(Object.values(FACTIONS_V50 || {}));
+    if (type === 'skills') return sortEntitiesForList(Object.values(SKILLS_V50 || {}));
+    return __configGetItemsV50(type);
+  };
+
+  const __configRenderEditorV50 = Configurator.renderEditor.bind(Configurator);
+  Configurator.renderEditor = function(entity) {
+    if (this.selectedType === 'factions') return this.renderFactionEditor(entity);
+    if (this.selectedType === 'skills') return this.renderSkillEditor(entity);
+    return __configRenderEditorV50(entity);
+  };
+
+  const __configInsertEntityV50 = Configurator.insertEntity.bind(Configurator);
+  Configurator.insertEntity = function(type, entity) {
+    if (type === 'factions') { const item = normalizeFactionV50(entity); FACTIONS_V50[item.id] = item; syncFactionsWorldDataV50(); return; }
+    if (type === 'skills') { const item = normalizeSkillV50(entity); SKILLS_V50[item.id] = item; syncSkillsWorldDataV50(); return; }
+    return __configInsertEntityV50(type, entity);
+  };
+
+  const __configRemoveEntityV50 = Configurator.removeEntity.bind(Configurator);
+  Configurator.removeEntity = function(type, id) {
+    if (type === 'factions') { delete FACTIONS_V50[id]; for (const player of Object.values(PLAYER_TEMPLATES || {})) { if (player.social?.reputation) player.social.reputation = normalizeReputationRowsV50(player.social.reputation).filter(row => row.orgId !== id); } syncFactionsWorldDataV50(); return; }
+    if (type === 'skills') { delete SKILLS_V50[id]; for (const player of Object.values(PLAYER_TEMPLATES || {})) { player.skills = normalizeSkillIdArrayV50(player.skills).filter(skillId => skillId !== id); if (player.specializations && typeof player.specializations === 'object') delete player.specializations[id]; } Object.values(SKILLS_V50).forEach(skill => { skill.requiredSkillIds = normalizeSkillIdArrayV50(skill.requiredSkillIds).filter(skillId => skillId !== id); skill.specializationIncreases = normalizeSpecializationIncreaseIdsV55(skill.specializationIncreases || []).filter(skillId => skillId !== id); }); syncSkillsWorldDataV50(); return; }
+    return __configRemoveEntityV50(type, id);
+  };
+
+  const __configBuildPayloadV50 = Configurator.buildPayload.bind(Configurator);
+  Configurator.buildPayload = function(type) {
+    if (type === 'factions') return serializeWorldSection('factions', FACTIONS_V50);
+    if (type === 'skills') return serializeWorldSection('skills', SKILLS_V50);
+    return __configBuildPayloadV50(type);
+  };
+
+  const __configCollectEntityV50 = Configurator.collectEntity.bind(Configurator);
+  Configurator.collectEntity = function(type, formEl, formData = new FormData(formEl)) {
+    const mediaField = formEl.querySelector('.media-field');
+    const image = String(formEl.querySelector('input[name="imageData"]')?.value || formData.get('imageData') || mediaField?.dataset?.savedImageValue || mediaField?.dataset?.pendingImageValue || '').trim();
+    if (type === 'factions') {
+      return normalizeFactionV50({
+        id: slugifyId(formData.get('id') || formData.get('name') || '', 'org'),
+        name: String(formData.get('name') || '').trim(),
+        type: String(formData.get('type') || '').trim(),
+        influence: String(formData.get('influence') || '').trim(),
+        reputationScale: String(formData.get('reputationScale') || '').trim(),
+        color: String(formData.get('color') || '#7df9ff').trim() || '#7df9ff',
+        description: String(formData.get('description') || '').trim(),
+        image,
+        relatedArticleIds: getCheckedValues(formEl, 'relatedArticleIds'),
+        visibility: { playerIds: getCheckedValues(formEl, 'visibilityPlayerIds') }
+      });
+    }
+    if (type === 'skills') {
+      return normalizeSkillV50({
+        id: slugifyId(formData.get('id') || formData.get('name') || '', 'skill'),
+        name: String(formData.get('name') || '').trim(),
+        skillType: normalizeSkillTypeV55(formData.get('skillType') || ''),
+        category: String(formData.get('category') || '').trim(),
+        cost: Number(formData.get('cost') || 0),
+        requiredAbilities: ABILITY_MODEL_V50.map(item => ({ key: item.key, value: normalizeAbilityValueV53(formData.get(`requiredAbility_${item.key}`) || 0, 0) })).filter(row => row.value > 0),
+        requiredSkillIds: getCheckedValues(formEl, 'requiredSkillIds'),
+        specializationIncreases: getCheckedValues(formEl, 'specializationIncreaseIds'),
+        color: String(formData.get('color') || '#7df9ff').trim() || '#7df9ff',
+        description: String(formData.get('description') || '').trim(),
+        image,
+        relatedArticleIds: getCheckedValues(formEl, 'relatedArticleIds'),
+        visibility: { playerIds: getCheckedValues(formEl, 'visibilityPlayerIds') }
+      });
+    }
+    if (type === 'players') {
+      return normalizePlayerProfileV2({
+        id: slugifyId(formData.get('id') || formData.get('displayName') || '', 'player'),
+        role: String(formData.get('role') || 'player'),
+        pass: String(formData.get('pass') || '0000').trim(),
+        shortName: String(formData.get('shortName') || '').trim(),
+        displayName: String(formData.get('displayName') || '').trim(),
+        rank: String(formData.get('rank') || '').trim(),
+        avatarGlyph: String(formData.get('avatarGlyph') || '').trim(),
+        credits: Number(formData.get('credits') || 0),
+        lore: String(formData.get('lore') || '').trim(),
+        notes: String(formData.get('notes') || '').trim(),
+        stats: {
+          hpCurrent: Number(formData.get('hpCurrent') || 0),
+          hpMax: Number(formData.get('hpMax') || 0),
+          shieldCurrent: Number(formData.get('shieldCurrent') || 0),
+          shieldMax: Number(formData.get('shieldMax') || 0),
+          energyCurrent: Number(formData.get('energyCurrent') || 0),
+          energyMax: Number(formData.get('energyMax') || 1)
+        },
+        abilities: Object.fromEntries(ABILITY_MODEL_V50.map(item => [item.key, normalizeAbilityValueV53(formData.get(`ability_${item.key}`) || 0, 0)])),
+        specializations: applyNewlyGrantedSkillBonusesV55(readSpecializationInputsV55(formEl), (PLAYER_TEMPLATES?.[Configurator.selectedId] || App.state?.users?.[Configurator.selectedId] || {}).skills || [], getCheckedValues(formEl, 'skillIds')),
+        equipmentSlots: {
+          primaryWeapon: String(formData.get('primaryWeapon') || ''),
+          secondaryWeapon: String(formData.get('secondaryWeapon') || ''),
+          armor: String(formData.get('armor') || '')
+        },
+        inventory: readInventoryRows(formEl),
+        implants: typeof parseImplantsAdvancedEditorV2 === 'function' ? parseImplantsAdvancedEditorV2(formData.get('implants') || '') : parseImplantsEditor(formData.get('implants') || ''),
+        social: { npcIds: getCheckedValues(formEl, 'npcIds'), orgs: [], reputation: readReputationRowsEditorV50(formEl) },
+        skillPoints: Number(formData.get('skillPoints') || 0),
+        skills: getCheckedValues(formEl, 'skillIds'),
+        currentPlanetId: String(formData.get('currentPlanetId') || '').trim(),
+        relatedArticleIds: getCheckedValues(formEl, 'relatedArticleIds'),
+        image
+      });
+    }
+    return __configCollectEntityV50(type, formEl, formData);
+  };
+
+  const __configRemapReferencesV50 = Configurator.remapReferences.bind(Configurator);
+  Configurator.remapReferences = function(type, oldId, newId) {
+    if (type === 'factions') {
+      if (oldId !== newId && FACTIONS_V50[oldId]) { FACTIONS_V50[newId] = { ...FACTIONS_V50[oldId], id: newId }; delete FACTIONS_V50[oldId]; }
+      for (const player of Object.values(PLAYER_TEMPLATES || {})) {
+        if (Array.isArray(player.social?.reputation)) player.social.reputation = player.social.reputation.map(row => row.orgId === oldId ? { ...row, orgId: newId } : row);
+      }
+      return;
+    }
+    if (type === 'skills') {
+      if (oldId !== newId && SKILLS_V50[oldId]) { SKILLS_V50[newId] = { ...SKILLS_V50[oldId], id: newId }; delete SKILLS_V50[oldId]; }
+      for (const player of Object.values(PLAYER_TEMPLATES || {})) {
+        player.skills = normalizeSkillIdArrayV50(player.skills).map(id => id === oldId ? newId : id);
+        if (player.specializations && Object.prototype.hasOwnProperty.call(player.specializations, oldId)) {
+          player.specializations[newId] = player.specializations[oldId];
+          delete player.specializations[oldId];
+        }
+      }
+      for (const skill of Object.values(SKILLS_V50 || {})) {
+        skill.requiredSkillIds = normalizeSkillIdArrayV50(skill.requiredSkillIds).map(id => id === oldId ? newId : id);
+        skill.specializationIncreases = normalizeSpecializationIncreaseIdsV55(skill.specializationIncreases || []).map(id => id === oldId ? newId : id);
+      }
+      return;
+    }
+    return __configRemapReferencesV50(type, oldId, newId);
+  };
+
+  const __configRenderV50 = Configurator.render.bind(Configurator);
+  Configurator.render = function() {
+    const result = __configRenderV50();
+    const root = document.getElementById('config-content');
+    bindReputationRowsEditorV50(root);
+    return result;
+  };
+
+  const __appRenderLoginPreviewV50 = App.renderLoginPreview.bind(App);
+  App.renderLoginPreview = function() {
+    try {
+      if (this.state?.users) {
+        this.state.users = Object.fromEntries(Object.entries(this.state.users || {}).map(([id, player]) => [id, normalizePlayerProfileV2(player)]));
+      }
+    } catch {}
+    return __appRenderLoginPreviewV50();
+  };
+
+  window.addEventListener('resize', () => scheduleSkillTreeLinesV51(document));
+})();
+
+
+/* v60 campaign access, guest mode, NPC stat/chat controls, global ambient library */
+(function(){
+  if (window.__campaignAccessNpcAmbientV60) return;
+  window.__campaignAccessNpcAmbientV60 = true;
+
+  const GUEST_ID_V60 = '__guest__';
+  const GUEST_PROFILE_V60 = {
+    id: GUEST_ID_V60,
+    role: 'guest',
+    pass: '',
+    shortName: 'Guest',
+    displayName: 'Гость',
+    rank: 'Guest Access',
+    avatarGlyph: 'GS',
+    credits: 0,
+    stats: { hpCurrent: 0, hpMax: 0, shieldCurrent: 0, shieldMax: 0, energyCurrent: 0, energyMax: 1 },
+    abilities: { strength: 0, dexterity: 0, intelligence: 0, endurance: 0, will: 0, glory: 0 },
+    specializations: {},
+    skills: [],
+    skillPoints: 0,
+    inventory: [],
+    implants: [],
+    social: { npcIds: [], orgs: [], reputation: [] },
+    currentPlanetId: '',
+    campaignIds: ['guest'],
+    relatedArticleIds: []
+  };
+  const ABILITIES_V60 = [
+    { key: 'strength', label: 'Сила', short: 'СИЛ' },
+    { key: 'dexterity', label: 'Ловкость', short: 'ЛОВ' },
+    { key: 'intelligence', label: 'Интеллект', short: 'ИНТ' },
+    { key: 'endurance', label: 'Выносливость', short: 'ВЫН' },
+    { key: 'will', label: 'Воля', short: 'ВОЛ' },
+    { key: 'glory', label: 'Слава', short: 'СЛА' }
+  ];
+  let CAMPAIGNS_V60 = {};
+  let CAMPAIGN_LIST_V60 = [];
+
+  WORLD_SECTIONS.campaigns = { label: 'Игровые кампании', mapKey: 'CAMPAIGNS', listKey: 'CAMPAIGN_LIST' };
+
+  function uniqueStringsV60(value) {
+    return Array.from(new Set((Array.isArray(value) ? value : [])
+      .map(entry => String(entry?.id || entry?.campaignId || entry || '').trim())
+      .filter(Boolean)));
+  }
+  function normalizeCampaignV60(entity = {}) {
+    const id = slugifyId(entity.id || entity.name || entity.title || '', 'campaign');
+    return {
+      id,
+      name: String(entity.name || entity.title || 'Новая кампания').trim(),
+      status: String(entity.status || '').trim(),
+      color: String(entity.color || '#7df9ff').trim() || '#7df9ff',
+      description: String(entity.description || entity.summary || '').trim(),
+      image: String(entity.image || '').trim(),
+      relatedArticleIds: Array.isArray(entity.relatedArticleIds) ? entity.relatedArticleIds.map(String).filter(Boolean) : []
+    };
+  }
+  function normalizeCampaignSectionV60(section = {}) {
+    const source = section && typeof section === 'object' ? section : {};
+    const recordSource = source.CAMPAIGNS && typeof source.CAMPAIGNS === 'object' ? source.CAMPAIGNS : {};
+    const listSource = Array.isArray(source.CAMPAIGN_LIST) ? source.CAMPAIGN_LIST : [];
+    const out = {};
+    const add = (entry, fallbackId = '') => {
+      if (!entry || typeof entry !== 'object') return;
+      const item = normalizeCampaignV60({ ...entry, id: entry.id || fallbackId });
+      if (item.id) out[item.id] = item;
+    };
+    Object.entries(recordSource).forEach(([id, entry]) => add(entry, id));
+    listSource.forEach(entry => add(entry));
+    if (!Object.keys(out).length) {
+      out.main = normalizeCampaignV60({ id: 'main', name: 'Основная кампания', status: 'active', color: '#7df9ff' });
+      out.guest = normalizeCampaignV60({ id: 'guest', name: 'Гостевой доступ', status: 'guest', color: '#9bb4c8' });
+    }
+    return out;
+  }
+  function campaignListV60() {
+    return sortEntitiesForList(Object.values(CAMPAIGNS_V60 || {}));
+  }
+  function campaignIdsForPlayerV60(player = {}) {
+    const ids = uniqueStringsV60(player.campaignIds || player.campaigns || []);
+    if (player.campaignId) ids.push(String(player.campaignId).trim());
+    if (!ids.length && player.role === 'guest') return ['guest'];
+    return Array.from(new Set(ids.filter(Boolean)));
+  }
+  function normalizePlayerCampaignsV60(player = {}) {
+    const ids = campaignIdsForPlayerV60(player);
+    return { ...player, campaignIds: ids.length ? ids : ['main'] };
+  }
+  function visibilityTargetsV60() {
+    const players = sortEntitiesForList(Object.values(PLAYER_TEMPLATES || {})).filter(player => player.role !== 'gm');
+    if (!players.some(player => player.id === GUEST_ID_V60)) players.push(GUEST_PROFILE_V60);
+    return players;
+  }
+  function visibleIdsV60(entity) {
+    return Array.isArray(entity?.visibility?.playerIds) ? entity.visibility.playerIds.map(String) : [];
+  }
+  function syncCampaignsWorldDataV60() {
+    CAMPAIGN_LIST_V60 = campaignListV60();
+    if (worldData && typeof worldData === 'object') worldData.campaigns = serializeWorldSection('campaigns', CAMPAIGNS_V60);
+    Data.campaigns = CAMPAIGNS_V60;
+    Data.getCampaign = id => Data.campaigns?.[id] || null;
+  }
+  function campaignSelectorMarkupV60(selectedIds = []) {
+    return renderCheckboxSelector('campaignIds', campaignListV60(), uniqueStringsV60(selectedIds), 'campaign', 'Кампаний пока нет');
+  }
+  function currentLoginCampaignIdV60() {
+    const select = document.getElementById('login-campaign-select-v60');
+    return String(select?.value || localStorage.getItem('grpg-login-campaign-v60') || 'all');
+  }
+  function playersForLoginCampaignV60() {
+    const selected = currentLoginCampaignIdV60();
+    const sourcePlayers = sortEntitiesForList(Object.values(App.state?.users || PLAYER_TEMPLATES)).filter(player => player.role !== 'guest');
+    if (!selected || selected === 'all') return sourcePlayers;
+    return sourcePlayers.filter(player => campaignIdsForPlayerV60(player).includes(selected));
+  }
+  function npcAllowsPlayerChatV60(npc = {}) {
+    return npc && npc.allowPlayerChat !== false && npc.chatEnabled !== false && npc.disablePlayerChat !== true;
+  }
+  function npcSpecializationValuesMarkupV60(values = {}) {
+    const specs = Object.values(Data.skills || {}).filter(skill => String(skill.skillType || skill.type || '').toLowerCase() === 'specialization');
+    if (!specs.length) return '<div class="small-note">Специализации пока не созданы.</div>';
+    return `<div class="cols3">${specs.map(spec => `<div class="field"><label>${esc(spec.name || spec.id)}</label><input class="input" type="number" min="0" name="npcSpecialization_${esc(spec.id)}" value="${Number(values[spec.id] || 0)}" /></div>`).join('')}</div>`;
+  }
+  function readNpcSpecializationsV60(formEl) {
+    const out = {};
+    Object.values(Data.skills || {}).filter(skill => String(skill.skillType || skill.type || '').toLowerCase() === 'specialization').forEach(spec => {
+      out[spec.id] = Math.max(0, Math.floor(Number(formEl.querySelector(`[name="npcSpecialization_${CSS.escape(spec.id)}"]`)?.value || 0)));
+    });
+    return out;
+  }
+  function npcAbilityInputsV60(npc = {}) {
+    const abilities = npc.abilities || {};
+    return `<div class="cols3">${ABILITIES_V60.map(item => `<div class="field"><label>${esc(item.label)}</label><input class="input" type="number" min="0" max="5" name="npcAbility_${esc(item.key)}" value="${Number(abilities[item.key] || 0)}" /></div>`).join('')}</div>`;
+  }
+  function readNpcAbilitiesV60(formEl) {
+    return Object.fromEntries(ABILITIES_V60.map(item => [item.key, clamp(Number(formEl.querySelector(`[name="npcAbility_${CSS.escape(item.key)}"]`)?.value || 0), 0, 5)]));
+  }
+  function renderNpcSkillSelectorV60(selected = []) {
+    return renderCheckboxSelector('npcSkillIds', sortEntitiesForList(Object.values(Data.skills || {})), uniqueStringsV60(selected), 'skill', 'Навыков пока нет');
+  }
+  function normalizeNpcV60(npc = {}) {
+    const stats = npc.stats && typeof npc.stats === 'object' ? npc.stats : {};
+    return {
+      ...npc,
+      npcKind: String(npc.npcKind || npc.kind || 'unique'),
+      allowPlayerChat: npc.allowPlayerChat !== false && npc.chatEnabled !== false && npc.disablePlayerChat !== true,
+      stats: {
+        hpCurrent: Number(stats.hpCurrent ?? stats.hp ?? 0),
+        hpMax: Number(stats.hpMax ?? stats.hp ?? 0),
+        shieldCurrent: Number(stats.shieldCurrent ?? stats.shield ?? 0),
+        shieldMax: Number(stats.shieldMax ?? stats.shield ?? 0),
+        energyCurrent: Number(stats.energyCurrent ?? stats.energy ?? 0),
+        energyMax: Number(stats.energyMax ?? 1)
+      },
+      abilities: Object.fromEntries(ABILITIES_V60.map(item => [item.key, clamp(Number(npc.abilities?.[item.key] || 0), 0, 5)])),
+      skills: uniqueStringsV60(npc.skills || npc.skillIds || []),
+      specializations: npc.specializations && typeof npc.specializations === 'object' ? Object.fromEntries(Object.entries(npc.specializations).map(([id, value]) => [id, Math.max(0, Number(value) || 0)])) : {}
+    };
+  }
+
+  const __isEntityVisibleV60 = isEntityVisible;
+  isEntityVisible = function(entity, user = App.currentUser) {
+    if (!entity) return false;
+    if (!user || user.role === 'gm') return true;
+    if (!entity.visibility || typeof entity.visibility !== 'object') return __isEntityVisibleV60(entity, user);
+    const allowed = visibleIdsV60(entity);
+    if (!allowed.length) return false;
+    const uid = String(user.id || '');
+    if (allowed.includes(uid)) return true;
+    if (user.role === 'guest' && (allowed.includes(GUEST_ID_V60) || allowed.includes('guest'))) return true;
+    return false;
+  };
+
+  const __applyWorldDataV60 = applyWorldData;
+  applyWorldData = function(payload = {}) {
+    __applyWorldDataV60(payload);
+    CAMPAIGNS_V60 = normalizeCampaignSectionV60(payload.campaigns || {});
+    CAMPAIGN_LIST_V60 = campaignListV60();
+    PLAYER_TEMPLATES = Object.fromEntries(Object.entries(PLAYER_TEMPLATES || {}).map(([id, player]) => [id, normalizePlayerCampaignsV60(player)]));
+    PLAYER_LIST = sortEntitiesForList(Object.values(PLAYER_TEMPLATES));
+    if (App?.state?.users) App.state.users = Object.fromEntries(Object.entries(App.state.users || {}).map(([id, player]) => [id, normalizePlayerCampaignsV60(player)]));
+    NPCS = Object.fromEntries(Object.entries(NPCS || {}).map(([id, npc]) => [id, normalizeNpcV60(npc)]));
+    NPC_LIST = sortEntitiesForList(Object.values(NPCS));
+    Data.npcs = NPCS;
+    syncCampaignsWorldDataV60();
+  };
+
+  const __buildWorldSnapshotV60 = buildWorldSnapshot;
+  buildWorldSnapshot = function() {
+    const snap = __buildWorldSnapshotV60();
+    snap.campaigns = serializeWorldSection('campaigns', CAMPAIGNS_V60);
+    if (snap.players?.PLAYER_TEMPLATES) {
+      Object.entries(snap.players.PLAYER_TEMPLATES).forEach(([id, player]) => { snap.players.PLAYER_TEMPLATES[id] = normalizePlayerCampaignsV60(player); });
+      snap.players.PLAYER_LIST = sortEntitiesForList(Object.values(snap.players.PLAYER_TEMPLATES));
+    }
+    if (snap.npcs?.NPCS) {
+      Object.entries(snap.npcs.NPCS).forEach(([id, npc]) => { snap.npcs.NPCS[id] = normalizeNpcV60(npc); });
+      snap.npcs.NPC_LIST = sortEntitiesForList(Object.values(snap.npcs.NPCS));
+    }
+    return snap;
+  };
+
+  const __createBlankEntityV60 = createBlankEntity;
+  createBlankEntity = function(type) {
+    const stamp = Date.now().toString().slice(-6);
+    if (type === 'campaigns') return normalizeCampaignV60({ id: `campaign_${stamp}`, name: 'Новая кампания', status: 'active', color: '#7df9ff' });
+    const entity = __createBlankEntityV60(type);
+    if (type === 'players') return normalizePlayerCampaignsV60(entity);
+    if (type === 'npcs') return normalizeNpcV60({ ...entity, allowPlayerChat: true, npcKind: 'unique' });
+    return entity;
+  };
+
+  const __configRenderVisibilityFieldV60 = Configurator.renderVisibilityField.bind(Configurator);
+  Configurator.renderVisibilityField = function(entity) {
+    return `<div class="field"><label>Доступен игрокам / гостю</label>${renderCheckboxSelector('visibilityPlayerIds', visibilityTargetsV60(), visibleIdsV60(entity), 'player', 'Нет игроков')}<div class="small-note">Если ничего не отмечено — элемент не виден никому, кроме ДМа. Для гостя отметь «Гость».</div></div>`;
+  };
+
+  Configurator.renderCampaignEditor = function(entity) {
+    const campaign = normalizeCampaignV60(entity);
+    return `<form id="config-editor-form" class="form" data-entity-type="campaigns">
+      ${this.renderHeader(campaign, 'Игровая кампания для разделения персонажей на экране входа.')}
+      ${imageFieldMarkup(campaign, 'Изображение / эмблема кампании')}
+      <div class="cols3"><div class="field"><label>ID</label><input class="input" name="id" value="${esc(campaign.id)}" /></div><div class="field"><label>Название</label><input class="input" name="name" value="${esc(campaign.name)}" /></div><div class="field"><label>Статус</label><input class="input" name="status" value="${esc(campaign.status)}" placeholder="active / archived / guest" /></div></div>
+      <div class="field"><label>Цвет</label><input class="input" name="color" value="${esc(campaign.color)}" /></div>
+      <div class="field"><label>Описание</label><textarea class="area" name="description">${esc(campaign.description)}</textarea>${typeof __htmlHint !== 'undefined' ? __htmlHint : ''}</div>
+      <div class="field"><label>Связанные статьи</label>${renderRelatedArticlesEditor(campaign.relatedArticleIds || [])}</div>
+      <button class="primary" type="submit">SAVE_CAMPAIGN</button>
+    </form>`;
+  };
+
+  const __configGetItemsV60 = Configurator.getItems.bind(Configurator);
+  Configurator.getItems = function(type) {
+    if (type === 'campaigns') return campaignListV60();
+    return __configGetItemsV60(type);
+  };
+  const __configRenderEditorV60 = Configurator.renderEditor.bind(Configurator);
+  Configurator.renderEditor = function(entity) {
+    if (this.selectedType === 'campaigns') return this.renderCampaignEditor(entity);
+    if (this.selectedType === 'npcs') return this.renderNpcEditorV60 ? this.renderNpcEditorV60(entity) : __configRenderEditorV60(entity);
+    return __configRenderEditorV60(entity);
+  };
+  const __configInsertEntityV60 = Configurator.insertEntity.bind(Configurator);
+  Configurator.insertEntity = function(type, entity) {
+    if (type === 'campaigns') { const item = normalizeCampaignV60(entity); CAMPAIGNS_V60[item.id] = item; syncCampaignsWorldDataV60(); return; }
+    if (type === 'npcs') { const item = normalizeNpcV60(entity); NPCS[item.id] = item; NPC_LIST = sortEntitiesForList(Object.values(NPCS)); worldData.npcs = serializeWorldSection('npcs', NPCS); return; }
+    return __configInsertEntityV60(type, entity);
+  };
+  const __configRemoveEntityV60 = Configurator.removeEntity.bind(Configurator);
+  Configurator.removeEntity = function(type, id) {
+    if (type === 'campaigns') { delete CAMPAIGNS_V60[id]; Object.values(PLAYER_TEMPLATES || {}).forEach(player => { player.campaignIds = campaignIdsForPlayerV60(player).filter(cid => cid !== id); }); syncCampaignsWorldDataV60(); return; }
+    return __configRemoveEntityV60(type, id);
+  };
+  const __configBuildPayloadV60 = Configurator.buildPayload.bind(Configurator);
+  Configurator.buildPayload = function(type) {
+    if (type === 'campaigns') return serializeWorldSection('campaigns', CAMPAIGNS_V60);
+    return __configBuildPayloadV60(type);
+  };
+  const __configCollectEntityV60 = Configurator.collectEntity.bind(Configurator);
+  Configurator.collectEntity = function(type, formEl, formData = new FormData(formEl)) {
+    const mediaField = formEl.querySelector('.media-field');
+    const image = String(formEl.querySelector('input[name="imageData"]')?.value || formData.get('imageData') || mediaField?.dataset?.savedImageValue || mediaField?.dataset?.pendingImageValue || '').trim();
+    if (type === 'campaigns') return normalizeCampaignV60({ id: formData.get('id'), name: formData.get('name'), status: formData.get('status'), color: formData.get('color'), description: formData.get('description'), image, relatedArticleIds: getCheckedValues(formEl, 'relatedArticleIds') });
+    if (type === 'npcs') {
+      const base = __configCollectEntityV60(type, formEl, formData) || {};
+      return normalizeNpcV60({
+        ...base,
+        npcKind: String(formData.get('npcKind') || 'unique'),
+        allowPlayerChat: formData.get('allowPlayerChat') === 'on',
+        stats: {
+          hpCurrent: Number(formData.get('npcHpCurrent') || 0), hpMax: Number(formData.get('npcHpMax') || 0),
+          shieldCurrent: Number(formData.get('npcShieldCurrent') || 0), shieldMax: Number(formData.get('npcShieldMax') || 0),
+          energyCurrent: Number(formData.get('npcEnergyCurrent') || 0), energyMax: Number(formData.get('npcEnergyMax') || 1)
+        },
+        abilities: readNpcAbilitiesV60(formEl),
+        skills: getCheckedValues(formEl, 'npcSkillIds'),
+        specializations: readNpcSpecializationsV60(formEl)
+      });
+    }
+    const entity = __configCollectEntityV60(type, formEl, formData);
+    if (type === 'players' && entity) entity.campaignIds = getCheckedValues(formEl, 'campaignIds');
+    return entity;
+  };
+
+  Configurator.renderNpcEditorV60 = function(entity) {
+    const npc = normalizeNpcV60(entity || {});
+    return `<form id="config-editor-form" class="form" data-entity-type="npcs">
+      ${this.renderHeader(npc, 'NPC может быть уникальным персонажем для сообщений или шаблонным юнитом только для боевых сцен.')}
+      ${imageFieldMarkup(npc, 'Изображение NPC')}
+      <div class="cols3"><div class="field"><label>ID</label><input class="input" name="id" value="${esc(npc.id)}" /></div><div class="field"><label>Имя / тип</label><input class="input" name="name" value="${esc(npc.name || '')}" /></div><div class="field"><label>Тип NPC</label><select class="select" name="npcKind"><option value="unique" ${npc.npcKind !== 'template' ? 'selected' : ''}>Уникальный NPC</option><option value="template" ${npc.npcKind === 'template' ? 'selected' : ''}>Шаблон / массовый NPC</option></select></div></div>
+      <div class="cols2"><div class="field"><label>Роль</label><input class="input" name="role" value="${esc(npc.role || '')}" /></div><div class="field"><label>Локация</label><input class="input" name="location" value="${esc(npc.location || '')}" /></div></div>
+      <label class="toggle-row"><input type="checkbox" name="allowPlayerChat" ${npc.allowPlayerChat ? 'checked' : ''} /> Игроки могут писать этому NPC</label>
+      ${this.renderVisibilityField(npc)}
+      <div class="field"><label>Краткое описание</label><textarea class="area" name="summary">${esc(npc.summary || '')}</textarea>${typeof __htmlHint !== 'undefined' ? __htmlHint : ''}</div>
+      <div class="field"><label>Черты / заметки, по одной на строку</label><textarea class="area" name="traits">${esc(listText(npc.traits || []))}</textarea></div>
+      <div class="section-title">Боевые показатели NPC</div>
+      <div class="cols3"><div class="field"><label>HP тек.</label><input class="input" type="number" name="npcHpCurrent" value="${Number(npc.stats.hpCurrent || 0)}" /></div><div class="field"><label>HP макс.</label><input class="input" type="number" name="npcHpMax" value="${Number(npc.stats.hpMax || 0)}" /></div><div class="field"><label>Энергия макс.</label><input class="input" type="number" name="npcEnergyMax" value="${Number(npc.stats.energyMax || 1)}" /></div></div>
+      <div class="cols3"><div class="field"><label>Щит тек.</label><input class="input" type="number" name="npcShieldCurrent" value="${Number(npc.stats.shieldCurrent || 0)}" /></div><div class="field"><label>Щит макс.</label><input class="input" type="number" name="npcShieldMax" value="${Number(npc.stats.shieldMax || 0)}" /></div><div class="field"><label>Энергия тек.</label><input class="input" type="number" name="npcEnergyCurrent" value="${Number(npc.stats.energyCurrent || 0)}" /></div></div>
+      <div class="section-title">Характеристики NPC</div>${npcAbilityInputsV60(npc)}
+      <div class="field"><label>Навыки и специализации NPC</label>${renderNpcSkillSelectorV60(npc.skills || [])}</div>
+      <div class="field"><label>Значения специализаций NPC</label>${npcSpecializationValuesMarkupV60(npc.specializations || {})}</div>
+      <div class="field"><label>Связанные статьи</label>${renderRelatedArticlesEditor(npc.relatedArticleIds || [])}</div>
+      <button class="primary" type="submit">SAVE_NPC</button>
+    </form>`;
+  };
+
+  const __renderPlayerEditorV60 = Configurator.renderPlayerEditor.bind(Configurator);
+  Configurator.renderPlayerEditor = function(user) {
+    const html = __renderPlayerEditorV60(normalizePlayerCampaignsV60(user));
+    const field = `<div class="field"><label>Игровые кампании</label>${campaignSelectorMarkupV60(campaignIdsForPlayerV60(user))}<div class="small-note">На экране входа персонаж будет показан только в отмеченных кампаниях.</div></div>`;
+    if (html.includes('<div class="field"><label>Связанные статьи</label>')) return html.replace('<div class="field"><label>Связанные статьи</label>', field + '<div class="field"><label>Связанные статьи</label>');
+    return html.replace('<button class="primary" type="submit">SAVE_PLAYER</button>', field + '<button class="primary" type="submit">SAVE_PLAYER</button>');
+  };
+
+  const __appFillLoginSelectV60 = App.fillLoginSelect.bind(App);
+  App.fillLoginSelect = function() {
+    const select = document.getElementById('char-select');
+    const authPanel = document.getElementById('login-auth-panel');
+    if (authPanel && !document.getElementById('login-campaign-select-v60')) {
+      const row = document.createElement('div');
+      row.className = 'form login-campaign-row-v60';
+      row.innerHTML = `<select id="login-campaign-select-v60" class="select"></select><button id="guest-login-btn-v60" class="secondary" type="button">ГОСТЕВОЙ ВХОД</button>`;
+      authPanel.querySelector('.form')?.prepend(row);
+      row.querySelector('#login-campaign-select-v60')?.addEventListener('change', event => { localStorage.setItem('grpg-login-campaign-v60', event.target.value); App.fillLoginSelect(); });
+      row.querySelector('#guest-login-btn-v60')?.addEventListener('click', () => App.loginGuestV60());
+    }
+    const campaignSelect = document.getElementById('login-campaign-select-v60');
+    if (campaignSelect) {
+      const selected = currentLoginCampaignIdV60();
+      campaignSelect.innerHTML = `<option value="all">Все кампании</option>${campaignListV60().map(c => `<option value="${esc(c.id)}" ${c.id === selected ? 'selected' : ''}>${esc(c.name || c.id)}</option>`).join('')}`;
+      if ([...campaignSelect.options].some(opt => opt.value === selected)) campaignSelect.value = selected;
+      else campaignSelect.value = 'all';
+    }
+    const sourcePlayers = playersForLoginCampaignV60();
+    if (!select) return __appFillLoginSelectV60();
+    if (!sourcePlayers.length) {
+      select.innerHTML = '<option value=>Нет доступных профилей в этой кампании</option>';
+      this.renderLoginPreview();
+      return;
+    }
+    const prev = select.value;
+    select.innerHTML = sourcePlayers.map(player => `<option value="${esc(player.id)}">${esc(player.displayName || player.id)}</option>`).join('');
+    if (sourcePlayers.some(player => player.id === prev)) select.value = prev;
+    this.renderLoginPreview();
+    this.updateBootView?.();
+  };
+  App.loginGuestV60 = function() {
+    this.state.users = this.state.users || {};
+    this.state.users[GUEST_ID_V60] = normalizePlayerCampaignsV60(GUEST_PROFILE_V60);
+    this.currentUserId = GUEST_ID_V60;
+    Persistence.saveSession(GUEST_ID_V60);
+    this.finishLogin();
+    Toast.show('Выполнен гостевой вход', 'ok');
+  };
+
+  const __appLoginV60 = App.login.bind(App);
+  App.login = function() {
+    const selectedId = document.getElementById('char-select')?.value;
+    if (!selectedId) { document.getElementById('login-error').textContent = 'Выбери профиль.'; return; }
+    return __appLoginV60();
+  };
+
+  try {
+    const __listNpcThreadsForPlayerV60 = listNpcThreadsForPlayer;
+    listNpcThreadsForPlayer = function(playerId = App.currentUserId) {
+      return __listNpcThreadsForPlayerV60(playerId).filter(npc => npcAllowsPlayerChatV60(npc));
+    };
+  } catch {}
+  const __chatRenderNpcThreadForPlayerV60 = ChatUI.renderNpcThreadForPlayer.bind(ChatUI);
+  ChatUI.renderNpcThreadForPlayer = function(npc) {
+    if (!npcAllowsPlayerChatV60(npc)) {
+      return `<div class="chat-panel card pad18"><div class="section-title">Канал связи</div><div class="small-note">ДМ закрыл возможность писать этому NPC. Запись доступна только для просмотра.</div></div>`;
+    }
+    return __chatRenderNpcThreadForPlayerV60(npc);
+  };
+  const __chatBindWithinV60 = ChatUI.bindWithin.bind(ChatUI);
+  ChatUI.bindWithin = function(root) {
+    root?.querySelectorAll?.('.npc-chat-form,.npc-chat-init-form').forEach(form => {
+      const npcId = form.dataset.npcId || form.dataset.defaultNpcId || form.querySelector('[name="npcId"]')?.value || '';
+      const npc = Data.getNpc?.(npcId);
+      if (npc && !npcAllowsPlayerChatV60(npc) && App.currentUser?.role !== 'gm') form.remove();
+    });
+    return __chatBindWithinV60(root);
+  };
+
+  function ensureAmbientModalV60() {
+    let modal = document.getElementById('global-ambient-modal-v60');
+    if (modal) return modal;
+    modal = document.createElement('div');
+    modal.id = 'global-ambient-modal-v60';
+    modal.className = 'modal global-ambient-modal-v60';
+    modal.innerHTML = `<div class="login-box card global-ambient-box-v60"><div class="row" style="justify-content:space-between;align-items:flex-start"><div><div class="section-title">Ambient library</div><h2 style="margin:0">Эмбиент главного экрана</h2></div><button class="ghost" type="button" id="global-ambient-close-v60">ЗАКРЫТЬ</button></div><div id="global-ambient-body-v60"></div></div>`;
+    document.body.appendChild(modal);
+    modal.querySelector('#global-ambient-close-v60')?.addEventListener('click', () => modal.classList.remove('open'));
+    return modal;
+  }
+  function renderGlobalAmbientV60() {
+    const modal = ensureAmbientModalV60();
+    const body = modal.querySelector('#global-ambient-body-v60');
+    const audioApi = window.CombatAudioV37;
+    if (!audioApi) { body.innerHTML = '<div class="small-note">Локальная библиотека звуков недоступна.</div>'; return; }
+    const ambientId = audioApi.state?.sceneAmbient?.global || '';
+    body.innerHTML = `<div class="small-note">Звуки хранятся локально в renderer/assets/audio. Панель доступна только ДМу. Эмбиент главного экрана использует тот же набор групп, что и боевые сцены.</div><div class="row combat-editor-actions"><input class="input" id="global-ambient-section-name-v60" placeholder="Новый раздел звуков" /><button class="secondary" type="button" id="global-ambient-add-section-v60">ДОБАВИТЬ РАЗДЕЛ</button><button class="ghost" type="button" id="global-ambient-stop-v60">СТОП ЭМБИЕНТ</button></div><div class="combat-sound-sections-v37">${audioApi.sections.map(section => `<div class="combat-sound-section-v37"><div class="combat-sound-section-head-v37"><b>${esc(section.name)}</b><div class="row combat-editor-actions"><button class="secondary" type="button" data-global-sound-add="${esc(section.id)}">ДОБАВИТЬ ФАЙЛЫ</button><button class="secondary" type="button" data-global-sound-random="${esc(section.id)}">СЛУЧАЙНЫЙ</button></div></div><div class="combat-sound-list-v37">${section.sounds.map(sound => `<div class="combat-sound-row-v37"><span>${esc(sound.name)}</span><div class="row combat-editor-actions"><button class="ghost" type="button" data-global-sound-play="${esc(sound.id)}">PLAY</button><button class="ghost ${ambientId === sound.id ? 'active' : ''}" type="button" data-global-sound-ambient="${esc(sound.id)}">AMBIENT</button></div></div>`).join('') || '<div class="small-note">В этом разделе пока нет файлов.</div>'}</div></div>`).join('')}</div>`;
+  }
+  document.addEventListener('click', event => {
+    const ambientBtn = event.target.closest?.('#ambient-mute-btn');
+    if (ambientBtn && App.currentUser?.role === 'gm') {
+      event.preventDefault(); event.stopImmediatePropagation();
+      renderGlobalAmbientV60(); ensureAmbientModalV60().classList.add('open'); return;
+    }
+    const modal = document.getElementById('global-ambient-modal-v60');
+    if (!modal?.classList.contains('open')) return;
+    const target = event.target.closest?.('#global-ambient-add-section-v60,#global-ambient-stop-v60,[data-global-sound-add],[data-global-sound-random],[data-global-sound-play],[data-global-sound-ambient]');
+    if (!target) return;
+    event.preventDefault(); event.stopPropagation();
+    const audioApi = window.CombatAudioV37;
+    if (!audioApi) return;
+    if (target.id === 'global-ambient-add-section-v60') { const input = document.getElementById('global-ambient-section-name-v60'); audioApi.addSection(input?.value || ''); if (input) input.value = ''; }
+    else if (target.id === 'global-ambient-stop-v60') { delete audioApi.state.sceneAmbient.global; audioApi.save(); audioApi.stopAmbient(); }
+    else if (target.dataset.globalSoundAdd) audioApi.addSound(target.dataset.globalSoundAdd);
+    else if (target.dataset.globalSoundRandom) audioApi.playRandom(target.dataset.globalSoundRandom);
+    else if (target.dataset.globalSoundPlay) audioApi.play(target.dataset.globalSoundPlay);
+    else if (target.dataset.globalSoundAmbient) audioApi.setAmbient('global', target.dataset.globalSoundAmbient);
+    setTimeout(renderGlobalAmbientV60, 80);
+  }, true);
+
+  document.addEventListener('DOMContentLoaded', () => {
+    try { App.fillLoginSelect?.(); } catch {}
+  });
+})();

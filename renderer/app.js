@@ -1195,7 +1195,7 @@ const ChatUI = {
     return `
       <div class="chat-panel card pad18">
         <div class="section-title">Канал связи</div>
-        <div class="small-note">Сообщения хранятся локально и синхронизируются через Supabase вместе с общим снапшотом кампании.</div>
+        <div class="small-note">Сообщения хранятся локально и синхронизируются через выбранный backend вместе с общим снапшотом кампании.</div>
         <div class="chat-thread" data-chat-thread>
           ${thread.map(message => this.messageMarkup(message, npc.id)).join('') || '<div class="small-note">Диалог ещё не начат.</div>'}
         </div>
@@ -1336,8 +1336,24 @@ const Sync = {
   config: null,
   status: { enabled: false, connected: false, message: 'Локальный режим', remote: null },
   pollTimer: null,
+  provider(config = this.config) {
+    const value = String(config?.provider || '').toLowerCase();
+    return value === 'pocketbase' || value === 'selfhost' || value === 'supabase' ? value : 'supabase';
+  },
+  cloudName(config = this.config) {
+    const provider = this.provider(config);
+    if (provider === 'pocketbase') return 'PocketBase';
+    if (provider === 'selfhost') return 'Self-host';
+    return 'Supabase';
+  },
+  isConfiguredConfig(config = this.config) {
+    const provider = this.provider(config);
+    if (provider === 'pocketbase') return Boolean(config?.enabled && config?.url && config?.pocketbaseEmail && config?.pocketbasePassword && config?.campaignId);
+    if (provider === 'selfhost') return Boolean(config?.enabled && (config?.serverUrl || config?.url) && config?.campaignId);
+    return Boolean(config?.enabled && config?.url && config?.anonKey && config?.campaignId);
+  },
   isConfigured() {
-    return Boolean(this.config?.enabled && this.config?.url && this.config?.anonKey && this.config?.campaignId);
+    return this.isConfiguredConfig(this.config);
   },
   needsBootstrap() {
     return !this.isConfigured();
@@ -1359,12 +1375,12 @@ const Sync = {
     this.config = res?.config || { enabled: false, campaignId: '', deviceLabel: '', storageBucket: 'campaign-assets', pollIntervalMs: 45000 };
     const current = App?.state?.meta?.sync || defaultSyncMeta();
     current.enabled = Boolean(this.config.enabled);
-    current.configured = Boolean(this.config.url && this.config.anonKey && this.config.campaignId);
+    current.configured = this.isConfiguredConfig(this.config);
     current.campaignId = this.config.campaignId || '';
     current.deviceLabel = this.config.deviceLabel || '';
     if (App?.state?.meta) {
       App.state.meta.sync = { ...defaultSyncMeta(), ...current };
-      App.state.meta.syncMode = this.config.enabled ? 'SUPABASE_MIRROR' : 'LOCAL_FILE_CACHE';
+      App.state.meta.syncMode = this.config.enabled ? `${this.cloudName(this.config).toUpperCase()}_MIRROR` : 'LOCAL_FILE_CACHE';
     }
     return this.config;
   },
@@ -1374,10 +1390,10 @@ const Sync = {
     App.state.meta.sync.localDirty = true;
     App.state.meta.sync.lastStatus = reason;
     App.state.meta.sync.enabled = Boolean(this.config?.enabled);
-    App.state.meta.sync.configured = Boolean(this.config?.url && this.config?.anonKey && this.config?.campaignId);
+    App.state.meta.sync.configured = this.isConfiguredConfig(this.config);
     App.state.meta.sync.campaignId = this.config?.campaignId || '';
     App.state.meta.sync.deviceLabel = this.config?.deviceLabel || '';
-    App.state.meta.syncMode = this.config?.enabled ? 'SUPABASE_MIRROR' : 'LOCAL_FILE_CACHE';
+    App.state.meta.syncMode = this.config?.enabled ? `${this.cloudName(this.config).toUpperCase()}_MIRROR` : 'LOCAL_FILE_CACHE';
     this.refreshChip();
   },
   buildSnapshot() {
@@ -1405,7 +1421,7 @@ const Sync = {
       ...defaultSyncMeta(),
       ...(App.state?.meta?.sync || {}),
       enabled: Boolean(this.config?.enabled),
-      configured: Boolean(this.config?.url && this.config?.anonKey && this.config?.campaignId),
+      configured: this.isConfiguredConfig(this.config),
       campaignId: this.config?.campaignId || '',
       deviceLabel: this.config?.deviceLabel || '',
       localDirty: false,
@@ -1416,7 +1432,7 @@ const Sync = {
       lastStatus: 'REMOTE_APPLIED',
       lastError: null
     };
-    normalizedState.meta.syncMode = this.config?.enabled ? 'SUPABASE_MIRROR' : 'LOCAL_FILE_CACHE';
+    normalizedState.meta.syncMode = this.config?.enabled ? `${this.cloudName(this.config).toUpperCase()}_MIRROR` : 'LOCAL_FILE_CACHE';
     await Persistence.save(normalizedState);
     App.state = await Persistence.load();
     mirrorPlayersIntoWorld(App.state);
@@ -1467,7 +1483,7 @@ const Sync = {
       App.state.meta.sync.lastError = res?.message || 'SYNC_PULL_FAILED';
       this.refreshChip();
       this.render();
-      if (!options.silent) Toast.show(`Supabase недоступен: ${res?.message || 'unknown error'}`, 'info');
+      if (!options.silent) Toast.show(`${this.cloudName()} недоступен: ${res?.message || 'unknown error'}`, 'info');
       return res;
     }
 
@@ -1484,7 +1500,7 @@ const Sync = {
         this.status = { enabled: true, connected: true, message: 'CONFLICT_REMOTE_NEWER', remote: res.remote || null };
         this.refreshChip();
         this.render();
-        if (!options.silent) Toast.show('В Supabase есть более новые данные. Локальные изменения не перезаписаны автоматически.', 'info');
+        if (!options.silent) Toast.show(`В ${this.cloudName()} есть более новые данные. Локальные изменения не перезаписаны автоматически.`, 'info');
         await Persistence.save(App.state);
         return { ...res, skipped: true };
       }
@@ -1498,11 +1514,12 @@ const Sync = {
         return { ...res, skipped: true };
       }
       await this.applyRemoteSnapshot(res.payload, res.remote, options);
-      if (!options.silent) Toast.show('Загружены более свежие данные из Supabase', 'ok');
+      if (!options.silent) Toast.show(`Загружены более свежие данные из ${this.cloudName()}`, 'ok');
       return res;
     }
 
     App.state.meta.sync.lastStatus = res.status === 'empty' ? 'REMOTE_EMPTY' : 'UP_TO_DATE';
+    App.state.meta.sync.lastError = null;
     this.status = { enabled: true, connected: true, message: res.status === 'empty' ? 'REMOTE_EMPTY' : 'UP_TO_DATE', remote: res.remote || null };
     this.refreshChip();
     this.render();
@@ -1541,8 +1558,8 @@ const Sync = {
       await Persistence.save(App.state);
       if (!options.silent) {
         const msg = res?.status === 'conflict'
-          ? 'Сохранено локально, но в Supabase уже есть более новая ревизия. Сначала подтяни облако.'
-          : `Сохранено локально, но Supabase недоступен: ${res?.message || 'unknown error'}`;
+          ? `Сохранено локально, но в ${this.cloudName()} уже есть более новая ревизия. Сначала подтяни облако.`
+          : `Сохранено локально, но ${this.cloudName()} недоступен: ${res?.message || 'unknown error'}`;
         Toast.show(msg, 'info');
       }
       return res;
@@ -1576,12 +1593,12 @@ const Sync = {
       lastStatus: 'SYNCED',
       lastError: null
     };
-    App.state.meta.syncMode = 'SUPABASE_MIRROR';
+    App.state.meta.syncMode = `${this.cloudName(this.config).toUpperCase()}_MIRROR`;
     this.status = { enabled: true, connected: true, message: 'SYNCED', remote: res.remote || null };
     this.refreshChip();
     this.render();
     await Persistence.save(App.state);
-    if (!options.silent) Toast.show('Локальные данные отправлены в Supabase', 'ok');
+    if (!options.silent) Toast.show(`Локальные данные отправлены в ${this.cloudName()}`, 'ok');
     return res;
   },
   refreshChip() {
@@ -1590,11 +1607,12 @@ const Sync = {
     const syncMeta = App?.state?.meta?.sync || defaultSyncMeta();
     let label = 'LOCAL_FILE_CACHE';
     if (this.config?.enabled) {
-      if (syncMeta.lastStatus === 'SYNCED') label = `SUPABASE_SYNCED r${syncMeta.remoteRevision || 0}`;
-      else if (syncMeta.lastStatus === 'CONFLICT' || syncMeta.lastStatus === 'REMOTE_NEWER_LOCAL_DIRTY') label = 'SUPABASE_CONFLICT';
-      else if (this.status?.connected === false && this.status?.message && this.status?.message !== 'Локальный режим') label = 'SUPABASE_OFFLINE';
-      else if (syncMeta.localDirty) label = 'SUPABASE_DIRTY';
-      else label = 'SUPABASE_READY';
+      const prefix = this.cloudName(this.config).toUpperCase().replace(/[^A-Z0-9]+/g, '_');
+      if (syncMeta.lastStatus === 'SYNCED') label = `${prefix}_SYNCED r${syncMeta.remoteRevision || 0}`;
+      else if (syncMeta.lastStatus === 'CONFLICT' || syncMeta.lastStatus === 'REMOTE_NEWER_LOCAL_DIRTY') label = `${prefix}_CONFLICT`;
+      else if (this.status?.connected === false && this.status?.message && this.status?.message !== 'Локальный режим') label = `${prefix}_OFFLINE`;
+      else if (syncMeta.localDirty) label = `${prefix}_DIRTY`;
+      else label = `${prefix}_READY`;
     }
     chip.textContent = `SYNC_MODE: ${label}`;
     chip.title = this.describeStatus();
@@ -1620,7 +1638,8 @@ const Sync = {
     const every = Math.max(10000, Number(this.config?.pollIntervalMs || 45000));
     this.pollTimer = setInterval(() => {
       (async () => {
-        await this.checkForRemoteUpdates('poll', { applyIfNewer: false, silent: true });
+        const canApplyWorld = !UiSyncGuard.isEditingCriticalForm() && !App?.state?.meta?.sync?.localDirty;
+        await this.checkForRemoteUpdates('poll', { applyIfNewer: canApplyWorld, silent: true });
         await PlayerSync.pullUpdates('poll', { silent: true, rerender: !UiSyncGuard.isEditingCriticalForm() });
         UiSyncGuard.flushIfIdle();
       })().catch(error => {
@@ -1638,11 +1657,21 @@ const Sync = {
     const formData = new FormData(formEl);
     const payload = {
       enabled: options.forceEnable ? true : Boolean(formData.get('enabled')),
+      provider: String(formData.get('provider') || this.config?.provider || 'supabase').trim().toLowerCase(),
       url: String(formData.get('url') || '').trim(),
+      serverUrl: String(formData.get('serverUrl') || '').trim(),
+      accessToken: String(formData.get('accessToken') || '').trim(),
       anonKey: String(formData.get('anonKey') || '').trim(),
+      pocketbaseEmail: String(formData.get('pocketbaseEmail') || '').trim(),
+      pocketbasePassword: String(formData.get('pocketbasePassword') || '').trim(),
+      pocketbaseUsersCollection: String(formData.get('pocketbaseUsersCollection') || 'app_users').trim() || 'app_users',
+      pocketbaseAssetsCollection: String(formData.get('pocketbaseAssetsCollection') || 'campaign_assets').trim() || 'campaign_assets',
       campaignId: String(formData.get('campaignId') || '').trim(),
       deviceLabel: String(formData.get('deviceLabel') || '').trim(),
       tableName: String(formData.get('tableName') || 'campaign_snapshots').trim() || 'campaign_snapshots',
+      chatTableName: String(formData.get('chatTableName') || 'campaign_messages').trim() || 'campaign_messages',
+      playerTableName: String(formData.get('playerTableName') || 'campaign_players').trim() || 'campaign_players',
+      combatRuntimeTableName: String(formData.get('combatRuntimeTableName') || 'campaign_combat_runtime').trim() || 'campaign_combat_runtime',
       storageBucket: String(formData.get('storageBucket') || 'campaign-assets').trim() || 'campaign-assets',
       pollIntervalMs: Number(formData.get('pollIntervalMs') || 45000)
     };
@@ -1651,50 +1680,72 @@ const Sync = {
       Toast.show(`Не удалось сохранить sync config: ${res?.message || 'unknown error'}`, 'err');
       return res;
     }
+    const previousSyncConfig = this.config || {};
     this.config = res.config;
+    const previousIdentity = [
+      this.provider(previousSyncConfig),
+      previousSyncConfig.url || previousSyncConfig.serverUrl || '',
+      previousSyncConfig.campaignId || '',
+      previousSyncConfig.tableName || ''
+    ].join('|');
+    const nextIdentity = [
+      this.provider(this.config),
+      this.config.url || this.config.serverUrl || '',
+      this.config.campaignId || '',
+      this.config.tableName || ''
+    ].join('|');
+    const keepRemoteMeta = previousIdentity === nextIdentity;
     App.state.meta.sync = {
       ...defaultSyncMeta(),
-      ...(App.state.meta.sync || {}),
+      ...(keepRemoteMeta ? (App.state.meta.sync || {}) : {}),
       enabled: Boolean(this.config.enabled),
-      configured: Boolean(this.config.url && this.config.anonKey && this.config.campaignId),
+      configured: this.isConfiguredConfig(this.config),
+      localDirty: Boolean(App.state?.meta?.sync?.localDirty),
       campaignId: this.config.campaignId || '',
-      deviceLabel: this.config.deviceLabel || ''
+      deviceLabel: this.config.deviceLabel || '',
+      lastStatus: keepRemoteMeta ? (App.state?.meta?.sync?.lastStatus || 'LOCAL_ONLY') : 'BACKEND_CHANGED',
+      lastError: null
     };
-    App.state.meta.syncMode = this.config.enabled ? 'SUPABASE_MIRROR' : 'LOCAL_FILE_CACHE';
+    App.state.meta.syncMode = this.config.enabled ? `${this.cloudName(this.config).toUpperCase()}_MIRROR` : 'LOCAL_FILE_CACHE';
     await Persistence.save(App.state);
     if (this.config.enabled) this.startPolling(); else this.stopPolling();
     this.refreshChip();
     this.render();
     App.updateBootView?.();
-    if (!options.silentToast) Toast.show('Параметры Supabase сохранены локально', 'ok');
+    if (!options.silentToast) Toast.show(`Параметры ${this.cloudName(this.config)} сохранены локально`, 'ok');
     return res;
   },
   renderBootstrap() {
     const root = $('#login-sync-bootstrap');
     if (!root) return;
-    const config = this.config || { enabled: false, url: '', anonKey: '', campaignId: '', deviceLabel: '', tableName: 'campaign_snapshots', storageBucket: 'campaign-assets', pollIntervalMs: 45000 };
+    const config = this.config || { enabled: false, provider: 'pocketbase', url: 'https://sync.grpg-sync.ru', pocketbaseEmail: '', pocketbasePassword: '', campaignId: 'main', deviceLabel: '', tableName: 'campaign_snapshots', storageBucket: 'campaign-assets', pollIntervalMs: 45000 };
     root.innerHTML = `
       <div class="boot-sync-card">
         <div class="section-title">Подключение к кампании</div>
-        
         <form id="bootstrap-sync-form" class="form">
-          <div class="field"><label>SUPABASE_URL</label><input class="input" name="url" value="${esc(config.url || '')}" placeholder="https://project.supabase.co" /></div>
-          <div class="field"><label>PUBLISHABLE / ANON KEY</label><input class="input" name="anonKey" value="${esc(config.anonKey || '')}" placeholder="sb_publishable_... или anon key" /></div>
+          <input type="hidden" name="provider" value="${esc(config.provider || 'pocketbase')}" />
+          <div class="field"><label>POCKETBASE_URL</label><input class="input" name="url" value="${esc(config.url || 'https://sync.grpg-sync.ru')}" placeholder="https://sync.grpg-sync.ru" /></div>
           <div class="cols2">
-            <div class="field"><label>CAMPAIGN_ID</label><input class="input" name="campaignId" value="${esc(config.campaignId || '')}" placeholder="campaign-alpha" /></div>
+            <div class="field"><label>APP_USER_EMAIL</label><input class="input" name="pocketbaseEmail" value="${esc(config.pocketbaseEmail || '')}" placeholder="dm@grpg-sync.local" /></div>
+            <div class="field"><label>APP_USER_PASSWORD</label><input class="input" type="password" name="pocketbasePassword" value="${esc(config.pocketbasePassword || '')}" /></div>
+          </div>
+          <div class="cols2">
+            <div class="field"><label>CAMPAIGN_ID</label><input class="input" name="campaignId" value="${esc(config.campaignId || 'main')}" placeholder="main" /></div>
             <div class="field"><label>DEVICE_LABEL</label><input class="input" name="deviceLabel" value="${esc(config.deviceLabel || '')}" placeholder="player-laptop / gm-main-pc" /></div>
           </div>
-          <div class="cols2">
-            <div class="field"><label>STORAGE_BUCKET</label><input class="input" name="storageBucket" value="${esc(config.storageBucket || 'campaign-assets')}" placeholder="campaign-assets" /></div>
-            <div class="field"><label>TABLE_NAME</label><input class="input" name="tableName" value="${esc(config.tableName || 'campaign_snapshots')}" /></div>
-          </div>
+          <input type="hidden" name="tableName" value="${esc(config.tableName || 'campaign_snapshots')}" />
+          <input type="hidden" name="chatTableName" value="${esc(config.chatTableName || 'campaign_messages')}" />
+          <input type="hidden" name="playerTableName" value="${esc(config.playerTableName || 'campaign_players')}" />
+          <input type="hidden" name="combatRuntimeTableName" value="${esc(config.combatRuntimeTableName || 'campaign_combat_runtime')}" />
+          <input type="hidden" name="pocketbaseUsersCollection" value="${esc(config.pocketbaseUsersCollection || 'app_users')}" />
+          <input type="hidden" name="pocketbaseAssetsCollection" value="${esc(config.pocketbaseAssetsCollection || 'campaign_assets')}" />
           <input type="hidden" name="enabled" value="1" />
           <input type="hidden" name="pollIntervalMs" value="${Number(config.pollIntervalMs || 45000)}" />
           <div class="boot-sync-actions">
             <button type="submit" class="primary">СОХРАНИТЬ И ПОДКЛЮЧИТЬ</button>
             <button type="button" id="bootstrap-open-advanced" class="secondary">РАСШИРЕННЫЕ НАСТРОЙКИ</button>
           </div>
-          <div class="boot-status">После сохранения данные кампании будут проверены автоматически.</div>
+          <div class="boot-status">По умолчанию используется PocketBase на sync.grpg-sync.ru. После сохранения данные кампании будут проверены автоматически.</div>
         </form>
       </div>
     `;
@@ -1704,6 +1755,7 @@ const Sync = {
       if (!res?.ok) return;
       await this.ping();
       await this.checkForRemoteUpdates('bootstrap-save', { applyIfNewer: true, force: true, silent: true });
+      await PlayerSync.pullUpdates('bootstrap-save', { forceFull: true, silent: true, rerender: false });
       App.state = await Persistence.load();
       mirrorPlayersIntoWorld(App.state);
       App.fillLoginSelect();
@@ -1717,33 +1769,59 @@ const Sync = {
   render() {
     const root = $('#sync-content');
     if (!root) return;
-    const config = this.config || { enabled: false, url: '', anonKey: '', campaignId: '', deviceLabel: '', tableName: 'campaign_snapshots', storageBucket: 'campaign-assets', pollIntervalMs: 45000 };
+    const config = this.config || { enabled: false, provider: 'pocketbase', url: 'https://sync.grpg-sync.ru', campaignId: 'main', deviceLabel: '', tableName: 'campaign_snapshots', storageBucket: 'campaign-assets', pollIntervalMs: 45000 };
+    const provider = this.provider(config);
     const syncMeta = App?.state?.meta?.sync || defaultSyncMeta();
     root.innerHTML = `
       <div class="module-wrap">
         <div class="card pad18 form">
           <div class="section-title">Параметры синхронизации</div>
-          
           <form id="sync-config-form" class="form">
             <label class="selector-option"><input type="checkbox" name="enabled" ${config.enabled ? 'checked' : ''} /><div><b>Включить синхронизацию</b><span class="selector-sub subtle">Если выключено, приложение работает только через локальные файлы.</span></div></label>
+            <div class="field">
+              <label>BACKEND</label>
+              <select class="select" name="provider">
+                <option value="pocketbase" ${provider === 'pocketbase' ? 'selected' : ''}>PocketBase</option>
+                <option value="supabase" ${provider === 'supabase' ? 'selected' : ''}>Supabase</option>
+                <option value="selfhost" ${provider === 'selfhost' ? 'selected' : ''}>Custom self-host</option>
+              </select>
+            </div>
             <div class="cols2">
-              <div class="field"><label>SUPABASE_URL</label><input class="input" name="url" value="${esc(config.url || '')}" placeholder="https://project.supabase.co" /></div>
-              <div class="field"><label>PUBLISHABLE / ANON KEY</label><input class="input" name="anonKey" value="${esc(config.anonKey || '')}" placeholder="sb_publishable_... или anon key" /></div>
+              <div class="field"><label>URL</label><input class="input" name="url" value="${esc(config.url || (provider === 'pocketbase' ? 'https://sync.grpg-sync.ru' : ''))}" placeholder="https://sync.grpg-sync.ru" /></div>
+              <div class="field"><label>CAMPAIGN_ID</label><input class="input" name="campaignId" value="${esc(config.campaignId || 'main')}" placeholder="main" /></div>
             </div>
-            <div class="cols3">
-              <div class="field"><label>CAMPAIGN_ID</label><input class="input" name="campaignId" value="${esc(config.campaignId || '')}" placeholder="campaign-alpha" /></div>
-              <div class="field"><label>DEVICE_LABEL</label><input class="input" name="deviceLabel" value="${esc(config.deviceLabel || '')}" placeholder="dm-main-pc / player-v-laptop" /></div>
-              <div class="field"><label>TABLE_NAME</label><input class="input" name="tableName" value="${esc(config.tableName || 'campaign_snapshots')}" /></div>
+            <div class="cols2 sync-provider-pocketbase" style="display:${provider === 'pocketbase' ? 'grid' : 'none'}">
+              <div class="field"><label>APP_USER_EMAIL</label><input class="input" name="pocketbaseEmail" value="${esc(config.pocketbaseEmail || '')}" placeholder="dm@grpg-sync.local" /></div>
+              <div class="field"><label>APP_USER_PASSWORD</label><input class="input" type="password" name="pocketbasePassword" value="${esc(config.pocketbasePassword || '')}" /></div>
             </div>
-            <div class="cols3">
+            <div class="cols2 sync-provider-supabase" style="display:${provider === 'supabase' ? 'grid' : 'none'}">
+              <div class="field"><label>SUPABASE_KEY</label><input class="input" name="anonKey" value="${esc(config.anonKey || '')}" placeholder="sb_publishable_... или anon key" /></div>
               <div class="field"><label>STORAGE_BUCKET</label><input class="input" name="storageBucket" value="${esc(config.storageBucket || 'campaign-assets')}" placeholder="campaign-assets" /></div>
+            </div>
+            <div class="cols2 sync-provider-selfhost" style="display:${provider === 'selfhost' ? 'grid' : 'none'}">
+              <div class="field"><label>SERVER_URL</label><input class="input" name="serverUrl" value="${esc(config.serverUrl || '')}" placeholder="https://server.example.com" /></div>
+              <div class="field"><label>ACCESS_TOKEN</label><input class="input" name="accessToken" value="${esc(config.accessToken || '')}" /></div>
+            </div>
+            <div class="cols3">
+              <div class="field"><label>DEVICE_LABEL</label><input class="input" name="deviceLabel" value="${esc(config.deviceLabel || '')}" placeholder="dm-main-pc / player-laptop" /></div>
               <div class="field"><label>POLL_INTERVAL_MS</label><input class="input" type="number" name="pollIntervalMs" value="${Number(config.pollIntervalMs || 45000)}" /></div>
               <div class="field"><label>REMOTE_REVISION</label><div class="input" style="display:flex;align-items:center">${syncMeta.remoteRevision || 0}</div></div>
             </div>
+            <details class="card pad12 subtle-card">
+              <summary>Имена коллекций / таблиц</summary>
+              <div class="cols2" style="margin-top:12px">
+                <div class="field"><label>SNAPSHOT</label><input class="input" name="tableName" value="${esc(config.tableName || 'campaign_snapshots')}" /></div>
+                <div class="field"><label>PLAYERS</label><input class="input" name="playerTableName" value="${esc(config.playerTableName || 'campaign_players')}" /></div>
+                <div class="field"><label>CHAT</label><input class="input" name="chatTableName" value="${esc(config.chatTableName || 'campaign_messages')}" /></div>
+                <div class="field"><label>COMBAT_RUNTIME</label><input class="input" name="combatRuntimeTableName" value="${esc(config.combatRuntimeTableName || 'campaign_combat_runtime')}" /></div>
+                <div class="field"><label>PB_USERS</label><input class="input" name="pocketbaseUsersCollection" value="${esc(config.pocketbaseUsersCollection || 'app_users')}" /></div>
+                <div class="field"><label>PB_ASSETS</label><input class="input" name="pocketbaseAssetsCollection" value="${esc(config.pocketbaseAssetsCollection || 'campaign_assets')}" /></div>
+              </div>
+            </details>
             <div class="cols3">
               <div class="field"><label>REMOTE_UPDATED_AT</label><div class="input" style="display:flex;align-items:center">${esc(syncMeta.remoteUpdatedAt || '—')}</div></div>
-              <div class="field"><label>IMAGE_BUCKET_MODE</label><div class="input" style="display:flex;align-items:center">PUBLIC_BUCKET_URLS</div></div>
-              <div class="field"><label>ASSET_SYNC</label><div class="input" style="display:flex;align-items:center">IMAGE_UPLOAD_ON_SAVE + IMAGE_NORMALIZE_ON_PUSH</div></div>
+              <div class="field"><label>BACKEND_MODE</label><div class="input" style="display:flex;align-items:center">${esc(this.cloudName(config))}</div></div>
+              <div class="field"><label>ASSET_SYNC</label><div class="input" style="display:flex;align-items:center">IMAGE_UPLOAD_ON_PUSH</div></div>
             </div>
             <div class="row config-actions">
               <button type="submit" class="primary">СОХРАНИТЬ НАСТРОЙКИ</button>
@@ -1756,6 +1834,7 @@ const Sync = {
         <div class="card pad18">
           <div class="section-title">Статус синхронизации</div>
           <div class="data-row"><span class="data-label">Режим</span><span class="data-value">${esc(App?.state?.meta?.syncMode || 'LOCAL_FILE_CACHE')}</span></div>
+          <div class="data-row"><span class="data-label">Backend</span><span class="data-value">${esc(this.cloudName(config))}</span></div>
           <div class="data-row"><span class="data-label">Статус</span><span class="data-value">${esc(syncMeta.lastStatus || 'LOCAL_ONLY')}</span></div>
           <div class="data-row"><span class="data-label">Локальные изменения</span><span class="data-value">${syncMeta.localDirty ? 'YES' : 'NO'}</span></div>
           <div class="data-row"><span class="data-label">Последняя проверка</span><span class="data-value">${esc(syncMeta.lastCheckedAt || '—')}</span></div>
@@ -1765,14 +1844,20 @@ const Sync = {
         </div>
       </div>
     `;
+    $('#sync-config-form select[name="provider"]')?.addEventListener('change', event => {
+      const value = String(event.currentTarget.value || 'supabase');
+      $$('.sync-provider-pocketbase').forEach(el => el.style.display = value === 'pocketbase' ? 'grid' : 'none');
+      $$('.sync-provider-supabase').forEach(el => el.style.display = value === 'supabase' ? 'grid' : 'none');
+      $$('.sync-provider-selfhost').forEach(el => el.style.display = value === 'selfhost' ? 'grid' : 'none');
+    });
     $('#sync-config-form')?.addEventListener('submit', async event => {
       event.preventDefault();
       await this.saveConfigFromForm(event.currentTarget);
     });
     $('#sync-test-btn')?.addEventListener('click', async () => {
       const res = await this.ping();
-      if (res?.ok && res?.connected) Toast.show('Связь с Supabase подтверждена', 'ok');
-      else Toast.show(`Связь с Supabase не подтверждена: ${res?.message || 'unknown error'}`, 'info');
+      if (res?.ok && res?.connected) Toast.show(`Связь с ${this.cloudName()} подтверждена`, 'ok');
+      else Toast.show(`Связь с ${this.cloudName()} не подтверждена: ${res?.message || 'unknown error'}`, 'info');
     });
     $('#sync-pull-btn')?.addEventListener('click', async () => {
       await this.checkForRemoteUpdates('manual-pull', { applyIfNewer: true, force: true, silent: false });
@@ -1783,6 +1868,85 @@ const Sync = {
     });
   }
 };
+
+/* v1.0.15 patch: live world snapshot refresh for skills, tickers and reputation sections */
+(function() {
+  if (window.__worldSnapshotRealtimeV1015) return;
+  window.__worldSnapshotRealtimeV1015 = true;
+
+  function snapshotEventFingerprintV1015(payload = {}) {
+    const remote = payload?.remote || payload || {};
+    return [payload?.eventType || '', remote?.campaignId || '', remote?.revision || 0, remote?.updatedAt || '', remote?.updatedBy || ''].join('|');
+  }
+
+  function shouldApplyWorldSnapshotNowV1015() {
+    if (!Sync?.config?.enabled) return false;
+    if (UiSyncGuard?.isEditingCriticalForm?.()) return false;
+    if (App?.state?.meta?.sync?.localDirty) return false;
+    return true;
+  }
+
+  Sync._seenWorldSnapshotEventsV1015 = Sync._seenWorldSnapshotEventsV1015 || {};
+  Sync._pendingWorldSnapshotPullV1015 = null;
+
+  Sync.scheduleWorldSnapshotPullV1015 = function(reason = 'world-snapshot-event', delayMs = 350) {
+    if (this._pendingWorldSnapshotPullV1015) clearTimeout(this._pendingWorldSnapshotPullV1015);
+    this._pendingWorldSnapshotPullV1015 = setTimeout(() => {
+      this._pendingWorldSnapshotPullV1015 = null;
+      (async () => {
+        await this.loadConfig();
+        if (!this.config?.enabled) return;
+        if (!shouldApplyWorldSnapshotNowV1015()) {
+          if (App?.state?.meta?.sync?.localDirty) {
+            await this.checkForRemoteUpdates(`${reason}:dirty-check`, { applyIfNewer: false, silent: true });
+            return;
+          }
+          this.scheduleWorldSnapshotPullV1015(`${reason}:deferred`, 1200);
+          return;
+        }
+        await this.checkForRemoteUpdates(reason, { applyIfNewer: true, silent: true });
+      })().catch(error => {
+        Debug.error('WORLD_SNAPSHOT_REALTIME_PULL_FAILED', { message: error?.message || String(error), stack: error?.stack || null });
+      });
+    }, Math.max(0, Number(delayMs || 0)));
+  };
+
+  Sync.initWorldSnapshotRealtimeBridgeV1015 = function() {
+    if (this._worldSnapshotRealtimeUnsubV1015 || !window.electronAPI?.onSyncSnapshotEvent) return;
+    this._worldSnapshotRealtimeUnsubV1015 = window.electronAPI.onSyncSnapshotEvent(payload => {
+      const fp = snapshotEventFingerprintV1015(payload);
+      const now = Date.now();
+      const seenAt = Number(this._seenWorldSnapshotEventsV1015[fp] || 0);
+      if (fp && seenAt && now - seenAt < 15000) return;
+      if (fp) this._seenWorldSnapshotEventsV1015[fp] = now;
+
+      const remoteRevision = Number(payload?.remote?.revision || 0);
+      const localRevision = Number(App?.state?.meta?.sync?.remoteRevision || 0);
+      if (remoteRevision && remoteRevision <= localRevision) return;
+      this.scheduleWorldSnapshotPullV1015('world-snapshot-realtime', 350);
+
+      Object.entries(this._seenWorldSnapshotEventsV1015).forEach(([key, stamp]) => {
+        if (now - Number(stamp || 0) > 30000) delete this._seenWorldSnapshotEventsV1015[key];
+      });
+    });
+  };
+
+  const __syncInitV1015 = Sync.init.bind(Sync);
+  Sync.init = async function() {
+    const result = await __syncInitV1015();
+    this.initWorldSnapshotRealtimeBridgeV1015();
+    return result;
+  };
+
+  const __syncSaveConfigFromFormV1015 = Sync.saveConfigFromForm.bind(Sync);
+  Sync.saveConfigFromForm = async function(formEl, options = {}) {
+    const result = await __syncSaveConfigFromFormV1015(formEl, options);
+    this.initWorldSnapshotRealtimeBridgeV1015();
+    if (result?.ok && result?.config?.enabled) this.scheduleWorldSnapshotPullV1015('sync-config-saved', 250);
+    return result;
+  };
+})();
+
 
 const PlayerSync = {
   shouldIsolateUsersFromSnapshot() {
@@ -2055,7 +2219,7 @@ const App = {
     if (title) title.textContent = needsBootstrap ? 'Подключение к кампании' : 'Вход в профиль';
     if (copy) {
       copy.textContent = needsBootstrap
-        ? 'На первом запуске нужно указать параметры Supabase для этой кампании.'
+        ? 'На первом запуске нужно указать параметры синхронизации для этой кампании.'
         : '';
     }
     if (bootstrap) {
@@ -2133,7 +2297,7 @@ const App = {
   async login() {
     if (Sync.needsBootstrap()) {
       this.updateBootView();
-      Toast.show('Сначала подключи Supabase для этой кампании', 'info');
+      Toast.show('Сначала подключи синхронизацию для этой кампании', 'info');
       return;
     }
     const requestedUserId = $('#char-select').value;
@@ -2623,6 +2787,12 @@ function bindFilterableSelectors(root) {
       if (empty) empty.hidden = visible > 0;
     };
     input?.addEventListener('input', apply);
+    panel.querySelector('[data-selector-check-all]')?.addEventListener('click', () => {
+      panel.querySelectorAll('input[type="checkbox"]').forEach(box => { box.checked = true; box.dispatchEvent(new Event('change', { bubbles: true })); });
+    });
+    panel.querySelector('[data-selector-clear]')?.addEventListener('click', () => {
+      panel.querySelectorAll('input[type="checkbox"]').forEach(box => { box.checked = false; box.dispatchEvent(new Event('change', { bubbles: true })); });
+    });
     apply();
   });
 }
@@ -2773,6 +2943,10 @@ function renderCheckboxSelector(name, items, selectedIds = [], type, emptyText =
   if (!items.length) return `<div class="small-note">${esc(emptyText)}</div>`;
   return `
     <div class="selector-panel" data-selector-panel>
+      <div class="selector-actions-v58">
+        <button class="ghost" type="button" data-selector-check-all>ВСЕМ</button>
+        <button class="ghost" type="button" data-selector-clear>СНЯТЬ</button>
+      </div>
       <div class="field selector-search-field">
         <input class="input selector-search-input" type="text" placeholder="Поиск по списку..." data-selector-search />
       </div>
@@ -2890,7 +3064,7 @@ function imageFieldMarkup(entity, title = 'Изображение') {
         <div class="media-actions">
           <input class="input image-file-input" type="file" accept="image/*,.dds,image/vnd.ms-dds,application/octet-stream" />
           <button type="button" class="secondary clear-image-btn">REMOVE_IMAGE</button>
-          <div class="small-note">Изображение копируется в локальную папку world-data/assets. DDS автоматически конвертируется в PNG для корректного отображения. Если включён Supabase, файл дополнительно грузится в Storage и раздаётся на другие ПК по cloud URL.</div>
+          <div class="small-note">Изображение копируется в локальную папку world-data/assets. DDS автоматически конвертируется в PNG для корректного отображения. Если включена облачная синхронизация, файл дополнительно грузится в backend и раздаётся на другие ПК по cloud URL.</div>
         </div>
       </div>
     </div>
@@ -3237,7 +3411,7 @@ function bindImageInputs(root) {
                 renderPreview();
               }
               if (result?.warning) {
-                Toast.show(`Локальный файл сохранён, но upload в Supabase не удался: ${result.warning}`, 'info');
+                Toast.show(`Локальный файл сохранён, но upload в backend не удался: ${result.warning}`, 'info');
               }
               return result;
             }
@@ -5197,10 +5371,14 @@ const GalaxyMap = {
   vortices: [],
   regionGlows: [],
   filaments: [],
+  staticBgCanvas: null,
+  galaxyImages: { big: null, main: null },
+  galaxyImageStatus: { big: 'idle', main: 'idle' },
   init() {
-    this.ctx = this.canvas.getContext('2d');
-    this.resize();
+    this.ctx = this.canvas.getContext('2d', { alpha: false });
     this.generate();
+    this.resize();
+    this.loadBackgroundImages();
     this.bind();
     this.draw();
   },
@@ -5238,30 +5416,6 @@ const GalaxyMap = {
       });
     }
 
-    const arms = 5;
-    for (let i = 0; i < 12500; i++) {
-      const arm = i % arms;
-      const baseAngle = (Math.PI * 2 / arms) * arm;
-      const radius = Math.pow(Math.random(), 0.68) * 0.62;
-      const spin = radius * 8.9;
-      const theta = baseAngle + spin + (Math.random() - 0.5) * (0.34 - radius * 0.16);
-      const warpX = 1.2 + Math.random() * 0.28;
-      const warpY = 0.58 + Math.random() * 0.22;
-      const x = 0.5 + Math.cos(theta) * radius * warpX;
-      const y = 0.5 + Math.sin(theta) * radius * warpY;
-      const warmFactor = x < 0.48 ? 0.7 : 0.12;
-      const hue = Math.random() < warmFactor
-        ? (Math.random() > 0.6 ? '255,176,96' : '255,142,78')
-        : (Math.random() > 0.58 ? '90,216,255' : '172,236,255');
-      this.galStars.push({
-        x,
-        y,
-        r: 0.24 + Math.random() * 1.06,
-        a: 0.12 + Math.random() * 0.5,
-        hue
-      });
-    }
-
     const warmClouds = [
       { x: 0.18, y: 0.28, rx: 0.23, ry: 0.13, rot: -0.55, hue: '255,118,54', a: 0.17 },
       { x: 0.30, y: 0.56, rx: 0.27, ry: 0.16, rot: -0.2, hue: '246,142,64', a: 0.14 },
@@ -5295,9 +5449,6 @@ const GalaxyMap = {
       { x: 0.51, y: 0.52, r: 0.22, hue: '255,214,162', a: 0.08 }
     ];
 
-    this.dustBands = [];
-    this.vortices = [];
-
     for (let i = 0; i < 18; i++) {
       const side = i < 9 ? 'warm' : 'cool';
       this.filaments.push({
@@ -5310,6 +5461,300 @@ const GalaxyMap = {
         a: 0.04 + Math.random() * 0.05
       });
     }
+  },
+  loadBackgroundImages() {
+    const loadLayer = (key, sources) => {
+      const tryLoad = index => {
+        if (index >= sources.length) {
+          this.galaxyImages[key] = null;
+          this.galaxyImageStatus[key] = 'missing';
+          console.warn(`Galaxy background image not found: ${sources.join(', ')}`);
+          return;
+        }
+        const src = sources[index];
+        const img = new Image();
+        this.galaxyImageStatus[key] = 'loading';
+        img.onload = () => {
+          this.galaxyImages[key] = img;
+          this.galaxyImageStatus[key] = 'ready';
+        };
+        img.onerror = () => tryLoad(index + 1);
+        img.src = src;
+      };
+      tryLoad(0);
+    };
+    loadLayer('big', ['assets/images/galaxy_bigstars.png', 'assets/images/galaxy_bigstarts.png', 'assets/images/galaxy2.png']);
+    loadLayer('main', ['assets/images/galaxy_mainstars.png', 'assets/images/galaxy1.png']);
+  },
+  createLayer(width, height) {
+    const layer = document.createElement('canvas');
+    layer.width = Math.max(1, Math.round(width));
+    layer.height = Math.max(1, Math.round(height));
+    return layer;
+  },
+  rebuildStaticLayers() {
+    if (!this.ctx || !this.W || !this.H) return;
+    this.staticBgCanvas = this.createLayer(this.W, this.H);
+    const bg = this.staticBgCanvas.getContext('2d', { alpha: false });
+    const W = this.W;
+    const H = this.H;
+
+    const sky = bg.createLinearGradient(0, 0, 0, H);
+    sky.addColorStop(0, '#030812');
+    sky.addColorStop(0.38, '#050c15');
+    sky.addColorStop(1, '#02050a');
+    bg.fillStyle = sky;
+    bg.fillRect(0, 0, W, H);
+
+    for (const region of this.regionGlows) {
+      const x = region.x * W;
+      const y = region.y * H;
+      const grad = bg.createRadialGradient(x, y, 0, x, y, region.r * Math.max(W, H));
+      grad.addColorStop(0, `rgba(${region.hue}, ${region.a})`);
+      grad.addColorStop(0.45, `rgba(${region.hue}, ${region.a * 0.3})`);
+      grad.addColorStop(1, 'rgba(0,0,0,0)');
+      bg.fillStyle = grad;
+      bg.fillRect(0, 0, W, H);
+    }
+
+    const centerFog = bg.createRadialGradient(W * 0.5, H * 0.5, 0, W * 0.5, H * 0.5, Math.max(W, H) * 0.72);
+    centerFog.addColorStop(0, 'rgba(214,240,255,0.16)');
+    centerFog.addColorStop(0.4, 'rgba(88,134,200,0.07)');
+    centerFog.addColorStop(1, 'rgba(0,0,0,0.42)');
+    bg.fillStyle = centerFog;
+    bg.fillRect(0, 0, W, H);
+
+    bg.globalCompositeOperation = 'screen';
+    for (const cloud of this.clouds) {
+      const x = cloud.x * W;
+      const y = cloud.y * H;
+      const radius = Math.max(cloud.rx * W, cloud.ry * H);
+      const gradient = bg.createRadialGradient(x, y, 0, x, y, radius);
+      gradient.addColorStop(0, `rgba(${cloud.hue}, ${cloud.a})`);
+      gradient.addColorStop(0.28, `rgba(${cloud.hue}, ${cloud.a * 0.62})`);
+      gradient.addColorStop(0.65, `rgba(${cloud.hue}, ${cloud.a * 0.18})`);
+      gradient.addColorStop(1, `rgba(${cloud.hue}, 0)`);
+      bg.save();
+      bg.translate(x, y);
+      bg.rotate(cloud.rot || 0);
+      bg.fillStyle = gradient;
+      bg.beginPath();
+      bg.ellipse(0, 0, cloud.rx * W, cloud.ry * H, 0, 0, Math.PI * 2);
+      bg.fill();
+      bg.restore();
+    }
+
+    for (const filament of this.filaments) {
+      const x = filament.x * W;
+      const y = filament.y * H;
+      const gradient = bg.createRadialGradient(x, y, 0, x, y, filament.rx * W);
+      gradient.addColorStop(0, `rgba(${filament.hue}, ${filament.a})`);
+      gradient.addColorStop(0.4, `rgba(${filament.hue}, ${filament.a * 0.25})`);
+      gradient.addColorStop(1, 'rgba(0,0,0,0)');
+      bg.save();
+      bg.translate(x, y);
+      bg.rotate(filament.rot);
+      bg.fillStyle = gradient;
+      bg.beginPath();
+      bg.ellipse(0, 0, filament.rx * W, filament.ry * H, 0, 0, Math.PI * 2);
+      bg.fill();
+      bg.restore();
+    }
+
+    bg.globalCompositeOperation = 'source-over';
+    for (const star of this.bgStars) {
+      bg.fillStyle = `rgba(${star.hue || '255,255,255'},${star.a})`;
+      bg.beginPath();
+      bg.arc(star.x * W, star.y * H, Math.max(0.55, star.r * this.DPR), 0, Math.PI * 2);
+      bg.fill();
+    }
+    bg.globalCompositeOperation = 'lighter';
+    for (const star of this.bloomStars) {
+      const x = star.x * W;
+      const y = star.y * H;
+      const glow = bg.createRadialGradient(x, y, 0, x, y, star.r * this.DPR * 5.8);
+      glow.addColorStop(0, `rgba(${star.hue}, ${star.a})`);
+      glow.addColorStop(0.16, `rgba(${star.hue}, ${star.a * 0.45})`);
+      glow.addColorStop(1, 'rgba(255,255,255,0)');
+      bg.fillStyle = glow;
+      bg.beginPath();
+      bg.arc(x, y, star.r * this.DPR * 5.8, 0, Math.PI * 2);
+      bg.fill();
+    }
+    bg.globalCompositeOperation = 'source-over';
+  },
+  drawImageLayer(img, options = {}) {
+    if (!img || !img.complete || !img.naturalWidth || !img.naturalHeight) return false;
+    const { ctx, W, H, state } = this;
+    const mode = options.mode || 'cover';
+    const scale = Math.max(0.01, Number(options.scale || 1));
+    const imgAspect = img.naturalWidth / img.naturalHeight;
+    let drawW = W * scale;
+    let drawH = drawW / imgAspect;
+    if (mode === 'cover') {
+      if (drawH < H * scale) {
+        drawH = H * scale;
+        drawW = drawH * imgAspect;
+      }
+    } else if (mode === 'contain') {
+      drawH = H * scale;
+      drawW = drawH * imgAspect;
+      if (drawW > W * scale) {
+        drawW = W * scale;
+        drawH = drawW / imgAspect;
+      }
+    }
+
+    const cameraShiftX = (state.cx - 0.5) * W * (options.cameraParallax || 0);
+    const cameraShiftY = (state.cy - 0.5) * H * (options.cameraParallax || 0);
+    const mouseShiftX = (state.mx - 0.5) * (options.mouseParallax || 0) * this.DPR;
+    const mouseShiftY = (state.my - 0.5) * (options.mouseParallax || 0) * this.DPR;
+    const baseX = (W - drawW) / 2 + cameraShiftX + mouseShiftX;
+    const baseY = (H - drawH) / 2 + cameraShiftY + mouseShiftY;
+
+    ctx.save();
+    ctx.globalAlpha = clamp(Number(options.alpha ?? 1), 0, 1);
+    ctx.globalCompositeOperation = options.composite || 'source-over';
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    const filters = [];
+    const blurPx = Math.max(0, Number(options.blur || 0));
+    if (blurPx > 0) filters.push(`blur(${(blurPx * this.DPR).toFixed(2)}px)`);
+    const brightness = Number(options.brightness || 1);
+    if (Number.isFinite(brightness) && Math.abs(brightness - 1) > 0.001) filters.push(`brightness(${brightness.toFixed(3)})`);
+    const saturate = Number(options.saturate || 1);
+    if (Number.isFinite(saturate) && Math.abs(saturate - 1) > 0.001) filters.push(`saturate(${saturate.toFixed(3)})`);
+    ctx.filter = filters.length ? filters.join(' ') : 'none';
+    if (options.glow) {
+      ctx.shadowColor = options.glowColor || 'rgba(125,249,255,0.55)';
+      ctx.shadowBlur = Number(options.glow) * this.DPR;
+    }
+    ctx.drawImage(img, baseX, baseY, drawW, drawH);
+    ctx.restore();
+    return true;
+  },
+  drawRepeatedImageLayer(img, options = {}) {
+    if (!img || !img.complete || !img.naturalWidth || !img.naturalHeight) return false;
+    const { ctx, W, H, state } = this;
+    const imgAspect = img.naturalWidth / img.naturalHeight;
+    const tileScale = Math.max(0.2, Number(options.tileScale || 1));
+    let drawH = H * tileScale;
+    let drawW = drawH * imgAspect;
+    if (drawW < W * 0.75) {
+      drawW = W * 0.75;
+      drawH = drawW / imgAspect;
+    }
+    const tileStepX = drawW;
+    const tileStepY = drawH;
+    const cameraShiftX = (state.cx - 0.5) * W * (options.cameraParallax || 0);
+    const cameraShiftY = (state.cy - 0.5) * H * (options.cameraParallax || 0);
+    const mouseShiftX = (state.mx - 0.5) * (options.mouseParallax || 0) * this.DPR;
+    const mouseShiftY = (state.my - 0.5) * (options.mouseParallax || 0) * this.DPR;
+    const offsetX = ((cameraShiftX + mouseShiftX) % tileStepX + tileStepX) % tileStepX;
+    const offsetY = ((cameraShiftY + mouseShiftY) % tileStepY + tileStepY) % tileStepY;
+
+    ctx.save();
+    ctx.globalAlpha = clamp(Number(options.alpha ?? 1), 0, 1);
+    ctx.globalCompositeOperation = options.composite || 'source-over';
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    const filters = [];
+    const blurPx = Math.max(0, Number(options.blur || 0));
+    if (blurPx > 0) filters.push(`blur(${(blurPx * this.DPR).toFixed(2)}px)`);
+    const brightness = Number(options.brightness || 1);
+    if (Number.isFinite(brightness) && Math.abs(brightness - 1) > 0.001) filters.push(`brightness(${brightness.toFixed(3)})`);
+    const saturate = Number(options.saturate || 1);
+    if (Number.isFinite(saturate) && Math.abs(saturate - 1) > 0.001) filters.push(`saturate(${saturate.toFixed(3)})`);
+    ctx.filter = filters.length ? filters.join(' ') : 'none';
+    if (options.glow) {
+      ctx.shadowColor = options.glowColor || 'rgba(180,224,255,0.42)';
+      ctx.shadowBlur = Number(options.glow) * this.DPR;
+    }
+    for (let x = -tileStepX - offsetX; x < W + tileStepX; x += tileStepX) {
+      for (let y = -tileStepY - offsetY; y < H + tileStepY; y += tileStepY) {
+        ctx.drawImage(img, x, y, drawW, drawH);
+      }
+    }
+    ctx.restore();
+    return true;
+  },
+  drawWorldAnchoredImageLayer(img, options = {}) {
+    if (!img || !img.complete || !img.naturalWidth || !img.naturalHeight) return false;
+    const { ctx, state } = this;
+    const bounds = options.bounds || { x: 0, y: 0, w: 1, h: 1 };
+    const topLeft = this.worldToScreen(bounds.x, bounds.y);
+    const bottomRight = this.worldToScreen(bounds.x + bounds.w, bounds.y + bounds.h);
+    const x = Math.min(topLeft.sx, bottomRight.sx);
+    const y = Math.min(topLeft.sy, bottomRight.sy);
+    const w = Math.abs(bottomRight.sx - topLeft.sx);
+    const h = Math.abs(bottomRight.sy - topLeft.sy);
+    if (w <= 1 || h <= 1) return false;
+
+    ctx.save();
+    ctx.globalAlpha = clamp(Number(options.alpha ?? 1), 0, 1) * Math.max(0, Math.min(1, 1.35 - state.zoom / 13));
+    ctx.globalCompositeOperation = options.composite || 'source-over';
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    const filters = [];
+    const blurPx = Math.max(0, Number(options.blur || 0));
+    if (blurPx > 0) filters.push(`blur(${(blurPx * this.DPR).toFixed(2)}px)`);
+    const brightness = Number(options.brightness || 1);
+    if (Number.isFinite(brightness) && Math.abs(brightness - 1) > 0.001) filters.push(`brightness(${brightness.toFixed(3)})`);
+    const saturate = Number(options.saturate || 1);
+    if (Number.isFinite(saturate) && Math.abs(saturate - 1) > 0.001) filters.push(`saturate(${saturate.toFixed(3)})`);
+    ctx.filter = filters.length ? filters.join(' ') : 'none';
+    if (options.glow) {
+      ctx.shadowColor = options.glowColor || 'rgba(125,249,255,0.55)';
+      ctx.shadowBlur = Number(options.glow) * this.DPR;
+    }
+    ctx.drawImage(img, x, y, w, h);
+    ctx.restore();
+    return true;
+  },
+  drawGalaxyBackground() {
+    const { ctx, W, H } = this;
+    if (this.staticBgCanvas) {
+      ctx.drawImage(this.staticBgCanvas, 0, 0, W, H);
+    } else {
+      const sky = ctx.createLinearGradient(0, 0, 0, H);
+      sky.addColorStop(0, '#030812');
+      sky.addColorStop(0.42, '#050c15');
+      sky.addColorStop(1, '#02050a');
+      ctx.fillStyle = sky;
+      ctx.fillRect(0, 0, W, H);
+    }
+
+    this.drawRepeatedImageLayer(this.galaxyImages.big, {
+      tileScale: 4.35,
+      alpha: 0.55,
+      composite: 'screen',
+      blur: 9.5,
+      brightness: 1.08,
+      saturate: 1.08,
+      glow: 26,
+      glowColor: 'rgba(205,235,255,0.26)',
+      mouseParallax: 18,
+      cameraParallax: -0.03
+    });
+
+    const pulse = 0.9 + Math.sin(performance.now() * 0.0011) * 0.08 + Math.sin(performance.now() * 0.00037) * 0.04;
+    this.drawWorldAnchoredImageLayer(this.galaxyImages.main, {
+      bounds: { x: 0, y: 0, w: 1, h: 1 },
+      alpha: 0.96,
+      composite: 'screen',
+      blur: 0.75,
+      brightness: 0.96,
+      saturate: 1.12,
+      glow: 9 * pulse,
+      glowColor: 'rgba(125,249,255,0.28)'
+    });
+
+    const vignette = ctx.createRadialGradient(W * 0.5, H * 0.48, Math.min(W, H) * 0.12, W * 0.5, H * 0.5, Math.max(W, H) * 0.72);
+    vignette.addColorStop(0, 'rgba(255,255,255,0)');
+    vignette.addColorStop(0.72, 'rgba(0,0,0,0.06)');
+    vignette.addColorStop(1, 'rgba(0,0,0,0.28)');
+    ctx.fillStyle = vignette;
+    ctx.fillRect(0, 0, W, H);
   },
   bind() {
     window.addEventListener('resize', () => this.resize());
@@ -5357,6 +5802,7 @@ const GalaxyMap = {
     this.canvas.height = this.H;
     this.canvas.style.width = `${window.innerWidth}px`;
     this.canvas.style.height = `${window.innerHeight}px`;
+    this.rebuildStaticLayers();
   },
   worldToScreen(x, y) {
     return { sx: (x - this.state.cx) * this.state.zoom * this.W + this.W / 2, sy: (y - this.state.cy) * this.state.zoom * this.H + this.H / 2 };
@@ -5491,120 +5937,7 @@ const GalaxyMap = {
     state.zoom = lerp(state.zoom, state.tzoom, 0.08);
 
     ctx.clearRect(0, 0, W, H);
-
-    const sky = ctx.createLinearGradient(0, 0, 0, H);
-    sky.addColorStop(0, '#030812');
-    sky.addColorStop(0.38, '#050c15');
-    sky.addColorStop(1, '#02050a');
-    ctx.fillStyle = sky;
-    ctx.fillRect(0, 0, W, H);
-
-    const parallaxX = (state.mx - 0.5) * 24 * this.DPR;
-    const parallaxY = (state.my - 0.5) * 24 * this.DPR;
-
-    for (const region of this.regionGlows) {
-      const x = region.x * W + parallaxX * 0.08;
-      const y = region.y * H + parallaxY * 0.08;
-      const grad = ctx.createRadialGradient(x, y, 0, x, y, region.r * Math.max(W, H));
-      grad.addColorStop(0, `rgba(${region.hue}, ${region.a})`);
-      grad.addColorStop(0.45, `rgba(${region.hue}, ${region.a * 0.3})`);
-      grad.addColorStop(1, 'rgba(0,0,0,0)');
-      ctx.fillStyle = grad;
-      ctx.fillRect(0, 0, W, H);
-    }
-
-    const centerFog = ctx.createRadialGradient(W * 0.5, H * 0.5, 0, W * 0.5, H * 0.5, Math.max(W, H) * 0.72);
-    centerFog.addColorStop(0, 'rgba(214,240,255,0.16)');
-    centerFog.addColorStop(0.4, 'rgba(88,134,200,0.07)');
-    centerFog.addColorStop(1, 'rgba(0,0,0,0.42)');
-    ctx.fillStyle = centerFog;
-    ctx.fillRect(0, 0, W, H);
-
-    ctx.globalCompositeOperation = 'screen';
-    for (const cloud of this.clouds) {
-      const x = cloud.x * W + parallaxX * 0.2;
-      const y = cloud.y * H + parallaxY * 0.2;
-      const radius = Math.max(cloud.rx * W, cloud.ry * H);
-      const gradient = ctx.createRadialGradient(x, y, 0, x, y, radius);
-      gradient.addColorStop(0, `rgba(${cloud.hue}, ${cloud.a})`);
-      gradient.addColorStop(0.28, `rgba(${cloud.hue}, ${cloud.a * 0.62})`);
-      gradient.addColorStop(0.65, `rgba(${cloud.hue}, ${cloud.a * 0.18})`);
-      gradient.addColorStop(1, `rgba(${cloud.hue}, 0)`);
-      ctx.save();
-      ctx.translate(x, y);
-      ctx.rotate(cloud.rot || 0);
-      ctx.fillStyle = gradient;
-      ctx.beginPath();
-      ctx.ellipse(0, 0, cloud.rx * W, cloud.ry * H, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
-    }
-
-    for (const filament of this.filaments) {
-      const x = filament.x * W + parallaxX * 0.12;
-      const y = filament.y * H + parallaxY * 0.12;
-      const gradient = ctx.createRadialGradient(x, y, 0, x, y, filament.rx * W);
-      gradient.addColorStop(0, `rgba(${filament.hue}, ${filament.a})`);
-      gradient.addColorStop(0.4, `rgba(${filament.hue}, ${filament.a * 0.25})`);
-      gradient.addColorStop(1, 'rgba(0,0,0,0)');
-      ctx.save();
-      ctx.translate(x, y);
-      ctx.rotate(filament.rot);
-      ctx.fillStyle = gradient;
-      ctx.beginPath();
-      ctx.ellipse(0, 0, filament.rx * W, filament.ry * H, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
-    }
-    ctx.globalCompositeOperation = 'source-over';
-
-    for (const star of this.bgStars) {
-      const x = (((star.x - (state.cx - 0.5) * 0.008) % 1 + 1) % 1) * W + parallaxX * 0.08;
-      const y = (((star.y - (state.cy - 0.5) * 0.008) % 1 + 1) % 1) * H + parallaxY * 0.08;
-      const alpha = star.a * (0.84 + 0.26 * Math.sin(now() * 0.001 + star.tw));
-      ctx.fillStyle = `rgba(${star.hue || '255,255,255'},${alpha})`;
-      ctx.beginPath();
-      ctx.arc(x, y, star.r * this.DPR, 0, Math.PI * 2);
-      ctx.fill();
-    }
-
-    ctx.globalCompositeOperation = 'lighter';
-    for (const star of this.bloomStars) {
-      const x = (((star.x - (state.cx - 0.5) * 0.012) % 1 + 1) % 1) * W + parallaxX * 0.16;
-      const y = (((star.y - (state.cy - 0.5) * 0.012) % 1 + 1) % 1) * H + parallaxY * 0.16;
-      const alpha = star.a * (0.86 + 0.22 * Math.sin(now() * 0.0007 + star.tw));
-      const glow = ctx.createRadialGradient(x, y, 0, x, y, star.r * this.DPR * 5.8);
-      glow.addColorStop(0, `rgba(${star.hue}, ${alpha})`);
-      glow.addColorStop(0.16, `rgba(${star.hue}, ${alpha * 0.45})`);
-      glow.addColorStop(1, 'rgba(255,255,255,0)');
-      ctx.fillStyle = glow;
-      ctx.beginPath();
-      ctx.arc(x, y, star.r * this.DPR * 5.8, 0, Math.PI * 2);
-      ctx.fill();
-    }
-
-    if (state.zoom < 10) {
-      for (const star of this.galStars) {
-        const point = this.worldToScreen(star.x, star.y);
-        const opacity = star.a * Math.max(0, (1.3 - state.zoom / 10));
-        if (opacity <= 0) continue;
-        ctx.fillStyle = `rgba(${star.hue || '125,249,255'},${opacity})`;
-        ctx.fillRect(point.sx, point.sy, star.r * this.DPR, star.r * this.DPR);
-      }
-
-      const core = this.worldToScreen(0.5, 0.5);
-      const bulge = ctx.createRadialGradient(core.sx, core.sy, 0, core.sx, core.sy, 380 * this.DPR / Math.max(1, state.zoom * 0.52));
-      bulge.addColorStop(0, 'rgba(228,244,255,0.42)');
-      bulge.addColorStop(0.18, 'rgba(198,230,255,0.22)');
-      bulge.addColorStop(0.42, 'rgba(92,156,255,0.08)');
-      bulge.addColorStop(1, 'rgba(0,0,0,0)');
-      ctx.fillStyle = bulge;
-      ctx.beginPath();
-      ctx.arc(core.sx, core.sy, 380 * this.DPR / Math.max(1, state.zoom * 0.52), 0, Math.PI * 2);
-      ctx.fill();
-      ctx.globalCompositeOperation = 'source-over';
-    }
-    ctx.globalCompositeOperation = 'source-over';
+    this.drawGalaxyBackground();
 
     const currentLocation = getPlayerCurrentLocation(App.currentUser);
     const currentSystemId = currentLocation.system?.id || null;
@@ -16072,6 +16405,10 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
     { key: 'glory', label: 'Слава', short: 'СЛА', legacy: ['cha'] }
   ];
   const ABILITY_BY_KEY_V50 = Object.fromEntries(ABILITY_MODEL_V50.map(item => [item.key, item]));
+  const ABILITY_MAX_V53 = 5;
+  const SKILL_TYPE_SKILL_V55 = 'skill';
+  const SKILL_TYPE_SPECIALIZATION_V55 = 'specialization';
+  let SKILL_TREE_FOCUS_V53 = null;
   let FACTIONS_V50 = {};
   let FACTION_LIST_V50 = [];
   let SKILLS_V50 = {};
@@ -16086,6 +16423,10 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
     return Number.isFinite(num) ? num : fallback;
   }
 
+  function normalizeAbilityValueV53(value, fallback = 0) {
+    return Math.max(0, Math.min(ABILITY_MAX_V53, numberOrFallbackV50(value, fallback)));
+  }
+
   function normalizeAbilitiesV50(source = {}) {
     const raw = source && typeof source === 'object' ? source : {};
     const out = {};
@@ -16095,13 +16436,47 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
         const legacyKey = item.legacy.find(key => raw[key] !== undefined);
         if (legacyKey) value = raw[legacyKey];
       }
-      out[item.key] = numberOrFallbackV50(value, 10);
+      out[item.key] = normalizeAbilityValueV53(value, 0);
     }
     return out;
   }
 
   function abilityLabelV50(key) {
     return ABILITY_BY_KEY_V50[key]?.label || key || 'Характеристика';
+  }
+
+  function normalizeSkillTypeV55(value = '') {
+    const text = String(value || '').trim().toLowerCase();
+    if (['specialization', 'specialisation', 'secondary', 'secondary_ability', 'secondaryAbility', 'spec', 'специализация', 'вторичная характеристика'].includes(text)) return SKILL_TYPE_SPECIALIZATION_V55;
+    return SKILL_TYPE_SKILL_V55;
+  }
+
+  function isSpecializationV55(entity = {}) {
+    return normalizeSkillTypeV55(entity.skillType || entity.type) === SKILL_TYPE_SPECIALIZATION_V55;
+  }
+
+  function isLearnableSkillV55(entity = {}) {
+    return normalizeSkillTypeV55(entity.skillType || entity.type) === SKILL_TYPE_SKILL_V55;
+  }
+
+  function normalizeSpecializationValuesV55(value = {}) {
+    const raw = value && typeof value === 'object' ? value : {};
+    const out = {};
+    Object.entries(raw).forEach(([id, entry]) => {
+      const key = String(id || '').trim();
+      if (!key) return;
+      out[key] = Math.max(0, Math.floor(numberOrFallbackV50(entry, 0)));
+    });
+    return out;
+  }
+
+  function normalizeSpecializationIncreaseIdsV55(value) {
+    return normalizeSkillIdArrayV50(value);
+  }
+
+  function specializationLabelV55(id) {
+    const item = Data.getSkill?.(id);
+    return item?.name || id || 'Специализация';
   }
 
   function normalizeSkillIdArrayV50(value) {
@@ -16189,8 +16564,9 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
   normalizePlayerProfileV2 = function(user = {}) {
     const next = __normalizePlayerProfileV50(user);
     next.abilities = normalizeAbilitiesV50(user.abilities || next.abilities || {});
+    next.specializations = normalizeSpecializationValuesV55(user.specializations || user.secondaryAbilities || next.specializations || {});
     next.skillPoints = Math.max(0, numberOrFallbackV50(user.skillPoints ?? user.upgradePoints ?? user.improvementPoints, 0));
-    next.skills = normalizeSkillIdArrayV50(user.skills || user.skillIds || []);
+    next.skills = normalizeSkillIdArrayV50(user.skills || user.skillIds || []).filter(id => !Data.getSkill || !isSpecializationV55(Data.getSkill(id) || {}));
     next.social = {
       ...(next.social || {}),
       npcIds: Array.isArray(next.social?.npcIds) ? next.social.npcIds : [],
@@ -16220,11 +16596,14 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
 
   function normalizeSkillV50(entity = {}) {
     const id = slugifyId(entity.id || entity.name || entity.title || '', 'skill');
+    const skillType = normalizeSkillTypeV55(entity.skillType || entity.type || entity.kind || '');
     const requiredAbilities = normalizeAbilityRequirementsV52(entity.requiredAbilities || entity.abilityRequirements || entity.requiredAbilityMap, entity.requiredAbility || entity.ability || '', entity.requiredAbilityValue ?? entity.abilityMin ?? 0);
     const firstAbilityReq = requiredAbilities[0] || { key: '', value: 0 };
     return {
       id,
-      name: String(entity.name || entity.title || 'Новый навык').trim(),
+      skillType,
+      type: skillType,
+      name: String(entity.name || entity.title || (skillType === SKILL_TYPE_SPECIALIZATION_V55 ? 'Новая специализация' : 'Новый навык')).trim(),
       category: String(entity.category || 'Общее').trim() || 'Общее',
       description: String(entity.description || entity.summary || entity.body || '').trim(),
       cost: Math.max(0, numberOrFallbackV50(entity.cost ?? entity.pointCost, 1)),
@@ -16232,13 +16611,23 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
       requiredAbility: firstAbilityReq.key,
       requiredAbilityValue: firstAbilityReq.value,
       requiredSkillIds: normalizeSkillIdArrayV50(entity.requiredSkillIds || entity.prerequisites || []),
+      specializationIncreases: normalizeSpecializationIncreaseIdsV55(entity.specializationIncreases || entity.specializationIncreaseIds || entity.secondaryAbilityIncreases || []),
       color: String(entity.color || '#7df9ff').trim() || '#7df9ff',
       image: String(entity.image || '').trim(),
       imageLocal: String(entity.imageLocal || '').trim(),
       imageStoragePath: String(entity.imageStoragePath || '').trim(),
       relatedArticleIds: Array.isArray(entity.relatedArticleIds) ? entity.relatedArticleIds.map(String).filter(Boolean) : [],
-      visibility: entity.visibility && typeof entity.visibility === 'object' ? { playerIds: Array.isArray(entity.visibility.playerIds) ? entity.visibility.playerIds.map(String) : [] } : { playerIds: [] }
+      visibility: entity.visibility && typeof entity.visibility === 'object' ? { playerIds: Array.isArray(entity.visibility.playerIds) ? entity.visibility.playerIds.map(String) : [] } : { playerIds: [] },
+      treePos: normalizeSkillTreePositionSafeV64(entity.treePos || entity.layout || entity.position || entity.pos)
     };
+  }
+
+  function normalizeSkillTreePositionSafeV64(raw = null) {
+    if (!raw || typeof raw !== 'object') return null;
+    const x = Number(raw.x);
+    const y = Number(raw.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    return { x: Math.max(0, Math.round(x)), y: Math.max(0, Math.round(y)) };
   }
 
   function normalizeRecordFromSectionV50(section = {}, mapKey, listKey, normalizeFn) {
@@ -16300,7 +16689,7 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
   createBlankEntity = function(type) {
     const stamp = Date.now().toString().slice(-6);
     if (type === 'factions') return normalizeFactionV50({ id: `org_${stamp}`, name: 'Новая организация', type: 'Фракция', influence: 'Локальное влияние', color: '#7df9ff' });
-    if (type === 'skills') return normalizeSkillV50({ id: `skill_${stamp}`, name: 'Новый навык', category: 'Общее', cost: 1, description: '' });
+    if (type === 'skills') return normalizeSkillV50({ id: `skill_${stamp}`, name: 'Новый навык', skillType: SKILL_TYPE_SKILL_V55, category: 'Общее', cost: 1, description: '' });
     const entity = __createBlankEntityV50(type);
     if (type === 'players') return normalizePlayerProfileV2({ ...entity, skillPoints: 0, skills: [], abilities: normalizeAbilitiesV50(entity.abilities || {}) });
     return entity;
@@ -16328,9 +16717,41 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
     return sortEntitiesForList(Object.values(SKILLS_V50 || {}).filter(item => isEntityVisible(item, user)));
   }
 
+  function getVisibleLearnableSkillsV55(user = App.currentUser) {
+    return sortEntitiesForList(getVisibleSkillsV50(user).filter(isLearnableSkillV55));
+  }
+
+  function getVisibleSpecializationsV55(user = App.currentUser) {
+    return sortEntitiesForList(getVisibleSkillsV50(user).filter(isSpecializationV55));
+  }
+
+  function getVisibleSkillTreeItemsV56(user = App.currentUser) {
+    return sortEntitiesForList(getVisibleSkillsV50(user).filter(item => isLearnableSkillV55(item) || isSpecializationV55(item)));
+  }
+
+  function isSkillRequirementMetV56(user, skillId) {
+    user = normalizePlayerProfileV2(user || {});
+    const reqSkill = Data.getSkill?.(skillId);
+    if (reqSkill && isSpecializationV55(reqSkill)) return Number(user.specializations?.[skillId] || 0) > 0;
+    return new Set(user.skills || []).has(skillId);
+  }
+
+  function skillRequirementNameV56(skillId) {
+    const reqSkill = Data.getSkill?.(skillId);
+    if (!reqSkill) return skillId || 'Навык';
+    return `${reqSkill.name || skillId}${isSpecializationV55(reqSkill) ? ' [специализация]' : ''}`;
+  }
+
+  function specializationTilesMarkupV55(user) {
+    const specs = getVisibleSpecializationsV55(user);
+    if (!specs.length) return '';
+    const values = normalizeSpecializationValuesV55(user?.specializations || {});
+    return `<div class="profile-specializations-wrap-v55"><div class="profile-specializations-title-v55">Специализации</div><div class="profile-specializations-grid-v55">${specs.map(spec => `<div class="ability profile-specialization-tile-v55" title="${esc(spec.name)}">${renderThumb(spec, { size: 'sm', type: 'skill', glyph: initials(spec.name, 'SP') })}<span>${esc(spec.name)}</span><b>${Number(values[spec.id] || 0)}</b></div>`).join('')}</div></div>`;
+  }
+
   function abilityTilesMarkupV50(user) {
     const abilities = normalizeAbilitiesV50(user?.abilities || {});
-    return ABILITY_MODEL_V50.map(item => `<div class="ability profile-ability-compact" title="${esc(item.label)}"><span>${esc(item.label)}</span><b>${esc(abilities[item.key])}</b></div>`).join('');
+    return ABILITY_MODEL_V50.map(item => `<div class="ability profile-ability-compact" title="${esc(item.label)}"><span>${esc(item.label)}</span><b>${esc(abilities[item.key])}</b></div>`).join('') + specializationTilesMarkupV55(user);
   }
 
   function reputationForFactionV50(user, faction) {
@@ -16338,11 +16759,35 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
     return rows.find(row => row.orgId && row.orgId === faction.id) || rows.find(row => row.name && row.name.toLowerCase() === String(faction.name || '').toLowerCase()) || null;
   }
 
+  function skillRequiresGloryV58(skill, stack = new Set()) {
+    skill = normalizeSkillV50(skill || {});
+    if (!skill.id && !skill.requiredAbilities?.length && !skill.requiredSkillIds?.length) return false;
+    if ((skill.requiredAbilities || []).some(req => req.key === 'glory')) return true;
+    if (stack.has(skill.id)) return false;
+    if (skill.id) stack.add(skill.id);
+    for (const reqId of skill.requiredSkillIds || []) {
+      const reqSkill = Data.getSkill?.(reqId);
+      if (reqSkill && skillRequiresGloryV58(reqSkill, stack)) return true;
+    }
+    return false;
+  }
+
+  function isPlayerBlockedGlorySkillV58(skill = {}) {
+    return skillRequiresGloryV58(skill) && App.currentUser?.role !== 'gm';
+  }
+
   function skillStatusV50(user, skill) {
     user = normalizePlayerProfileV2(user);
     skill = normalizeSkillV50(skill);
+    const isSpec = isSpecializationV55(skill);
     const owned = new Set(user.skills || []);
-    if (owned.has(skill.id)) return { state: 'owned', ok: false, reasons: ['Навык уже изучен'] };
+    if (isSpec) {
+      const value = Number(user.specializations?.[skill.id] || 0);
+      if (value > 0) return { state: 'specialization-owned', ok: false, reasons: ['Специализация уже изучена'], value };
+    } else if (owned.has(skill.id)) {
+      return { state: 'owned', ok: false, reasons: ['Навык уже изучен'] };
+    }
+    if (isPlayerBlockedGlorySkillV58(skill)) return { state: 'gm-only', ok: false, reasons: ['Навыки ветки Славы выдаёт ДМ'], value: isSpec ? Number(user.specializations?.[skill.id] || 0) : undefined };
     const reasons = [];
     if (Number(user.skillPoints || 0) < Number(skill.cost || 0)) reasons.push(`Нужно очков улучшения: ${skill.cost}`);
     for (const req of skill.requiredAbilities || []) {
@@ -16350,15 +16795,21 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
       if (current < Number(req.value || 0)) reasons.push(`${abilityLabelV50(req.key)} ${current}/${req.value}`);
     }
     for (const reqId of skill.requiredSkillIds || []) {
-      if (!owned.has(reqId)) reasons.push(`Нужен навык: ${Data.getSkill(reqId)?.name || reqId}`);
+      const reqSkill = Data.getSkill?.(reqId);
+      if (reqSkill && isSpecializationV55(reqSkill)) {
+        const current = Number(user.specializations?.[reqId] || 0);
+        if (current < 1) reasons.push(`Нужна специализация: ${reqSkill.name || reqId} ${current}/1`);
+      } else if (!owned.has(reqId)) {
+        reasons.push(`Нужен навык: ${Data.getSkill(reqId)?.name || reqId}`);
+      }
     }
-    return { state: reasons.length ? 'locked' : 'available', ok: !reasons.length, reasons };
+    return { state: reasons.length ? 'locked' : 'available', ok: !reasons.length, reasons, value: isSpec ? Number(user.specializations?.[skill.id] || 0) : undefined };
   }
 
   function skillSortBucketV50(user, skill) {
     const status = skillStatusV50(user, skill).state;
     if (status === 'available') return 0;
-    if (status === 'owned') return 1;
+    if (status === 'owned' || status === 'specialization-owned') return 1;
     return 2;
   }
 
@@ -16418,6 +16869,13 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
     return `${type}:${String(id || '').trim()}`;
   }
 
+  function treeNodePartsV53(nodeId = '') {
+    const text = String(nodeId || '');
+    const splitAt = text.indexOf(':');
+    if (splitAt < 0) return { type: '', id: text };
+    return { type: text.slice(0, splitAt), id: text.slice(splitAt + 1) };
+  }
+
   function skillTreeDepthV51(skill, memo = {}, stack = new Set()) {
     skill = normalizeSkillV50(skill);
     if (!skill.id) return 1;
@@ -16427,7 +16885,7 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
     let depth = 1;
     for (const reqId of skill.requiredSkillIds || []) {
       const reqSkill = Data.getSkill(reqId);
-      if (reqSkill) depth = Math.max(depth, skillTreeDepthV51(reqSkill, memo, stack) + 1);
+      if (reqSkill && reqId !== skill.id) depth = Math.max(depth, skillTreeDepthV51(reqSkill, memo, stack) + 1);
     }
     stack.delete(skill.id);
     memo[skill.id] = depth;
@@ -16446,7 +16904,7 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
     }
     for (const reqId of skill.requiredSkillIds || []) {
       const reqSkill = Data.getSkill(reqId);
-      if (reqSkill) roots.push(...skillRootColumnsV51(reqSkill, memo, stack));
+      if (reqSkill && reqId !== skill.id) roots.push(...skillRootColumnsV51(reqSkill, memo, stack));
     }
     stack.delete(skill.id);
     const clean = Array.from(new Set(roots.filter(index => Number.isFinite(index) && index >= 0)));
@@ -16461,45 +16919,304 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
     return Math.abs(hash) % ABILITY_MODEL_V50.length;
   }
 
+  function preferredAbilityForSkillV53(skill, index = 0) {
+    skill = normalizeSkillV50(skill);
+    const directAbility = (skill.requiredAbilities || []).find(req => ABILITY_BY_KEY_V50[req.key]);
+    if (directAbility) return directAbility.key;
+    const roots = skillRootColumnsV51(skill, {}, new Set());
+    if (roots.length) return ABILITY_MODEL_V50[roots[0]]?.key || ABILITY_MODEL_V50[0].key;
+    return ABILITY_MODEL_V50[fallbackSkillColumnV51(skill, index)]?.key || ABILITY_MODEL_V50[0].key;
+  }
+
+  function buildSpecializationGrantParentMapV56(skills) {
+    const byId = new Map(skills.map(skill => [skill.id, normalizeSkillV50(skill)]));
+    const parentBySpecId = new Map();
+    skills.map(skill => normalizeSkillV50(skill)).forEach(skill => {
+      if (!isLearnableSkillV55(skill)) return;
+      for (const specId of normalizeSpecializationIncreaseIdsV55(skill.specializationIncreases || [])) {
+        const spec = byId.get(specId);
+        if (!spec || !isSpecializationV55(spec) || specId === skill.id || parentBySpecId.has(specId)) continue;
+        parentBySpecId.set(specId, skill.id);
+      }
+    });
+    return parentBySpecId;
+  }
+
+  function buildPrimaryParentMapV53(skills) {
+    const byId = new Map(skills.map(skill => [skill.id, skill]));
+    const indexById = new Map(skills.map((skill, index) => [skill.id, index]));
+    const parentBySkillId = new Map();
+    skills.forEach((skill, index) => {
+      const reqSkill = normalizeSkillIdArrayV50(skill.requiredSkillIds || []).find(id => id !== skill.id && byId.has(id));
+      if (reqSkill) parentBySkillId.set(skill.id, treeNodeIdV51('skill', reqSkill));
+      else parentBySkillId.set(skill.id, treeNodeIdV51('ability', preferredAbilityForSkillV53(skill, index)));
+    });
+    const createsCycle = (childId, parentNodeId) => {
+      const seen = new Set([childId]);
+      let current = parentNodeId;
+      for (let guard = 0; guard < skills.length + 4; guard += 1) {
+        const parts = treeNodePartsV53(current);
+        if (parts.type !== 'skill') return false;
+        if (seen.has(parts.id)) return true;
+        seen.add(parts.id);
+        current = parentBySkillId.get(parts.id);
+        if (!current) return false;
+      }
+      return true;
+    };
+    skills.forEach(skill => {
+      const parent = parentBySkillId.get(skill.id);
+      if (createsCycle(skill.id, parent)) {
+        parentBySkillId.set(skill.id, treeNodeIdV51('ability', preferredAbilityForSkillV53(skill, indexById.get(skill.id) || 0)));
+      }
+    });
+    return parentBySkillId;
+  }
+
+  function addSkillTreeEdgeV53(edges, seen, from, to, kind = 'skill') {
+    if (!from || !to || from === to) return;
+    const key = `${from}>${to}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    edges.push({ from, to, kind });
+  }
+
+  function skillAncestorRequiresAbilityV54(skill, abilityKey, byId, stack = new Set()) {
+    skill = normalizeSkillV50(skill);
+    if (!skill.id || stack.has(skill.id)) return false;
+    stack.add(skill.id);
+    for (const reqId of skill.requiredSkillIds || []) {
+      const parent = byId.get(reqId);
+      if (!parent || reqId === skill.id) continue;
+      const normalizedParent = normalizeSkillV50(parent);
+      if ((normalizedParent.requiredAbilities || []).some(req => req.key === abilityKey)) return true;
+      if (skillAncestorRequiresAbilityV54(normalizedParent, abilityKey, byId, stack)) return true;
+    }
+    return false;
+  }
+
+  function primaryAncestorRequiresAbilityV56(skillId, abilityKey, primaryParentBySkillId = new Map(), byId = new Map()) {
+    const seen = new Set([skillId]);
+    let current = primaryParentBySkillId.get(skillId);
+    for (let guard = 0; guard < byId.size + 8; guard += 1) {
+      const parts = treeNodePartsV53(current || '');
+      if (parts.type !== 'skill' || !parts.id || seen.has(parts.id)) return false;
+      seen.add(parts.id);
+      const parent = normalizeSkillV50(byId.get(parts.id) || {});
+      if ((parent.requiredAbilities || []).some(req => req.key === abilityKey)) return true;
+      current = primaryParentBySkillId.get(parts.id);
+    }
+    return false;
+  }
+
+  function buildSkillTreeEdgesV53(skills, primaryParentBySkillId = new Map()) {
+    skills = skills.map(skill => normalizeSkillV50(skill));
+    const byId = new Map(skills.map(skill => [skill.id, skill]));
+    const skillIds = new Set(skills.map(skill => skill.id));
+    const edges = [];
+    const seen = new Set();
+
+    skills.forEach(skill => {
+      const to = treeNodeIdV51('skill', skill.id);
+      const primaryParent = primaryParentBySkillId.get(skill.id);
+      if (primaryParent) {
+        const parentParts = treeNodePartsV53(primaryParent);
+        addSkillTreeEdgeV53(edges, seen, primaryParent, to, parentParts.type === 'skill' ? 'primary' : 'ability');
+      }
+    });
+
+    skills.forEach(skill => {
+      const to = treeNodeIdV51('skill', skill.id);
+      const primaryParent = primaryParentBySkillId.get(skill.id);
+      for (const req of skill.requiredAbilities || []) {
+        if (!ABILITY_BY_KEY_V50[req.key]) continue;
+        if (skillAncestorRequiresAbilityV54(skill, req.key, byId) || primaryAncestorRequiresAbilityV56(skill.id, req.key, primaryParentBySkillId, byId)) continue;
+        const from = treeNodeIdV51('ability', req.key);
+        addSkillTreeEdgeV53(edges, seen, from, to, from === primaryParent ? 'ability' : 'ability-extra');
+      }
+      for (const reqId of skill.requiredSkillIds || []) {
+        if (!skillIds.has(reqId) || reqId === skill.id) continue;
+        const from = treeNodeIdV51('skill', reqId);
+        addSkillTreeEdgeV53(edges, seen, from, to, from === primaryParent ? 'primary' : 'secondary');
+      }
+      // Навыки могут повышать специализации как бонус, но это не является
+      // требованием дерева и не рисуется отдельной пунктирной связью.
+    });
+    return edges;
+  }
+
+  function graphReachableV53(startId, edges, direction = 'down') {
+    const out = new Set();
+    const stack = [startId];
+    while (stack.length) {
+      const current = stack.pop();
+      for (const edge of edges) {
+        const next = direction === 'up' ? (edge.to === current ? edge.from : '') : (edge.from === current ? edge.to : '');
+        if (!next || out.has(next)) continue;
+        out.add(next);
+        stack.push(next);
+      }
+    }
+    return out;
+  }
+
+  function skillTreeVisibleSetsV53(layout) {
+    const abilities = new Set(ABILITY_MODEL_V50.map(item => treeNodeIdV51('ability', item.key)));
+    const skills = new Set((layout?.skills || []).map(skill => treeNodeIdV51('skill', skill.id)));
+    const focus = SKILL_TREE_FOCUS_V53;
+    const selected = focus?.type && focus?.id ? treeNodeIdV51(focus.type, focus.id) : '';
+    return { abilities, skills, selected };
+  }
+
+  function rootAbilityForNodeV54(nodeId, primaryParentBySkillId = new Map(), byId = new Map()) {
+    const parts = treeNodePartsV53(nodeId);
+    if (parts.type === 'ability') return parts.id;
+    if (parts.type !== 'skill') return '';
+    let current = nodeId;
+    const seen = new Set();
+    for (let guard = 0; guard < byId.size + 8; guard += 1) {
+      if (!current || seen.has(current)) break;
+      seen.add(current);
+      const nodeParts = treeNodePartsV53(current);
+      if (nodeParts.type === 'ability') return nodeParts.id;
+      if (nodeParts.type !== 'skill') break;
+      const parent = primaryParentBySkillId.get(nodeParts.id);
+      if (!parent) {
+        const skill = byId.get(nodeParts.id);
+        return skill ? preferredAbilityForSkillV53(skill, 0) : '';
+      }
+      const parentParts = treeNodePartsV53(parent);
+      if (parentParts.type === 'ability') return parentParts.id;
+      current = parent;
+    }
+    return '';
+  }
+
+  function expandedAbilityKeysV54(skills, rawEdges, primaryParentBySkillId, byId) {
+    return new Set(ABILITY_MODEL_V50.map(item => item.key));
+  }
+
   function buildSkillTreeLayoutV51(user) {
     user = normalizePlayerProfileV2(user);
     const depthMemo = {};
-    const rootMemo = {};
-    const skills = getVisibleSkillsV50(user).map(skill => normalizeSkillV50(skill)).sort((a, b) => {
+    const skills = getVisibleSkillTreeItemsV56(user).map(skill => normalizeSkillV50(skill)).sort((a, b) => {
       const da = skillTreeDepthV51(a, depthMemo);
       const db = skillTreeDepthV51(b, depthMemo);
       if (da !== db) return da - db;
       const ca = String(a.category || '').localeCompare(String(b.category || ''), 'ru');
       if (ca) return ca;
-      return String(a.name || '').localeCompare(String(b.name || ''), 'ru');
+      return String(a.name || '').localeCompare(String(b.name || ''), 'ru') || String(a.id || '').localeCompare(String(b.id || ''), 'ru');
     });
-    const rows = new Map();
-    skills.forEach((skill, index) => {
-      const row = Math.max(1, skillTreeDepthV51(skill, depthMemo));
-      const rootColumns = skillRootColumnsV51(skill, rootMemo);
-      const preferredCol = rootColumns.length ? Math.round(rootColumns.reduce((sum, value) => sum + value, 0) / rootColumns.length) : fallbackSkillColumnV51(skill, index);
-      if (!rows.has(row)) rows.set(row, Array.from({ length: ABILITY_MODEL_V50.length }, () => []));
-      const columns = rows.get(row);
-      const baseCol = Math.max(0, Math.min(ABILITY_MODEL_V50.length - 1, preferredCol));
-      let col = baseCol;
-      for (let step = 0; step < ABILITY_MODEL_V50.length; step += 1) {
-        const left = baseCol - step;
-        const right = baseCol + step;
-        if (left >= 0 && !columns[left].length) { col = left; break; }
-        if (right < ABILITY_MODEL_V50.length && !columns[right].length) { col = right; break; }
+    const skillById = new Map(skills.map(skill => [skill.id, skill]));
+    const primaryParentBySkillId = buildPrimaryParentMapV53(skills);
+    const rawEdges = buildSkillTreeEdgesV53(skills, primaryParentBySkillId);
+    const expandedRoots = expandedAbilityKeysV54(skills, rawEdges, primaryParentBySkillId, skillById);
+    const NODE_W = 164;
+    const ABILITY_W = 170;
+    const SKILL_H = 84;
+    const ABILITY_H = 88;
+    const X_GAP = 42;
+    const ROOT_GAP = 92;
+    const ROW_GAP = 128;
+    const PAD_X = 34;
+    const PAD_TOP = 18;
+    const rowByNode = new Map();
+    const positions = new Map();
+    const depthRowMemo = new Map();
+
+    const nodeDepthFromPrimaryParent = (nodeId, stack = new Set()) => {
+      if (depthRowMemo.has(nodeId)) return depthRowMemo.get(nodeId);
+      const parts = treeNodePartsV53(nodeId);
+      if (parts.type === 'ability') {
+        depthRowMemo.set(nodeId, 0);
+        return 0;
       }
-      columns[col].push(skill);
+      if (parts.type !== 'skill' || stack.has(nodeId)) return 1;
+      stack.add(nodeId);
+      const parent = primaryParentBySkillId.get(parts.id);
+      let depth = 1;
+      if (parent) {
+        const parentParts = treeNodePartsV53(parent);
+        depth = parentParts.type === 'ability' ? 1 : nodeDepthFromPrimaryParent(parent, stack) + 1;
+      } else {
+        depth = Math.max(1, skillTreeDepthV51(skillById.get(parts.id), depthMemo));
+      }
+      stack.delete(nodeId);
+      depthRowMemo.set(nodeId, depth);
+      return depth;
+    };
+
+    const rootOrder = ABILITY_MODEL_V50.map(item => item.key);
+    const rootBuckets = new Map(rootOrder.map(key => [key, []]));
+    skills.forEach((skill, index) => {
+      const nodeId = treeNodeIdV51('skill', skill.id);
+      const rootKey = rootAbilityForNodeV54(nodeId, primaryParentBySkillId, skillById) || preferredAbilityForSkillV53(skill, index);
+      const safeRoot = rootBuckets.has(rootKey) ? rootKey : rootOrder[fallbackSkillColumnV51(skill, index)] || rootOrder[0];
+      const row = Math.max(1, nodeDepthFromPrimaryParent(nodeId));
+      rootBuckets.get(safeRoot).push({ skill, nodeId, row });
+      rowByNode.set(nodeId, row);
     });
-    for (const columns of rows.values()) {
-      columns.forEach(list => list.sort((a, b) => {
-        const bucket = skillSortBucketV50(user, a) - skillSortBucketV50(user, b);
-        if (bucket) return bucket;
-        const cat = String(a.category || '').localeCompare(String(b.category || ''), 'ru');
-        if (cat) return cat;
-        return String(a.name || '').localeCompare(String(b.name || ''), 'ru');
-      }));
-    }
-    return { rows: Array.from(rows.entries()).sort((a, b) => a[0] - b[0]), skills };
+
+    const rootLayouts = [];
+    rootOrder.forEach(rootKey => {
+      const rows = new Map();
+      (rootBuckets.get(rootKey) || []).forEach(entry => {
+        if (!rows.has(entry.row)) rows.set(entry.row, []);
+        rows.get(entry.row).push(entry);
+      });
+      for (const list of rows.values()) {
+        list.sort((a, b) => {
+          const as = a.skill;
+          const bs = b.skill;
+          const bucket = skillSortBucketV50(user, as) - skillSortBucketV50(user, bs);
+          if (bucket) return bucket;
+          const cat = String(as.category || '').localeCompare(String(bs.category || ''), 'ru');
+          if (cat) return cat;
+          return String(as.name || '').localeCompare(String(bs.name || ''), 'ru') || String(as.id || '').localeCompare(String(bs.id || ''), 'ru');
+        });
+      }
+      const maxRowCount = Math.max(1, ...Array.from(rows.values()).map(list => list.length));
+      rootLayouts.push({ rootKey, rows, width: Math.max(ABILITY_W, maxRowCount * NODE_W + Math.max(0, maxRowCount - 1) * X_GAP) });
+    });
+
+    let cursorX = PAD_X;
+    rootLayouts.forEach(layout => {
+      const ability = ABILITY_BY_KEY_V50[layout.rootKey] || ABILITY_MODEL_V50[0];
+      const abilityId = treeNodeIdV51('ability', layout.rootKey);
+      rowByNode.set(abilityId, 0);
+      positions.set(abilityId, { x: cursorX + layout.width / 2 - ABILITY_W / 2, y: PAD_TOP, w: ABILITY_W, h: ABILITY_H, row: 0 });
+      for (const [row, list] of layout.rows.entries()) {
+        const rowWidth = list.length * NODE_W + Math.max(0, list.length - 1) * X_GAP;
+        let x = cursorX + Math.max(0, (layout.width - rowWidth) / 2);
+        list.forEach(entry => {
+          positions.set(entry.nodeId, { x, y: PAD_TOP + row * ROW_GAP, w: NODE_W, h: SKILL_H, row });
+          x += NODE_W + X_GAP;
+        });
+      }
+      cursorX += layout.width + ROOT_GAP;
+    });
+
+    skills.forEach(skill => {
+      const manualPos = skillTreePosV63(skill);
+      if (!manualPos) return;
+      const nodeId = treeNodeIdV51('skill', skill.id);
+      const current = positions.get(nodeId) || { x: 0, y: 0, w: NODE_W, h: SKILL_H, row: 1 };
+      const row = Math.max(1, Math.round((manualPos.y - PAD_TOP) / ROW_GAP));
+      rowByNode.set(nodeId, row);
+      positions.set(nodeId, { ...current, x: manualPos.x, y: manualPos.y, w: current.w || NODE_W, h: current.h || SKILL_H, row });
+    });
+
+    const allPositions = Array.from(positions.values());
+    const maxRight = Math.max(PAD_X + ABILITY_W, ...allPositions.map(pos => pos.x + pos.w));
+    const maxBottom = Math.max(PAD_TOP + ABILITY_H, ...allPositions.map(pos => pos.y + pos.h));
+    const canvasWidth = Math.max(920, maxRight + PAD_X);
+    const canvasHeight = Math.max(420, maxBottom + 62);
+    const edges = rawEdges.map(edge => ({
+      ...edge,
+      fromRow: rowByNode.get(edge.from) ?? 0,
+      toRow: rowByNode.get(edge.to) ?? 0
+    }));
+    return { skills, positions, edges, primaryParentBySkillId, canvasWidth, canvasHeight };
   }
 
   function skillRequirementTextV51(skill) {
@@ -16510,63 +17227,358 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
     return reqs.join(' · ');
   }
 
-  function abilityTreeNodeMarkupV51(user, item) {
+  function styleFromTreePosV53(pos = {}) {
+    return `left:${Number(pos.x || 0).toFixed(1)}px;top:${Number(pos.y || 0).toFixed(1)}px;width:${Number(pos.w || 154).toFixed(1)}px;`;
+  }
+
+  function abilityTreeNodeMarkupV51(user, item, layout, visibleSets) {
     const abilities = normalizeAbilitiesV50(user?.abilities || {});
-    const value = Math.max(0, Number(abilities[item.key] || 0));
+    const value = normalizeAbilityValueV53(abilities[item.key] || 0, 0);
     const points = Number(user?.skillPoints || 0);
-    const state = value >= 20 ? 'maxed' : points > 0 ? 'available' : 'locked';
+    const isGlory = item.key === 'glory';
+    const state = isGlory ? 'gm-only' : value >= ABILITY_MAX_V53 ? 'maxed' : points > 0 ? 'available' : 'locked';
     const canUpgrade = state === 'available';
-    return `<div class="profile-skill-node-v51 profile-ability-node-v51 ${esc(state)}" data-tree-node-id="${esc(treeNodeIdV51('ability', item.key))}" data-tree-row="0" data-tree-col="${ABILITY_MODEL_V50.findIndex(entry => entry.key === item.key)}">
+    const nodeId = treeNodeIdV51('ability', item.key);
+    const pos = layout.positions.get(nodeId) || { x: 0, y: 0, w: 168, row: 0 };
+    const selected = visibleSets.selected === nodeId ? 'focus-selected' : '';
+    return `<div class="profile-skill-node-v51 profile-ability-node-v51 ${esc(state)} ${selected}" data-tree-node-id="${esc(nodeId)}" data-tree-kind="ability" data-tree-id="${esc(item.key)}" data-tree-row="0" style="${styleFromTreePosV53(pos)}" title="Показать ветку: ${esc(item.label)}">
       <div class="profile-skill-node-head-v51"><span>${esc(item.short)}</span><b>${esc(item.label)}</b></div>
       <div class="profile-skill-node-value-v51">${Number(value)}</div>
-      ${canUpgrade ? `<button class="secondary profile-upgrade-ability-btn-v51" type="button" data-ability-key="${esc(item.key)}">+1</button>` : `<button class="secondary profile-upgrade-ability-btn-v51" type="button" disabled>${value >= 20 ? '20' : 'НЕТ ОЧКОВ'}</button>`}
+      ${canUpgrade ? `<button class="secondary profile-upgrade-ability-btn-v51" type="button" data-ability-key="${esc(item.key)}">+1</button>` : `<button class="secondary profile-upgrade-ability-btn-v51" type="button" disabled>${isGlory ? 'ДМ' : value >= ABILITY_MAX_V53 ? String(ABILITY_MAX_V53) : 'НЕТ ОЧКОВ'}</button>`}
     </div>`;
   }
 
-  function skillTreeNodeMarkupV51(user, skill, row, col) {
+  function skillTreeNodeMarkupV51(user, skill, layout, visibleSets) {
+    skill = normalizeSkillV50(skill);
+    user = normalizePlayerProfileV2(user);
+    const isSpec = isSpecializationV55(skill);
     const status = skillStatusV50(user, skill);
-    const actionLabel = status.state === 'owned' ? 'ИЗУЧЕНО' : Number(user?.skillPoints || 0) < Number(skill.cost || 0) ? 'НЕТ ОЧКОВ' : 'ТРЕБОВАНИЯ';
-    return `<div class="profile-skill-node-v51 profile-skill-card-v50 ${esc(status.state)}" data-tree-node-id="${esc(treeNodeIdV51('skill', skill.id))}" data-tree-row="${Number(row)}" data-tree-col="${Number(col)}" data-skill-card-id="${esc(skill.id)}">
-      <div class="profile-skill-node-thumb-v51">${renderThumb(skill, { size: 'sm', type: 'skill', glyph: initials(skill.name, 'SK') })}</div>
+    const isOwned = status.state === 'owned' || status.state === 'specialization-owned';
+    const actionLabel = isOwned ? 'ИЗУЧЕНО' : status.state === 'gm-only' ? 'ДМ' : Number(user?.skillPoints || 0) < Number(skill.cost || 0) ? 'НЕТ ОЧКОВ' : 'ТРЕБОВАНИЯ';
+    const nodeId = treeNodeIdV51('skill', skill.id);
+    const pos = layout.positions.get(nodeId) || { x: 0, y: 0, w: 154, row: 1 };
+    const hidden = '';
+    const selected = visibleSets.selected === nodeId ? 'focus-selected' : '';
+    const specValue = Number(user.specializations?.[skill.id] || 0);
+    const typeClass = isSpec ? 'profile-specialization-node-v56' : '';
+    const glyph = initials(skill.name, isSpec ? 'SP' : 'SK');
+    const learnButton = status.state === 'available'
+      ? `<button class="primary profile-learn-skill-btn-v50" type="button" data-skill-id="${esc(skill.id)}">ПРОКАЧАТЬ</button>`
+      : `<button class="secondary profile-learn-skill-btn-v50" type="button" disabled>${esc(actionLabel)}</button>`;
+    const actions = `<button class="ghost profile-skill-info-btn-v52" type="button" data-skill-id="${esc(skill.id)}" title="Описание и требования">i</button>${isSpec ? `<span class="profile-specialization-node-value-v56" title="Значение специализации">${Number(specValue)}</span>` : ''}${learnButton}`;
+    return `<div class="profile-skill-node-v51 profile-skill-card-v50 ${esc(status.state)} ${hidden} ${selected} ${typeClass}" data-tree-node-id="${esc(nodeId)}" data-tree-kind="skill" data-tree-id="${esc(skill.id)}" data-tree-row="${Number(pos.row || 1)}" data-skill-card-id="${esc(skill.id)}" style="${styleFromTreePosV53(pos)}">
+      <div class="profile-skill-node-thumb-v51">${renderThumb(skill, { size: 'sm', type: 'skill', glyph })}</div>
       <div class="profile-skill-node-main-v51">
-        <div class="profile-skill-node-title-v51"><b>${esc(skill.name)}</b></div>
-        <div class="profile-skill-node-actions-v52">
-          <button class="ghost profile-skill-info-btn-v52" type="button" data-skill-id="${esc(skill.id)}" title="Описание и требования">i</button>
-          ${status.state === 'available' ? `<button class="primary profile-learn-skill-btn-v50" type="button" data-skill-id="${esc(skill.id)}">ПРОКАЧАТЬ</button>` : `<button class="secondary profile-learn-skill-btn-v50" type="button" disabled>${esc(actionLabel)}</button>`}
-        </div>
+        <div class="profile-skill-node-title-v51"><b>${esc(skill.name)}</b>${isSpec ? '<span class="profile-specialization-node-kicker-v56">специализация</span>' : ''}</div>
+        <div class="profile-skill-node-actions-v52">${actions}</div>
       </div>
     </div>`;
   }
 
   function skillTreeEdgesV51(skills) {
-    const edges = [];
-    skills.forEach(skill => {
-      skill = normalizeSkillV50(skill);
-      for (const req of skill.requiredAbilities || []) {
-        if (req.key) edges.push({ from: treeNodeIdV51('ability', req.key), to: treeNodeIdV51('skill', skill.id), kind: 'ability' });
-      }
-      (skill.requiredSkillIds || []).forEach(reqId => {
-        if (Data.getSkill(reqId)) edges.push({ from: treeNodeIdV51('skill', reqId), to: treeNodeIdV51('skill', skill.id), kind: 'skill' });
+    return buildSkillTreeEdgesV53(skills.map(skill => normalizeSkillV50(skill)), buildPrimaryParentMapV53(skills.map(skill => normalizeSkillV50(skill))));
+  }
+
+
+  let SKILL_TREE_ZOOM_V63 = Number(window.__skillTreeZoomV63 || 1) || 1;
+  let SKILL_TREE_EDIT_MODE_V63 = false;
+  let SKILL_TREE_SELECTED_ID_V63 = '';
+  let SKILL_TREE_SAVE_TIMER_V63 = 0;
+
+  function clampSkillTreeZoomV63(value) {
+    return clamp(Number(value || 1), 0.45, 2.4);
+  }
+
+  function isDesktopClientV63() {
+    return Boolean(window.electronAPI);
+  }
+
+  function canEditSkillTreeV63() {
+    if (!isDesktopClientV63()) return false;
+    const current = App?.currentUser || App?.state?.users?.[App?.currentUserId] || {};
+    const role = String(current.role || '').trim().toLowerCase();
+    const id = String(App?.currentUserId || current.id || '').trim().toLowerCase();
+    return role === 'gm' || role === 'dm' || role === 'master' || id === 'gm' || id === 'dm' || id === 'master';
+  }
+
+  function skillTreePosV63(skill = {}) {
+    const raw = skill?.treePos || skill?.layout || skill?.position || skill?.pos;
+    const x = Number(raw?.x);
+    const y = Number(raw?.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    return { x: Math.max(0, Math.round(x)), y: Math.max(0, Math.round(y)) };
+  }
+
+  function normalizeSkillTreeIdV63(id = '') {
+    return String(id || '').trim();
+  }
+
+  function snapSkillTreePosV63(x, y, skillId = '') {
+    const grid = 24;
+    const nodeW = 164;
+    const gapX = 42;
+    const rowGap = 128;
+    const minY = 146;
+    let sx = Math.round(Number(x || 0) / grid) * grid;
+    let sy = Math.round(Number(y || 0) / grid) * grid;
+    const candidates = [];
+    Object.values(SKILLS_V50 || {}).forEach(raw => {
+      const other = normalizeSkillV50(raw || {});
+      if (!other.id || other.id === skillId) return;
+      const pos = skillTreePosV63(other);
+      if (!pos) return;
+      const dx = nodeW + gapX;
+      candidates.push({ x: pos.x - dx, y: pos.y });
+      candidates.push({ x: pos.x + dx, y: pos.y });
+      candidates.push({ x: pos.x, y: pos.y + rowGap });
+      candidates.push({ x: pos.x - dx, y: pos.y + rowGap });
+      candidates.push({ x: pos.x + dx, y: pos.y + rowGap });
+      candidates.push({ x: pos.x, y: Math.max(minY, pos.y - rowGap) });
+      candidates.push({ x: pos.x - dx, y: Math.max(minY, pos.y - rowGap) });
+      candidates.push({ x: pos.x + dx, y: Math.max(minY, pos.y - rowGap) });
+    });
+    let best = null;
+    for (const candidate of candidates) {
+      const distance = Math.hypot(candidate.x - sx, candidate.y - sy);
+      if (distance <= 42 && (!best || distance < best.distance)) best = { ...candidate, distance };
+    }
+    if (best) { sx = best.x; sy = best.y; }
+    return { x: Math.max(0, Math.round(sx)), y: Math.max(minY, Math.round(sy)) };
+  }
+
+  function setSkillTreePosV63(skillId, x, y) {
+    skillId = normalizeSkillTreeIdV63(skillId);
+    if (!skillId || !SKILLS_V50?.[skillId]) return false;
+    SKILLS_V50[skillId].treePos = snapSkillTreePosV63(x, y, skillId);
+    try { syncSkillsWorldDataV50(); } catch {}
+    return true;
+  }
+
+  async function persistSkillTreeV63(reason = 'skill-tree-edit-v63') {
+    try { syncSkillsWorldDataV50(); } catch {}
+    try { await window.electronAPI?.saveWorldData?.(buildWorldSnapshot()); } catch (err) { Debug?.error?.('SKILL_TREE_V63_SAVE_WORLD_FAILED', { message: err?.message || String(err) }); }
+    try { await App?.writeLocalMirrors?.(); } catch {}
+    try { await Sync?.pushCurrentSnapshot?.(reason, { silent: true }); } catch (err) { Debug?.error?.('SKILL_TREE_V63_SYNC_FAILED', { message: err?.message || String(err) }); }
+  }
+
+  function schedulePersistSkillTreeV63(reason = 'skill-tree-edit-v63') {
+    clearTimeout(SKILL_TREE_SAVE_TIMER_V63);
+    SKILL_TREE_SAVE_TIMER_V63 = setTimeout(() => {
+      SKILL_TREE_SAVE_TIMER_V63 = 0;
+      persistSkillTreeV63(reason);
+    }, 360);
+  }
+
+  function skillTreeToolbarMarkupV63(user) {
+    const canEdit = canEditSkillTreeV63();
+    return `<div class="profile-skill-tree-toolbar-v51 profile-skill-tree-toolbar-v63" data-skill-toolbar-v63="1">
+      <div class="row" style="gap:8px;flex-wrap:wrap">
+        <div class="chip">ОЧКИ УЛУЧШЕНИЯ: ${Number(user.skillPoints || 0)}</div>
+        <span class="chip">SKILL_UI v1.0.35</span>
+        <div class="small-note">Масштаб доступен всем. Информация открывается при наведении. Ветка Славы выдаётся ДМом.</div>
+      </div>
+      <div class="row" style="gap:8px;flex-wrap:wrap">
+        <button class="ghost" type="button" data-skill-zoom-v63="out">−</button>
+        <span class="chip" data-skill-zoom-label-v63>${Math.round(clampSkillTreeZoomV63(SKILL_TREE_ZOOM_V63) * 100)}%</span>
+        <button class="ghost" type="button" data-skill-zoom-v63="in">+</button>
+        <button class="ghost" type="button" data-skill-zoom-v63="reset">100%</button>
+        ${canEdit ? `<button class="secondary" type="button" data-skill-edit-toggle-v63="1">${SKILL_TREE_EDIT_MODE_V63 ? 'РЕЖИМ РЕДАКТОРА: ON' : 'РЕЖИМ РЕДАКТОРА: OFF'}</button><button class="secondary" type="button" data-skill-add-v63="skill">+ НАВЫК</button><button class="secondary" type="button" data-skill-add-v63="specialization">+ СПЕЦИАЛИЗАЦИЯ</button>` : ''}
+      </div>
+    </div>`;
+  }
+
+  function skillTreeEditorPanelMarkupV63() {
+    if (!canEditSkillTreeV63() || !SKILL_TREE_EDIT_MODE_V63) return '';
+    const selectedId = normalizeSkillTreeIdV63(SKILL_TREE_SELECTED_ID_V63);
+    const selected = selectedId ? normalizeSkillV50(SKILLS_V50?.[selectedId] || {}) : null;
+    if (!selected?.id) {
+      return `<aside class="profile-skill-editor-panel-v63"><div class="section-title">Редактор навыков</div><div class="small-note">Выбери плитку навыка. В режиме редактора плитки можно двигать мышью. Позиция сохраняется в worldJson и синхронизируется через PocketBase.</div></aside>`;
+    }
+    const pos = skillTreePosV63(selected) || { x: 0, y: 0 };
+    const skillOptions = getVisibleSkillTreeItemsV56({ role: 'gm' }).filter(item => item.id !== selected.id);
+    const specOptions = getVisibleSpecializationsV55({ role: 'gm' }).filter(item => item.id !== selected.id);
+    return `<aside class="profile-skill-editor-panel-v63">
+      <div class="section-title">Редактор навыка</div>
+      <form class="form" data-skill-editor-form-v63 data-skill-id="${esc(selected.id)}">
+        <div class="field"><label>ID</label><input class="input" value="${esc(selected.id)}" readonly /></div>
+        <div class="field"><label>Название</label><input class="input" name="name" value="${esc(selected.name || '')}" /></div>
+        <div class="cols2"><div class="field"><label>Тип</label><select class="select" name="skillType"><option value="skill" ${!isSpecializationV55(selected) ? 'selected' : ''}>Навык</option><option value="specialization" ${isSpecializationV55(selected) ? 'selected' : ''}>Специализация</option></select></div><div class="field"><label>Стоимость</label><input class="input" type="number" min="0" name="cost" value="${Number(selected.cost || 0)}" /></div></div>
+        <div class="cols2"><div class="field"><label>Категория</label><input class="input" name="category" value="${esc(selected.category || 'Общее')}" /></div><div class="field"><label>Цвет</label><input class="input" name="color" value="${esc(selected.color || '#7df9ff')}" /></div></div>
+        <div class="field"><label>Позиция</label><input class="input" value="x:${Number(pos.x || 0)} y:${Number(pos.y || 0)}" readonly /></div>
+        <div class="field"><label>Зависимости от навыков / специализаций</label>${renderCheckboxSelector('requiredSkillIds', skillOptions, selected.requiredSkillIds || [], 'skill', 'Нет навыков')}</div>
+        <div class="field"><label>Повышает специализации</label>${renderCheckboxSelector('specializationIncreaseIds', specOptions, selected.specializationIncreases || [], 'skill', 'Нет специализаций')}</div>
+        <div class="field"><label>Описание</label><textarea class="area" name="description">${esc(selected.description || '')}</textarea></div>
+        <div class="row" style="gap:8px;flex-wrap:wrap"><button class="primary" type="submit">СОХРАНИТЬ</button><button class="ghost" type="button" data-skill-delete-v63="${esc(selected.id)}">УДАЛИТЬ</button></div>
+      </form>
+    </aside>`;
+  }
+
+  function rerenderSkillTreeModalV63() {
+    const body = document.querySelector('#profile-extra-modal-body-v50');
+    if (!body) return;
+    const scroll = body.querySelector('.profile-skill-tree-scroll-v51');
+    const scrollLeft = scroll?.scrollLeft || 0;
+    const scrollTop = scroll?.scrollTop || 0;
+    const current = normalizePlayerProfileV2(App.state.users[App.currentUserId] || App.currentUser || {});
+    body.innerHTML = skillsModalMarkupV50(current);
+    bindProfileModalActionsV50(body);
+    const nextScroll = body.querySelector('.profile-skill-tree-scroll-v51');
+    if (nextScroll) { nextScroll.scrollLeft = scrollLeft; nextScroll.scrollTop = scrollTop; }
+  }
+
+  async function addSkillTreeItemV63(type = 'skill') {
+    if (!canEditSkillTreeV63()) return;
+    const stamp = Date.now().toString(36).slice(-6);
+    const id = `${type === 'specialization' ? 'spec' : 'skill'}_${stamp}`;
+    const existingCount = Object.keys(SKILLS_V50 || {}).length;
+    const pos = snapSkillTreePosV63(120 + (existingCount % 5) * 206, 300 + Math.floor(existingCount / 5) * 128, id);
+    SKILLS_V50[id] = normalizeSkillV50({ id, name: type === 'specialization' ? 'Новая специализация' : 'Новый навык', skillType: type === 'specialization' ? 'specialization' : 'skill', category: 'Общее', cost: type === 'specialization' ? 0 : 1, color: '#7df9ff', description: '', treePos: pos });
+    SKILL_TREE_SELECTED_ID_V63 = id;
+    SKILL_TREE_EDIT_MODE_V63 = true;
+    await persistSkillTreeV63('skill-tree-add-v63');
+    rerenderSkillTreeModalV63();
+  }
+
+  async function saveSkillTreeFormV63(form) {
+    const id = normalizeSkillTreeIdV63(form.dataset.skillId);
+    if (!id || !SKILLS_V50?.[id]) return;
+    const before = normalizeSkillV50(SKILLS_V50[id]);
+    SKILLS_V50[id] = normalizeSkillV50({
+      ...before,
+      name: String(form.querySelector('[name="name"]')?.value || before.name || '').trim() || before.name,
+      skillType: String(form.querySelector('[name="skillType"]')?.value || before.skillType || 'skill'),
+      cost: Number(form.querySelector('[name="cost"]')?.value || 0),
+      category: String(form.querySelector('[name="category"]')?.value || 'Общее').trim() || 'Общее',
+      color: String(form.querySelector('[name="color"]')?.value || before.color || '#7df9ff').trim() || '#7df9ff',
+      requiredSkillIds: getCheckedValues(form, 'requiredSkillIds').filter(req => req !== id),
+      specializationIncreases: getCheckedValues(form, 'specializationIncreaseIds').filter(req => req !== id),
+      description: String(form.querySelector('[name="description"]')?.value || '').trim(),
+      treePos: before.treePos || skillTreePosV63(before) || null
+    });
+    await persistSkillTreeV63('skill-tree-save-v63');
+    Toast.show('Навык сохранён', 'ok');
+    rerenderSkillTreeModalV63();
+  }
+
+  async function deleteSkillTreeItemV63(id) {
+    if (!canEditSkillTreeV63()) return;
+    id = normalizeSkillTreeIdV63(id);
+    const skill = normalizeSkillV50(SKILLS_V50?.[id] || {});
+    if (!skill.id) return;
+    if (!window.confirm(`Удалить «${skill.name || skill.id}»?`)) return;
+    delete SKILLS_V50[id];
+    Object.values(SKILLS_V50 || {}).forEach(item => {
+      item.requiredSkillIds = normalizeSkillIdArrayV50(item.requiredSkillIds).filter(req => req !== id);
+      item.specializationIncreases = normalizeSpecializationIncreaseIdsV55(item.specializationIncreases || []).filter(req => req !== id);
+    });
+    SKILL_TREE_SELECTED_ID_V63 = '';
+    await persistSkillTreeV63('skill-tree-delete-v63');
+    rerenderSkillTreeModalV63();
+  }
+
+  function bindSkillTreeControlsV63(root = document) {
+    root.querySelectorAll?.('[data-skill-zoom-v63]').forEach(button => {
+      if (button.dataset.boundV63 === '1') return;
+      button.dataset.boundV63 = '1';
+      button.addEventListener('click', event => {
+        event.preventDefault();
+        const action = button.dataset.skillZoomV63;
+        if (action === 'in') SKILL_TREE_ZOOM_V63 = clampSkillTreeZoomV63(SKILL_TREE_ZOOM_V63 * 1.15);
+        else if (action === 'out') SKILL_TREE_ZOOM_V63 = clampSkillTreeZoomV63(SKILL_TREE_ZOOM_V63 / 1.15);
+        else SKILL_TREE_ZOOM_V63 = 1;
+        window.__skillTreeZoomV63 = SKILL_TREE_ZOOM_V63;
+        rerenderSkillTreeModalV63();
       });
     });
-    return edges;
+    root.querySelectorAll?.('[data-skill-edit-toggle-v63]').forEach(button => {
+      if (button.dataset.boundV63 === '1') return;
+      button.dataset.boundV63 = '1';
+      button.addEventListener('click', event => { event.preventDefault(); SKILL_TREE_EDIT_MODE_V63 = !SKILL_TREE_EDIT_MODE_V63; rerenderSkillTreeModalV63(); });
+    });
+    root.querySelectorAll?.('[data-skill-add-v63]').forEach(button => {
+      if (button.dataset.boundV63 === '1') return;
+      button.dataset.boundV63 = '1';
+      button.addEventListener('click', event => { event.preventDefault(); addSkillTreeItemV63(button.dataset.skillAddV63 || 'skill'); });
+    });
+    root.querySelectorAll?.('[data-skill-editor-form-v63]').forEach(form => {
+      if (form.dataset.boundV63 === '1') return;
+      form.dataset.boundV63 = '1';
+      form.addEventListener('submit', event => { event.preventDefault(); saveSkillTreeFormV63(form); });
+    });
+    root.querySelectorAll?.('[data-skill-delete-v63]').forEach(button => {
+      if (button.dataset.boundV63 === '1') return;
+      button.dataset.boundV63 = '1';
+      button.addEventListener('click', event => { event.preventDefault(); deleteSkillTreeItemV63(button.dataset.skillDeleteV63); });
+    });
+    root.querySelectorAll?.('.profile-skill-tree-canvas-v51 [data-skill-card-id]').forEach(card => {
+      if (card.dataset.boundEditSelectV63 !== '1') {
+        card.dataset.boundEditSelectV63 = '1';
+        card.addEventListener('click', event => {
+          if (event.target?.closest?.('button,input,select,textarea,a,label')) return;
+          if (!canEditSkillTreeV63() || !SKILL_TREE_EDIT_MODE_V63) return;
+          SKILL_TREE_SELECTED_ID_V63 = normalizeSkillTreeIdV63(card.dataset.skillCardId);
+          rerenderSkillTreeModalV63();
+        });
+      }
+      if (card.dataset.boundDragV63 === '1') return;
+      card.dataset.boundDragV63 = '1';
+      card.addEventListener('mousedown', event => {
+        if (!canEditSkillTreeV63() || !SKILL_TREE_EDIT_MODE_V63 || event.button !== 0) return;
+        if (event.target?.closest?.('button,input,select,textarea,a,label')) return;
+        const skillId = normalizeSkillTreeIdV63(card.dataset.skillCardId);
+        if (!skillId || !SKILLS_V50?.[skillId]) return;
+        SKILL_TREE_SELECTED_ID_V63 = skillId;
+        const startX = event.clientX;
+        const startY = event.clientY;
+        const startPos = skillTreePosV63(SKILLS_V50[skillId]) || { x: parseFloat(card.style.left) || 0, y: parseFloat(card.style.top) || 0 };
+        let moved = false;
+        card.classList.add('is-dragging-v63');
+        const move = ev => {
+          const next = snapSkillTreePosV63(startPos.x + (ev.clientX - startX) / clampSkillTreeZoomV63(SKILL_TREE_ZOOM_V63), startPos.y + (ev.clientY - startY) / clampSkillTreeZoomV63(SKILL_TREE_ZOOM_V63), skillId);
+          card.style.left = `${next.x}px`;
+          card.style.top = `${next.y}px`;
+          setSkillTreePosV63(skillId, next.x, next.y);
+          moved = true;
+          try { drawSkillTreeLinesV51(card.closest('#profile-extra-modal-body-v50') || document); } catch {}
+        };
+        const stop = () => {
+          document.removeEventListener('mousemove', move);
+          document.removeEventListener('mouseup', stop);
+          card.classList.remove('is-dragging-v63');
+          if (moved) {
+            const finalX = Number.parseFloat(card.style.left || '0') || 0;
+            const finalY = Number.parseFloat(card.style.top || '0') || 0;
+            setSkillTreePosV63(skillId, finalX, finalY);
+            schedulePersistSkillTreeV63('skill-tree-position-v63');
+          }
+        };
+        document.addEventListener('mousemove', move);
+        document.addEventListener('mouseup', stop);
+        event.preventDefault();
+        event.stopPropagation();
+      });
+    });
   }
 
   function skillsModalMarkupV50(user) {
     user = normalizePlayerProfileV2(user);
     const layout = buildSkillTreeLayoutV51(user);
-    const edges = skillTreeEdgesV51(layout.skills);
-    const abilityRow = ABILITY_MODEL_V50.map(item => `<div class="profile-skill-column-v51">${abilityTreeNodeMarkupV51(user, item)}</div>`).join('');
-    const skillRows = layout.rows.map(([row, columns]) => `<div class="profile-skill-row-v51" data-skill-tree-row="${Number(row)}">${columns.map((list, col) => `<div class="profile-skill-column-v51">${list.map(skill => skillTreeNodeMarkupV51(user, skill, row, col)).join('')}</div>`).join('')}</div>`).join('');
-    return `<div class="profile-skill-tree-toolbar-v51">
-      <div class="chip">ОЧКИ УЛУЧШЕНИЯ: ${Number(user.skillPoints || 0)}</div>
-    </div>
-    <div class="profile-skill-tree-scroll-v51">
-      <div class="profile-skill-tree-canvas-v51" data-skill-tree="1" data-skill-tree-edges="${esc(JSON.stringify(edges))}">
-        <svg class="profile-skill-lines-v51" aria-hidden="true"></svg>
-        <div class="profile-skill-row-v51 profile-skill-ability-row-v51" data-skill-tree-row="0">${abilityRow}</div>
-        ${skillRows || '<div class="small-note" style="padding:24px">В World Config пока нет навыков.</div>'}
+    const visibleSets = skillTreeVisibleSetsV53(layout);
+    const abilityNodes = ABILITY_MODEL_V50.map(item => abilityTreeNodeMarkupV51(user, item, layout, visibleSets)).join('');
+    const skillNodes = layout.skills.map(skill => skillTreeNodeMarkupV51(user, skill, layout, visibleSets)).join('');
+    const zoom = clampSkillTreeZoomV63(SKILL_TREE_ZOOM_V63);
+    const editClass = canEditSkillTreeV63() && SKILL_TREE_EDIT_MODE_V63 ? 'is-edit-mode-v63' : '';
+    return `${skillTreeToolbarMarkupV63(user)}
+    <div class="profile-skill-tree-layout-v63 ${editClass}">
+      <div class="profile-skill-tree-scroll-v51">
+        <div class="profile-skill-tree-stage-v63" style="width:${Number(layout.canvasWidth * zoom).toFixed(1)}px;height:${Number(layout.canvasHeight * zoom).toFixed(1)}px;">
+          <div class="profile-skill-tree-canvas-v51" data-skill-tree="1" data-skill-tree-edges="${esc(JSON.stringify(layout.edges))}" style="width:${Number(layout.canvasWidth).toFixed(1)}px;height:${Number(layout.canvasHeight).toFixed(1)}px;transform:scale(${Number(zoom).toFixed(3)});transform-origin:0 0;">
+            <svg class="profile-skill-lines-v51" aria-hidden="true"></svg>
+            ${abilityNodes}${skillNodes || '<div class="small-note profile-skill-empty-v53">В World Config пока нет навыков или специализаций.</div>'}
+          </div>
+        </div>
       </div>
+      ${skillTreeEditorPanelMarkupV63()}
     </div>`;
   }
 
@@ -16576,16 +17588,25 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
     if (!skill.id) return '<div class="small-note">Навык не найден.</div>';
     const status = skillStatusV50(user, skill);
     const abilityReqs = (skill.requiredAbilities || []).map(req => `<li>${esc(abilityLabelV50(req.key))}: ${Number(user.abilities?.[req.key] || 0)} / ${Number(req.value || 0)}</li>`).join('');
-    const skillReqs = (skill.requiredSkillIds || []).map(id => `<li>${esc(Data.getSkill(id)?.name || id)}${(user.skills || []).includes(id) ? ' ✓' : ''}</li>`).join('');
+    const skillReqs = (skill.requiredSkillIds || []).map(id => {
+      const reqSkill = Data.getSkill?.(id);
+      if (reqSkill && isSpecializationV55(reqSkill)) {
+        const value = Number(user.specializations?.[id] || 0);
+        return `<li>${esc(reqSkill.name || id)} [специализация]: ${value} / 1${value >= 1 ? ' ✓' : ''}</li>`;
+      }
+      return `<li>${esc(Data.getSkill(id)?.name || id)}${(user.skills || []).includes(id) ? ' ✓' : ''}</li>`;
+    }).join('');
+    const increaseReqs = isLearnableSkillV55(skill) ? normalizeSpecializationIncreaseIdsV55(skill.specializationIncreases || []).map(id => `<li>${esc(specializationLabelV55(id))} +1</li>`).join('') : '';
     const missing = status.reasons.length ? `<div class="profile-skill-detail-warning-v52">${esc(status.reasons.join(' · '))}</div>` : '';
     return `<div class="profile-skill-detail-v52">
       <div class="profile-skill-detail-head-v52">
         ${renderThumb(skill, { size: 'md', type: 'skill', glyph: initials(skill.name, 'SK') })}
-        <div><b>${esc(skill.name)}</b><div class="small-note">${esc(skill.category || 'Общее')} · ${Number(skill.cost || 0)} ОУ</div></div>
+        <div><b>${esc(skill.name)}</b><div class="small-note">${esc(skill.category || 'Общее')} · ${isSpecializationV55(skill) ? `Специализация · ${Number(skill.cost || 0)} ОУ` : `${Number(skill.cost || 0)} ОУ`}</div></div>
       </div>
       ${skill.description ? `<div class="profile-skill-detail-description-v52">${esc(skill.description)}</div>` : '<div class="small-note">Описание не задано.</div>'}
       <div class="section-title">Требования</div>
-      ${abilityReqs || skillReqs ? `<ul class="profile-skill-detail-reqs-v52">${abilityReqs}${skillReqs}</ul>` : '<div class="small-note">Нет требований.</div>'}
+      ${abilityReqs || skillReqs ? `<ul class="profile-skill-detail-reqs-v52">${abilityReqs}${skillReqs}</ul>` : (isSpecializationV55(skill) ? '<div class="small-note">Это вторичная характеристика персонажа. В дереве она может быть узлом зависимости для других навыков.</div>' : '<div class="small-note">Нет требований.</div>')}
+      ${increaseReqs ? `<div class="section-title">Повышает</div><ul class="profile-skill-detail-reqs-v52">${increaseReqs}</ul>` : ''}
       ${missing}
     </div>`;
   }
@@ -16617,24 +17638,53 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
     modal.classList.add('open');
   }
 
+  function applySkillSpecializationIncreasesV55(values = {}, skill = {}) {
+    const next = normalizeSpecializationValuesV55(values);
+    for (const specId of normalizeSpecializationIncreaseIdsV55(skill.specializationIncreases || [])) {
+      if (!specId || !isSpecializationV55(Data.getSkill?.(specId) || {})) continue;
+      next[specId] = Math.max(0, Math.floor(numberOrFallbackV50(next[specId], 0))) + 1;
+    }
+    return next;
+  }
+
+  function applyNewlyGrantedSkillBonusesV55(values = {}, oldSkillIds = [], nextSkillIds = []) {
+    let out = normalizeSpecializationValuesV55(values);
+    const oldSet = new Set(normalizeSkillIdArrayV50(oldSkillIds));
+    for (const skillId of normalizeSkillIdArrayV50(nextSkillIds)) {
+      if (oldSet.has(skillId)) continue;
+      const skill = Data.getSkill?.(skillId);
+      if (!skill || !isLearnableSkillV55(skill)) continue;
+      out = applySkillSpecializationIncreasesV55(out, skill);
+    }
+    return out;
+  }
+
   async function learnSkillV50(skillId) {
     const current = normalizePlayerProfileV2(App.state.users[App.currentUserId] || App.currentUser || {});
     const skill = Data.getSkill(skillId);
     if (!current?.id || !skill) return;
-    const status = skillStatusV50(current, skill);
+    const normalizedSkill = normalizeSkillV50(skill);
+    const isSpec = isSpecializationV55(normalizedSkill);
+    const status = skillStatusV50(current, normalizedSkill);
     if (!status.ok) {
-      Toast.show(status.reasons.join(' · ') || 'Навык недоступен', 'err');
+      Toast.show(status.reasons.join(' · ') || (isSpec ? 'Специализация недоступна' : 'Навык недоступен'), 'err');
       return;
     }
-    if (!window.confirm(`Вы уверены что хотите взять «${skill.name}»?`)) return;
-    current.skills = normalizeSkillIdArrayV50([...(current.skills || []), skill.id]);
-    current.skillPoints = Math.max(0, Number(current.skillPoints || 0) - Number(skill.cost || 0));
+    if (!window.confirm(`Вы уверены что хотите взять «${normalizedSkill.name}»?`)) return;
+    if (isSpec) {
+      current.specializations = normalizeSpecializationValuesV55(current.specializations || {});
+      current.specializations[normalizedSkill.id] = Math.max(1, Number(current.specializations[normalizedSkill.id] || 0) + 1);
+    } else {
+      current.skills = normalizeSkillIdArrayV50([...(current.skills || []), normalizedSkill.id]);
+      current.specializations = applySkillSpecializationIncreasesV55(current.specializations || {}, normalizedSkill);
+    }
+    current.skillPoints = Math.max(0, Number(current.skillPoints || 0) - Number(normalizedSkill.cost || 0));
     App.state.users[current.id] = normalizePlayerProfileV2(current);
     PLAYER_TEMPLATES[current.id] = deep(App.state.users[current.id]);
     await App.writeLocalMirrors();
-    const patch = { skills: App.state.users[current.id].skills, skillPoints: App.state.users[current.id].skillPoints };
-    const syncRes = await PlayerSync.pushPlayerPatch(current.id, patch, { notice: `Навык изучен: ${skill.name}`, rerender: true });
-    if (!syncRes?.ok && syncRes?.status !== 'disabled') Toast.show(`Навык сохранён локально, но облако не обновилось: ${syncRes?.message || 'unknown error'}`, 'info');
+    const patch = { skills: App.state.users[current.id].skills, skillPoints: App.state.users[current.id].skillPoints, specializations: App.state.users[current.id].specializations };
+    const syncRes = await PlayerSync.pushPlayerPatch(current.id, patch, { notice: `${isSpec ? 'Специализация повышена' : 'Навык изучен'}: ${normalizedSkill.name}`, rerender: true });
+    if (!syncRes?.ok && syncRes?.status !== 'disabled') Toast.show(`${isSpec ? 'Специализация сохранена' : 'Навык сохранён'} локально, но облако не обновилось: ${syncRes?.message || 'unknown error'}`, 'info');
     const modal = ensureProfileModalV50();
     modal.querySelector('#profile-extra-modal-body-v50').innerHTML = skillsModalMarkupV50(App.state.users[current.id]);
     bindProfileModalActionsV50(modal);
@@ -16651,64 +17701,139 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
   }
 
   function findClearVerticalLaneX_V52(x, y1, y2, obstacles, preferredDirection = 1, minX = 0, maxX = 1) {
-    let laneX = x;
+    let laneX = Math.max(minX, Math.min(maxX, x));
     const dir = preferredDirection >= 0 ? 1 : -1;
-    for (let step = 0; step < 42; step += 1) {
-      const hit = obstacles.find(rect => rectIntersectsVerticalV52(rect, laneX, y1, y2));
-      if (!hit) return Math.max(minX, Math.min(maxX, laneX));
-      const out = dir > 0 ? hit.right + 10 : hit.left - 10;
-      laneX = Math.max(minX, Math.min(maxX, out + offsetFromIndexV51(step % 3, 3, 6)));
-      if (laneX <= minX + 1 || laneX >= maxX - 1) laneX = x + (step + 1) * 18 * dir;
+    const candidates = [laneX];
+    for (let step = 1; step <= 34; step += 1) {
+      candidates.push(x + step * 18 * dir, x - step * 18 * dir);
     }
-    return Math.max(minX, Math.min(maxX, laneX));
+    for (const candidate of candidates) {
+      laneX = Math.max(minX, Math.min(maxX, candidate));
+      const hit = obstacles.some(rect => rectIntersectsVerticalV52(rect, laneX, y1, y2));
+      if (!hit) return laneX;
+    }
+    return Math.max(minX, Math.min(maxX, x));
+  }
+
+  function setSkillTreeHoverV53(tree, nodeId = '') {
+    const nodes = Array.from(tree.querySelectorAll('[data-tree-node-id]'));
+    const paths = Array.from(tree.querySelectorAll('.profile-skill-edge-v51'));
+    nodes.forEach(node => node.classList.remove('is-hovered', 'is-dependency', 'is-dependent', 'is-dimmed'));
+    paths.forEach(path => path.classList.remove('is-hovered', 'is-dependency', 'is-dependent', 'is-dimmed'));
+    if (!nodeId) return;
+    let edges = [];
+    try { edges = JSON.parse(tree.dataset.skillTreeEdges || '[]'); } catch { edges = []; }
+    const upstream = graphReachableV53(nodeId, edges, 'up');
+    const downstream = graphReachableV53(nodeId, edges, 'down');
+    const related = new Set([nodeId, ...upstream, ...downstream]);
+    nodes.forEach(node => {
+      const id = node.dataset.treeNodeId;
+      if (!related.has(id)) {
+        node.classList.add('is-dimmed');
+      } else if (id === nodeId) {
+        node.classList.add('is-hovered');
+      } else if (upstream.has(id)) {
+        node.classList.add('is-dependency');
+      } else if (downstream.has(id)) {
+        node.classList.add('is-dependent');
+      }
+    });
+    paths.forEach(path => {
+      const from = path.dataset.edgeFrom;
+      const to = path.dataset.edgeTo;
+      if (!related.has(from) || !related.has(to)) {
+        path.classList.add('is-dimmed');
+      } else if ((from === nodeId && downstream.has(to)) || (to === nodeId && upstream.has(from))) {
+        path.classList.add('is-hovered');
+      } else if (upstream.has(from) && (upstream.has(to) || to === nodeId)) {
+        path.classList.add('is-dependency');
+      } else if ((from === nodeId || downstream.has(from)) && downstream.has(to)) {
+        path.classList.add('is-dependent');
+      }
+    });
+  }
+
+  function applySkillTreeFocusV53(root = document) {
+    const trees = Array.from(root.querySelectorAll?.('[data-skill-tree="1"]') || []);
+    trees.forEach(tree => {
+      const focus = SKILL_TREE_FOCUS_V53;
+      const selected = focus?.type && focus?.id ? treeNodeIdV51(focus.type, focus.id) : '';
+      tree.querySelectorAll('[data-tree-node-id]').forEach(node => {
+        const nodeId = node.dataset.treeNodeId;
+        node.classList.toggle('focus-selected', Boolean(selected && selected === nodeId));
+        node.classList.remove('is-hidden');
+      });
+      setSkillTreeHoverV53(tree, '');
+    });
+  }
+
+  function setSkillTreeFocusV53(type, id, root = document) {
+    const next = type && id ? { type, id } : null;
+    if (next && SKILL_TREE_FOCUS_V53?.type === next.type && SKILL_TREE_FOCUS_V53?.id === next.id) SKILL_TREE_FOCUS_V53 = null;
+    else SKILL_TREE_FOCUS_V53 = next;
+    const scope = root?.querySelector ? root : document;
+    const body = scope.querySelector('#profile-extra-modal-body-v50') || document.querySelector('#profile-extra-modal-body-v50');
+    if (body?.querySelector?.('[data-skill-tree="1"]')) {
+      const scroll = body.querySelector('.profile-skill-tree-scroll-v51');
+      const scrollLeft = scroll?.scrollLeft || 0;
+      const scrollTop = scroll?.scrollTop || 0;
+      const current = normalizePlayerProfileV2(App.state.users[App.currentUserId] || App.currentUser || {});
+      body.innerHTML = skillsModalMarkupV50(current);
+      bindProfileModalActionsV50(body);
+      const nextScroll = body.querySelector('.profile-skill-tree-scroll-v51');
+      if (nextScroll) {
+        nextScroll.scrollLeft = scrollLeft;
+        nextScroll.scrollTop = scrollTop;
+      }
+      scheduleSkillTreeLinesV51(body);
+      return;
+    }
+    applySkillTreeFocusV53(root);
+    scheduleSkillTreeLinesV51(root);
   }
 
   function drawSkillTreeLinesV51(root = document) {
     const trees = Array.from(root.querySelectorAll?.('[data-skill-tree="1"]') || []);
     trees.forEach(tree => {
+      applySkillTreeFocusV53(tree.parentElement || root);
       const svg = tree.querySelector('.profile-skill-lines-v51');
       if (!svg) return;
       let edges = [];
       try { edges = JSON.parse(tree.dataset.skillTreeEdges || '[]'); } catch { edges = []; }
       const treeRect = tree.getBoundingClientRect();
       if (!treeRect.width || !treeRect.height) return;
-      const nodes = new Map(Array.from(tree.querySelectorAll('[data-tree-node-id]')).map(node => [node.dataset.treeNodeId, node]));
-      const obstaclePadding = 9;
-      const obstacles = Array.from(nodes.values()).map(node => {
+      const rawTreeWidth = Math.max(1, Number.parseFloat(tree.style.width || '') || tree.scrollWidth || treeRect.width);
+      const rawTreeHeight = Math.max(1, Number.parseFloat(tree.style.height || '') || tree.scrollHeight || treeRect.height);
+      const zoomX = Math.max(0.001, treeRect.width / rawTreeWidth);
+      const zoomY = Math.max(0.001, treeRect.height / rawTreeHeight);
+      const nodes = new Map(Array.from(tree.querySelectorAll('[data-tree-node-id]')).filter(node => !node.classList.contains('is-hidden')).map(node => [node.dataset.treeNodeId, node]));
+      const obstaclePadding = 14;
+      const rectForNode = node => {
         const rect = node.getBoundingClientRect();
+        const left = (rect.left - treeRect.left) / zoomX;
+        const top = (rect.top - treeRect.top) / zoomY;
+        const width = rect.width / zoomX;
+        const height = rect.height / zoomY;
         return {
-          left: rect.left - treeRect.left - obstaclePadding,
-          right: rect.right - treeRect.left + obstaclePadding,
-          top: rect.top - treeRect.top - obstaclePadding,
-          bottom: rect.bottom - treeRect.top + obstaclePadding
+          left,
+          right: left + width,
+          top,
+          bottom: top + height,
+          width,
+          height
         };
-      });
+      };
       const drawable = edges.map((edge, index) => {
         const fromNode = nodes.get(edge.from);
         const toNode = nodes.get(edge.to);
         if (!fromNode || !toNode) return null;
-        const fromRectAbs = fromNode.getBoundingClientRect();
-        const toRectAbs = toNode.getBoundingClientRect();
-        const fromRect = {
-          left: fromRectAbs.left - treeRect.left,
-          right: fromRectAbs.right - treeRect.left,
-          top: fromRectAbs.top - treeRect.top,
-          bottom: fromRectAbs.bottom - treeRect.top,
-          width: fromRectAbs.width,
-          height: fromRectAbs.height
-        };
-        const toRect = {
-          left: toRectAbs.left - treeRect.left,
-          right: toRectAbs.right - treeRect.left,
-          top: toRectAbs.top - treeRect.top,
-          bottom: toRectAbs.bottom - treeRect.top,
-          width: toRectAbs.width,
-          height: toRectAbs.height
-        };
-        const fromRow = Number(fromNode.dataset.treeRow || 0);
-        const toRow = Number(toNode.dataset.treeRow || 0);
+        const fromRect = rectForNode(fromNode);
+        const toRect = rectForNode(toNode);
+        const fromRow = Number(edge.fromRow ?? fromNode.dataset.treeRow ?? 0);
+        const toRow = Number(edge.toRow ?? toNode.dataset.treeRow ?? 0);
         return { edge, index, fromNode, toNode, fromRect, toRect, fromRow, toRow };
       }).filter(Boolean);
+      const allVisibleNodes = Array.from(nodes.values());
       const sourceGroups = new Map();
       const targetGroups = new Map();
       const bandGroups = new Map();
@@ -16727,30 +17852,55 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
       for (const list of sourceGroups.values()) list.sort((a, b) => (a.toRect.left + a.toRect.width / 2) - (b.toRect.left + b.toRect.width / 2)).forEach((item, i) => sourceIndex.set(item.index, { i, total: list.length }));
       for (const list of targetGroups.values()) list.sort((a, b) => (a.fromRect.left + a.fromRect.width / 2) - (b.fromRect.left + b.fromRect.width / 2)).forEach((item, i) => targetIndex.set(item.index, { i, total: list.length }));
       for (const list of bandGroups.values()) list.sort((a, b) => ((a.fromRect.left + a.toRect.left) / 2) - ((b.fromRect.left + b.toRect.left) / 2)).forEach((item, i) => bandIndex.set(item.index, { i, total: list.length }));
+      const maxX = rawTreeWidth;
+      const maxY = rawTreeHeight;
       const paths = [];
-      const maxX = Math.max(1, tree.scrollWidth);
       drawable.forEach(item => {
         const src = sourceIndex.get(item.index) || { i: 0, total: 1 };
         const dst = targetIndex.get(item.index) || { i: 0, total: 1 };
         const band = bandIndex.get(item.index) || { i: 0, total: 1 };
         const fromCx = item.fromRect.left + item.fromRect.width / 2;
         const toCx = item.toRect.left + item.toRect.width / 2;
+        const fromParts = treeNodePartsV53(item.edge.from);
         const direction = toCx >= fromCx ? 1 : -1;
-        const sx = fromCx + offsetFromIndexV51(src.i, src.total, 5);
+        const sx = fromCx + offsetFromIndexV51(src.i, src.total, item.edge.kind === 'primary' ? 3 : 7);
         const sy = item.fromRect.bottom;
-        const tx = toCx + offsetFromIndexV51(dst.i, dst.total, 5);
+        const tx = toCx + offsetFromIndexV51(dst.i, dst.total, item.edge.kind === 'primary' ? 3 : 7);
         const ty = item.toRect.top;
-        const startGapY = sy + 8 + offsetFromIndexV51(src.i, src.total, 3);
-        const endGapY = Math.max(startGapY + 12, ty - 8 + offsetFromIndexV51(dst.i, dst.total, 3));
-        let laneX = (sx + tx) / 2 + offsetFromIndexV51(band.i, band.total, 14);
-        if (Math.abs(tx - sx) < 34) laneX = sx + direction * (34 + Math.abs(offsetFromIndexV51(band.i, band.total, 10)));
-        laneX = findClearVerticalLaneX_V52(laneX, startGapY, endGapY, obstacles, direction, 8, Math.max(8, maxX - 8));
+        const isPrimarySkillLine = item.edge.kind === 'primary' && fromParts.type === 'skill';
+        const isPrimaryAbilityLine = item.edge.kind === 'ability' && fromParts.type === 'ability';
+        if (isPrimarySkillLine || isPrimaryAbilityLine) {
+          const d = `M ${sx.toFixed(1)} ${sy.toFixed(1)} L ${tx.toFixed(1)} ${ty.toFixed(1)}`;
+          paths.push(`<path class="profile-skill-edge-v51 ${esc(item.edge.kind || 'skill')}" data-edge-from="${esc(item.edge.from)}" data-edge-to="${esc(item.edge.to)}" d="${d}"/>`);
+          return;
+        }
+        let startGapY = sy + 18 + offsetFromIndexV51(src.i, src.total, 5);
+        let endGapY = ty - 18 + offsetFromIndexV51(dst.i, dst.total, 5);
+        if (endGapY <= startGapY + 16) {
+          const mid = (sy + ty) / 2;
+          startGapY = mid - 10;
+          endGapY = mid + 10;
+        }
+        let preferredLaneX = (sx + tx) / 2 + offsetFromIndexV51(band.i, band.total, 22);
+        if (Math.abs(tx - sx) < 54) preferredLaneX = sx + direction * (54 + Math.abs(offsetFromIndexV51(band.i, band.total, 14)));
+        const obstacles = allVisibleNodes
+          .filter(node => node !== item.fromNode && node !== item.toNode)
+          .map(node => {
+            const rect = rectForNode(node);
+            return {
+              left: rect.left - obstaclePadding,
+              right: rect.right + obstaclePadding,
+              top: rect.top - obstaclePadding,
+              bottom: rect.bottom + obstaclePadding
+            };
+          });
+        const laneX = findClearVerticalLaneX_V52(preferredLaneX, Math.min(startGapY, endGapY), Math.max(startGapY, endGapY), obstacles, direction, 10, Math.max(10, maxX - 10));
         const d = `M ${sx.toFixed(1)} ${sy.toFixed(1)} L ${sx.toFixed(1)} ${startGapY.toFixed(1)} L ${laneX.toFixed(1)} ${startGapY.toFixed(1)} L ${laneX.toFixed(1)} ${endGapY.toFixed(1)} L ${tx.toFixed(1)} ${endGapY.toFixed(1)} L ${tx.toFixed(1)} ${ty.toFixed(1)}`;
-        paths.push(`<path class="profile-skill-edge-v51 ${esc(item.edge.kind || 'skill')}" d="${d}"/>`);
+        paths.push(`<path class="profile-skill-edge-v51 ${esc(item.edge.kind || 'skill')}" data-edge-from="${esc(item.edge.from)}" data-edge-to="${esc(item.edge.to)}" d="${d}"/>`);
       });
-      svg.setAttribute('viewBox', `0 0 ${Math.max(1, tree.scrollWidth)} ${Math.max(1, tree.scrollHeight)}`);
-      svg.setAttribute('width', String(Math.max(1, tree.scrollWidth)));
-      svg.setAttribute('height', String(Math.max(1, tree.scrollHeight)));
+      svg.setAttribute('viewBox', `0 0 ${maxX} ${maxY}`);
+      svg.setAttribute('width', String(maxX));
+      svg.setAttribute('height', String(maxY));
       svg.innerHTML = paths.join('');
     });
   }
@@ -16770,18 +17920,22 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
     const ability = ABILITY_BY_KEY_V50[abilityKey];
     const current = normalizePlayerProfileV2(App.state.users[App.currentUserId] || App.currentUser || {});
     if (!current?.id || !ability) return;
+    if (abilityKey === 'glory') {
+      Toast.show('Славу выдаёт ДМ. Игрок не может прокачивать её самостоятельно.', 'err');
+      return;
+    }
     const abilities = normalizeAbilitiesV50(current.abilities || {});
     const value = Number(abilities[abilityKey] || 0);
-    if (value >= 20) {
-      Toast.show(`${ability.label} уже на максимуме 20`, 'info');
+    if (value >= ABILITY_MAX_V53) {
+      Toast.show(`${ability.label} уже на максимуме ${ABILITY_MAX_V53}`, 'info');
       return;
     }
     if (Number(current.skillPoints || 0) < 1) {
       Toast.show('Не хватает очков улучшения', 'err');
       return;
     }
-    if (!window.confirm(`Улучшить «${ability.label}» до ${Math.min(20, value + 1)} за 1 очко улучшения?`)) return;
-    abilities[abilityKey] = Math.min(20, value + 1);
+    if (!window.confirm(`Улучшить «${ability.label}» до ${Math.min(ABILITY_MAX_V53, value + 1)} за 1 очко улучшения?`)) return;
+    abilities[abilityKey] = Math.min(ABILITY_MAX_V53, value + 1);
     current.abilities = abilities;
     current.skillPoints = Math.max(0, Number(current.skillPoints || 0) - 1);
     App.state.users[current.id] = normalizePlayerProfileV2(current);
@@ -16794,6 +17948,89 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
     modal.querySelector('#profile-extra-modal-body-v50').innerHTML = skillsModalMarkupV50(App.state.users[current.id]);
     bindProfileModalActionsV50(modal);
     UI.renderProfile();
+  }
+
+  function ensureSkillHoverCardV58() {
+    let card = document.getElementById('profile-skill-hover-card-v58');
+    if (card) return card;
+    card = document.createElement('div');
+    card.id = 'profile-skill-hover-card-v58';
+    card.className = 'profile-skill-hover-card-v58';
+    document.body.appendChild(card);
+    return card;
+  }
+
+  function moveSkillHoverCardV58(event) {
+    const card = ensureSkillHoverCardV58();
+    const pad = 18;
+    const rect = card.getBoundingClientRect();
+    let x = event.clientX + pad;
+    let y = event.clientY + pad;
+    if (x + rect.width > window.innerWidth - 10) x = Math.max(10, event.clientX - rect.width - pad);
+    if (y + rect.height > window.innerHeight - 10) y = Math.max(10, event.clientY - rect.height - pad);
+    card.style.left = `${x}px`;
+    card.style.top = `${y}px`;
+  }
+
+  function showSkillHoverCardV58(skillId, event) {
+    const skill = normalizeSkillV50(Data.getSkill(skillId) || {});
+    if (!skill.id) return;
+    const card = ensureSkillHoverCardV58();
+    card.innerHTML = skillDetailsMarkupV52(App.state.users[App.currentUserId] || App.currentUser || {}, skillId);
+    card.classList.add('open');
+    moveSkillHoverCardV58(event);
+  }
+
+  function hideSkillHoverCardV58() {
+    const card = document.getElementById('profile-skill-hover-card-v58');
+    if (card) card.classList.remove('open');
+  }
+
+  function bindSkillTreePanV57(root = document) {
+    const scrolls = Array.from(root.querySelectorAll?.('.profile-skill-tree-scroll-v51') || []);
+    scrolls.forEach(scroll => {
+      if (scroll.dataset.panBoundV57 === '1') return;
+      scroll.dataset.panBoundV57 = '1';
+      let active = false;
+      let moved = false;
+      let startX = 0;
+      let startY = 0;
+      let startLeft = 0;
+      let startTop = 0;
+      const stop = () => {
+        if (!active) return;
+        active = false;
+        scroll.classList.remove('is-panning-v57');
+        document.removeEventListener('mousemove', move);
+        document.removeEventListener('mouseup', stop);
+        if (moved) {
+          scroll.dataset.suppressClickV57 = '1';
+          setTimeout(() => { delete scroll.dataset.suppressClickV57; }, 80);
+        }
+      };
+      const move = event => {
+        if (!active) return;
+        const dx = event.clientX - startX;
+        const dy = event.clientY - startY;
+        if (Math.abs(dx) > 3 || Math.abs(dy) > 3) moved = true;
+        scroll.scrollLeft = startLeft - dx;
+        scroll.scrollTop = startTop - dy;
+      };
+      scroll.addEventListener('mousedown', event => {
+        if (event.button !== 0) return;
+        if (event.target?.closest?.('button,input,select,textarea,a,label')) return;
+        active = true;
+        moved = false;
+        startX = event.clientX;
+        startY = event.clientY;
+        startLeft = scroll.scrollLeft;
+        startTop = scroll.scrollTop;
+        scroll.classList.add('is-panning-v57');
+        document.addEventListener('mousemove', move);
+        document.addEventListener('mouseup', stop);
+        event.preventDefault();
+      });
+    });
   }
 
   function bindProfileModalActionsV50(root = document) {
@@ -16810,8 +18047,43 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
     root.querySelectorAll('.profile-skill-info-btn-v52').forEach(button => {
       if (button.dataset.boundV52 === '1') return;
       button.dataset.boundV52 = '1';
-      button.addEventListener('click', () => openSkillDetailsV52(button.dataset.skillId));
+      button.addEventListener('mouseenter', event => showSkillHoverCardV58(button.dataset.skillId, event));
+      button.addEventListener('mousemove', moveSkillHoverCardV58);
+      button.addEventListener('mouseleave', hideSkillHoverCardV58);
+      button.addEventListener('click', event => { event.preventDefault(); event.stopPropagation(); });
     });
+    root.querySelectorAll('[data-skill-card-id]').forEach(card => {
+      if (card.dataset.boundSkillHoverV58 === '1') return;
+      card.dataset.boundSkillHoverV58 = '1';
+      card.addEventListener('mouseenter', event => showSkillHoverCardV58(card.dataset.skillCardId, event));
+      card.addEventListener('mousemove', moveSkillHoverCardV58);
+      card.addEventListener('mouseleave', hideSkillHoverCardV58);
+    });
+    root.querySelectorAll('[data-skill-tree="1"] [data-tree-node-id]').forEach(node => {
+      if (node.dataset.boundTreeV53 === '1') return;
+      node.dataset.boundTreeV53 = '1';
+      node.addEventListener('click', event => {
+        if (event.target?.closest?.('button')) return;
+        const scroll = node.closest('.profile-skill-tree-scroll-v51');
+        if (scroll?.dataset?.suppressClickV57 === '1') {
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
+        // Все навыки показаны сразу; клик по узлу больше не сворачивает дерево.
+      });
+      node.addEventListener('mouseenter', () => {
+        const tree = node.closest('[data-skill-tree="1"]');
+        if (tree) setSkillTreeHoverV53(tree, node.dataset.treeNodeId);
+      });
+      node.addEventListener('mouseleave', () => {
+        const tree = node.closest('[data-skill-tree="1"]');
+        if (tree) setSkillTreeHoverV53(tree, '');
+      });
+    });
+    bindSkillTreePanV57(root);
+    bindSkillTreeControlsV63(root);
+    applySkillTreeFocusV53(root);
     scheduleSkillTreeLinesV51(root);
   }
 
@@ -16854,7 +18126,7 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
 
   function renderAbilityInputsV50(user) {
     const abilities = normalizeAbilitiesV50(user.abilities || {});
-    return `<div class="cols3">${ABILITY_MODEL_V50.map(item => `<div class="field"><label>${esc(item.label)}</label><input class="input" type="number" name="ability_${esc(item.key)}" value="${Number(abilities[item.key] || 0)}" /></div>`).join('')}</div>`;
+    return `<div class="cols3">${ABILITY_MODEL_V50.map(item => `<div class="field"><label>${esc(item.label)}</label><input class="input" type="number" min="0" max="${ABILITY_MAX_V53}" name="ability_${esc(item.key)}" value="${Number(abilities[item.key] || 0)}" /></div>`).join('')}</div>`;
   }
 
   function renderReputationRowsEditorV50(rows = []) {
@@ -16901,11 +18173,30 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
 
   function renderAbilityRequirementsEditorV52(skill) {
     const values = abilityRequirementsMapV52(skill);
-    return `<div class="skill-ability-req-grid-v52">${ABILITY_MODEL_V50.map(item => `<div class="field"><label>${esc(item.label)}</label><input class="input" type="number" min="0" name="requiredAbility_${esc(item.key)}" value="${Number(values[item.key] || 0)}" placeholder="0" /></div>`).join('')}</div>`;
+    return `<div class="skill-ability-req-grid-v52">${ABILITY_MODEL_V50.map(item => `<div class="field"><label>${esc(item.label)}</label><input class="input" type="number" min="0" max="${ABILITY_MAX_V53}" name="requiredAbility_${esc(item.key)}" value="${Number(values[item.key] || 0)}" placeholder="0" /></div>`).join('')}</div>`;
   }
 
   function renderSkillSelectorV50(selected = []) {
-    return renderCheckboxSelector('skillIds', getVisibleSkillsV50({ role: 'gm' }), normalizeSkillIdArrayV50(selected), 'skill', 'Нет навыков');
+    return renderCheckboxSelector('skillIds', getVisibleLearnableSkillsV55({ role: 'gm' }), normalizeSkillIdArrayV50(selected), 'skill', 'Нет навыков');
+  }
+
+  function renderSpecializationSelectorV55(name, selected = []) {
+    return renderCheckboxSelector(name, getVisibleSpecializationsV55({ role: 'gm' }), normalizeSkillIdArrayV50(selected), 'skill', 'Нет специализаций');
+  }
+
+  function renderSpecializationInputsV55(user) {
+    const specs = getVisibleSpecializationsV55({ role: 'gm' });
+    const values = normalizeSpecializationValuesV55(user.specializations || {});
+    if (!specs.length) return '<div class="small-note">Специализации ещё не созданы в World Config → Навыки.</div>';
+    return `<div class="skill-ability-req-grid-v52 specialization-value-grid-v55">${specs.map(spec => `<div class="field"><label>${esc(spec.name)}</label><input class="input" type="number" min="0" name="specialization_${esc(spec.id)}" value="${Number(values[spec.id] || 0)}" /></div>`).join('')}</div>`;
+  }
+
+  function readSpecializationInputsV55(formEl) {
+    const out = {};
+    getVisibleSpecializationsV55({ role: 'gm' }).forEach(spec => {
+      out[spec.id] = Math.max(0, Math.floor(numberOrFallbackV50(formEl.querySelector(`[name="specialization_${CSS.escape(spec.id)}"]`)?.value, 0)));
+    });
+    return out;
   }
 
   Configurator.renderFactionEditor = function(entity) {
@@ -16925,12 +18216,14 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
   Configurator.renderSkillEditor = function(entity) {
     const skill = normalizeSkillV50(entity);
     return `<form id="config-editor-form" class="form" data-entity-type="skills">
-      ${this.renderHeader(skill, 'Навык, который игрок может изучить за очки улучшения при выполнении условий. Ведущий может выдать навык вручную в профиле игрока.')}
+      ${this.renderHeader(skill, 'Навык или специализация. Навык игрок изучает за очки улучшения, а специализация отображается в профиле как вторичная характеристика.')}
       ${imageFieldMarkup(skill, 'Иконка навыка')}
-      <div class="cols3"><div class="field"><label>ID</label><input class="input" name="id" value="${esc(skill.id)}" /></div><div class="field"><label>Название</label><input class="input" name="name" value="${esc(skill.name)}" /></div><div class="field"><label>Категория</label><input class="input" name="category" value="${esc(skill.category)}" /></div></div>
+      <div class="cols3"><div class="field"><label>ID</label><input class="input" name="id" value="${esc(skill.id)}" /></div><div class="field"><label>Название</label><input class="input" name="name" value="${esc(skill.name)}" /></div><div class="field"><label>Тип</label><select class="select" name="skillType"><option value="skill" ${skill.skillType === SKILL_TYPE_SKILL_V55 ? 'selected' : ''}>Навык</option><option value="specialization" ${skill.skillType === SKILL_TYPE_SPECIALIZATION_V55 ? 'selected' : ''}>Вторичная характеристика / специализация</option></select></div></div>
+      <div class="field"><label>Категория</label><input class="input" name="category" value="${esc(skill.category)}" /></div>
       <div class="cols2"><div class="field"><label>Стоимость в очках улучшения</label><input class="input" type="number" min="0" name="cost" value="${Number(skill.cost || 0)}" /></div><div class="field"><label>Цвет</label><input class="input" name="color" value="${esc(skill.color)}" /></div></div>
       <div class="field"><label>Условия: характеристики</label>${renderAbilityRequirementsEditorV52(skill)}<div class="small-note">0 означает, что требования по этой характеристике нет.</div></div>
-      <div class="field"><label>Условие: уже изученные навыки</label>${renderCheckboxSelector('requiredSkillIds', getVisibleSkillsV50({ role: 'gm' }).filter(item => item.id !== skill.id), skill.requiredSkillIds || [], 'skill', 'Нет навыков')}</div>
+      <div class="field"><label>Условие: навыки и специализации</label>${renderCheckboxSelector('requiredSkillIds', getVisibleSkillTreeItemsV56({ role: 'gm' }).filter(item => item.id !== skill.id), skill.requiredSkillIds || [], 'skill', 'Нет навыков или специализаций')}</div>
+      <div class="field"><label>Повышает специализации на 1 при изучении</label>${renderSpecializationSelectorV55('specializationIncreaseIds', skill.specializationIncreases || [])}<div class="small-note">Работает для типа «Навык». Отмеченные специализации увеличиваются на 1 после изучения навыка игроком.</div></div>
       ${this.renderVisibilityField(skill)}
       <div class="field"><label>Описание</label><textarea class="area" name="description">${esc(skill.description)}</textarea>${typeof __htmlHint !== 'undefined' ? __htmlHint : ''}</div>
       <div class="field"><label>Связанные статьи</label>${renderRelatedArticlesEditor(skill.relatedArticleIds || [])}</div>
@@ -16953,6 +18246,7 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
       <div class="cols3"><div class="field"><label>Текущее здоровье</label><input class="input" type="number" name="hpCurrent" value="${Number(user.stats.hpCurrent || 0)}" /></div><div class="field"><label>Макс. здоровье</label><input class="input" type="number" name="hpMax" value="${Number(user.stats.hpMax || 0)}" /></div><div class="field"><label>Энергия (текущая)</label><input class="input" type="number" name="energyCurrent" value="${Number(user.stats.energyCurrent || 0)}" /></div></div>
       <div class="cols3"><div class="field"><label>Текущий щит</label><input class="input" type="number" name="shieldCurrent" value="${Number(user.stats.shieldCurrent || 0)}" /></div><div class="field"><label>Макс. щит</label><input class="input" type="number" name="shieldMax" value="${Number(user.stats.shieldMax || 0)}" /></div><div class="field"><label>Энергия (базовый максимум)</label><input class="input" type="number" name="energyMax" value="${Number(user.stats.energyMax || 1)}" /></div></div>
       <div class="section-title">Характеристики</div>${renderAbilityInputsV50(user)}
+      <div class="section-title">Специализации</div>${renderSpecializationInputsV55(user)}
       <div class="cols3"><div class="field"><label>Основное оружие</label><select class="select" name="primaryWeapon"><option value="">—</option>${primaryOptions.map(option => `<option value="${option.id}" ${option.id === (user.equipmentSlots?.primaryWeapon || '') ? 'selected' : ''}>${esc(option.name)}</option>`).join('')}</select></div><div class="field"><label>Вторичное оружие</label><select class="select" name="secondaryWeapon"><option value="">—</option>${secondaryOptions.map(option => `<option value="${option.id}" ${option.id === (user.equipmentSlots?.secondaryWeapon || '') ? 'selected' : ''}>${esc(option.name)}</option>`).join('')}</select></div><div class="field"><label>Броня</label><select class="select" name="armor"><option value="">—</option>${armorOptions.map(option => `<option value="${option.id}" ${option.id === (user.equipmentSlots?.armor || '') ? 'selected' : ''}>${esc(option.name)}</option>`).join('')}</select></div></div>
       <div class="field"><label>Лор</label><textarea class="area" name="lore">${esc(user.lore || '')}</textarea>${typeof __htmlHint !== 'undefined' ? __htmlHint : ''}</div>
       <div class="field"><label>Заметки</label><textarea class="area" name="notes">${esc(user.notes || '')}</textarea>${typeof __htmlHint !== 'undefined' ? __htmlHint : ''}</div>
@@ -16990,7 +18284,7 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
   const __configRemoveEntityV50 = Configurator.removeEntity.bind(Configurator);
   Configurator.removeEntity = function(type, id) {
     if (type === 'factions') { delete FACTIONS_V50[id]; for (const player of Object.values(PLAYER_TEMPLATES || {})) { if (player.social?.reputation) player.social.reputation = normalizeReputationRowsV50(player.social.reputation).filter(row => row.orgId !== id); } syncFactionsWorldDataV50(); return; }
-    if (type === 'skills') { delete SKILLS_V50[id]; for (const player of Object.values(PLAYER_TEMPLATES || {})) { player.skills = normalizeSkillIdArrayV50(player.skills).filter(skillId => skillId !== id); } Object.values(SKILLS_V50).forEach(skill => { skill.requiredSkillIds = normalizeSkillIdArrayV50(skill.requiredSkillIds).filter(skillId => skillId !== id); }); syncSkillsWorldDataV50(); return; }
+    if (type === 'skills') { delete SKILLS_V50[id]; for (const player of Object.values(PLAYER_TEMPLATES || {})) { player.skills = normalizeSkillIdArrayV50(player.skills).filter(skillId => skillId !== id); if (player.specializations && typeof player.specializations === 'object') delete player.specializations[id]; } Object.values(SKILLS_V50).forEach(skill => { skill.requiredSkillIds = normalizeSkillIdArrayV50(skill.requiredSkillIds).filter(skillId => skillId !== id); skill.specializationIncreases = normalizeSpecializationIncreaseIdsV55(skill.specializationIncreases || []).filter(skillId => skillId !== id); }); syncSkillsWorldDataV50(); return; }
     return __configRemoveEntityV50(type, id);
   };
 
@@ -17023,10 +18317,12 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
       return normalizeSkillV50({
         id: slugifyId(formData.get('id') || formData.get('name') || '', 'skill'),
         name: String(formData.get('name') || '').trim(),
+        skillType: normalizeSkillTypeV55(formData.get('skillType') || ''),
         category: String(formData.get('category') || '').trim(),
         cost: Number(formData.get('cost') || 0),
-        requiredAbilities: ABILITY_MODEL_V50.map(item => ({ key: item.key, value: Number(formData.get(`requiredAbility_${item.key}`) || 0) })).filter(row => row.value > 0),
+        requiredAbilities: ABILITY_MODEL_V50.map(item => ({ key: item.key, value: normalizeAbilityValueV53(formData.get(`requiredAbility_${item.key}`) || 0, 0) })).filter(row => row.value > 0),
         requiredSkillIds: getCheckedValues(formEl, 'requiredSkillIds'),
+        specializationIncreases: getCheckedValues(formEl, 'specializationIncreaseIds'),
         color: String(formData.get('color') || '#7df9ff').trim() || '#7df9ff',
         description: String(formData.get('description') || '').trim(),
         image,
@@ -17054,7 +18350,8 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
           energyCurrent: Number(formData.get('energyCurrent') || 0),
           energyMax: Number(formData.get('energyMax') || 1)
         },
-        abilities: Object.fromEntries(ABILITY_MODEL_V50.map(item => [item.key, Number(formData.get(`ability_${item.key}`) || 0)])),
+        abilities: Object.fromEntries(ABILITY_MODEL_V50.map(item => [item.key, normalizeAbilityValueV53(formData.get(`ability_${item.key}`) || 0, 0)])),
+        specializations: applyNewlyGrantedSkillBonusesV55(readSpecializationInputsV55(formEl), (PLAYER_TEMPLATES?.[Configurator.selectedId] || App.state?.users?.[Configurator.selectedId] || {}).skills || [], getCheckedValues(formEl, 'skillIds')),
         equipmentSlots: {
           primaryWeapon: String(formData.get('primaryWeapon') || ''),
           secondaryWeapon: String(formData.get('secondaryWeapon') || ''),
@@ -17084,8 +18381,17 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
     }
     if (type === 'skills') {
       if (oldId !== newId && SKILLS_V50[oldId]) { SKILLS_V50[newId] = { ...SKILLS_V50[oldId], id: newId }; delete SKILLS_V50[oldId]; }
-      for (const player of Object.values(PLAYER_TEMPLATES || {})) player.skills = normalizeSkillIdArrayV50(player.skills).map(id => id === oldId ? newId : id);
-      for (const skill of Object.values(SKILLS_V50 || {})) skill.requiredSkillIds = normalizeSkillIdArrayV50(skill.requiredSkillIds).map(id => id === oldId ? newId : id);
+      for (const player of Object.values(PLAYER_TEMPLATES || {})) {
+        player.skills = normalizeSkillIdArrayV50(player.skills).map(id => id === oldId ? newId : id);
+        if (player.specializations && Object.prototype.hasOwnProperty.call(player.specializations, oldId)) {
+          player.specializations[newId] = player.specializations[oldId];
+          delete player.specializations[oldId];
+        }
+      }
+      for (const skill of Object.values(SKILLS_V50 || {})) {
+        skill.requiredSkillIds = normalizeSkillIdArrayV50(skill.requiredSkillIds).map(id => id === oldId ? newId : id);
+        skill.specializationIncreases = normalizeSpecializationIncreaseIdsV55(skill.specializationIncreases || []).map(id => id === oldId ? newId : id);
+      }
       return;
     }
     return __configRemapReferencesV50(type, oldId, newId);
@@ -17110,4 +18416,437 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
   };
 
   window.addEventListener('resize', () => scheduleSkillTreeLinesV51(document));
+})();
+
+
+/* v60 campaign access, guest mode, NPC stat/chat controls, global ambient library */
+(function(){
+  if (window.__campaignAccessNpcAmbientV60) return;
+  window.__campaignAccessNpcAmbientV60 = true;
+
+  const GUEST_ID_V60 = '__guest__';
+  const GUEST_PROFILE_V60 = {
+    id: GUEST_ID_V60,
+    role: 'guest',
+    pass: '',
+    shortName: 'Guest',
+    displayName: 'Гость',
+    rank: 'Guest Access',
+    avatarGlyph: 'GS',
+    credits: 0,
+    stats: { hpCurrent: 0, hpMax: 0, shieldCurrent: 0, shieldMax: 0, energyCurrent: 0, energyMax: 1 },
+    abilities: { strength: 0, dexterity: 0, intelligence: 0, endurance: 0, will: 0, glory: 0 },
+    specializations: {},
+    skills: [],
+    skillPoints: 0,
+    inventory: [],
+    implants: [],
+    social: { npcIds: [], orgs: [], reputation: [] },
+    currentPlanetId: '',
+    campaignIds: ['guest'],
+    relatedArticleIds: []
+  };
+  const ABILITIES_V60 = [
+    { key: 'strength', label: 'Сила', short: 'СИЛ' },
+    { key: 'dexterity', label: 'Ловкость', short: 'ЛОВ' },
+    { key: 'intelligence', label: 'Интеллект', short: 'ИНТ' },
+    { key: 'endurance', label: 'Выносливость', short: 'ВЫН' },
+    { key: 'will', label: 'Воля', short: 'ВОЛ' },
+    { key: 'glory', label: 'Слава', short: 'СЛА' }
+  ];
+  let CAMPAIGNS_V60 = {};
+  let CAMPAIGN_LIST_V60 = [];
+
+  WORLD_SECTIONS.campaigns = { label: 'Игровые кампании', mapKey: 'CAMPAIGNS', listKey: 'CAMPAIGN_LIST' };
+
+  function uniqueStringsV60(value) {
+    return Array.from(new Set((Array.isArray(value) ? value : [])
+      .map(entry => String(entry?.id || entry?.campaignId || entry || '').trim())
+      .filter(Boolean)));
+  }
+  function normalizeCampaignV60(entity = {}) {
+    const id = slugifyId(entity.id || entity.name || entity.title || '', 'campaign');
+    return {
+      id,
+      name: String(entity.name || entity.title || 'Новая кампания').trim(),
+      status: String(entity.status || '').trim(),
+      color: String(entity.color || '#7df9ff').trim() || '#7df9ff',
+      description: String(entity.description || entity.summary || '').trim(),
+      image: String(entity.image || '').trim(),
+      relatedArticleIds: Array.isArray(entity.relatedArticleIds) ? entity.relatedArticleIds.map(String).filter(Boolean) : []
+    };
+  }
+  function normalizeCampaignSectionV60(section = {}) {
+    const source = section && typeof section === 'object' ? section : {};
+    const recordSource = source.CAMPAIGNS && typeof source.CAMPAIGNS === 'object' ? source.CAMPAIGNS : {};
+    const listSource = Array.isArray(source.CAMPAIGN_LIST) ? source.CAMPAIGN_LIST : [];
+    const out = {};
+    const add = (entry, fallbackId = '') => {
+      if (!entry || typeof entry !== 'object') return;
+      const item = normalizeCampaignV60({ ...entry, id: entry.id || fallbackId });
+      if (item.id) out[item.id] = item;
+    };
+    Object.entries(recordSource).forEach(([id, entry]) => add(entry, id));
+    listSource.forEach(entry => add(entry));
+    if (!Object.keys(out).length) {
+      out.main = normalizeCampaignV60({ id: 'main', name: 'Основная кампания', status: 'active', color: '#7df9ff' });
+      out.guest = normalizeCampaignV60({ id: 'guest', name: 'Гостевой доступ', status: 'guest', color: '#9bb4c8' });
+    }
+    return out;
+  }
+  function campaignListV60() {
+    return sortEntitiesForList(Object.values(CAMPAIGNS_V60 || {}));
+  }
+  function campaignIdsForPlayerV60(player = {}) {
+    const ids = uniqueStringsV60(player.campaignIds || player.campaigns || []);
+    if (player.campaignId) ids.push(String(player.campaignId).trim());
+    if (!ids.length && player.role === 'guest') return ['guest'];
+    return Array.from(new Set(ids.filter(Boolean)));
+  }
+  function normalizePlayerCampaignsV60(player = {}) {
+    const ids = campaignIdsForPlayerV60(player);
+    return { ...player, campaignIds: ids.length ? ids : ['main'] };
+  }
+  function visibilityTargetsV60() {
+    const players = sortEntitiesForList(Object.values(PLAYER_TEMPLATES || {})).filter(player => player.role !== 'gm');
+    if (!players.some(player => player.id === GUEST_ID_V60)) players.push(GUEST_PROFILE_V60);
+    return players;
+  }
+  function visibleIdsV60(entity) {
+    return Array.isArray(entity?.visibility?.playerIds) ? entity.visibility.playerIds.map(String) : [];
+  }
+  function syncCampaignsWorldDataV60() {
+    CAMPAIGN_LIST_V60 = campaignListV60();
+    if (worldData && typeof worldData === 'object') worldData.campaigns = serializeWorldSection('campaigns', CAMPAIGNS_V60);
+    Data.campaigns = CAMPAIGNS_V60;
+    Data.getCampaign = id => Data.campaigns?.[id] || null;
+  }
+  function campaignSelectorMarkupV60(selectedIds = []) {
+    return renderCheckboxSelector('campaignIds', campaignListV60(), uniqueStringsV60(selectedIds), 'campaign', 'Кампаний пока нет');
+  }
+  function currentLoginCampaignIdV60() {
+    const select = document.getElementById('login-campaign-select-v60');
+    return String(select?.value || localStorage.getItem('grpg-login-campaign-v60') || 'all');
+  }
+  function playersForLoginCampaignV60() {
+    const selected = currentLoginCampaignIdV60();
+    const sourcePlayers = sortEntitiesForList(Object.values(App.state?.users || PLAYER_TEMPLATES)).filter(player => player.role !== 'guest');
+    if (!selected || selected === 'all') return sourcePlayers;
+    return sourcePlayers.filter(player => campaignIdsForPlayerV60(player).includes(selected));
+  }
+  function npcAllowsPlayerChatV60(npc = {}) {
+    return npc && npc.allowPlayerChat !== false && npc.chatEnabled !== false && npc.disablePlayerChat !== true;
+  }
+  function npcSpecializationValuesMarkupV60(values = {}) {
+    const specs = Object.values(Data.skills || {}).filter(skill => String(skill.skillType || skill.type || '').toLowerCase() === 'specialization');
+    if (!specs.length) return '<div class="small-note">Специализации пока не созданы.</div>';
+    return `<div class="cols3">${specs.map(spec => `<div class="field"><label>${esc(spec.name || spec.id)}</label><input class="input" type="number" min="0" name="npcSpecialization_${esc(spec.id)}" value="${Number(values[spec.id] || 0)}" /></div>`).join('')}</div>`;
+  }
+  function readNpcSpecializationsV60(formEl) {
+    const out = {};
+    Object.values(Data.skills || {}).filter(skill => String(skill.skillType || skill.type || '').toLowerCase() === 'specialization').forEach(spec => {
+      out[spec.id] = Math.max(0, Math.floor(Number(formEl.querySelector(`[name="npcSpecialization_${CSS.escape(spec.id)}"]`)?.value || 0)));
+    });
+    return out;
+  }
+  function npcAbilityInputsV60(npc = {}) {
+    const abilities = npc.abilities || {};
+    return `<div class="cols3">${ABILITIES_V60.map(item => `<div class="field"><label>${esc(item.label)}</label><input class="input" type="number" min="0" max="5" name="npcAbility_${esc(item.key)}" value="${Number(abilities[item.key] || 0)}" /></div>`).join('')}</div>`;
+  }
+  function readNpcAbilitiesV60(formEl) {
+    return Object.fromEntries(ABILITIES_V60.map(item => [item.key, clamp(Number(formEl.querySelector(`[name="npcAbility_${CSS.escape(item.key)}"]`)?.value || 0), 0, 5)]));
+  }
+  function renderNpcSkillSelectorV60(selected = []) {
+    return renderCheckboxSelector('npcSkillIds', sortEntitiesForList(Object.values(Data.skills || {})), uniqueStringsV60(selected), 'skill', 'Навыков пока нет');
+  }
+  function normalizeNpcV60(npc = {}) {
+    const stats = npc.stats && typeof npc.stats === 'object' ? npc.stats : {};
+    return {
+      ...npc,
+      npcKind: String(npc.npcKind || npc.kind || 'unique'),
+      allowPlayerChat: npc.allowPlayerChat !== false && npc.chatEnabled !== false && npc.disablePlayerChat !== true,
+      stats: {
+        hpCurrent: Number(stats.hpCurrent ?? stats.hp ?? 0),
+        hpMax: Number(stats.hpMax ?? stats.hp ?? 0),
+        shieldCurrent: Number(stats.shieldCurrent ?? stats.shield ?? 0),
+        shieldMax: Number(stats.shieldMax ?? stats.shield ?? 0),
+        energyCurrent: Number(stats.energyCurrent ?? stats.energy ?? 0),
+        energyMax: Number(stats.energyMax ?? 1)
+      },
+      abilities: Object.fromEntries(ABILITIES_V60.map(item => [item.key, clamp(Number(npc.abilities?.[item.key] || 0), 0, 5)])),
+      skills: uniqueStringsV60(npc.skills || npc.skillIds || []),
+      specializations: npc.specializations && typeof npc.specializations === 'object' ? Object.fromEntries(Object.entries(npc.specializations).map(([id, value]) => [id, Math.max(0, Number(value) || 0)])) : {}
+    };
+  }
+
+  const __isEntityVisibleV60 = isEntityVisible;
+  isEntityVisible = function(entity, user = App.currentUser) {
+    if (!entity) return false;
+    if (!user || user.role === 'gm') return true;
+    if (!entity.visibility || typeof entity.visibility !== 'object') return __isEntityVisibleV60(entity, user);
+    const allowed = visibleIdsV60(entity);
+    if (!allowed.length) return false;
+    const uid = String(user.id || '');
+    if (allowed.includes(uid)) return true;
+    if (user.role === 'guest' && (allowed.includes(GUEST_ID_V60) || allowed.includes('guest'))) return true;
+    return false;
+  };
+
+  const __applyWorldDataV60 = applyWorldData;
+  applyWorldData = function(payload = {}) {
+    __applyWorldDataV60(payload);
+    CAMPAIGNS_V60 = normalizeCampaignSectionV60(payload.campaigns || {});
+    CAMPAIGN_LIST_V60 = campaignListV60();
+    PLAYER_TEMPLATES = Object.fromEntries(Object.entries(PLAYER_TEMPLATES || {}).map(([id, player]) => [id, normalizePlayerCampaignsV60(player)]));
+    PLAYER_LIST = sortEntitiesForList(Object.values(PLAYER_TEMPLATES));
+    if (App?.state?.users) App.state.users = Object.fromEntries(Object.entries(App.state.users || {}).map(([id, player]) => [id, normalizePlayerCampaignsV60(player)]));
+    NPCS = Object.fromEntries(Object.entries(NPCS || {}).map(([id, npc]) => [id, normalizeNpcV60(npc)]));
+    NPC_LIST = sortEntitiesForList(Object.values(NPCS));
+    Data.npcs = NPCS;
+    syncCampaignsWorldDataV60();
+  };
+
+  const __buildWorldSnapshotV60 = buildWorldSnapshot;
+  buildWorldSnapshot = function() {
+    const snap = __buildWorldSnapshotV60();
+    snap.campaigns = serializeWorldSection('campaigns', CAMPAIGNS_V60);
+    if (snap.players?.PLAYER_TEMPLATES) {
+      Object.entries(snap.players.PLAYER_TEMPLATES).forEach(([id, player]) => { snap.players.PLAYER_TEMPLATES[id] = normalizePlayerCampaignsV60(player); });
+      snap.players.PLAYER_LIST = sortEntitiesForList(Object.values(snap.players.PLAYER_TEMPLATES));
+    }
+    if (snap.npcs?.NPCS) {
+      Object.entries(snap.npcs.NPCS).forEach(([id, npc]) => { snap.npcs.NPCS[id] = normalizeNpcV60(npc); });
+      snap.npcs.NPC_LIST = sortEntitiesForList(Object.values(snap.npcs.NPCS));
+    }
+    return snap;
+  };
+
+  const __createBlankEntityV60 = createBlankEntity;
+  createBlankEntity = function(type) {
+    const stamp = Date.now().toString().slice(-6);
+    if (type === 'campaigns') return normalizeCampaignV60({ id: `campaign_${stamp}`, name: 'Новая кампания', status: 'active', color: '#7df9ff' });
+    const entity = __createBlankEntityV60(type);
+    if (type === 'players') return normalizePlayerCampaignsV60(entity);
+    if (type === 'npcs') return normalizeNpcV60({ ...entity, allowPlayerChat: true, npcKind: 'unique' });
+    return entity;
+  };
+
+  const __configRenderVisibilityFieldV60 = Configurator.renderVisibilityField.bind(Configurator);
+  Configurator.renderVisibilityField = function(entity) {
+    return `<div class="field"><label>Доступен игрокам / гостю</label>${renderCheckboxSelector('visibilityPlayerIds', visibilityTargetsV60(), visibleIdsV60(entity), 'player', 'Нет игроков')}<div class="small-note">Если ничего не отмечено — элемент не виден никому, кроме ДМа. Для гостя отметь «Гость».</div></div>`;
+  };
+
+  Configurator.renderCampaignEditor = function(entity) {
+    const campaign = normalizeCampaignV60(entity);
+    return `<form id="config-editor-form" class="form" data-entity-type="campaigns">
+      ${this.renderHeader(campaign, 'Игровая кампания для разделения персонажей на экране входа.')}
+      ${imageFieldMarkup(campaign, 'Изображение / эмблема кампании')}
+      <div class="cols3"><div class="field"><label>ID</label><input class="input" name="id" value="${esc(campaign.id)}" /></div><div class="field"><label>Название</label><input class="input" name="name" value="${esc(campaign.name)}" /></div><div class="field"><label>Статус</label><input class="input" name="status" value="${esc(campaign.status)}" placeholder="active / archived / guest" /></div></div>
+      <div class="field"><label>Цвет</label><input class="input" name="color" value="${esc(campaign.color)}" /></div>
+      <div class="field"><label>Описание</label><textarea class="area" name="description">${esc(campaign.description)}</textarea>${typeof __htmlHint !== 'undefined' ? __htmlHint : ''}</div>
+      <div class="field"><label>Связанные статьи</label>${renderRelatedArticlesEditor(campaign.relatedArticleIds || [])}</div>
+      <button class="primary" type="submit">SAVE_CAMPAIGN</button>
+    </form>`;
+  };
+
+  const __configGetItemsV60 = Configurator.getItems.bind(Configurator);
+  Configurator.getItems = function(type) {
+    if (type === 'campaigns') return campaignListV60();
+    return __configGetItemsV60(type);
+  };
+  const __configRenderEditorV60 = Configurator.renderEditor.bind(Configurator);
+  Configurator.renderEditor = function(entity) {
+    if (this.selectedType === 'campaigns') return this.renderCampaignEditor(entity);
+    if (this.selectedType === 'npcs') return this.renderNpcEditorV60 ? this.renderNpcEditorV60(entity) : __configRenderEditorV60(entity);
+    return __configRenderEditorV60(entity);
+  };
+  const __configInsertEntityV60 = Configurator.insertEntity.bind(Configurator);
+  Configurator.insertEntity = function(type, entity) {
+    if (type === 'campaigns') { const item = normalizeCampaignV60(entity); CAMPAIGNS_V60[item.id] = item; syncCampaignsWorldDataV60(); return; }
+    if (type === 'npcs') { const item = normalizeNpcV60(entity); NPCS[item.id] = item; NPC_LIST = sortEntitiesForList(Object.values(NPCS)); worldData.npcs = serializeWorldSection('npcs', NPCS); return; }
+    return __configInsertEntityV60(type, entity);
+  };
+  const __configRemoveEntityV60 = Configurator.removeEntity.bind(Configurator);
+  Configurator.removeEntity = function(type, id) {
+    if (type === 'campaigns') { delete CAMPAIGNS_V60[id]; Object.values(PLAYER_TEMPLATES || {}).forEach(player => { player.campaignIds = campaignIdsForPlayerV60(player).filter(cid => cid !== id); }); syncCampaignsWorldDataV60(); return; }
+    return __configRemoveEntityV60(type, id);
+  };
+  const __configBuildPayloadV60 = Configurator.buildPayload.bind(Configurator);
+  Configurator.buildPayload = function(type) {
+    if (type === 'campaigns') return serializeWorldSection('campaigns', CAMPAIGNS_V60);
+    return __configBuildPayloadV60(type);
+  };
+  const __configCollectEntityV60 = Configurator.collectEntity.bind(Configurator);
+  Configurator.collectEntity = function(type, formEl, formData = new FormData(formEl)) {
+    const mediaField = formEl.querySelector('.media-field');
+    const image = String(formEl.querySelector('input[name="imageData"]')?.value || formData.get('imageData') || mediaField?.dataset?.savedImageValue || mediaField?.dataset?.pendingImageValue || '').trim();
+    if (type === 'campaigns') return normalizeCampaignV60({ id: formData.get('id'), name: formData.get('name'), status: formData.get('status'), color: formData.get('color'), description: formData.get('description'), image, relatedArticleIds: getCheckedValues(formEl, 'relatedArticleIds') });
+    if (type === 'npcs') {
+      const base = __configCollectEntityV60(type, formEl, formData) || {};
+      return normalizeNpcV60({
+        ...base,
+        npcKind: String(formData.get('npcKind') || 'unique'),
+        allowPlayerChat: formData.get('allowPlayerChat') === 'on',
+        stats: {
+          hpCurrent: Number(formData.get('npcHpCurrent') || 0), hpMax: Number(formData.get('npcHpMax') || 0),
+          shieldCurrent: Number(formData.get('npcShieldCurrent') || 0), shieldMax: Number(formData.get('npcShieldMax') || 0),
+          energyCurrent: Number(formData.get('npcEnergyCurrent') || 0), energyMax: Number(formData.get('npcEnergyMax') || 1)
+        },
+        abilities: readNpcAbilitiesV60(formEl),
+        skills: getCheckedValues(formEl, 'npcSkillIds'),
+        specializations: readNpcSpecializationsV60(formEl)
+      });
+    }
+    const entity = __configCollectEntityV60(type, formEl, formData);
+    if (type === 'players' && entity) entity.campaignIds = getCheckedValues(formEl, 'campaignIds');
+    return entity;
+  };
+
+  Configurator.renderNpcEditorV60 = function(entity) {
+    const npc = normalizeNpcV60(entity || {});
+    return `<form id="config-editor-form" class="form" data-entity-type="npcs">
+      ${this.renderHeader(npc, 'NPC может быть уникальным персонажем для сообщений или шаблонным юнитом только для боевых сцен.')}
+      ${imageFieldMarkup(npc, 'Изображение NPC')}
+      <div class="cols3"><div class="field"><label>ID</label><input class="input" name="id" value="${esc(npc.id)}" /></div><div class="field"><label>Имя / тип</label><input class="input" name="name" value="${esc(npc.name || '')}" /></div><div class="field"><label>Тип NPC</label><select class="select" name="npcKind"><option value="unique" ${npc.npcKind !== 'template' ? 'selected' : ''}>Уникальный NPC</option><option value="template" ${npc.npcKind === 'template' ? 'selected' : ''}>Шаблон / массовый NPC</option></select></div></div>
+      <div class="cols2"><div class="field"><label>Роль</label><input class="input" name="role" value="${esc(npc.role || '')}" /></div><div class="field"><label>Локация</label><input class="input" name="location" value="${esc(npc.location || '')}" /></div></div>
+      <label class="toggle-row"><input type="checkbox" name="allowPlayerChat" ${npc.allowPlayerChat ? 'checked' : ''} /> Игроки могут писать этому NPC</label>
+      ${this.renderVisibilityField(npc)}
+      <div class="field"><label>Краткое описание</label><textarea class="area" name="summary">${esc(npc.summary || '')}</textarea>${typeof __htmlHint !== 'undefined' ? __htmlHint : ''}</div>
+      <div class="field"><label>Черты / заметки, по одной на строку</label><textarea class="area" name="traits">${esc(listText(npc.traits || []))}</textarea></div>
+      <div class="section-title">Боевые показатели NPC</div>
+      <div class="cols3"><div class="field"><label>HP тек.</label><input class="input" type="number" name="npcHpCurrent" value="${Number(npc.stats.hpCurrent || 0)}" /></div><div class="field"><label>HP макс.</label><input class="input" type="number" name="npcHpMax" value="${Number(npc.stats.hpMax || 0)}" /></div><div class="field"><label>Энергия макс.</label><input class="input" type="number" name="npcEnergyMax" value="${Number(npc.stats.energyMax || 1)}" /></div></div>
+      <div class="cols3"><div class="field"><label>Щит тек.</label><input class="input" type="number" name="npcShieldCurrent" value="${Number(npc.stats.shieldCurrent || 0)}" /></div><div class="field"><label>Щит макс.</label><input class="input" type="number" name="npcShieldMax" value="${Number(npc.stats.shieldMax || 0)}" /></div><div class="field"><label>Энергия тек.</label><input class="input" type="number" name="npcEnergyCurrent" value="${Number(npc.stats.energyCurrent || 0)}" /></div></div>
+      <div class="section-title">Характеристики NPC</div>${npcAbilityInputsV60(npc)}
+      <div class="field"><label>Навыки и специализации NPC</label>${renderNpcSkillSelectorV60(npc.skills || [])}</div>
+      <div class="field"><label>Значения специализаций NPC</label>${npcSpecializationValuesMarkupV60(npc.specializations || {})}</div>
+      <div class="field"><label>Связанные статьи</label>${renderRelatedArticlesEditor(npc.relatedArticleIds || [])}</div>
+      <button class="primary" type="submit">SAVE_NPC</button>
+    </form>`;
+  };
+
+  const __renderPlayerEditorV60 = Configurator.renderPlayerEditor.bind(Configurator);
+  Configurator.renderPlayerEditor = function(user) {
+    const html = __renderPlayerEditorV60(normalizePlayerCampaignsV60(user));
+    const field = `<div class="field"><label>Игровые кампании</label>${campaignSelectorMarkupV60(campaignIdsForPlayerV60(user))}<div class="small-note">На экране входа персонаж будет показан только в отмеченных кампаниях.</div></div>`;
+    if (html.includes('<div class="field"><label>Связанные статьи</label>')) return html.replace('<div class="field"><label>Связанные статьи</label>', field + '<div class="field"><label>Связанные статьи</label>');
+    return html.replace('<button class="primary" type="submit">SAVE_PLAYER</button>', field + '<button class="primary" type="submit">SAVE_PLAYER</button>');
+  };
+
+  const __appFillLoginSelectV60 = App.fillLoginSelect.bind(App);
+  App.fillLoginSelect = function() {
+    const select = document.getElementById('char-select');
+    const authPanel = document.getElementById('login-auth-panel');
+    if (authPanel && !document.getElementById('login-campaign-select-v60')) {
+      const row = document.createElement('div');
+      row.className = 'form login-campaign-row-v60';
+      row.innerHTML = `<select id="login-campaign-select-v60" class="select"></select><button id="guest-login-btn-v60" class="secondary" type="button">ГОСТЕВОЙ ВХОД</button>`;
+      authPanel.querySelector('.form')?.prepend(row);
+      row.querySelector('#login-campaign-select-v60')?.addEventListener('change', event => { localStorage.setItem('grpg-login-campaign-v60', event.target.value); App.fillLoginSelect(); });
+      row.querySelector('#guest-login-btn-v60')?.addEventListener('click', () => App.loginGuestV60());
+    }
+    const campaignSelect = document.getElementById('login-campaign-select-v60');
+    if (campaignSelect) {
+      const selected = currentLoginCampaignIdV60();
+      campaignSelect.innerHTML = `<option value="all">Все кампании</option>${campaignListV60().map(c => `<option value="${esc(c.id)}" ${c.id === selected ? 'selected' : ''}>${esc(c.name || c.id)}</option>`).join('')}`;
+      if ([...campaignSelect.options].some(opt => opt.value === selected)) campaignSelect.value = selected;
+      else campaignSelect.value = 'all';
+    }
+    const sourcePlayers = playersForLoginCampaignV60();
+    if (!select) return __appFillLoginSelectV60();
+    if (!sourcePlayers.length) {
+      select.innerHTML = '<option value=>Нет доступных профилей в этой кампании</option>';
+      this.renderLoginPreview();
+      return;
+    }
+    const prev = select.value;
+    select.innerHTML = sourcePlayers.map(player => `<option value="${esc(player.id)}">${esc(player.displayName || player.id)}</option>`).join('');
+    if (sourcePlayers.some(player => player.id === prev)) select.value = prev;
+    this.renderLoginPreview();
+    this.updateBootView?.();
+  };
+  App.loginGuestV60 = function() {
+    this.state.users = this.state.users || {};
+    this.state.users[GUEST_ID_V60] = normalizePlayerCampaignsV60(GUEST_PROFILE_V60);
+    this.currentUserId = GUEST_ID_V60;
+    Persistence.saveSession(GUEST_ID_V60);
+    this.finishLogin();
+    Toast.show('Выполнен гостевой вход', 'ok');
+  };
+
+  const __appLoginV60 = App.login.bind(App);
+  App.login = function() {
+    const selectedId = document.getElementById('char-select')?.value;
+    if (!selectedId) { document.getElementById('login-error').textContent = 'Выбери профиль.'; return; }
+    return __appLoginV60();
+  };
+
+  try {
+    const __listNpcThreadsForPlayerV60 = listNpcThreadsForPlayer;
+    listNpcThreadsForPlayer = function(playerId = App.currentUserId) {
+      return __listNpcThreadsForPlayerV60(playerId).filter(npc => npcAllowsPlayerChatV60(npc));
+    };
+  } catch {}
+  const __chatRenderNpcThreadForPlayerV60 = ChatUI.renderNpcThreadForPlayer.bind(ChatUI);
+  ChatUI.renderNpcThreadForPlayer = function(npc) {
+    if (!npcAllowsPlayerChatV60(npc)) {
+      return `<div class="chat-panel card pad18"><div class="section-title">Канал связи</div><div class="small-note">ДМ закрыл возможность писать этому NPC. Запись доступна только для просмотра.</div></div>`;
+    }
+    return __chatRenderNpcThreadForPlayerV60(npc);
+  };
+  const __chatBindWithinV60 = ChatUI.bindWithin.bind(ChatUI);
+  ChatUI.bindWithin = function(root) {
+    root?.querySelectorAll?.('.npc-chat-form,.npc-chat-init-form').forEach(form => {
+      const npcId = form.dataset.npcId || form.dataset.defaultNpcId || form.querySelector('[name="npcId"]')?.value || '';
+      const npc = Data.getNpc?.(npcId);
+      if (npc && !npcAllowsPlayerChatV60(npc) && App.currentUser?.role !== 'gm') form.remove();
+    });
+    return __chatBindWithinV60(root);
+  };
+
+  function ensureAmbientModalV60() {
+    let modal = document.getElementById('global-ambient-modal-v60');
+    if (modal) return modal;
+    modal = document.createElement('div');
+    modal.id = 'global-ambient-modal-v60';
+    modal.className = 'modal global-ambient-modal-v60';
+    modal.innerHTML = `<div class="login-box card global-ambient-box-v60"><div class="row" style="justify-content:space-between;align-items:flex-start"><div><div class="section-title">Ambient library</div><h2 style="margin:0">Эмбиент главного экрана</h2></div><button class="ghost" type="button" id="global-ambient-close-v60">ЗАКРЫТЬ</button></div><div id="global-ambient-body-v60"></div></div>`;
+    document.body.appendChild(modal);
+    modal.querySelector('#global-ambient-close-v60')?.addEventListener('click', () => modal.classList.remove('open'));
+    return modal;
+  }
+  function renderGlobalAmbientV60() {
+    const modal = ensureAmbientModalV60();
+    const body = modal.querySelector('#global-ambient-body-v60');
+    const audioApi = window.CombatAudioV37;
+    if (!audioApi) { body.innerHTML = '<div class="small-note">Локальная библиотека звуков недоступна.</div>'; return; }
+    const ambientId = audioApi.state?.sceneAmbient?.global || '';
+    body.innerHTML = `<div class="small-note">Звуки хранятся локально в renderer/assets/audio. Панель доступна только ДМу. Эмбиент главного экрана использует тот же набор групп, что и боевые сцены.</div><div class="row combat-editor-actions"><input class="input" id="global-ambient-section-name-v60" placeholder="Новый раздел звуков" /><button class="secondary" type="button" id="global-ambient-add-section-v60">ДОБАВИТЬ РАЗДЕЛ</button><button class="ghost" type="button" id="global-ambient-stop-v60">СТОП ЭМБИЕНТ</button></div><div class="combat-sound-sections-v37">${audioApi.sections.map(section => `<div class="combat-sound-section-v37"><div class="combat-sound-section-head-v37"><b>${esc(section.name)}</b><div class="row combat-editor-actions"><button class="secondary" type="button" data-global-sound-add="${esc(section.id)}">ДОБАВИТЬ ФАЙЛЫ</button><button class="secondary" type="button" data-global-sound-random="${esc(section.id)}">СЛУЧАЙНЫЙ</button></div></div><div class="combat-sound-list-v37">${section.sounds.map(sound => `<div class="combat-sound-row-v37"><span>${esc(sound.name)}</span><div class="row combat-editor-actions"><button class="ghost" type="button" data-global-sound-play="${esc(sound.id)}">PLAY</button><button class="ghost ${ambientId === sound.id ? 'active' : ''}" type="button" data-global-sound-ambient="${esc(sound.id)}">AMBIENT</button></div></div>`).join('') || '<div class="small-note">В этом разделе пока нет файлов.</div>'}</div></div>`).join('')}</div>`;
+  }
+  document.addEventListener('click', event => {
+    const ambientBtn = event.target.closest?.('#ambient-mute-btn');
+    if (ambientBtn && App.currentUser?.role === 'gm') {
+      event.preventDefault(); event.stopImmediatePropagation();
+      renderGlobalAmbientV60(); ensureAmbientModalV60().classList.add('open'); return;
+    }
+    const modal = document.getElementById('global-ambient-modal-v60');
+    if (!modal?.classList.contains('open')) return;
+    const target = event.target.closest?.('#global-ambient-add-section-v60,#global-ambient-stop-v60,[data-global-sound-add],[data-global-sound-random],[data-global-sound-play],[data-global-sound-ambient]');
+    if (!target) return;
+    event.preventDefault(); event.stopPropagation();
+    const audioApi = window.CombatAudioV37;
+    if (!audioApi) return;
+    if (target.id === 'global-ambient-add-section-v60') { const input = document.getElementById('global-ambient-section-name-v60'); audioApi.addSection(input?.value || ''); if (input) input.value = ''; }
+    else if (target.id === 'global-ambient-stop-v60') { delete audioApi.state.sceneAmbient.global; audioApi.save(); audioApi.stopAmbient(); }
+    else if (target.dataset.globalSoundAdd) audioApi.addSound(target.dataset.globalSoundAdd);
+    else if (target.dataset.globalSoundRandom) audioApi.playRandom(target.dataset.globalSoundRandom);
+    else if (target.dataset.globalSoundPlay) audioApi.play(target.dataset.globalSoundPlay);
+    else if (target.dataset.globalSoundAmbient) audioApi.setAmbient('global', target.dataset.globalSoundAmbient);
+    setTimeout(renderGlobalAmbientV60, 80);
+  }, true);
+
+  document.addEventListener('DOMContentLoaded', () => {
+    try { App.fillLoginSelect?.(); } catch {}
+  });
+
+
 })();

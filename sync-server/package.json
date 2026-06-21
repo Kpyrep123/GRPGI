@@ -1,0 +1,13 @@
+{
+  "name": "galactic-rpg-sync-server",
+  "version": "1.0.16",
+  "private": true,
+  "description": "Self-host realtime sync server for Galactic RPG Interface",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
