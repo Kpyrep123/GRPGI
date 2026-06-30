@@ -18820,7 +18820,7 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
     const audioApi = window.CombatAudioV37;
     if (!audioApi) { body.innerHTML = '<div class="small-note">Локальная библиотека звуков недоступна.</div>'; return; }
     const ambientId = audioApi.state?.sceneAmbient?.global || '';
-    body.innerHTML = `<div class="small-note">Звуки хранятся локально в renderer/assets/audio. Панель доступна только ДМу. Эмбиент главного экрана использует тот же набор групп, что и боевые сцены.</div><div class="row combat-editor-actions"><input class="input" id="global-ambient-section-name-v60" placeholder="Новый раздел звуков" /><button class="secondary" type="button" id="global-ambient-add-section-v60">ДОБАВИТЬ РАЗДЕЛ</button><button class="ghost" type="button" id="global-ambient-stop-v60">СТОП ЭМБИЕНТ</button></div><div class="combat-sound-sections-v37">${audioApi.sections.map(section => `<div class="combat-sound-section-v37"><div class="combat-sound-section-head-v37"><b>${esc(section.name)}</b><div class="row combat-editor-actions"><button class="secondary" type="button" data-global-sound-add="${esc(section.id)}">ДОБАВИТЬ ФАЙЛЫ</button><button class="secondary" type="button" data-global-sound-random="${esc(section.id)}">СЛУЧАЙНЫЙ</button></div></div><div class="combat-sound-list-v37">${section.sounds.map(sound => `<div class="combat-sound-row-v37"><span>${esc(sound.name)}</span><div class="row combat-editor-actions"><button class="ghost" type="button" data-global-sound-play="${esc(sound.id)}">PLAY</button><button class="ghost ${ambientId === sound.id ? 'active' : ''}" type="button" data-global-sound-ambient="${esc(sound.id)}">AMBIENT</button></div></div>`).join('') || '<div class="small-note">В этом разделе пока нет файлов.</div>'}</div></div>`).join('')}</div>`;
+    body.innerHTML = `<div class="small-note">Звуки хранятся локально в renderer/assets/audio. Панель доступна только ДМу. Эмбиент главного экрана использует тот же набор групп, что и боевые сцены.</div><div class="row combat-editor-actions"><input class="input" id="global-ambient-section-name-v60" placeholder="Новый раздел звуков" /><button class="secondary" type="button" id="global-ambient-add-section-v60">ДОБАВИТЬ РАЗДЕЛ</button><button class="ghost" type="button" id="global-ambient-stop-v60">СТОП ЭМБИЕНТ</button></div><div class="combat-sound-sections-v37">${audioApi.sections.map(section => `<div class="combat-sound-section-v37"><div class="combat-sound-section-head-v37"><b>${esc(section.name)}</b><div class="row combat-editor-actions"><button class="secondary" type="button" data-global-sound-add="${esc(section.id)}">ДОБАВИТЬ ФАЙЛЫ</button><button class="secondary" type="button" data-global-sound-random="${esc(section.id)}">СЛУЧАЙНЫЙ</button></div></div><div class="combat-sound-list-v37">${section.sounds.map(sound => `<div class="combat-sound-row-v37"><span>${esc(sound.name)}</span><div class="row combat-editor-actions"><button class="ghost" type="button" data-global-sound-play="${esc(sound.id)}">PLAY</button><button class="ghost ${ambientId === sound.id ? 'active' : ''}" type="button" data-global-sound-ambient="${esc(sound.id)}">AMBIENT</button><button class="ghost" type="button" data-global-sound-stop="${esc(sound.id)}" title="Остановить эмбиент">⏹</button></div></div>`).join('') || '<div class="small-note">В этом разделе пока нет файлов.</div>'}</div></div>`).join('')}</div>`;
   }
   document.addEventListener('click', event => {
     const ambientBtn = event.target.closest?.('#ambient-mute-btn');
@@ -18830,13 +18830,13 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
     }
     const modal = document.getElementById('global-ambient-modal-v60');
     if (!modal?.classList.contains('open')) return;
-    const target = event.target.closest?.('#global-ambient-add-section-v60,#global-ambient-stop-v60,[data-global-sound-add],[data-global-sound-random],[data-global-sound-play],[data-global-sound-ambient]');
+    const target = event.target.closest?.('#global-ambient-add-section-v60,#global-ambient-stop-v60,[data-global-sound-add],[data-global-sound-random],[data-global-sound-play],[data-global-sound-ambient],[data-global-sound-stop]');
     if (!target) return;
     event.preventDefault(); event.stopPropagation();
     const audioApi = window.CombatAudioV37;
     if (!audioApi) return;
     if (target.id === 'global-ambient-add-section-v60') { const input = document.getElementById('global-ambient-section-name-v60'); audioApi.addSection(input?.value || ''); if (input) input.value = ''; }
-    else if (target.id === 'global-ambient-stop-v60') { delete audioApi.state.sceneAmbient.global; audioApi.save(); audioApi.stopAmbient(); }
+    else if (target.id === 'global-ambient-stop-v60' || target.dataset.globalSoundStop) { delete audioApi.state.sceneAmbient.global; audioApi.save(); audioApi.stopAmbient(); }
     else if (target.dataset.globalSoundAdd) audioApi.addSound(target.dataset.globalSoundAdd);
     else if (target.dataset.globalSoundRandom) audioApi.playRandom(target.dataset.globalSoundRandom);
     else if (target.dataset.globalSoundPlay) audioApi.play(target.dataset.globalSoundPlay);
@@ -18849,4 +18849,1336 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
   });
 
 
+})();
+
+
+/* v1.0.36 regions / ships / realtime map MVP */
+(function(){
+  if (window.__regionsShipsRtsV36) return;
+  window.__regionsShipsRtsV36 = true;
+
+  var REGION_MAPS_V36 = {};
+  var REGION_MAP_LIST_V36 = [];
+  var SHIPS_V36 = {};
+  var SHIP_LIST_V36 = [];
+  var RTS_REGION_UI_V36 = { mapId: '', mode: 'play', selectedTokenId: '', selectedMarkerId: '', dragging: null, raf: 0, view: { zoom: 1, panX: 0, panY: 0, frameW: 0, frameH: 0 }, persistTimer: 0, persistMsg: '', displayTimer: 0, resizeBound: false, arming: '', missiles: [] };
+  const RTS_REGION_STATE_KEY_V36 = 'regionRuntime';
+
+  WORLD_SECTIONS.regionMaps = { label: 'Регионы / города', mapKey: 'REGION_MAPS', listKey: 'REGION_MAP_LIST' };
+  WORLD_SECTIONS.ships = { label: 'Корабли', mapKey: 'SHIPS', listKey: 'SHIP_LIST' };
+
+  function safeArrayV36(value) { return Array.isArray(value) ? value : []; }
+  function cleanIdV36(value, fallback = 'id') { return slugifyId(String(value || '').trim() || `${fallback}_${Date.now().toString(36)}`, fallback); }
+  function uniqueV36(values) { return Array.from(new Set(safeArrayV36(values).map(v => String(v || '').trim()).filter(Boolean))); }
+  function nowIsoV36() { return new Date().toISOString(); }
+  function isGmV36(user = App?.currentUser) {
+    const role = String(user?.role || '').toLowerCase();
+    const id = String(user?.id || App?.currentUserId || '').toLowerCase();
+    return role === 'gm' || role === 'dm' || role === 'master' || id === 'gm' || id === 'dm';
+  }
+  function playerOptionsV36(includeGm = false) { return sortEntitiesForList(Object.values(App?.state?.users || PLAYER_TEMPLATES || {})).filter(p => includeGm || String(p.role || '') !== 'gm'); }
+  function npcOptionsV36() { return sortEntitiesForList(Object.values(NPCS || {})); }
+  function shipOptionsV36() { return sortEntitiesForList(Object.values(SHIPS_V36 || {})); }
+  function regionMapOptionsV36(planetId = '') {
+    const list = sortEntitiesForList(Object.values(REGION_MAPS_V36 || {}));
+    return planetId ? list.filter(map => String(map.planetId || '') === String(planetId)) : list;
+  }
+  function normalizeRegionMarkerV36(marker = {}) {
+    return {
+      id: String(marker.id || `marker_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,6)}`).trim(),
+      name: String(marker.name || 'Метка').trim() || 'Метка',
+      type: String(marker.type || 'point').trim() || 'point',
+      x: clamp(Number(marker.x ?? 500), 0, 1000),
+      y: clamp(Number(marker.y ?? 500), 0, 1000),
+      color: String(marker.color || '#7df9ff').trim() || '#7df9ff',
+      visibleToPlayers: marker.visibleToPlayers !== false,
+      targetRegionId: String(marker.targetRegionId || '').trim(),
+      notes: String(marker.notes || '').trim()
+    };
+  }
+  function normalizeRegionTokenV36(token = {}) {
+    return {
+      id: String(token.id || `token_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,6)}`).trim(),
+      name: String(token.name || 'Токен').trim() || 'Токен',
+      type: ['player','ship','unit','convoy'].includes(String(token.type || '').trim()) ? String(token.type || '').trim() : 'unit',
+      x: clamp(Number(token.x ?? 500), 0, 1000),
+      y: clamp(Number(token.y ?? 500), 0, 1000),
+      startX: Number(token.startX ?? token.x ?? 500),
+      startY: Number(token.startY ?? token.y ?? 500),
+      destX: Number(token.destX ?? token.x ?? 500),
+      destY: Number(token.destY ?? token.y ?? 500),
+      moveStartedAt: String(token.moveStartedAt || '').trim(),
+      moveEndsAt: String(token.moveEndsAt || '').trim(),
+      color: String(token.color || '#7df9ff').trim() || '#7df9ff',
+      image: String(token.image || '').trim(),
+      playerId: String(token.playerId || '').trim(),
+      shipId: String(token.shipId || '').trim(),
+      npcId: String(token.npcId || '').trim(),
+      visibleToPlayers: Boolean(token.visibleToPlayers),
+      visionRadius: Math.max(0, Number(token.visionRadius || 90)),
+      radarRadius: Math.max(0, Number(token.radarRadius || 0)),
+      moveShipId: String(token.moveShipId || '').trim(),
+      moveFuelStart: Number(token.moveFuelStart || 0),
+      moveFuelCost: Number(token.moveFuelCost || 0),
+      notes: String(token.notes || '').trim()
+    };
+  }
+  function normalizeRegionMapV36(map = {}) {
+    const id = cleanIdV36(map.id || map.name, 'region');
+    return {
+      id,
+      name: String(map.name || id).trim() || id,
+      kind: ['region','city','building'].includes(String(map.kind || '').trim()) ? String(map.kind || '').trim() : 'region',
+      planetId: String(map.planetId || '').trim(),
+      parentRegionId: String(map.parentRegionId || map.parentId || '').trim(),
+      image: String(map.image || map.backgroundImage || '').trim(),
+      color: String(map.color || '#7df9ff').trim() || '#7df9ff',
+      width: Math.max(300, Number(map.width || 1000)),
+      height: Math.max(200, Number(map.height || 700)),
+      scaleLabel: String(map.scaleLabel || 'км').trim() || 'км',
+      summary: String(map.summary || '').trim(),
+      markers: safeArrayV36(map.markers).map(normalizeRegionMarkerV36),
+      tokens: safeArrayV36(map.tokens).map(normalizeRegionTokenV36),
+      fog: {
+        enabled: map.fog ? map.fog.enabled !== false : true,
+        radius: Math.max(0, Number(map.fog?.radius ?? 50)),
+        explored: typeof map.fog?.explored === 'string' ? map.fog.explored : ''
+      },
+      visibility: map.visibility || { playerIds: [] },
+      relatedArticleIds: uniqueV36(map.relatedArticleIds || [])
+    };
+  }
+  function normalizeShipV36(ship = {}) {
+    const id = cleanIdV36(ship.id || ship.name, 'ship');
+    const fuelCapacity = Math.max(0, Number(ship.fuelCapacity ?? ship.maxFuel ?? 100));
+    const fuel = clamp(Number(ship.fuel ?? fuelCapacity), 0, Math.max(1, fuelCapacity));
+    return {
+      id,
+      name: String(ship.name || id).trim() || id,
+      model: String(ship.model || '').trim(),
+      image: String(ship.image || '').trim(),
+      ownerPlayerId: String(ship.ownerPlayerId || '').trim(),
+      currentRegionId: String(ship.currentRegionId || '').trim(),
+      currentPlanetId: String(ship.currentPlanetId || '').trim(),
+      fuel,
+      fuelCapacity,
+      fuelConsumption: Math.max(0.01, Number(ship.fuelConsumption || 1)),
+      mass: Math.max(1, Number(ship.mass || 100)),
+      enginePower: Math.max(1, Number(ship.enginePower || 100)),
+      cargoMass: Math.max(0, Number(ship.cargoMass || 0)),
+      crewPlayerIds: uniqueV36(ship.crewPlayerIds || []),
+      crewNpcIds: uniqueV36(ship.crewNpcIds || []),
+      guns: safeArrayV36(ship.guns).map(gun => ({ name: String(gun?.name || '').trim(), type: String(gun?.type || '').trim(), damage: String(gun?.damage || '').trim(), range: Number(gun?.range || 0) })).filter(gun => gun.name),
+      notes: String(ship.notes || '').trim(),
+      visibility: ship.visibility || { playerIds: [] },
+      relatedArticleIds: uniqueV36(ship.relatedArticleIds || [])
+    };
+  }
+  function shipSpeedV36(ship = {}) {
+    const mass = Math.max(1, Number(ship.mass || 100) + Number(ship.cargoMass || 0));
+    const power = Math.max(1, Number(ship.enginePower || 100));
+    return clamp((power / mass) * 150, 12, 260);
+  }
+  function shipFuelRangeV36(ship = {}) {
+    const fuel = Math.max(0, Number(ship.fuel || 0));
+    const consumption = Math.max(0.01, Number(ship.fuelConsumption || 1));
+    return clamp((fuel / consumption) * 100, 0, 2500);
+  }
+  function shipMovementStatsMarkupV36(ship = {}) {
+    const speed = shipSpeedV36(ship);
+    const range = shipFuelRangeV36(ship);
+    return `<div class="small-note">Авторасчёт: скорость ${speed.toFixed(1)} ед/сек · запас хода ${range.toFixed(0)} ед карты</div>`;
+  }
+  function currentTokenPositionV36(token = {}, at = Date.now()) {
+    const start = Date.parse(token.moveStartedAt || '');
+    const end = Date.parse(token.moveEndsAt || '');
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start || at >= end) {
+      return { x: Number(token.destX ?? token.x ?? 0), y: Number(token.destY ?? token.y ?? 0), done: Boolean(token.moveEndsAt) && Number.isFinite(end) && at >= end };
+    }
+    const t = clamp((at - start) / (end - start), 0, 1);
+    return {
+      x: lerp(Number(token.startX ?? token.x ?? 0), Number(token.destX ?? token.x ?? 0), t),
+      y: lerp(Number(token.startY ?? token.y ?? 0), Number(token.destY ?? token.y ?? 0), t),
+      done: false
+    };
+  }
+  function settleRegionTokenV36(token = {}) {
+    const pos = currentTokenPositionV36(token);
+    if (pos.done) {
+      // Commit the fuel actually burned over the completed route (consumed progressively, deducted once here).
+      if (token.moveShipId && SHIPS_V36[token.moveShipId] && Number(token.moveFuelCost || 0) > 0) {
+        const ship = SHIPS_V36[token.moveShipId];
+        const start = Number.isFinite(token.moveFuelStart) ? Number(token.moveFuelStart) : Number(ship.fuel || 0);
+        ship.fuel = clamp(start - Number(token.moveFuelCost || 0), 0, Math.max(1, Number(ship.fuelCapacity || ship.fuel || 0)));
+      }
+      token.moveShipId = '';
+      token.moveFuelStart = 0;
+      token.moveFuelCost = 0;
+      token.x = clamp(Number(token.destX ?? pos.x), 0, 1000);
+      token.y = clamp(Number(token.destY ?? pos.y), 0, 1000);
+      token.startX = token.x;
+      token.startY = token.y;
+      token.destX = token.x;
+      token.destY = token.y;
+      token.moveStartedAt = '';
+      token.moveEndsAt = '';
+    }
+    return token;
+  }
+  function settleAllRegionTokensV36() {
+    Object.values(REGION_MAPS_V36 || {}).forEach(map => { map.tokens = safeArrayV36(map.tokens).map(settleRegionTokenV36); });
+  }
+  function visibleRegionTokenV36(token, map) {
+    if (isGmV36()) return true;
+    if (token.visibleToPlayers) return true;
+    const me = App?.currentUser;
+    if (token.playerId && token.playerId === me?.id) return true;
+    const ownTokens = safeArrayV36(map.tokens).filter(item => item.visibleToPlayers || item.playerId === me?.id || (item.shipId && SHIPS_V36[item.shipId]?.crewPlayerIds?.includes(me?.id)));
+    const pos = currentTokenPositionV36(token);
+    return ownTokens.some(own => {
+      const ownPos = currentTokenPositionV36(own);
+      const radius = Math.max(Number(own.visionRadius || 0), Number(own.radarRadius || 0));
+      return radius > 0 && Math.hypot(pos.x - ownPos.x, pos.y - ownPos.y) <= radius;
+    });
+  }
+  function canOpenRegionMapV36(map, user = App?.currentUser) {
+    if (!map) return false;
+    if (isGmV36(user)) return true;
+    if (String(user?.currentRegionId || '') === String(map.id)) return true;
+    const shipId = String(user?.currentShipId || '').trim();
+    if (shipId && SHIPS_V36[shipId]?.currentRegionId === map.id) return true;
+    return false;
+  }
+  function getRegionRuntimeV36() {
+    if (!App.state.toolState) App.state.toolState = {};
+    if (!App.state.toolState[RTS_REGION_STATE_KEY_V36] || typeof App.state.toolState[RTS_REGION_STATE_KEY_V36] !== 'object') App.state.toolState[RTS_REGION_STATE_KEY_V36] = { activeMapId: '', updatedAt: null };
+    return App.state.toolState[RTS_REGION_STATE_KEY_V36];
+  }
+  async function persistRegionsShipsV36(message = '', opts = {}) {
+    settleAllRegionTokensV36();
+    REGION_MAP_LIST_V36 = sortEntitiesForList(Object.values(REGION_MAPS_V36));
+    SHIP_LIST_V36 = sortEntitiesForList(Object.values(SHIPS_V36));
+    worldData.regionMaps = serializeWorldSection('regionMaps', REGION_MAPS_V36);
+    worldData.ships = serializeWorldSection('ships', SHIPS_V36);
+    try { mirrorPlayersIntoWorld(App.state); } catch {}
+    if (window.electronAPI?.saveWorldData) {
+      const res = await window.electronAPI.saveWorldData(buildWorldSnapshot());
+      if (res?.ok && res.world) applyWorldData(res.world);
+    }
+    try { Sync.markLocalDirty('REGION_RTS_EDIT'); await Sync.pushCurrentSnapshot('region-rts-edit', { silent: true }); } catch {}
+    if (message && !opts.silent) Toast.show(message, 'ok');
+  }
+  // Debounced save so dragging / property tweaks / live movement don't spam the heavy world snapshot + sync push.
+  function scheduleRegionPersistV36(message = '', opts = {}) {
+    if (message) RTS_REGION_UI_V36.persistMsg = message;
+    clearTimeout(RTS_REGION_UI_V36.persistTimer);
+    const delay = Number(opts.delay != null ? opts.delay : 550);
+    RTS_REGION_UI_V36.persistTimer = setTimeout(() => {
+      const msg = RTS_REGION_UI_V36.persistMsg; RTS_REGION_UI_V36.persistMsg = '';
+      persistRegionsShipsV36(msg, { silent: !msg }).catch(() => {});
+    }, delay);
+  }
+
+  // ---- interactive camera (pan / zoom) ----
+  function getRegionViewV36() { if (!RTS_REGION_UI_V36.view) RTS_REGION_UI_V36.view = { zoom: 1, panX: 0, panY: 0, frameW: 0, frameH: 0 }; return RTS_REGION_UI_V36.view; }
+  function clampRegionViewV36(view) {
+    const z = clamp(Number(view.zoom || 1), 0.6, 6);
+    const fw = Math.max(1, Number(view.frameW || 1));
+    const fh = Math.max(1, Number(view.frameH || 1));
+    const overX = fw * 0.45, overY = fh * 0.45;
+    view.zoom = z;
+    view.panX = clamp(Number(view.panX || 0), Math.min(0, fw * (1 - z)) - overX, overX);
+    view.panY = clamp(Number(view.panY || 0), Math.min(0, fh * (1 - z)) - overY, overY);
+    return view;
+  }
+  function applyRegionCameraV36() {
+    const stage = document.getElementById('region-map-stage-v36');
+    if (!stage) return;
+    const v = clampRegionViewV36(getRegionViewV36());
+    stage.style.transform = `translate(${v.panX.toFixed(1)}px, ${v.panY.toFixed(1)}px) scale(${v.zoom.toFixed(4)})`;
+  }
+  function sizeRegionBoardV36() {
+    const map = REGION_MAPS_V36[RTS_REGION_UI_V36.mapId];
+    const wrap = document.getElementById('region-map-board-wrap-v36');
+    const frame = document.getElementById('region-map-frame-v36');
+    if (!map || !wrap || !frame) return;
+    const availW = Math.max(1, wrap.clientWidth - 20);
+    const availH = Math.max(1, wrap.clientHeight - 20);
+    const aspect = Math.max(.1, Number(map.width || 1000) / Math.max(1, Number(map.height || 700)));
+    let w = availW, h = w / aspect;
+    if (h > availH) { h = availH; w = h * aspect; }
+    frame.style.width = `${w.toFixed(1)}px`;
+    frame.style.height = `${h.toFixed(1)}px`;
+    const v = getRegionViewV36(); v.frameW = w; v.frameH = h;
+    applyRegionCameraV36();
+  }
+  function regionZoomAtV36(factor, cx, cy) {
+    const v = getRegionViewV36();
+    const fw = Math.max(1, v.frameW || 1), fh = Math.max(1, v.frameH || 1);
+    const ax = cx == null ? fw / 2 : cx, ay = cy == null ? fh / 2 : cy;
+    const z0 = Math.max(0.0001, v.zoom), z1 = clamp(z0 * factor, 0.6, 6);
+    v.panX = ax - (z1 / z0) * (ax - v.panX);
+    v.panY = ay - (z1 / z0) * (ay - v.panY);
+    v.zoom = z1;
+    applyRegionCameraV36();
+    queueRegionDisplayMirrorV36();
+  }
+  function resetRegionViewV36() {
+    const v = getRegionViewV36(); v.zoom = 1; v.panX = 0; v.panY = 0;
+    applyRegionCameraV36(); queueRegionDisplayMirrorV36();
+  }
+  // ---- second-screen camera mirror (normalized pan so it scales to any display size) ----
+  function regionDisplayPayloadV36() {
+    const v = getRegionViewV36();
+    const fw = Math.max(1, v.frameW || 1), fh = Math.max(1, v.frameH || 1);
+    return { mode: 'region', activeRegionMapId: RTS_REGION_UI_V36.mapId || '', regionCamera: { zoom: Number(v.zoom || 1), panFracX: Number(v.panX || 0) / fw, panFracY: Number(v.panY || 0) / fh }, updatedAt: nowIsoV36() };
+  }
+  function queueRegionDisplayMirrorV36() {
+    clearTimeout(RTS_REGION_UI_V36.displayTimer);
+    RTS_REGION_UI_V36.displayTimer = setTimeout(() => { try { window.electronAPI?.updatePlayerDisplayView?.(regionDisplayPayloadV36()); } catch {} }, 45);
+  }
+  // ---- live fuel helpers (consume progressively while moving) ----
+  function liveShipForTokenV36(token) {
+    let ship = token.shipId ? SHIPS_V36[token.shipId] : null;
+    if (!ship && token.playerId) ship = SHIPS_V36[(App.state.users[token.playerId] || PLAYER_TEMPLATES[token.playerId])?.currentShipId];
+    return ship || null;
+  }
+  function liveFuelV36(token, ship, at = Date.now()) {
+    if (!ship) return 0;
+    const start = Date.parse(token.moveStartedAt || ''), end = Date.parse(token.moveEndsAt || '');
+    if (token.moveShipId === ship.id && Number.isFinite(start) && Number.isFinite(end) && end > start) {
+      const t = clamp((at - start) / (end - start), 0, 1);
+      return clamp(Number(token.moveFuelStart || ship.fuel || 0) - Number(token.moveFuelCost || 0) * t, 0, Math.max(1, Number(ship.fuelCapacity || ship.fuel || 0)));
+    }
+    return Number(ship.fuel || 0);
+  }
+  function shipRangeFromFuelV36(ship, fuel) {
+    const consumption = Math.max(0.01, Number(ship.fuelConsumption || 1));
+    return clamp((Math.max(0, fuel) / consumption) * 100, 0, 2500);
+  }
+
+  // Merge an incoming section into the in-memory map *in place* so existing object references
+  // (held by open-modal event handlers, the rAF loop, etc.) stay valid across saves / remote syncs.
+  // Replacing the objects wholesale made edits land on a stale `map` and silently vanish.
+  function mergeWorldSectionInPlaceV36(target, rawEntries, normalize) {
+    const next = {};
+    Object.entries(rawEntries || {}).forEach(([id, raw]) => {
+      const normalized = normalize({ id, ...raw });
+      const existing = target[normalized.id];
+      if (existing && typeof existing === 'object') {
+        Object.keys(existing).forEach(key => { delete existing[key]; });
+        Object.assign(existing, normalized);
+        next[normalized.id] = existing;
+      } else {
+        next[normalized.id] = normalized;
+      }
+    });
+    return next;
+  }
+  const __applyWorldData_v36 = applyWorldData;
+  applyWorldData = function(payload = {}) {
+    __applyWorldData_v36(payload);
+    REGION_MAPS_V36 = mergeWorldSectionInPlaceV36(REGION_MAPS_V36, payload?.regionMaps?.REGION_MAPS || payload?.regions?.REGION_MAPS || payload?.REGION_MAPS || {}, normalizeRegionMapV36);
+    REGION_MAP_LIST_V36 = sortEntitiesForList(Object.values(REGION_MAPS_V36));
+    SHIPS_V36 = mergeWorldSectionInPlaceV36(SHIPS_V36, payload?.ships?.SHIPS || payload?.SHIPS || {}, normalizeShipV36);
+    SHIP_LIST_V36 = sortEntitiesForList(Object.values(SHIPS_V36));
+    worldData.regionMaps = serializeWorldSection('regionMaps', REGION_MAPS_V36);
+    worldData.ships = serializeWorldSection('ships', SHIPS_V36);
+    Data.regionMaps = REGION_MAPS_V36;
+    Data.ships = SHIPS_V36;
+  };
+
+  const __buildWorldSnapshot_v36 = buildWorldSnapshot;
+  buildWorldSnapshot = function() {
+    settleAllRegionTokensV36();
+    const snap = __buildWorldSnapshot_v36();
+    snap.regionMaps = serializeWorldSection('regionMaps', REGION_MAPS_V36);
+    snap.ships = serializeWorldSection('ships', SHIPS_V36);
+    return snap;
+  };
+
+  const __createBlankEntity_v36 = createBlankEntity;
+  createBlankEntity = function(type) {
+    const stamp = Date.now().toString(36).slice(-6);
+    if (type === 'regionMaps') return normalizeRegionMapV36({ id: `region_${stamp}`, name: 'Новый регион', kind: 'region', planetId: UI?.selectedPlanetId || Object.keys(PLANETS)[0] || '', width: 1000, height: 700, markers: [], tokens: [] });
+    if (type === 'ships') return normalizeShipV36({ id: `ship_${stamp}`, name: 'Новый корабль', model: '', fuel: 100, fuelCapacity: 100, fuelConsumption: 1, mass: 100, enginePower: 100, crewPlayerIds: [], crewNpcIds: [], guns: [] });
+    return __createBlankEntity_v36(type);
+  };
+
+  function regionMapSelectOptionsV36(selected = '', planetId = '') {
+    return `<option value="">Не задано</option>${regionMapOptionsV36(planetId).map(map => `<option value="${esc(map.id)}" ${map.id === selected ? 'selected' : ''}>${esc(map.name)} · ${esc(map.kind)}</option>`).join('')}`;
+  }
+  function shipSelectOptionsV36(selected = '') {
+    return `<option value="">Не задан</option>${shipOptionsV36().map(ship => `<option value="${esc(ship.id)}" ${ship.id === selected ? 'selected' : ''}>${esc(ship.name)}${ship.model ? ` · ${esc(ship.model)}` : ''}</option>`).join('')}`;
+  }
+  function renderShipGunRowsV36(guns = []) {
+    const rows = safeArrayV36(guns).length ? safeArrayV36(guns) : [{ name: '', type: '', damage: '', range: 0 }];
+    return rows.map((gun, index) => `<div class="dynamic-row ship-gun-row-v36">
+      <input class="input" name="gunName" value="${esc(gun.name || '')}" placeholder="Орудие" />
+      <input class="input" name="gunType" value="${esc(gun.type || '')}" placeholder="Тип" />
+      <input class="input" name="gunDamage" value="${esc(gun.damage || '')}" placeholder="Урон" />
+      <input class="input" type="number" name="gunRange" value="${Number(gun.range || 0)}" placeholder="Дальность" />
+      <button class="ghost rts-remove-row" type="button">×</button>
+    </div>`).join('');
+  }
+  function readShipGunsV36(formEl) {
+    return Array.from(formEl.querySelectorAll('.ship-gun-row-v36')).map(row => ({
+      name: row.querySelector('[name="gunName"]')?.value || '',
+      type: row.querySelector('[name="gunType"]')?.value || '',
+      damage: row.querySelector('[name="gunDamage"]')?.value || '',
+      range: Number(row.querySelector('[name="gunRange"]')?.value || 0)
+    })).filter(gun => String(gun.name || '').trim());
+  }
+  function renderRegionMapEditorV36(map) {
+    const parentOptions = `<option value="">Нет</option>${Object.values(REGION_MAPS_V36).filter(item => item.id !== map.id && (!map.planetId || item.planetId === map.planetId)).map(item => `<option value="${esc(item.id)}" ${item.id === map.parentRegionId ? 'selected' : ''}>${esc(item.name)}</option>`).join('')}`;
+    return `<form id="config-editor-form" class="form" data-entity-type="regionMaps">
+      ${Configurator.renderHeader(map, 'Карта региона, города или здания. Её можно открыть с планеты на галактической карте и вывести на второй экран.')}
+      ${imageFieldMarkup(map, 'Карта / фон региона')}
+      <div class="cols3">
+        <div class="field"><label>ID</label><input class="input" name="id" value="${esc(map.id)}" /></div>
+        <div class="field"><label>Название</label><input class="input" name="name" value="${esc(map.name)}" /></div>
+        <div class="field"><label>Тип</label><select class="select" name="kind"><option value="region" ${map.kind === 'region' ? 'selected' : ''}>Регион</option><option value="city" ${map.kind === 'city' ? 'selected' : ''}>Город</option><option value="building" ${map.kind === 'building' ? 'selected' : ''}>Здание</option></select></div>
+      </div>
+      <div class="cols3">
+        <div class="field"><label>Планета</label><select class="select" name="planetId">${Object.values(PLANETS).map(planet => `<option value="${esc(planet.id)}" ${planet.id === map.planetId ? 'selected' : ''}>${esc(planet.name || planet.id)}</option>`).join('')}</select></div>
+        <div class="field"><label>Родительский регион / город</label><select class="select" name="parentRegionId">${parentOptions}</select></div>
+        <div class="field"><label>Цвет</label><input class="input" name="color" value="${esc(map.color || '#7df9ff')}" /></div>
+      </div>
+      <div class="cols3">
+        <div class="field"><label>Ширина карты</label><input class="input" type="number" name="width" value="${Number(map.width || 1000)}" /></div>
+        <div class="field"><label>Высота карты</label><input class="input" type="number" name="height" value="${Number(map.height || 700)}" /></div>
+        <div class="field"><label>Единицы</label><input class="input" name="scaleLabel" value="${esc(map.scaleLabel || 'км')}" /></div>
+      </div>
+      <div class="field"><label>Описание</label><textarea class="area" name="summary">${esc(map.summary || '')}</textarea></div>
+      ${Configurator.renderVisibilityField(map)}
+      <div class="field"><label>Связанные статьи</label>${renderRelatedArticlesEditor(map.relatedArticleIds || [])}</div>
+      <div class="row" style="gap:10px;flex-wrap:wrap"><button class="primary" type="submit">SAVE_REGION_MAP</button><button class="secondary" type="button" data-open-region-map="${esc(map.id)}">ОТКРЫТЬ КАРТУ</button></div>
+    </form>`;
+  }
+  function renderShipEditorV36(ship) {
+    return `<form id="config-editor-form" class="form" data-entity-type="ships">
+      ${Configurator.renderHeader(ship, 'Корабль имеет экипаж, топливо и автоматически рассчитываемую скорость/запас хода на картах регионов.')}
+      ${imageFieldMarkup(ship, 'Изображение корабля')}
+      <div class="cols3">
+        <div class="field"><label>ID</label><input class="input" name="id" value="${esc(ship.id)}" /></div>
+        <div class="field"><label>Имя собственное</label><input class="input" name="name" value="${esc(ship.name)}" /></div>
+        <div class="field"><label>Модель</label><input class="input" name="model" value="${esc(ship.model || '')}" /></div>
+      </div>
+      <div class="cols3">
+        <div class="field"><label>Текущий регион</label><select class="select" name="currentRegionId">${regionMapSelectOptionsV36(ship.currentRegionId)}</select></div>
+        <div class="field"><label>Текущая планета</label><select class="select" name="currentPlanetId"><option value="">Не задана</option>${Object.values(PLANETS).map(planet => `<option value="${esc(planet.id)}" ${planet.id === ship.currentPlanetId ? 'selected' : ''}>${esc(planet.name || planet.id)}</option>`).join('')}</select></div>
+        <div class="field"><label>Владелец / капитан</label><select class="select" name="ownerPlayerId"><option value="">Не задан</option>${playerOptionsV36(true).map(player => `<option value="${esc(player.id)}" ${player.id === ship.ownerPlayerId ? 'selected' : ''}>${esc(player.displayName || player.id)}</option>`).join('')}</select></div>
+      </div>
+      <div class="cols3">
+        <div class="field"><label>Топливо</label><input class="input" type="number" name="fuel" value="${Number(ship.fuel || 0)}" /></div>
+        <div class="field"><label>Макс. топливо</label><input class="input" type="number" name="fuelCapacity" value="${Number(ship.fuelCapacity || 0)}" /></div>
+        <div class="field"><label>Расход / 100 ед.</label><input class="input" type="number" step="0.01" name="fuelConsumption" value="${Number(ship.fuelConsumption || 1)}" /></div>
+      </div>
+      <div class="cols3">
+        <div class="field"><label>Масса</label><input class="input" type="number" name="mass" value="${Number(ship.mass || 100)}" /></div>
+        <div class="field"><label>Мощность двигателя</label><input class="input" type="number" name="enginePower" value="${Number(ship.enginePower || 100)}" /></div>
+        <div class="field"><label>Грузовая масса</label><input class="input" type="number" name="cargoMass" value="${Number(ship.cargoMass || 0)}" />${shipMovementStatsMarkupV36(ship)}</div>
+      </div>
+      <div class="field"><label>Экипаж игроки</label>${renderCheckboxSelector('crewPlayerIds', playerOptionsV36(false), ship.crewPlayerIds || [], 'player', 'Нет игроков')}</div>
+      <div class="field"><label>Экипаж NPC</label>${renderCheckboxSelector('crewNpcIds', npcOptionsV36(), ship.crewNpcIds || [], 'npc', 'Нет NPC')}</div>
+      <div class="field"><label>Пушки</label><div id="ship-gun-rows" class="dynamic-list">${renderShipGunRowsV36(ship.guns)}</div><button class="secondary" type="button" id="ship-add-gun-row">ADD_GUN</button></div>
+      <div class="field"><label>Заметки</label><textarea class="area" name="notes">${esc(ship.notes || '')}</textarea></div>
+      ${Configurator.renderVisibilityField(ship)}
+      <div class="field"><label>Связанные статьи</label>${renderRelatedArticlesEditor(ship.relatedArticleIds || [])}</div>
+      <button class="primary" type="submit">SAVE_SHIP</button>
+    </form>`;
+  }
+
+  const __cfgGetItemsV36 = Configurator.getItems.bind(Configurator);
+  Configurator.getItems = function(type) {
+    if (type === 'regionMaps') return sortEntitiesForList(Object.values(REGION_MAPS_V36));
+    if (type === 'ships') return sortEntitiesForList(Object.values(SHIPS_V36));
+    return __cfgGetItemsV36(type);
+  };
+  const __cfgRenderEditorV36 = Configurator.renderEditor.bind(Configurator);
+  Configurator.renderEditor = function(entity) {
+    if (this.selectedType === 'regionMaps') return renderRegionMapEditorV36(normalizeRegionMapV36(entity));
+    if (this.selectedType === 'ships') return renderShipEditorV36(normalizeShipV36(entity));
+    return __cfgRenderEditorV36(entity);
+  };
+  const __cfgInsertEntityV36 = Configurator.insertEntity.bind(Configurator);
+  Configurator.insertEntity = function(type, entity) {
+    if (type === 'regionMaps') { const item = normalizeRegionMapV36(entity); REGION_MAPS_V36[item.id] = item; REGION_MAP_LIST_V36 = sortEntitiesForList(Object.values(REGION_MAPS_V36)); worldData.regionMaps = serializeWorldSection('regionMaps', REGION_MAPS_V36); return; }
+    if (type === 'ships') { const item = normalizeShipV36(entity); SHIPS_V36[item.id] = item; SHIP_LIST_V36 = sortEntitiesForList(Object.values(SHIPS_V36)); worldData.ships = serializeWorldSection('ships', SHIPS_V36); return; }
+    return __cfgInsertEntityV36(type, entity);
+  };
+  const __cfgRemoveEntityV36 = Configurator.removeEntity.bind(Configurator);
+  Configurator.removeEntity = function(type, id) {
+    if (type === 'regionMaps') { delete REGION_MAPS_V36[id]; Object.values(REGION_MAPS_V36).forEach(map => { if (map.parentRegionId === id) map.parentRegionId = ''; }); Object.values(SHIPS_V36).forEach(ship => { if (ship.currentRegionId === id) ship.currentRegionId = ''; }); return; }
+    if (type === 'ships') { delete SHIPS_V36[id]; Object.values(REGION_MAPS_V36).forEach(map => { map.tokens = safeArrayV36(map.tokens).filter(token => token.shipId !== id); }); return; }
+    return __cfgRemoveEntityV36(type, id);
+  };
+  const __cfgCollectEntityV36 = Configurator.collectEntity.bind(Configurator);
+  Configurator.collectEntity = function(type, formEl, formData = new FormData(formEl)) {
+    if (type === 'regionMaps') {
+      const old = this.getSelectedEntity() || {};
+      const mediaField = formEl.querySelector('.media-field');
+      const hiddenImage = formEl.querySelector('input[name="imageData"]')?.value || '';
+      const image = String(hiddenImage || formData.get('imageData') || mediaField?.dataset?.savedImageValue || mediaField?.dataset?.pendingImageValue || old.image || '').trim();
+      return normalizeRegionMapV36({
+        ...old,
+        id: slugifyId(formData.get('id') || formData.get('name') || '', 'region'),
+        name: String(formData.get('name') || '').trim(),
+        kind: String(formData.get('kind') || 'region').trim(),
+        planetId: String(formData.get('planetId') || '').trim(),
+        parentRegionId: String(formData.get('parentRegionId') || '').trim(),
+        color: String(formData.get('color') || '#7df9ff').trim(),
+        width: Number(formData.get('width') || 1000),
+        height: Number(formData.get('height') || 700),
+        scaleLabel: String(formData.get('scaleLabel') || 'км').trim(),
+        summary: String(formData.get('summary') || '').trim(),
+        image,
+        relatedArticleIds: getCheckedValues(formEl, 'relatedArticleIds'),
+        visibility: { playerIds: getCheckedValues(formEl, 'visibilityPlayerIds') }
+      });
+    }
+    if (type === 'ships') {
+      const old = this.getSelectedEntity() || {};
+      const mediaField = formEl.querySelector('.media-field');
+      const hiddenImage = formEl.querySelector('input[name="imageData"]')?.value || '';
+      const image = String(hiddenImage || formData.get('imageData') || mediaField?.dataset?.savedImageValue || mediaField?.dataset?.pendingImageValue || old.image || '').trim();
+      return normalizeShipV36({
+        ...old,
+        id: slugifyId(formData.get('id') || formData.get('name') || '', 'ship'),
+        name: String(formData.get('name') || '').trim(),
+        model: String(formData.get('model') || '').trim(),
+        ownerPlayerId: String(formData.get('ownerPlayerId') || '').trim(),
+        currentRegionId: String(formData.get('currentRegionId') || '').trim(),
+        currentPlanetId: String(formData.get('currentPlanetId') || '').trim(),
+        fuel: Number(formData.get('fuel') || 0),
+        fuelCapacity: Number(formData.get('fuelCapacity') || 0),
+        fuelConsumption: Number(formData.get('fuelConsumption') || 1),
+        mass: Number(formData.get('mass') || 100),
+        enginePower: Number(formData.get('enginePower') || 100),
+        cargoMass: Number(formData.get('cargoMass') || 0),
+        crewPlayerIds: getCheckedValues(formEl, 'crewPlayerIds'),
+        crewNpcIds: getCheckedValues(formEl, 'crewNpcIds'),
+        guns: readShipGunsV36(formEl),
+        notes: String(formData.get('notes') || '').trim(),
+        image,
+        relatedArticleIds: getCheckedValues(formEl, 'relatedArticleIds'),
+        visibility: { playerIds: getCheckedValues(formEl, 'visibilityPlayerIds') }
+      });
+    }
+    const base = __cfgCollectEntityV36(type, formEl, formData);
+    if (type === 'players' && base) {
+      base.currentRegionId = String(formData.get('currentRegionId') || base.currentRegionId || '').trim();
+      base.currentShipId = String(formData.get('currentShipId') || base.currentShipId || '').trim();
+    }
+    return base;
+  };
+  const __cfgBuildPayloadV36 = Configurator.buildPayload.bind(Configurator);
+  Configurator.buildPayload = function(type) {
+    if (type === 'regionMaps') return serializeWorldSection('regionMaps', REGION_MAPS_V36);
+    if (type === 'ships') return serializeWorldSection('ships', SHIPS_V36);
+    return __cfgBuildPayloadV36(type);
+  };
+  const __cfgRenderV36 = Configurator.render.bind(Configurator);
+  Configurator.render = function() {
+    __cfgRenderV36();
+    bindRtsConfigEnhancementsV36();
+  };
+  const __cfgPlayerEditorV36 = Configurator.renderPlayerEditor?.bind(Configurator);
+  if (__cfgPlayerEditorV36) {
+    Configurator.renderPlayerEditor = function(user) {
+      const html = __cfgPlayerEditorV36(user);
+      const fields = `<div class="cols2 rts-player-location-fields-v36">
+        <div class="field"><label>Текущий регион / город</label><select class="select" name="currentRegionId">${regionMapSelectOptionsV36(user.currentRegionId || '', user.currentPlanetId || '')}</select></div>
+        <div class="field"><label>Текущий корабль</label><select class="select" name="currentShipId">${shipSelectOptionsV36(user.currentShipId || '')}</select></div>
+      </div>`;
+      return html.replace('<div class="cols3">\n          <div class="field"><label>HP</label>', `${fields}<div class="cols3">\n          <div class="field"><label>HP</label>`);
+    };
+  }
+  function bindRtsConfigEnhancementsV36() {
+    document.querySelectorAll('[data-open-region-map]').forEach(button => {
+      if (button.dataset.rtsBound === '1') return;
+      button.dataset.rtsBound = '1';
+      button.addEventListener('click', () => openRegionMapV36(button.dataset.openRegionMap));
+    });
+    document.getElementById('ship-add-gun-row')?.addEventListener('click', () => {
+      document.getElementById('ship-gun-rows')?.insertAdjacentHTML('beforeend', renderShipGunRowsV36([{ name: '', type: '', damage: '', range: 0 }]));
+      bindRtsConfigEnhancementsV36();
+    });
+    document.querySelectorAll('.rts-remove-row').forEach(button => {
+      if (button.dataset.rtsBound === '1') return;
+      button.dataset.rtsBound = '1';
+      button.addEventListener('click', () => button.closest('.dynamic-row')?.remove());
+    });
+  }
+
+  async function createRegionForPlanetV36(planetId, kind = 'region') {
+    const planet = PLANETS[planetId];
+    if (!planet) return;
+    const id = cleanIdV36(`${kind}_${planet.id}_${Date.now().toString(36).slice(-5)}`, 'region');
+    REGION_MAPS_V36[id] = normalizeRegionMapV36({ id, name: kind === 'city' ? 'Новый город' : 'Новый регион', kind, planetId: planet.id, width: 1000, height: 700 });
+    Configurator.selectedType = 'regionMaps';
+    Configurator.selectedId = id;
+    await persistRegionsShipsV36('Карта региона создана');
+    UI.openModule('config');
+  }
+  function regionButtonsForPlanetV36(planetId) {
+    const maps = regionMapOptionsV36(planetId);
+    const currentUser = App?.currentUser || {};
+    const visibleMaps = maps.filter(map => canOpenRegionMapV36(map, currentUser));
+    const gm = isGmV36();
+    return `<div class="analysis-section rts-planet-region-panel-v36">
+      <div class="section-title">Регионы / города</div>
+      <div class="small-note">Игроки открывают только карту того региона или города, где находится их персонаж или корабль.</div>
+      <div class="rts-region-button-grid-v36">${visibleMaps.map(map => `<button class="secondary" type="button" data-open-region-map="${esc(map.id)}">${esc(map.name)} <span>${esc(map.kind)}</span></button>`).join('') || '<div class="small-note">Нет доступных карт региона.</div>'}</div>
+      ${gm ? `<div class="row" style="margin-top:10px;gap:8px;flex-wrap:wrap"><button class="secondary" type="button" data-create-region-map="region" data-planet-id="${esc(planetId)}">+ РЕГИОН</button><button class="secondary" type="button" data-create-region-map="city" data-planet-id="${esc(planetId)}">+ ГОРОД</button><button class="secondary" type="button" data-create-region-map="building" data-planet-id="${esc(planetId)}">+ ЗДАНИЕ</button></div>` : ''}
+    </div>`;
+  }
+  const __renderPlanetAnalysisV36 = UI.renderPlanetAnalysis.bind(UI);
+  UI.renderPlanetAnalysis = function(planetId, systemId) {
+    __renderPlanetAnalysisV36(planetId, systemId);
+    const container = document.getElementById('analysis-content');
+    if (container) {
+      container.insertAdjacentHTML('beforeend', regionButtonsForPlanetV36(planetId));
+      bindRtsRegionButtonsV36(container);
+    }
+  };
+  function bindRtsRegionButtonsV36(root = document) {
+    root.querySelectorAll('[data-open-region-map]').forEach(button => {
+      if (button.dataset.rtsBound === '1') return;
+      button.dataset.rtsBound = '1';
+      button.addEventListener('click', () => openRegionMapV36(button.dataset.openRegionMap));
+    });
+    root.querySelectorAll('[data-create-region-map]').forEach(button => {
+      if (button.dataset.rtsBound === '1') return;
+      button.dataset.rtsBound = '1';
+      button.addEventListener('click', () => createRegionForPlanetV36(button.dataset.planetId, button.dataset.createRegionMap || 'region'));
+    });
+  }
+
+  function ensureRegionModalV36() {
+    let modal = document.getElementById('region-map-modal-v36');
+    if (modal) return modal;
+    modal = document.createElement('div');
+    modal.id = 'region-map-modal-v36';
+    modal.className = 'modal region-map-modal-v36';
+    modal.innerHTML = `<div class="region-map-shell-v36"><div id="region-map-body-v36"></div></div>`;
+    document.body.appendChild(modal);
+    modal.addEventListener('click', event => { if (event.target === modal) closeRegionMapV36(); });
+    return modal;
+  }
+  function closeRegionMapV36() {
+    const modal = document.getElementById('region-map-modal-v36');
+    if (modal) modal.classList.remove('open');
+    if (RTS_REGION_UI_V36.raf) cancelAnimationFrame(RTS_REGION_UI_V36.raf);
+    RTS_REGION_UI_V36.raf = 0;
+    RTS_REGION_UI_V36.arming = '';
+    try { window.CombatAudioV37?.stopAmbient?.(); } catch {}
+  }
+  function regionMapTokenLabelV36(token) {
+    if (token.shipId && SHIPS_V36[token.shipId]) return SHIPS_V36[token.shipId].name;
+    if (token.playerId && (App.state.users[token.playerId] || PLAYER_TEMPLATES[token.playerId])) return (App.state.users[token.playerId] || PLAYER_TEMPLATES[token.playerId]).displayName || token.playerId;
+    if (token.npcId && NPCS[token.npcId]) return NPCS[token.npcId].name || token.npcId;
+    return token.name || token.id;
+  }
+  function regionMapAccessBannerV36(map) {
+    const planet = PLANETS[map.planetId];
+    const parent = REGION_MAPS_V36[map.parentRegionId];
+    return `<div class="small-note">${planet ? `Планета: <b>${esc(planet.name)}</b>` : 'Планета не задана'}${parent ? ` · Внутри: <b>${esc(parent.name)}</b>` : ''} · ${esc(map.kind)}</div>`;
+  }
+  function renderRegionTokenMarkupV36(map, token) {
+    const pos = currentTokenPositionV36(token);
+    const selectedClass = token.id === RTS_REGION_UI_V36.selectedTokenId ? ' selected' : '';
+    const movingClass = token.moveEndsAt ? ' moving' : '';
+    const hiddenClass = isGmV36() && !token.visibleToPlayers ? ' player-hidden' : '';
+    const isShip = token.type === 'ship';
+    const ship = token.shipId ? SHIPS_V36[token.shipId] : null;
+    // Ships are drawn as a plain coloured circle + name (no image).
+    const img = isShip ? '' : (token.image || ship?.image || '');
+    const inner = img ? `<img src="${esc(img)}" alt="" />` : `<span>${esc(isShip ? '' : token.type === 'player' ? '●' : '▲')}</span>`;
+    return `<button class="rts-map-token-v36${selectedClass}${movingClass}${hiddenClass}${isShip ? ' is-ship-v36' : ''}" data-token-id="${esc(token.id)}" style="left:${(pos.x / map.width * 100).toFixed(3)}%;top:${(pos.y / map.height * 100).toFixed(3)}%;--rts-color:${esc(token.color)}" title="${esc(regionMapTokenLabelV36(token))}">${inner}<b>${esc(regionMapTokenLabelV36(token))}</b></button>`;
+  }
+  function renderRegionSidePanelV36(map) {
+    const isEdit = RTS_REGION_UI_V36.mode === 'edit';
+    const selected = safeArrayV36(map.tokens).find(t => t.id === RTS_REGION_UI_V36.selectedTokenId) || null;
+    const selectedMarker = isEdit ? safeArrayV36(map.markers).find(m => m.id === RTS_REGION_UI_V36.selectedMarkerId) : null;
+    const selectedShip = selected ? liveShipForTokenV36(selected) : null;
+    const playerOpts = playerOptionsV36(false).map(p => `<option value="${esc(p.id)}">${esc(p.displayName || p.id)}</option>`).join('');
+    const addTools = `<div class="rts-panel-group-v36">
+      <div class="section-title">Добавить на карту</div>
+      <div class="rts-add-row-v36"><select class="select" id="rts-player-token-v36"><option value="">Игрок…</option>${playerOpts}</select><button class="secondary rts-add-btn-v36" type="button" data-rts-add="player" title="Добавить игрока">+</button></div>
+      <div class="rts-add-row-v36"><select class="select" id="rts-ship-token-v36"><option value="">Корабль…</option>${shipOptionsV36().map(s => `<option value="${esc(s.id)}">${esc(s.name)}</option>`).join('')}</select><button class="secondary rts-add-btn-v36" type="button" data-rts-add="ship" title="Добавить корабль">+</button></div>
+      <div class="rts-add-row-v36"><select class="select" id="rts-npc-token-v36"><option value="">NPC…</option>${npcOptionsV36().map(n => `<option value="${esc(n.id)}">${esc(n.name || n.id)}</option>`).join('')}</select><button class="secondary rts-add-btn-v36" type="button" data-rts-add="npc" title="Добавить NPC">+</button></div>
+      <div class="row" style="gap:8px;flex-wrap:wrap"><button class="secondary" type="button" data-rts-add="unit">+ Нейтральный отряд</button><button class="secondary" type="button" data-rts-add="marker">+ Метка</button></div>
+    </div>
+    <div class="rts-panel-group-v36">
+      <div class="section-title">Туман войны</div>
+      <label class="check-line"><input type="checkbox" id="rts-fog-enabled-v36" ${map.fog?.enabled !== false ? 'checked' : ''}/> Включён</label>
+      <div class="field"><label>Радиус обзора (${esc(map.scaleLabel || 'ед')})</label><input class="input" type="number" id="rts-fog-radius-v36" value="${Number(map.fog?.radius ?? 50)}" /></div>
+      <button class="ghost" type="button" id="rts-fog-clear-v36">Сбросить разведку</button>
+      <div class="small-note">Игроки видят ${Number(map.fog?.radius ?? 50)} ${esc(map.scaleLabel || 'ед')} вокруг своих кораблей; разведанные зоны остаются приглушёнными. Кнопка «ТУМАН» в шапке показывает туман как у игроков.</div>
+    </div>`;
+    const assignTools = `<div class="rts-panel-group-v36">
+      <div class="section-title">Присвоить положение игроку</div>
+      <div class="rts-add-row-v36"><select class="select" id="rts-assign-player-v36"><option value="">Игрок…</option>${playerOpts}</select><button class="secondary" type="button" id="rts-assign-player-btn-v36">OK</button></div>
+      <div class="small-note">Игрок сможет открыть карту региона, где находится его персонаж или корабль.</div>
+    </div>`;
+    let inspector = '';
+    if (selected) {
+      const moving = Boolean(selected.moveEndsAt);
+      inspector = `<div class="rts-panel-group-v36 rts-inspector-v36">
+        <div class="section-title">Юнит: ${esc(regionMapTokenLabelV36(selected))}</div>
+        ${isEdit ? `<div class="cols2"><div class="field"><label>Имя на карте</label><input class="input" id="rts-token-name-v36" value="${esc(selected.name || '')}" /></div><div class="field"><label>Цвет</label><input class="input" type="color" id="rts-token-color-v36" value="${esc(/^#[0-9a-fA-F]{6}$/.test(selected.color || '') ? selected.color : '#7df9ff')}" /></div></div>` : ''}
+        <label class="check-line"><input type="checkbox" id="rts-token-visible-v36" ${selected.visibleToPlayers ? 'checked' : ''}/> Видим игрокам</label>
+        <div class="cols2"><div class="field"><label>Обзор</label><input class="input" type="number" id="rts-token-vision-v36" value="${Number(selected.visionRadius || 0)}" /></div><div class="field"><label>Радар</label><input class="input" type="number" id="rts-token-radar-v36" value="${Number(selected.radarRadius || 0)}" /></div></div>
+        ${selectedShip ? `<div class="rts-ship-stat-card-v36"><b>${esc(selectedShip.name)}</b>${shipMovementStatsMarkupV36(selectedShip)}<div class="small-note">Топливо: <span id="rts-ship-fuel-readout-v36">${Number(liveFuelV36(selected, selectedShip)).toFixed(1)} / ${Number(selectedShip.fuelCapacity).toFixed(1)}</span></div></div>` : ''}
+        <div class="rts-inspector-actions-v36">
+          ${!isEdit ? `<button class="secondary" type="button" id="rts-stop-v36" ${moving ? '' : 'disabled'}>СТОП</button><button class="secondary" type="button" id="rts-missile-v36">РАКЕТА</button>` : ''}
+          <button class="ghost" type="button" id="rts-delete-token-v36">Удалить юнит</button>
+        </div>
+      </div>`;
+    } else if (selectedMarker) {
+      const targetOpts = `<option value="">Нет перехода</option>${regionMapOptionsV36().filter(m => m.id !== map.id).map(m => `<option value="${esc(m.id)}" ${m.id === selectedMarker.targetRegionId ? 'selected' : ''}>${esc(m.name)} · ${esc(m.kind)}</option>`).join('')}`;
+      inspector = `<div class="rts-panel-group-v36 rts-inspector-v36">
+        <div class="section-title">Метка</div>
+        <div class="cols2"><div class="field"><label>Название</label><input class="input" id="rts-marker-name-v36" value="${esc(selectedMarker.name || '')}" /></div><div class="field"><label>Цвет</label><input class="input" type="color" id="rts-marker-color-v36" value="${esc(/^#[0-9a-fA-F]{6}$/.test(selectedMarker.color || '') ? selectedMarker.color : '#7df9ff')}" /></div></div>
+        <label class="check-line"><input type="checkbox" id="rts-marker-visible-v36" ${selectedMarker.visibleToPlayers !== false ? 'checked' : ''}/> Видна игрокам</label>
+        <div class="field"><label>Переход в регион / город</label><select class="select" id="rts-marker-target-v36">${targetOpts}</select></div>
+        <div class="rts-inspector-actions-v36"><button class="ghost" type="button" id="rts-delete-marker-v36">Удалить метку</button></div>
+      </div>`;
+    }
+    return `<div class="small-note">${isEdit ? 'Редактор: добавляй объекты кнопками ниже, перетаскивай их по карте, тяни пустоту — панорама, колесо — зум.' : 'Игра: выбери юнит и кликни по карте — проложишь курс. Колесо — зум, тяни пустоту — панорама.'}</div>
+      ${isEdit ? addTools : assignTools}
+      ${inspector || '<div class="small-note" style="margin-top:12px">Объект не выбран — кликни по юниту или метке на карте.</div>'}`;
+  }
+  function renderRegionMapV36(map) {
+    const gm = isGmV36();
+    const toolbar = `<div class="region-map-toolbar-v36">
+      <div><div class="section-title">Карта региона</div><h2>${esc(map.name)}</h2>${regionMapAccessBannerV36(map)}</div>
+      <div class="row" style="gap:8px;flex-wrap:wrap;justify-content:flex-end">
+        ${gm ? `<button class="secondary" type="button" id="rts-mode-toggle-v36">${RTS_REGION_UI_V36.mode === 'edit' ? 'РЕЖИМ: РЕДАКТОР' : 'РЕЖИМ: ИГРА'}</button><button class="secondary ${RTS_REGION_UI_V36.fogPreview ? 'rts-arm-active-v36' : ''}" type="button" id="rts-fog-toggle-v36" title="Показать туман войны как у игроков">ТУМАН</button><button class="secondary" type="button" id="rts-ambient-v36">ЭМБИЕНТ</button><button class="secondary" type="button" id="rts-show-display-v36">НА 2 ЭКРАН</button>` : ''}
+        <button class="ghost" type="button" id="rts-close-map-v36">ЗАКРЫТЬ</button>
+      </div>
+    </div>`;
+    const markers = safeArrayV36(map.markers).filter(marker => gm || marker.visibleToPlayers).map(marker => { const sel = gm && marker.id === RTS_REGION_UI_V36.selectedMarkerId ? ' selected' : ''; return `<button class="rts-map-marker-v36${sel}" data-marker-id="${esc(marker.id)}" style="left:${(marker.x / map.width * 100).toFixed(3)}%;top:${(marker.y / map.height * 100).toFixed(3)}%;--rts-color:${esc(marker.color)}" title="${esc(marker.name)}"><span></span><b>${esc(marker.name)}</b></button>`; }).join('');
+    const tokens = safeArrayV36(map.tokens).filter(token => visibleRegionTokenV36(token, map)).map(token => renderRegionTokenMarkupV36(map, token)).join('');
+    const hint = RTS_REGION_UI_V36.mode === 'edit'
+      ? 'Перетаскивай токены и метки · колесо — зум · тяни пустоту — панорама'
+      : 'Колесо — зум · тяни пустоту — панорама · клик по пустому месту — проложить курс';
+    return `${toolbar}<div class="region-map-layout-v36">
+      <div class="region-map-board-wrap-v36" id="region-map-board-wrap-v36">
+        <div class="region-map-frame-v36 ${RTS_REGION_UI_V36.mode === 'edit' ? 'is-edit' : 'is-play'}" id="region-map-frame-v36" data-map-id="${esc(map.id)}">
+          <div class="region-map-stage-v36" id="region-map-stage-v36" style="background-color:#08111b;${map.image ? `background-image:url('${esc(map.image)}')` : ''}">
+            <div class="rts-fuel-range-v36" id="region-fuel-range-v36" style="display:none"></div>
+            <div class="rts-map-grid-v36"></div>
+            <svg class="rts-course-svg-v36" id="rts-course-svg-v36" viewBox="0 0 ${Number(map.width || 1000)} ${Number(map.height || 700)}" preserveAspectRatio="none" style="display:none"><line class="rts-course-line-v36" id="rts-course-line-v36" x1="0" y1="0" x2="0" y2="0" /></svg>
+            ${markers}${tokens}
+            <div class="rts-missiles-layer-v36" id="rts-missiles-layer-v36"></div>
+            <canvas class="rts-fog-canvas-v36" id="rts-fog-canvas-v36" style="display:none"></canvas>
+          </div>
+          <div class="region-map-zoom-controls-v36">
+            <button type="button" id="rts-zoom-in-v36" title="Приблизить">＋</button>
+            <button type="button" id="rts-zoom-out-v36" title="Отдалить">－</button>
+            <button type="button" id="rts-zoom-reset-v36" title="Сбросить вид">⟲</button>
+          </div>
+          <div class="region-map-hint-v36">${hint}</div>
+          <div class="rts-course-label-v36" id="rts-course-label-v36" style="display:none"></div>
+        </div>
+      </div>
+      <aside class="region-map-side-v36" id="region-map-side-v36"${gm ? '' : ' style="display:none"'}>${gm ? renderRegionSidePanelV36(map) : ''}</aside>
+    </div>`;
+  }
+  function openRegionMapV36(mapId) {
+    const map = REGION_MAPS_V36[mapId];
+    if (!map) return Toast.show('Карта региона не найдена', 'err');
+    if (!canOpenRegionMapV36(map)) return Toast.show('Персонаж не находится в этом регионе', 'err');
+    RTS_REGION_UI_V36.mapId = map.id;
+    RTS_REGION_UI_V36.view = { zoom: 1, panX: 0, panY: 0, frameW: 0, frameH: 0 };
+    const runtime = getRegionRuntimeV36();
+    runtime.activeMapId = map.id;
+    runtime.updatedAt = nowIsoV36();
+    const modal = ensureRegionModalV36();
+    modal.classList.add('open');
+    if (!RTS_REGION_UI_V36.resizeBound) {
+      RTS_REGION_UI_V36.resizeBound = true;
+      window.addEventListener('resize', () => { if (document.getElementById('region-map-modal-v36')?.classList.contains('open')) sizeRegionBoardV36(); });
+    }
+    rerenderRegionMapV36();
+    queueRegionDisplayMirrorV36();
+    try { window.CombatAudioV37?.startAmbient?.(regionAmbientKeyV36()); } catch {}
+  }
+  function rerenderRegionMapV36() {
+    const map = REGION_MAPS_V36[RTS_REGION_UI_V36.mapId];
+    const body = document.getElementById('region-map-body-v36');
+    if (!map || !body) return;
+    body.innerHTML = renderRegionMapV36(map);
+    bindRegionMapModalV36(map);
+    sizeRegionBoardV36();
+    requestAnimationFrame(() => sizeRegionBoardV36());
+    setTimeout(() => sizeRegionBoardV36(), 80);
+    startRegionMapAnimationV36();
+  }
+  function refreshRegionSideV36(map) {
+    const aside = document.getElementById('region-map-side-v36');
+    if (!aside || !isGmV36()) return;
+    aside.innerHTML = renderRegionSidePanelV36(map);
+    bindRegionSideControlsV36(map);
+  }
+  function selectRegionTokenV36(map, id) {
+    RTS_REGION_UI_V36.selectedTokenId = id;
+    RTS_REGION_UI_V36.selectedMarkerId = '';
+    document.querySelectorAll('.rts-map-token-v36').forEach(node => node.classList.toggle('selected', node.dataset.tokenId === id));
+    document.querySelectorAll('.rts-map-marker-v36').forEach(node => node.classList.remove('selected'));
+    refreshRegionSideV36(map);
+  }
+  function selectRegionMarkerV36(map, id) {
+    RTS_REGION_UI_V36.selectedMarkerId = id;
+    RTS_REGION_UI_V36.selectedTokenId = '';
+    document.querySelectorAll('.rts-map-marker-v36').forEach(node => node.classList.toggle('selected', node.dataset.markerId === id));
+    document.querySelectorAll('.rts-map-token-v36').forEach(node => node.classList.remove('selected'));
+    refreshRegionSideV36(map);
+  }
+  function boardCoordsFromEventV36(event, map) {
+    const stage = document.getElementById('region-map-stage-v36');
+    const rect = stage.getBoundingClientRect();
+    return { x: clamp(((event.clientX - rect.left) / Math.max(1, rect.width)) * map.width, 0, map.width), y: clamp(((event.clientY - rect.top) / Math.max(1, rect.height)) * map.height, 0, map.height) };
+  }
+  function bindRegionMapModalV36(map) {
+    document.getElementById('rts-close-map-v36')?.addEventListener('click', closeRegionMapV36);
+    document.getElementById('rts-mode-toggle-v36')?.addEventListener('click', () => { RTS_REGION_UI_V36.mode = RTS_REGION_UI_V36.mode === 'edit' ? 'play' : 'edit'; RTS_REGION_UI_V36.arming = ''; rerenderRegionMapV36(); });
+    document.getElementById('rts-show-display-v36')?.addEventListener('click', () => showRegionMapOnDisplayV36(map.id));
+    document.getElementById('rts-ambient-v36')?.addEventListener('click', openRegionAmbientV36);
+    document.getElementById('rts-fog-toggle-v36')?.addEventListener('click', () => { RTS_REGION_UI_V36.fogPreview = !RTS_REGION_UI_V36.fogPreview; rerenderRegionMapV36(); });
+    document.getElementById('rts-zoom-in-v36')?.addEventListener('click', () => regionZoomAtV36(1.2));
+    document.getElementById('rts-zoom-out-v36')?.addEventListener('click', () => regionZoomAtV36(1 / 1.2));
+    document.getElementById('rts-zoom-reset-v36')?.addEventListener('click', resetRegionViewV36);
+    document.querySelectorAll('.rts-map-token-v36').forEach(node => {
+      node.addEventListener('click', event => { event.stopPropagation(); selectRegionTokenV36(map, node.dataset.tokenId); });
+      node.addEventListener('pointerdown', event => { event.stopPropagation(); startRegionDragV36(event, map, 'token', node.dataset.tokenId); });
+    });
+    document.querySelectorAll('.rts-map-marker-v36').forEach(node => {
+      node.addEventListener('pointerdown', event => { event.stopPropagation(); startRegionDragV36(event, map, 'marker', node.dataset.markerId); });
+      node.addEventListener('click', event => {
+        event.stopPropagation();
+        const marker = map.markers.find(m => m.id === node.dataset.markerId);
+        if (!marker) return;
+        if (isGmV36() && RTS_REGION_UI_V36.mode === 'edit') { selectRegionMarkerV36(map, marker.id); return; }
+        // play mode: a selected unit gets a course to the marker; otherwise follow the region transition.
+        const token = isGmV36() ? map.tokens.find(t => t.id === RTS_REGION_UI_V36.selectedTokenId) : null;
+        if (token) { startRegionTokenMoveV36(map, token, marker.x, marker.y); return; }
+        if (marker.targetRegionId && REGION_MAPS_V36[marker.targetRegionId] && canOpenRegionMapV36(REGION_MAPS_V36[marker.targetRegionId])) openRegionMapV36(marker.targetRegionId);
+      });
+    });
+    bindRegionBoardInteractionsV36(map);
+    bindRegionSideControlsV36(map);
+  }
+  function bindRegionBoardInteractionsV36(map) {
+    const frame = document.getElementById('region-map-frame-v36');
+    if (!frame) return;
+    frame.addEventListener('wheel', event => {
+      event.preventDefault();
+      const rect = frame.getBoundingClientRect();
+      regionZoomAtV36(event.deltaY < 0 ? 1.12 : 1 / 1.12, event.clientX - rect.left, event.clientY - rect.top);
+    }, { passive: false });
+    let pan = null;
+    frame.addEventListener('pointerdown', event => {
+      if (event.button !== 0) return;
+      if (event.target.closest('.rts-map-token-v36,.rts-map-marker-v36,.region-map-zoom-controls-v36')) return;
+      const v = getRegionViewV36();
+      pan = { startX: event.clientX, startY: event.clientY, panX: v.panX, panY: v.panY, moved: false, pointerId: event.pointerId };
+      try { frame.setPointerCapture(event.pointerId); } catch {}
+      frame.classList.add('is-panning');
+      hideRegionCoursePreviewV36();
+    });
+    frame.addEventListener('pointermove', event => {
+      if (!pan) { updateRegionCoursePreviewV36(map, event); return; }
+      const dx = event.clientX - pan.startX, dy = event.clientY - pan.startY;
+      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) pan.moved = true;
+      const v = getRegionViewV36();
+      v.panX = pan.panX + dx; v.panY = pan.panY + dy;
+      applyRegionCameraV36();
+      if (pan.moved) queueRegionDisplayMirrorV36();
+    });
+    frame.addEventListener('pointerleave', hideRegionCoursePreviewV36);
+    frame.addEventListener('pointerup', event => {
+      if (!pan) return;
+      const wasPan = pan.moved;
+      try { frame.releasePointerCapture(event.pointerId); } catch {}
+      frame.classList.remove('is-panning');
+      pan = null;
+      if (wasPan) { queueRegionDisplayMirrorV36(); return; }
+      if (!isGmV36() || RTS_REGION_UI_V36.mode !== 'play') return;
+      if (event.target.closest('.rts-map-token-v36,.rts-map-marker-v36,.region-map-zoom-controls-v36')) return;
+      const point = boardCoordsFromEventV36(event, map);
+      // missile strike: when armed, the next empty click fires at the target instead of moving.
+      if (RTS_REGION_UI_V36.arming) {
+        const carrier = map.tokens.find(t => t.id === RTS_REGION_UI_V36.arming);
+        if (carrier) { const cp = currentTokenPositionV36(carrier); launchMissileV36(map, cp.x, cp.y, point.x, point.y); Toast.show('Ракета запущена', 'ok'); }
+        RTS_REGION_UI_V36.arming = '';
+        frame.classList.remove('is-arming');
+        document.getElementById('rts-missile-v36')?.classList.remove('rts-arm-active-v36');
+        return;
+      }
+      const token = map.tokens.find(t => t.id === RTS_REGION_UI_V36.selectedTokenId);
+      if (!token) { Toast.show('Сначала выбери юнит для движения', 'err'); return; }
+      startRegionTokenMoveV36(map, token, point.x, point.y);
+      hideRegionCoursePreviewV36();
+    });
+    frame.addEventListener('pointercancel', () => { pan = null; frame.classList.remove('is-panning'); });
+  }
+  function selectedRegionTokenV36(map) { return safeArrayV36(map.tokens).find(t => t.id === RTS_REGION_UI_V36.selectedTokenId) || null; }
+  function selectedRegionMarkerV36(map) { return safeArrayV36(map.markers).find(m => m.id === RTS_REGION_UI_V36.selectedMarkerId) || null; }
+  function addRegionEntityV36(map, kind) {
+    const at = viewCenterMapCoordsV36(map);
+    if (kind === 'marker') {
+      const marker = normalizeRegionMarkerV36({ name: 'Новая метка', x: at.x, y: at.y });
+      map.markers.push(marker);
+      RTS_REGION_UI_V36.selectedMarkerId = marker.id; RTS_REGION_UI_V36.selectedTokenId = '';
+      scheduleRegionPersistV36('Метка добавлена', { delay: 120 });
+      rerenderRegionMapV36();
+      return;
+    }
+    let token = null;
+    if (kind === 'ship') {
+      const id = document.getElementById('rts-ship-token-v36')?.value || '';
+      if (!id || !SHIPS_V36[id]) return Toast.show('Выбери корабль из списка', 'err');
+      token = normalizeRegionTokenV36({ type: 'ship', shipId: id, name: SHIPS_V36[id].name, image: SHIPS_V36[id].image, x: at.x, y: at.y, visibleToPlayers: true });
+    } else if (kind === 'player') {
+      const id = document.getElementById('rts-player-token-v36')?.value || '';
+      if (!id) return Toast.show('Выбери игрока из списка', 'err');
+      token = normalizeRegionTokenV36({ type: 'player', playerId: id, name: getPlayerDisplayName(id), x: at.x, y: at.y, visibleToPlayers: true });
+    } else if (kind === 'npc') {
+      const id = document.getElementById('rts-npc-token-v36')?.value || '';
+      if (!id || !NPCS[id]) return Toast.show('Выбери NPC из списка', 'err');
+      token = normalizeRegionTokenV36({ type: 'unit', npcId: id, name: NPCS[id].name, image: NPCS[id].image, x: at.x, y: at.y, visibleToPlayers: false });
+    } else {
+      token = normalizeRegionTokenV36({ type: 'unit', name: 'Нейтральный отряд', x: at.x, y: at.y, visibleToPlayers: false });
+    }
+    map.tokens.push(token);
+    RTS_REGION_UI_V36.selectedTokenId = token.id; RTS_REGION_UI_V36.selectedMarkerId = '';
+    scheduleRegionPersistV36('Токен добавлен', { delay: 120 });
+    rerenderRegionMapV36();
+  }
+  function bindRegionSideControlsV36(map) {
+    document.querySelectorAll('[data-rts-add]').forEach(btn => btn.addEventListener('click', () => addRegionEntityV36(map, btn.dataset.rtsAdd)));
+    document.getElementById('rts-assign-player-btn-v36')?.addEventListener('click', async () => {
+      const playerId = document.getElementById('rts-assign-player-v36')?.value || '';
+      if (!playerId) return Toast.show('Выбери игрока из списка', 'err');
+      const player = App.state.users[playerId] || PLAYER_TEMPLATES[playerId];
+      if (!player) return;
+      player.currentRegionId = map.id;
+      player.currentPlanetId = map.planetId;
+      if (App.state.users[playerId]) { App.state.users[playerId].currentRegionId = map.id; App.state.users[playerId].currentPlanetId = map.planetId; }
+      if (PLAYER_TEMPLATES[playerId]) { PLAYER_TEMPLATES[playerId].currentRegionId = map.id; PLAYER_TEMPLATES[playerId].currentPlanetId = map.planetId; }
+      if (!safeArrayV36(map.tokens).some(token => token.playerId === playerId)) map.tokens.push(normalizeRegionTokenV36({ type: 'player', playerId, name: player.displayName || playerId, x: map.width / 2, y: map.height / 2, visibleToPlayers: true }));
+      try { await App.saveState('Положение игрока обновлено'); } catch {}
+      scheduleRegionPersistV36('Игрок присвоен региону', { delay: 120 });
+      rerenderRegionMapV36();
+    });
+    // token inspector
+    document.getElementById('rts-token-name-v36')?.addEventListener('change', event => { const token = selectedRegionTokenV36(map); if (token) { token.name = String(event.target.value || '').trim() || token.name; document.querySelector(`[data-token-id="${CSS.escape(token.id)}"] b`)?.replaceChildren(document.createTextNode(regionMapTokenLabelV36(token))); scheduleRegionPersistV36('Имя обновлено'); } });
+    document.getElementById('rts-token-color-v36')?.addEventListener('change', event => { const token = selectedRegionTokenV36(map); if (token) { token.color = event.target.value; document.querySelector(`[data-token-id="${CSS.escape(token.id)}"]`)?.style.setProperty('--rts-color', token.color); scheduleRegionPersistV36('Цвет обновлён'); } });
+    document.getElementById('rts-token-visible-v36')?.addEventListener('change', event => {
+      const token = selectedRegionTokenV36(map);
+      if (!token) return;
+      token.visibleToPlayers = event.target.checked;
+      document.querySelector(`[data-token-id="${CSS.escape(token.id)}"]`)?.classList.toggle('player-hidden', !token.visibleToPlayers);
+      scheduleRegionPersistV36('Видимость токена обновлена');
+    });
+    document.getElementById('rts-token-vision-v36')?.addEventListener('change', event => { const token = selectedRegionTokenV36(map); if (token) { token.visionRadius = Number(event.target.value || 0); scheduleRegionPersistV36('Обзор токена обновлён'); } });
+    document.getElementById('rts-token-radar-v36')?.addEventListener('change', event => { const token = selectedRegionTokenV36(map); if (token) { token.radarRadius = Number(event.target.value || 0); scheduleRegionPersistV36('Радар токена обновлён'); } });
+    document.getElementById('rts-delete-token-v36')?.addEventListener('click', () => { map.tokens = map.tokens.filter(t => t.id !== RTS_REGION_UI_V36.selectedTokenId); RTS_REGION_UI_V36.selectedTokenId = ''; scheduleRegionPersistV36('Токен удалён', { delay: 120 }); rerenderRegionMapV36(); });
+    document.getElementById('rts-stop-v36')?.addEventListener('click', () => stopRegionTokenMoveV36(map));
+    document.getElementById('rts-missile-v36')?.addEventListener('click', () => armMissileV36(map));
+    // marker inspector
+    document.getElementById('rts-marker-name-v36')?.addEventListener('change', event => { const marker = selectedRegionMarkerV36(map); if (marker) { marker.name = String(event.target.value || '').trim() || marker.name; const node = document.querySelector(`[data-marker-id="${CSS.escape(marker.id)}"] b`); if (node) node.textContent = marker.name; scheduleRegionPersistV36('Метка обновлена'); } });
+    document.getElementById('rts-marker-color-v36')?.addEventListener('change', event => { const marker = selectedRegionMarkerV36(map); if (marker) { marker.color = event.target.value; document.querySelector(`[data-marker-id="${CSS.escape(marker.id)}"]`)?.style.setProperty('--rts-color', marker.color); scheduleRegionPersistV36('Цвет метки обновлён'); } });
+    document.getElementById('rts-marker-visible-v36')?.addEventListener('change', event => { const marker = selectedRegionMarkerV36(map); if (marker) { marker.visibleToPlayers = event.target.checked; scheduleRegionPersistV36('Видимость метки обновлена'); } });
+    document.getElementById('rts-marker-target-v36')?.addEventListener('change', event => { const marker = selectedRegionMarkerV36(map); if (marker) { marker.targetRegionId = event.target.value; scheduleRegionPersistV36('Переход метки обновлён'); } });
+    document.getElementById('rts-delete-marker-v36')?.addEventListener('click', () => { map.markers = map.markers.filter(m => m.id !== RTS_REGION_UI_V36.selectedMarkerId); RTS_REGION_UI_V36.selectedMarkerId = ''; scheduleRegionPersistV36('Метка удалена', { delay: 120 }); rerenderRegionMapV36(); });
+    // fog of war settings
+    document.getElementById('rts-fog-enabled-v36')?.addEventListener('change', event => { if (!map.fog) map.fog = { enabled: true, radius: 50, explored: '' }; map.fog.enabled = event.target.checked; RTS_REGION_UI_V36.fogBaseSig = ''; scheduleRegionPersistV36('Туман войны обновлён'); });
+    document.getElementById('rts-fog-radius-v36')?.addEventListener('change', event => { if (!map.fog) map.fog = { enabled: true, radius: 50, explored: '' }; map.fog.radius = Math.max(0, Number(event.target.value || 0)); scheduleRegionPersistV36('Радиус тумана обновлён'); });
+    document.getElementById('rts-fog-clear-v36')?.addEventListener('click', () => { if (map.fog) map.fog.explored = ''; RTS_REGION_UI_V36.fogBaseSig = ''; scheduleRegionPersistV36('Разведка сброшена', { delay: 120 }); });
+  }
+  function startRegionDragV36(event, map, kind, id) {
+    if (!isGmV36() || RTS_REGION_UI_V36.mode !== 'edit') return;
+    event.preventDefault();
+    const item = kind === 'token' ? map.tokens.find(t => t.id === id) : map.markers.find(m => m.id === id);
+    if (!item) return;
+    if (kind === 'token') selectRegionTokenV36(map, id);
+    else selectRegionMarkerV36(map, id);
+    RTS_REGION_UI_V36.dragging = { kind, id, mapId: map.id };
+    const node = document.querySelector(kind === 'token' ? `[data-token-id="${CSS.escape(id)}"]` : `[data-marker-id="${CSS.escape(id)}"]`);
+    const move = e => {
+      const p = boardCoordsFromEventV36(e, map);
+      item.x = p.x; item.y = p.y;
+      if (kind === 'token') { item.startX = p.x; item.startY = p.y; item.destX = p.x; item.destY = p.y; item.moveStartedAt = ''; item.moveEndsAt = ''; item.moveShipId = ''; item.moveFuelCost = 0; }
+      if (node) { node.style.left = `${(p.x / map.width * 100).toFixed(3)}%`; node.style.top = `${(p.y / map.height * 100).toFixed(3)}%`; }
+    };
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      RTS_REGION_UI_V36.dragging = null;
+      scheduleRegionPersistV36('Положение на карте сохранено');
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up, { once: true });
+  }
+  function startRegionTokenMoveV36(map, token, destX, destY) {
+    const pos = currentTokenPositionV36(token);
+    const distance = Math.hypot(destX - pos.x, destY - pos.y);
+    let speed = 40;
+    const ship = liveShipForTokenV36(token);
+    if (ship) {
+      speed = shipSpeedV36(ship);
+      const fuelCost = distance * Math.max(0.01, Number(ship.fuelConsumption || 1)) / 100;
+      if (fuelCost > Number(ship.fuel || 0)) { Toast.show('Недостаточно топлива для маршрута', 'err'); return; }
+      // Fuel is consumed progressively during the move and committed once on arrival (settleRegionTokenV36).
+      token.moveShipId = ship.id;
+      token.moveFuelStart = Number(ship.fuel || 0);
+      token.moveFuelCost = fuelCost;
+      ship.currentRegionId = map.id;
+      if (map.planetId) ship.currentPlanetId = map.planetId;
+      (ship.crewPlayerIds || []).forEach(pid => {
+        if (App.state.users[pid]) { App.state.users[pid].currentRegionId = map.id; App.state.users[pid].currentPlanetId = map.planetId; App.state.users[pid].currentShipId = ship.id; }
+        if (PLAYER_TEMPLATES[pid]) { PLAYER_TEMPLATES[pid].currentRegionId = map.id; PLAYER_TEMPLATES[pid].currentPlanetId = map.planetId; PLAYER_TEMPLATES[pid].currentShipId = ship.id; }
+      });
+    } else {
+      token.moveShipId = ''; token.moveFuelStart = 0; token.moveFuelCost = 0;
+    }
+    const durationMs = clamp((distance / Math.max(1, speed)) * 1000, 350, 120000);
+    const nowMs = Date.now();
+    token.startX = pos.x; token.startY = pos.y; token.x = pos.x; token.y = pos.y;
+    token.destX = destX; token.destY = destY;
+    token.moveStartedAt = new Date(nowMs).toISOString();
+    token.moveEndsAt = new Date(nowMs + durationMs).toISOString();
+    document.querySelector(`[data-token-id="${CSS.escape(token.id)}"]`)?.classList.add('moving');
+    // No re-render: the rAF loop animates the token; persist soon so the second screen + other clients pick up the route.
+    scheduleRegionPersistV36('Маршрут запущен', { delay: 120 });
+  }
+  function updateRegionFuelRangeV36(map, now) {
+    const circle = document.getElementById('region-fuel-range-v36');
+    if (!circle) return;
+    const token = safeArrayV36(map.tokens).find(t => t.id === RTS_REGION_UI_V36.selectedTokenId);
+    const ship = token ? liveShipForTokenV36(token) : null;
+    if (!token || !ship) { circle.style.display = 'none'; return; }
+    const range = shipRangeFromFuelV36(ship, liveFuelV36(token, ship, now));
+    if (!(range > 0)) { circle.style.display = 'none'; return; }
+    const pos = currentTokenPositionV36(token, now);
+    circle.style.display = '';
+    circle.style.left = `${(pos.x / map.width * 100).toFixed(3)}%`;
+    circle.style.top = `${(pos.y / map.height * 100).toFixed(3)}%`;
+    circle.style.width = `${(range / map.width * 100 * 2).toFixed(3)}%`;
+    circle.style.height = `${(range / map.height * 100 * 2).toFixed(3)}%`;
+  }
+  function patchRegionSideFuelV36(map, now) {
+    const readout = document.getElementById('rts-ship-fuel-readout-v36');
+    if (!readout) return;
+    const token = safeArrayV36(map.tokens).find(t => t.id === RTS_REGION_UI_V36.selectedTokenId);
+    const ship = token ? liveShipForTokenV36(token) : null;
+    if (!ship) return;
+    readout.textContent = `${Number(liveFuelV36(token, ship, now)).toFixed(1)} / ${Number(ship.fuelCapacity).toFixed(1)}`;
+  }
+  function viewCenterMapCoordsV36(map) {
+    const v = getRegionViewV36();
+    const fw = Math.max(1, v.frameW || 1), fh = Math.max(1, v.frameH || 1);
+    const z = Math.max(0.0001, v.zoom || 1);
+    const lx = (fw / 2 - (v.panX || 0)) / z;
+    const ly = (fh / 2 - (v.panY || 0)) / z;
+    return { x: clamp(lx / fw * map.width, 0, map.width), y: clamp(ly / fh * map.height, 0, map.height) };
+  }
+  function stopRegionTokenMoveV36(map) {
+    const token = safeArrayV36(map.tokens).find(t => t.id === RTS_REGION_UI_V36.selectedTokenId);
+    if (!token || !token.moveEndsAt) return;
+    const pos = currentTokenPositionV36(token);
+    // Commit the fuel burned over the partial trip before halting.
+    if (token.moveShipId && SHIPS_V36[token.moveShipId]) {
+      const ship = SHIPS_V36[token.moveShipId];
+      const start = Date.parse(token.moveStartedAt || ''), end = Date.parse(token.moveEndsAt || '');
+      let frac = 0;
+      if (Number.isFinite(start) && Number.isFinite(end) && end > start) frac = clamp((Date.now() - start) / (end - start), 0, 1);
+      ship.fuel = clamp(Number(token.moveFuelStart || ship.fuel || 0) - Number(token.moveFuelCost || 0) * frac, 0, Math.max(1, Number(ship.fuelCapacity || ship.fuel || 0)));
+    }
+    token.x = pos.x; token.y = pos.y; token.startX = pos.x; token.startY = pos.y; token.destX = pos.x; token.destY = pos.y;
+    token.moveStartedAt = ''; token.moveEndsAt = ''; token.moveShipId = ''; token.moveFuelStart = 0; token.moveFuelCost = 0;
+    document.querySelector(`[data-token-id="${CSS.escape(token.id)}"]`)?.classList.remove('moving');
+    scheduleRegionPersistV36('Движение остановлено', { delay: 120 });
+    refreshRegionSideV36(map);
+  }
+  function hideRegionCoursePreviewV36() {
+    const svg = document.getElementById('rts-course-svg-v36'); if (svg) svg.style.display = 'none';
+    const label = document.getElementById('rts-course-label-v36'); if (label) label.style.display = 'none';
+  }
+  function updateRegionCoursePreviewV36(map, event) {
+    const svg = document.getElementById('rts-course-svg-v36');
+    const line = document.getElementById('rts-course-line-v36');
+    const label = document.getElementById('rts-course-label-v36');
+    const frame = document.getElementById('region-map-frame-v36');
+    if (!svg || !line || !frame) return;
+    if (!isGmV36() || RTS_REGION_UI_V36.mode !== 'play' || RTS_REGION_UI_V36.arming) { hideRegionCoursePreviewV36(); return; }
+    const token = safeArrayV36(map.tokens).find(t => t.id === RTS_REGION_UI_V36.selectedTokenId);
+    if (!token) { hideRegionCoursePreviewV36(); return; }
+    const from = currentTokenPositionV36(token);
+    const to = boardCoordsFromEventV36(event, map);
+    line.setAttribute('x1', from.x.toFixed(1)); line.setAttribute('y1', from.y.toFixed(1));
+    line.setAttribute('x2', to.x.toFixed(1)); line.setAttribute('y2', to.y.toFixed(1));
+    svg.style.display = '';
+    const dist = Math.hypot(to.x - from.x, to.y - from.y);
+    const ship = liveShipForTokenV36(token);
+    const speed = ship ? shipSpeedV36(ship) : 40;
+    const eta = dist / Math.max(1, speed);
+    let text = `${dist.toFixed(0)} ${map.scaleLabel || 'ед'} · ⏱ ${eta.toFixed(0)}с`;
+    let bad = false;
+    if (ship) {
+      const cost = dist * Math.max(0.01, Number(ship.fuelConsumption || 1)) / 100;
+      text += ` · ⛽ ${cost.toFixed(1)}`;
+      if (cost > Number(ship.fuel || 0)) { bad = true; text += ' · нет топлива'; }
+    }
+    if (label) {
+      const rect = frame.getBoundingClientRect();
+      label.style.left = `${(event.clientX - rect.left + 16).toFixed(0)}px`;
+      label.style.top = `${(event.clientY - rect.top + 16).toFixed(0)}px`;
+      label.textContent = text;
+      label.classList.toggle('bad', bad);
+      label.style.display = '';
+    }
+  }
+  function armMissileV36(map) {
+    const token = safeArrayV36(map.tokens).find(t => t.id === RTS_REGION_UI_V36.selectedTokenId);
+    if (!token) return Toast.show('Выбери юнит-носитель', 'err');
+    RTS_REGION_UI_V36.arming = RTS_REGION_UI_V36.arming === token.id ? '' : token.id;
+    const armed = Boolean(RTS_REGION_UI_V36.arming);
+    document.getElementById('region-map-frame-v36')?.classList.toggle('is-arming', armed);
+    document.getElementById('rts-missile-v36')?.classList.toggle('rts-arm-active-v36', armed);
+    hideRegionCoursePreviewV36();
+    Toast.show(armed ? 'Кликни по цели для запуска ракеты' : 'Запуск отменён', 'ok');
+  }
+  function launchMissileV36(map, fromX, fromY, destX, destY) {
+    if (!Array.isArray(RTS_REGION_UI_V36.missiles)) RTS_REGION_UI_V36.missiles = [];
+    const dist = Math.hypot(destX - fromX, destY - fromY);
+    const now = Date.now();
+    RTS_REGION_UI_V36.missiles.push({ id: 'm_' + now.toString(36) + Math.random().toString(36).slice(2, 5), fromX, fromY, destX, destY, startedAt: now, endsAt: now + clamp(dist / 300 * 1000, 350, 6000), impacted: false });
+  }
+  function renderMissilesV36(map, now) {
+    const layer = document.getElementById('rts-missiles-layer-v36');
+    if (!layer) return;
+    const list = Array.isArray(RTS_REGION_UI_V36.missiles) ? RTS_REGION_UI_V36.missiles : [];
+    list.forEach(m => {
+      const t = clamp((now - m.startedAt) / Math.max(1, m.endsAt - m.startedAt), 0, 1);
+      let node = layer.querySelector(`[data-missile="${CSS.escape(m.id)}"]`);
+      if (t >= 1) {
+        if (!m.impacted) {
+          m.impacted = true;
+          if (node) node.remove();
+          const boom = document.createElement('div');
+          boom.className = 'rts-missile-impact-v36';
+          boom.style.left = `${(m.destX / map.width * 100).toFixed(3)}%`;
+          boom.style.top = `${(m.destY / map.height * 100).toFixed(3)}%`;
+          layer.appendChild(boom);
+          setTimeout(() => boom.remove(), 600);
+        }
+        return;
+      }
+      if (!node) { node = document.createElement('div'); node.className = 'rts-missile-v36'; node.dataset.missile = m.id; layer.appendChild(node); }
+      const x = m.fromX + (m.destX - m.fromX) * t, y = m.fromY + (m.destY - m.fromY) * t;
+      node.style.left = `${(x / map.width * 100).toFixed(3)}%`;
+      node.style.top = `${(y / map.height * 100).toFixed(3)}%`;
+    });
+    if (list.some(m => m.impacted && (now - m.endsAt) > 700)) RTS_REGION_UI_V36.missiles = list.filter(m => !(m.impacted && (now - m.endsAt) > 700));
+  }
+  // ---- fog of war ----
+  function fogGridDimsV36(map) {
+    const cols = 64;
+    const rows = clamp(Math.round(cols * (Number(map.height || 1) / Math.max(1, Number(map.width || 1)))), 16, 110);
+    return { cols, rows };
+  }
+  function fogEnsureExploredV36(map) {
+    if (!map.fog) map.fog = { enabled: true, radius: 50, explored: '' };
+    const { cols, rows } = fogGridDimsV36(map);
+    const len = cols * rows;
+    if (typeof map.fog.explored !== 'string' || map.fog.explored.length !== len) map.fog.explored = '0'.repeat(len);
+    return { cols, rows, len };
+  }
+  function fogRevealSourcesV36(map) {
+    const baseR = Number(map.fog?.radius ?? 50);
+    // Player ships clear fog within the map's fog radius (default 50 km); a token's radar extends it.
+    return safeArrayV36(map.tokens).filter(t => t && t.type !== 'unit').map(t => {
+      const pos = currentTokenPositionV36(t);
+      const r = Math.max(baseR, Number(t.radarRadius || 0));
+      return { x: pos.x, y: pos.y, r: Math.max(1, r) };
+    });
+  }
+  function markExploredV36(map) {
+    if (!map.fog?.enabled) return false;
+    const { cols, rows } = fogEnsureExploredV36(map);
+    const cellW = map.width / cols, cellH = map.height / rows;
+    let chars = null;
+    fogRevealSourcesV36(map).forEach(src => {
+      const minC = Math.max(0, Math.floor((src.x - src.r) / cellW)), maxC = Math.min(cols - 1, Math.floor((src.x + src.r) / cellW));
+      const minR = Math.max(0, Math.floor((src.y - src.r) / cellH)), maxR = Math.min(rows - 1, Math.floor((src.y + src.r) / cellH));
+      for (let ry = minR; ry <= maxR; ry++) for (let cx = minC; cx <= maxC; cx++) {
+        const idx = ry * cols + cx;
+        if ((chars ? chars[idx] : map.fog.explored[idx]) === '1') continue;
+        const ccx = (cx + 0.5) * cellW, ccy = (ry + 0.5) * cellH;
+        if (Math.hypot(ccx - src.x, ccy - src.y) <= src.r) { if (!chars) chars = map.fog.explored.split(''); chars[idx] = '1'; }
+      }
+    });
+    if (chars) { map.fog.explored = chars.join(''); return true; }
+    return false;
+  }
+  function fogActiveV36(map) {
+    if (!map.fog?.enabled) return false;
+    if (RTS_REGION_UI_V36.mode === 'edit') return false;
+    if (isGmV36()) return Boolean(RTS_REGION_UI_V36.fogPreview);
+    return true;
+  }
+  function buildFogBaseV36(map) {
+    const { cols, rows } = fogEnsureExploredV36(map);
+    const cv = document.createElement('canvas');
+    cv.width = cols; cv.height = rows;
+    const c = cv.getContext('2d');
+    c.fillStyle = 'rgba(2,6,12,0.96)';
+    c.fillRect(0, 0, cols, rows);
+    // Explored cells get carved back to a partial dim ("already scouted").
+    c.globalCompositeOperation = 'destination-out';
+    c.fillStyle = 'rgba(0,0,0,0.62)';
+    const ex = map.fog.explored;
+    for (let i = 0; i < ex.length; i++) { if (ex[i] === '1') c.fillRect(i % cols, Math.floor(i / cols), 1, 1); }
+    c.globalCompositeOperation = 'source-over';
+    return cv;
+  }
+  function renderFogV36(map) {
+    const canvas = document.getElementById('rts-fog-canvas-v36');
+    if (!canvas) return;
+    if (!fogActiveV36(map)) { canvas.style.display = 'none'; return; }
+    const W = 900, H = Math.max(1, Math.round(W * (Number(map.height || 1) / Math.max(1, Number(map.width || 1)))));
+    if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
+    canvas.style.display = '';
+    const ctx = canvas.getContext('2d');
+    fogEnsureExploredV36(map);
+    const ones = (map.fog.explored.match(/1/g) || []).length;
+    const sig = `${map.fog.explored.length}:${ones}`;
+    if (RTS_REGION_UI_V36.fogBaseSig !== sig || !RTS_REGION_UI_V36.fogBase) { RTS_REGION_UI_V36.fogBase = buildFogBaseV36(map); RTS_REGION_UI_V36.fogBaseSig = sig; }
+    ctx.clearRect(0, 0, W, H);
+    ctx.imageSmoothingEnabled = true;
+    try { ctx.drawImage(RTS_REGION_UI_V36.fogBase, 0, 0, W, H); } catch {}
+    ctx.globalCompositeOperation = 'destination-out';
+    fogRevealSourcesV36(map).forEach(src => {
+      const cx = src.x / map.width * W, cy = src.y / map.height * H, r = Math.max(2, src.r / map.width * W);
+      const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+      g.addColorStop(0, 'rgba(0,0,0,1)'); g.addColorStop(0.72, 'rgba(0,0,0,1)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+    });
+    ctx.globalCompositeOperation = 'source-over';
+  }
+  function regionAmbientKeyV36() { return 'region:' + (RTS_REGION_UI_V36.mapId || ''); }
+  function ensureRegionAmbientModalV36() {
+    let modal = document.getElementById('region-ambient-modal-v36');
+    if (modal) return modal;
+    modal = document.createElement('div');
+    modal.id = 'region-ambient-modal-v36';
+    modal.className = 'modal region-ambient-modal-v36';
+    modal.innerHTML = `<div class="region-ambient-box-v36"><div class="row" style="justify-content:space-between;align-items:flex-start"><div><div class="section-title">Эмбиент региона</div><h2 style="margin:0" id="region-ambient-title-v36"></h2></div><button class="ghost" type="button" id="region-ambient-close-v36">ЗАКРЫТЬ</button></div><div class="region-ambient-body-v36" id="region-ambient-body-v36"></div></div>`;
+    document.body.appendChild(modal);
+    modal.addEventListener('click', event => {
+      if (event.target === modal || event.target.closest('#region-ambient-close-v36')) { modal.classList.remove('open'); return; }
+      const target = event.target.closest('[data-ra-add-section],[data-ra-add],[data-ra-random],[data-ra-play],[data-ra-ambient],[data-ra-stop],#region-ambient-stop-v36');
+      if (!target) return;
+      const audioApi = window.CombatAudioV37;
+      if (!audioApi) return;
+      event.preventDefault(); event.stopPropagation();
+      const key = regionAmbientKeyV36();
+      if (target.id === 'region-ambient-stop-v36' || target.dataset.raStop !== undefined) { delete audioApi.state.sceneAmbient[key]; audioApi.save(); audioApi.stopAmbient(); }
+      else if (target.dataset.raAddSection !== undefined) { const input = document.getElementById('region-ambient-section-name-v36'); audioApi.addSection(input?.value || ''); if (input) input.value = ''; }
+      else if (target.dataset.raAdd) audioApi.addSound(target.dataset.raAdd);
+      else if (target.dataset.raRandom) audioApi.playRandom(target.dataset.raRandom);
+      else if (target.dataset.raPlay) audioApi.play(target.dataset.raPlay);
+      else if (target.dataset.raAmbient) audioApi.setAmbient(key, target.dataset.raAmbient);
+      setTimeout(renderRegionAmbientBodyV36, 80);
+    });
+    return modal;
+  }
+  function renderRegionAmbientBodyV36() {
+    const modal = ensureRegionAmbientModalV36();
+    const map = REGION_MAPS_V36[RTS_REGION_UI_V36.mapId];
+    const titleEl = modal.querySelector('#region-ambient-title-v36');
+    if (titleEl) titleEl.textContent = map?.name || 'Регион';
+    const body = modal.querySelector('#region-ambient-body-v36');
+    const audioApi = window.CombatAudioV37;
+    if (!audioApi) { body.innerHTML = '<div class="small-note">Локальная библиотека звуков недоступна.</div>'; return; }
+    const ambientId = audioApi.state?.sceneAmbient?.[regionAmbientKeyV36()] || '';
+    body.innerHTML = `<div class="small-note">Звуки хранятся локально в renderer/assets/audio. Эмбиент привязан к этой карте региона и запускается при её открытии.</div>
+      <div class="row combat-editor-actions" style="margin-top:10px;gap:8px;flex-wrap:wrap"><input class="input" id="region-ambient-section-name-v36" placeholder="Новый раздел звуков" /><button class="secondary" type="button" data-ra-add-section="1">ДОБАВИТЬ РАЗДЕЛ</button><button class="ghost" type="button" id="region-ambient-stop-v36">СТОП ЭМБИЕНТ</button></div>
+      <div class="combat-sound-sections-v37" style="margin-top:10px">${audioApi.sections.map(section => `<div class="combat-sound-section-v37"><div class="combat-sound-section-head-v37"><b>${esc(section.name)}</b><div class="row combat-editor-actions"><button class="secondary" type="button" data-ra-add="${esc(section.id)}">ДОБАВИТЬ ФАЙЛЫ</button><button class="secondary" type="button" data-ra-random="${esc(section.id)}">СЛУЧАЙНЫЙ</button></div></div><div class="combat-sound-list-v37">${section.sounds.map(sound => `<div class="combat-sound-row-v37"><span>${esc(sound.name)}</span><div class="row combat-editor-actions"><button class="ghost" type="button" data-ra-play="${esc(sound.id)}">PLAY</button><button class="ghost ${ambientId === sound.id ? 'active' : ''}" type="button" data-ra-ambient="${esc(sound.id)}">AMBIENT</button><button class="ghost" type="button" data-ra-stop="${esc(sound.id)}" title="Остановить эмбиент">⏹</button></div></div>`).join('') || '<div class="small-note">В этом разделе пока нет файлов.</div>'}</div></div>`).join('')}</div>`;
+  }
+  function openRegionAmbientV36() {
+    if (!window.CombatAudioV37) return Toast.show('Библиотека звуков недоступна', 'err');
+    renderRegionAmbientBodyV36();
+    ensureRegionAmbientModalV36().classList.add('open');
+  }
+  function startRegionMapAnimationV36() {
+    if (RTS_REGION_UI_V36.raf) cancelAnimationFrame(RTS_REGION_UI_V36.raf);
+    const tick = () => {
+      const modal = document.getElementById('region-map-modal-v36');
+      const map = REGION_MAPS_V36[RTS_REGION_UI_V36.mapId];
+      if (!map || !modal?.classList.contains('open')) { RTS_REGION_UI_V36.raf = 0; return; }
+      const now = Date.now();
+      let settled = false;
+      safeArrayV36(map.tokens).forEach(token => {
+        const pos = currentTokenPositionV36(token, now);
+        const node = document.querySelector(`[data-token-id="${CSS.escape(token.id)}"]`);
+        if (node) {
+          node.style.left = `${(pos.x / map.width * 100).toFixed(3)}%`;
+          node.style.top = `${(pos.y / map.height * 100).toFixed(3)}%`;
+          node.classList.toggle('moving', Boolean(token.moveEndsAt) && !pos.done);
+        }
+        if (pos.done) settled = true;
+      });
+      updateRegionFuelRangeV36(map, now);
+      patchRegionSideFuelV36(map, now);
+      renderMissilesV36(map, now);
+      if (markExploredV36(map)) scheduleRegionPersistV36('', { delay: 2000 });
+      try { renderFogV36(map); } catch {}
+      if (settled) {
+        settleAllRegionTokensV36();
+        scheduleRegionPersistV36('', { delay: 150 });
+      }
+      RTS_REGION_UI_V36.raf = requestAnimationFrame(tick);
+    };
+    RTS_REGION_UI_V36.raf = requestAnimationFrame(tick);
+  }
+  async function showRegionMapOnDisplayV36(mapId) {
+    const map = REGION_MAPS_V36[mapId];
+    if (!map) return;
+    try { await window.electronAPI?.openPlayerDisplay?.(); } catch {}
+    try { await window.electronAPI?.updatePlayerDisplayView?.(regionDisplayPayloadV36()); } catch {}
+    scheduleRegionPersistV36('', { delay: 50 }); // flush fog config / explored so the second screen picks it up
+    const runtime = getRegionRuntimeV36(); runtime.activeMapId = map.id; runtime.updatedAt = nowIsoV36();
+    try { await App.saveState('Карта региона выведена на второй экран'); } catch {}
+  }
+
+  const __renderProfileV36 = UI.renderProfile.bind(UI);
+  UI.renderProfile = function() {
+    __renderProfileV36();
+    injectProfileLocationV36();
+  };
+  function injectProfileLocationV36() {
+    const root = document.getElementById('profile-content');
+    if (!root || root.querySelector('.profile-rts-location-card-v36')) return;
+    const user = App.currentUser || App.state.users?.[App.currentUserId] || {};
+    const map = REGION_MAPS_V36[user.currentRegionId || ''];
+    const ship = SHIPS_V36[user.currentShipId || ''];
+    const planet = PLANETS[user.currentPlanetId || map?.planetId || ship?.currentPlanetId || ''];
+    const html = `<div class="card profile-card profile-rts-location-card-v36"><div class="section-title">Текущее положение</div>
+      <div class="data-row"><span class="data-label">Планета</span><span class="data-value">${esc(planet?.name || '—')}</span></div>
+      <div class="data-row"><span class="data-label">Регион / город</span><span class="data-value">${esc(map?.name || '—')}</span></div>
+      <div class="data-row"><span class="data-label">Корабль</span><span class="data-value">${esc(ship?.name || '—')}${ship?.model ? ` · ${esc(ship.model)}` : ''}</span></div>
+      ${ship ? `<div class="small-note">Топливо ${Number(ship.fuel || 0).toFixed(1)} / ${Number(ship.fuelCapacity || 0).toFixed(1)} · скорость ${shipSpeedV36(ship).toFixed(1)}</div>` : ''}
+      ${map && canOpenRegionMapV36(map, user) ? `<button class="secondary" type="button" data-open-region-map="${esc(map.id)}" style="margin-top:10px">ОТКРЫТЬ КАРТУ</button>` : '<div class="small-note" style="margin-top:10px">Карта доступна, когда персонаж находится в регионе.</div>'}
+    </div>`;
+    root.insertAdjacentHTML('afterbegin', html);
+    bindRtsRegionButtonsV36(root);
+  }
+
+  window.RegionMapsV36 = { open: openRegionMapV36, persist: persistRegionsShipsV36, maps: () => REGION_MAPS_V36, ships: () => SHIPS_V36 };
 })();

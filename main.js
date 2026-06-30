@@ -11,7 +11,7 @@ try {
   updaterLoadError = error;
 }
 
-const WORLD_FILE_NAMES = ['players','systems','planets','npcs','equipment','flora','fauna','articles','news','tasks','organizations','factions','skills','campaigns','combatScenes','ui'];
+const WORLD_FILE_NAMES = ['players','systems','planets','npcs','equipment','flora','fauna','articles','news','tasks','organizations','factions','skills','campaigns','combatScenes','ui','regionMaps','ships'];
 const DEFAULT_SYNC_TABLE = 'campaign_snapshots';
 const DEFAULT_CHAT_TABLE = 'campaign_messages';
 const DEFAULT_PLAYER_TABLE = 'campaign_players';
@@ -165,6 +165,14 @@ function getWorldSectionItemCount(sectionName, payload) {
   if (sectionName === 'campaigns') {
     if (payload.CAMPAIGNS && typeof payload.CAMPAIGNS === 'object') return Object.keys(payload.CAMPAIGNS).length;
     return Array.isArray(payload.CAMPAIGN_LIST) ? payload.CAMPAIGN_LIST.length : 0;
+  }
+  if (sectionName === 'regionMaps') {
+    if (payload.REGION_MAPS && typeof payload.REGION_MAPS === 'object') return Object.keys(payload.REGION_MAPS).length;
+    return Array.isArray(payload.REGION_MAP_LIST) ? payload.REGION_MAP_LIST.length : 0;
+  }
+  if (sectionName === 'ships') {
+    if (payload.SHIPS && typeof payload.SHIPS === 'object') return Object.keys(payload.SHIPS).length;
+    return Array.isArray(payload.SHIP_LIST) ? payload.SHIP_LIST.length : 0;
   }
   if (sectionName === 'combatScenes') return payload.COMBAT_SCENES && typeof payload.COMBAT_SCENES === 'object' ? Object.keys(payload.COMBAT_SCENES).length : 0;
   if (sectionName === 'ui') return Array.isArray(payload.galaxyLegend) ? payload.galaxyLegend.length : 0;
@@ -610,6 +618,21 @@ async function normalizeSnapshotImagesForCloud(config = {}, snapshot = {}) {
     }
     clone.world.campaigns.CAMPAIGN_LIST = Object.values(campaigns).sort((a, b) => String(a.name || a.id || '').localeCompare(String(b.name || b.id || ''), 'ru'));
   }
+  if (clone?.world?.regionMaps) {
+    const regionMaps = clone.world.regionMaps.REGION_MAPS || {};
+    for (const entry of Object.values(regionMaps)) {
+      await ensureEntityImageOnSupabase(config, entry, { section: 'regionMaps' });
+    }
+    clone.world.regionMaps.REGION_MAP_LIST = Object.values(regionMaps).sort((a, b) => String(a.name || a.id || '').localeCompare(String(b.name || b.id || ''), 'ru'));
+  }
+  if (clone?.world?.ships) {
+    const ships = clone.world.ships.SHIPS || {};
+    for (const entry of Object.values(ships)) {
+      await ensureEntityImageOnSupabase(config, entry, { section: 'ships' });
+    }
+    clone.world.ships.SHIP_LIST = Object.values(ships).sort((a, b) => String(a.name || a.id || '').localeCompare(String(b.name || b.id || ''), 'ru'));
+  }
+
   const stateUsers = clone?.state?.users || {};
   for (const player of Object.values(stateUsers)) {
     await ensureEntityImageOnSupabase(config, player, { section: 'players' });
@@ -819,6 +842,18 @@ function isWorldSectionUsable(name, payload) {
     return Boolean(
       (payload.CAMPAIGNS && typeof payload.CAMPAIGNS === 'object') ||
       Array.isArray(payload.CAMPAIGN_LIST)
+    );
+  }
+  if (name === 'regionMaps') {
+    return Boolean(
+      (payload.REGION_MAPS && typeof payload.REGION_MAPS === 'object') ||
+      Array.isArray(payload.REGION_MAP_LIST)
+    );
+  }
+  if (name === 'ships') {
+    return Boolean(
+      (payload.SHIPS && typeof payload.SHIPS === 'object') ||
+      Array.isArray(payload.SHIP_LIST)
     );
   }
   return true;
@@ -1812,7 +1847,7 @@ let chatRealtime = null;
 let worldSnapshotRealtime = null;
 let mainWindow = null;
 let playerDisplayWindow = null;
-let playerDisplayMirrorState = { activeSceneId: '', cameraByScene: {}, updatedAt: null };
+let playerDisplayMirrorState = { mode: '', activeSceneId: '', activeRegionMapId: '', cameraByScene: {}, regionCamera: null, updatedAt: null };
 let updaterConfigured = false;
 let updaterLatestStatus = { status: 'idle', packaged: false, available: Boolean(autoUpdater), message: '' };
 
@@ -3226,9 +3261,15 @@ ipcMain.handle('display:player:view:get', async () => ({
 ipcMain.handle('display:player:view:update', async (_event, payload) => {
   try {
     const next = payload && typeof payload === 'object' ? payload : {};
+    const hasMode = Object.prototype.hasOwnProperty.call(next, 'mode');
+    const hasRegionMap = Object.prototype.hasOwnProperty.call(next, 'activeRegionMapId');
+    const hasRegionCamera = Object.prototype.hasOwnProperty.call(next, 'regionCamera');
     playerDisplayMirrorState = {
+      mode: hasMode ? String(next.mode || '').trim() : (playerDisplayMirrorState.mode || ''),
       activeSceneId: String(next.activeSceneId || playerDisplayMirrorState.activeSceneId || '').trim(),
+      activeRegionMapId: hasRegionMap ? String(next.activeRegionMapId || '').trim() : (playerDisplayMirrorState.activeRegionMapId || ''),
       cameraByScene: next.cameraByScene && typeof next.cameraByScene === 'object' ? next.cameraByScene : (playerDisplayMirrorState.cameraByScene || {}),
+      regionCamera: hasRegionCamera ? (next.regionCamera && typeof next.regionCamera === 'object' ? next.regionCamera : null) : (playerDisplayMirrorState.regionCamera || null),
       updatedAt: next.updatedAt || new Date().toISOString()
     };
     if (playerDisplayWindow && !playerDisplayWindow.isDestroyed()) {
