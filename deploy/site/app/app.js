@@ -367,7 +367,7 @@
       ${group.map(item => {
         const unread = item._type === 'article' && !isArchiveArticleRead(item.id);
         return `
-          <article class="archive-tile ${item.id === entity?.id ? 'active' : ''} ${unread ? 'unread' : ''}">
+          <article class="archive-tile ${item.id === entity?.id ? 'active' : ''} ${unread ? 'unread' : ''}" style="cursor:pointer" data-action="select-archive" data-type="${esc(item._type)}" data-id="${esc(item.id)}">
             ${renderEntityThumb(item)}
             <button class="archive-tile-btn" type="button" data-action="select-archive" data-type="${esc(item._type)}" data-id="${esc(item.id)}">
               <span>${unread ? '<b class="new-badge">NEW</b> ' : ''}${esc(archiveItemLabel(item))}</span>

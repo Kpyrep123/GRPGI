@@ -618,3 +618,132 @@ body::after {
   .archive-split { grid-template-columns: 1fr; }
   .archive-sidebar { position: relative; top: auto; max-height: 38vh; border: 1px solid rgba(255,255,255,.12); border-radius: 18px; padding: 12px; background: rgba(0,0,0,.18); }
 }
+
+/* =====================================================================
+   v1.0.38 web <-> Electron visual alignment
+   Pulls the web (PC) player client to the desktop app's design language.
+   DM mode / combat scenes / regional maps are intentionally excluded.
+   ===================================================================== */
+:root {
+  --stroke: rgba(125,249,255,.14);
+  --stroke2: rgba(125,249,255,.24);
+  --text: #f2fbff;
+  --muted: rgba(255,255,255,.58);
+  --mono: Consolas, Monaco, monospace;
+  --tr: all .32s cubic-bezier(.16,1,.3,1);
+  --shadow: 0 24px 70px rgba(0,0,0,.6);
+  --radius: 22px;
+}
+body { font-family: "Segoe UI", system-ui, sans-serif; }
+
+/* Electron's subtle vignette + scanline overlay (replaces the grid lines) */
+body::after {
+  background:
+    radial-gradient(circle at center, transparent 50%, rgba(0,0,0,.42) 100%),
+    repeating-linear-gradient(180deg, rgba(255,255,255,0) 0px, rgba(255,255,255,0) 2px, rgba(255,255,255,.012) 3px) !important;
+  background-size: auto !important;
+}
+
+/* Themed scrollbars */
+* { scrollbar-color: rgba(125,249,255,.28) transparent; scrollbar-width: thin; }
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb { background: rgba(125,249,255,.18); border-radius: 999px; border: 2px solid transparent; background-clip: content-box; }
+*::-webkit-scrollbar-thumb:hover { background: rgba(125,249,255,.34); border: 2px solid transparent; background-clip: content-box; }
+
+/* Cards: match the Electron .card treatment (deep gradient, soft glow, blur) */
+.boot-card, .card, .hero-card, .thread-card, .article-card, .planet-card,
+.profile-card, .entity-card, .compact-card, .info-card, .details-card,
+.preview-card, .archive-tile, .stat, .log-entry, .chat-bubble {
+  border: 1px solid var(--stroke2);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  background:
+    linear-gradient(180deg, rgba(13,18,28,.88), rgba(8,12,20,.94)),
+    radial-gradient(circle at 20% 0%, rgba(125,249,255,.06), transparent 36%);
+}
+.stat, .log-entry, .chat-bubble, .info-card, .compact-card, .preview-card, .details-card { border-radius: 16px; }
+
+/* Buttons: bright cyan primary in mono, like the Electron app (not uppercase) */
+.primary, .secondary, .ghost-btn, .chip-btn, .link-btn {
+  border-radius: 14px;
+  padding: 12px 16px;
+  font: 12px var(--mono);
+  text-transform: none;
+  letter-spacing: normal;
+  cursor: pointer;
+  transition: var(--tr);
+}
+.primary {
+  border: none;
+  background: linear-gradient(180deg, #7df9ff, #b7ebff);
+  color: #00131a;
+  font-weight: 700;
+  box-shadow: 0 12px 28px rgba(125,249,255,.24);
+}
+.secondary, .link-btn { background: rgba(125,249,255,.06); color: var(--accent); border: 1px solid var(--stroke2); }
+.ghost-btn, .chip-btn { background: rgba(255,255,255,.04); color: #d5edf9; border: 1px solid rgba(255,255,255,.08); }
+.primary:hover, .secondary:hover, .ghost-btn:hover, .chip-btn:hover, .link-btn:hover { transform: translateY(-2px); }
+.chip-btn.active, .segmented .chip-btn.active { background: rgba(125,249,255,.14); border-color: var(--stroke2); color: var(--accent); }
+button:disabled { opacity: .45; transform: none !important; cursor: default; }
+
+/* Inputs / selects / textareas: Electron padding, radius, focus glow + chevron */
+.input, .textarea, select.input {
+  border-radius: 14px;
+  padding: 14px;
+  background: rgba(255,255,255,.05);
+  border: 1px solid var(--stroke2);
+  color: #fff;
+  transition: var(--tr);
+}
+.input:hover, .textarea:hover, select.input:hover { border-color: rgba(125,249,255,.3); }
+.input:focus, .textarea:focus, select.input:focus { outline: none; border-color: rgba(125,249,255,.4); box-shadow: 0 0 0 4px rgba(125,249,255,.08); }
+select.input {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='%23dffbff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+  padding-right: 42px;
+}
+select.input option { background: #0a1220; color: #effcff; }
+
+/* Pills / chips / tags */
+.info-chip, .pill, .tag, .link-pill { padding: 6px 10px; border-radius: 999px; background: rgba(125,249,255,.08); border: 1px solid var(--stroke2); color: #dffbff; font-size: 11px; }
+
+/* Eyebrows / section meta in accent mono, like Electron */
+.eyebrow { font-family: var(--mono); color: var(--accent); letter-spacing: .2em; }
+.info-card .k, .data-label { color: var(--muted); font-family: var(--mono); }
+.data-value { font-family: var(--mono); }
+
+/* Floating dock: lift + glow like the Electron #dock items */
+.bottom-nav.desktop-dock {
+  background: linear-gradient(180deg, rgba(15,22,35,.64), rgba(8,12,20,.88));
+  border: 1px solid var(--stroke2);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(18px);
+}
+.nav-btn {
+  border: 1px solid rgba(125,249,255,.18);
+  background: linear-gradient(180deg, rgba(125,249,255,.16), rgba(125,249,255,.06));
+  color: var(--accent);
+  font: 11px var(--mono);
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  transition: var(--tr);
+}
+.nav-btn:hover { transform: translateY(-6px) scale(1.04); background: linear-gradient(180deg, #8efcff, #b8e9ff); color: #00131a; box-shadow: 0 14px 30px rgba(125,249,255,.3); }
+.nav-btn.active { background: radial-gradient(circle at 50% 0%, rgba(125,249,255,.30), rgba(125,249,255,.08)); border-color: rgba(125,249,255,.5); color: #ecffff; }
+
+/* Topbar accent + active archive/entity cards */
+.topbar h1, #screen-title { color: var(--accent); }
+.entity-card.active, .thread-card.active, .article-card.active, .planet-card.active, .archive-tile.active {
+  border-color: rgba(125,249,255,.42);
+  background: linear-gradient(180deg, rgba(125,249,255,.10), rgba(10,16,24,.92));
+}
+
+/* Belt-and-suspenders: keep DM / combat / region surfaces out of the web client */
+.combat-board-wrap, .combat-card, .combat-scene-list, .combat-stage-shell,
+[data-screen="combat"], [data-screen="regions"], [data-action^="combat-"],
+.region-map-modal-v36, .dm-only { display: none !important; }
