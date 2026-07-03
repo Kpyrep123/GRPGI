@@ -17042,7 +17042,9 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
       // Навыки могут повышать специализации как бонус, но это не является
       // требованием дерева и не рисуется отдельной пунктирной связью.
     });
-    return edges;
+    // Рисуем только основную (primary) связь каждого узла — пунктирные
+    // вторичные зависимости (secondary / ability-extra) убраны по запросу.
+    return edges.filter(edge => edge.kind === 'primary' || edge.kind === 'ability');
   }
 
   function graphReachableV53(startId, edges, direction = 'down') {
@@ -17096,7 +17098,7 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
     return new Set(ABILITY_MODEL_V50.map(item => item.key));
   }
 
-  function buildSkillTreeLayoutV51(user) {
+  function buildSkillTreeLayoutV51(user, options = {}) {
     user = normalizePlayerProfileV2(user);
     const depthMemo = {};
     const skills = getVisibleSkillTreeItemsV56(user).map(skill => normalizeSkillV50(skill)).sort((a, b) => {
@@ -17147,63 +17149,94 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
     };
 
     const rootOrder = ABILITY_MODEL_V50.map(item => item.key);
-    const rootBuckets = new Map(rootOrder.map(key => [key, []]));
+
+    // Build the primary-parent forest (each node now has exactly one parent edge),
+    // then lay it out as a tidy tree: leaves take sequential columns and each parent
+    // is centred over its children. This is deterministic and keeps subtrees intact,
+    // so editing one node only reflows its own subtree instead of scattering the rest.
+    const childrenByParent = new Map();
+    const ensureChildList = parentId => { if (!childrenByParent.has(parentId)) childrenByParent.set(parentId, []); return childrenByParent.get(parentId); };
     skills.forEach((skill, index) => {
       const nodeId = treeNodeIdV51('skill', skill.id);
-      const rootKey = rootAbilityForNodeV54(nodeId, primaryParentBySkillId, skillById) || preferredAbilityForSkillV53(skill, index);
-      const safeRoot = rootBuckets.has(rootKey) ? rootKey : rootOrder[fallbackSkillColumnV51(skill, index)] || rootOrder[0];
-      const row = Math.max(1, nodeDepthFromPrimaryParent(nodeId));
-      rootBuckets.get(safeRoot).push({ skill, nodeId, row });
-      rowByNode.set(nodeId, row);
+      let parentId = primaryParentBySkillId.get(skill.id);
+      const parentParts = treeNodePartsV53(parentId || '');
+      const parentMissing = !parentId
+        || (parentParts.type === 'ability' && !ABILITY_BY_KEY_V50[parentParts.id])
+        || (parentParts.type === 'skill' && !skillById.has(parentParts.id));
+      if (parentMissing) parentId = treeNodeIdV51('ability', rootOrder[fallbackSkillColumnV51(skill, index)] || rootOrder[0]);
+      ensureChildList(parentId).push(nodeId);
+      rowByNode.set(nodeId, Math.max(1, nodeDepthFromPrimaryParent(nodeId)));
     });
+    const childSort = (aId, bId) => {
+      const as = skillById.get(treeNodePartsV53(aId).id) || {};
+      const bs = skillById.get(treeNodePartsV53(bId).id) || {};
+      const bucket = skillSortBucketV50(user, as) - skillSortBucketV50(user, bs);
+      if (bucket) return bucket;
+      const cat = String(as.category || '').localeCompare(String(bs.category || ''), 'ru');
+      if (cat) return cat;
+      return String(as.name || '').localeCompare(String(bs.name || ''), 'ru') || String(as.id || '').localeCompare(String(bs.id || ''), 'ru');
+    };
+    for (const list of childrenByParent.values()) list.sort(childSort);
 
-    const rootLayouts = [];
+    const colByNode = new Map();
+    let nextCol = 0;
+    const assignCols = (nodeId, stack = new Set()) => {
+      if (colByNode.has(nodeId)) return colByNode.get(nodeId);
+      if (stack.has(nodeId)) { const c = nextCol; nextCol += 1; colByNode.set(nodeId, c); return c; }
+      stack.add(nodeId);
+      const kids = childrenByParent.get(nodeId) || [];
+      let col;
+      if (!kids.length) { col = nextCol; nextCol += 1; }
+      else {
+        const childCols = kids.map(kid => assignCols(kid, stack));
+        col = (childCols[0] + childCols[childCols.length - 1]) / 2;
+      }
+      stack.delete(nodeId);
+      colByNode.set(nodeId, col);
+      return col;
+    };
     rootOrder.forEach(rootKey => {
-      const rows = new Map();
-      (rootBuckets.get(rootKey) || []).forEach(entry => {
-        if (!rows.has(entry.row)) rows.set(entry.row, []);
-        rows.get(entry.row).push(entry);
-      });
-      for (const list of rows.values()) {
-        list.sort((a, b) => {
-          const as = a.skill;
-          const bs = b.skill;
-          const bucket = skillSortBucketV50(user, as) - skillSortBucketV50(user, bs);
-          if (bucket) return bucket;
-          const cat = String(as.category || '').localeCompare(String(bs.category || ''), 'ru');
-          if (cat) return cat;
-          return String(as.name || '').localeCompare(String(bs.name || ''), 'ru') || String(as.id || '').localeCompare(String(bs.id || ''), 'ru');
-        });
-      }
-      const maxRowCount = Math.max(1, ...Array.from(rows.values()).map(list => list.length));
-      rootLayouts.push({ rootKey, rows, width: Math.max(ABILITY_W, maxRowCount * NODE_W + Math.max(0, maxRowCount - 1) * X_GAP) });
-    });
-
-    let cursorX = PAD_X;
-    rootLayouts.forEach(layout => {
-      const ability = ABILITY_BY_KEY_V50[layout.rootKey] || ABILITY_MODEL_V50[0];
-      const abilityId = treeNodeIdV51('ability', layout.rootKey);
+      const abilityId = treeNodeIdV51('ability', rootKey);
       rowByNode.set(abilityId, 0);
-      positions.set(abilityId, { x: cursorX + layout.width / 2 - ABILITY_W / 2, y: PAD_TOP, w: ABILITY_W, h: ABILITY_H, row: 0 });
-      for (const [row, list] of layout.rows.entries()) {
-        const rowWidth = list.length * NODE_W + Math.max(0, list.length - 1) * X_GAP;
-        let x = cursorX + Math.max(0, (layout.width - rowWidth) / 2);
-        list.forEach(entry => {
-          positions.set(entry.nodeId, { x, y: PAD_TOP + row * ROW_GAP, w: NODE_W, h: SKILL_H, row });
-          x += NODE_W + X_GAP;
-        });
-      }
-      cursorX += layout.width + ROOT_GAP;
+      assignCols(abilityId);
+      nextCol += 1; // visual gap between ability subtrees
+    });
+    skills.forEach(skill => { const nodeId = treeNodeIdV51('skill', skill.id); if (!colByNode.has(nodeId)) assignCols(nodeId); });
+
+    const COL_STEP = NODE_W + X_GAP;
+    colByNode.forEach((col, nodeId) => {
+      const parts = treeNodePartsV53(nodeId);
+      const isAbility = parts.type === 'ability';
+      const w = isAbility ? ABILITY_W : NODE_W;
+      const h = isAbility ? ABILITY_H : SKILL_H;
+      const row = rowByNode.get(nodeId) ?? (isAbility ? 0 : 1);
+      const centerX = PAD_X + col * COL_STEP + NODE_W / 2;
+      positions.set(nodeId, { x: Math.round(centerX - w / 2), y: PAD_TOP + row * ROW_GAP, w, h, row });
     });
 
-    skills.forEach(skill => {
-      const manualPos = skillTreePosV63(skill);
-      if (!manualPos) return;
-      const nodeId = treeNodeIdV51('skill', skill.id);
-      const current = positions.get(nodeId) || { x: 0, y: 0, w: NODE_W, h: SKILL_H, row: 1 };
-      const row = Math.max(1, Math.round((manualPos.y - PAD_TOP) / ROW_GAP));
-      rowByNode.set(nodeId, row);
-      positions.set(nodeId, { ...current, x: manualPos.x, y: manualPos.y, w: current.w || NODE_W, h: current.h || SKILL_H, row });
+    // Manual positions (drag in editor / persisted auto-sort) win unless explicitly recomputing.
+    if (!options.ignoreManual) {
+      skills.forEach(skill => {
+        const manualPos = skillTreePosV63(skill);
+        if (!manualPos) return;
+        const nodeId = treeNodeIdV51('skill', skill.id);
+        const current = positions.get(nodeId) || { x: 0, y: 0, w: NODE_W, h: SKILL_H, row: 1 };
+        const row = Math.max(1, Math.round((manualPos.y - PAD_TOP) / ROW_GAP));
+        rowByNode.set(nodeId, row);
+        positions.set(nodeId, { ...current, x: manualPos.x, y: manualPos.y, w: current.w || NODE_W, h: current.h || SKILL_H, row });
+      });
+    }
+
+    // Keep each ability header centred over its actual branch (also after manual moves / edits).
+    rootOrder.forEach(rootKey => {
+      const abilityId = treeNodeIdV51('ability', rootKey);
+      const centers = (childrenByParent.get(abilityId) || [])
+        .map(kid => { const p = positions.get(kid); return p ? p.x + p.w / 2 : null; })
+        .filter(v => v != null);
+      if (!centers.length) return;
+      const mid = (Math.min(...centers) + Math.max(...centers)) / 2;
+      const cur = positions.get(abilityId);
+      if (cur) positions.set(abilityId, { ...cur, x: Math.round(mid - cur.w / 2) });
     });
 
     const allPositions = Array.from(positions.values());
@@ -17382,7 +17415,7 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
         <span class="chip" data-skill-zoom-label-v63>${Math.round(clampSkillTreeZoomV63(SKILL_TREE_ZOOM_V63) * 100)}%</span>
         <button class="ghost" type="button" data-skill-zoom-v63="in">+</button>
         <button class="ghost" type="button" data-skill-zoom-v63="reset">100%</button>
-        ${canEdit ? `<button class="secondary" type="button" data-skill-edit-toggle-v63="1">${SKILL_TREE_EDIT_MODE_V63 ? 'РЕЖИМ РЕДАКТОРА: ON' : 'РЕЖИМ РЕДАКТОРА: OFF'}</button><button class="secondary" type="button" data-skill-add-v63="skill">+ НАВЫК</button><button class="secondary" type="button" data-skill-add-v63="specialization">+ СПЕЦИАЛИЗАЦИЯ</button>` : ''}
+        ${canEdit ? `<button class="secondary" type="button" data-skill-edit-toggle-v63="1">${SKILL_TREE_EDIT_MODE_V63 ? 'РЕЖИМ РЕДАКТОРА: ON' : 'РЕЖИМ РЕДАКТОРА: OFF'}</button><button class="secondary" type="button" data-skill-autosort-v63="1" title="Аккуратно разложить дерево и зафиксировать позиции">АВТО-СОРТИРОВКА</button><button class="secondary" type="button" data-skill-add-v63="skill">+ НАВЫК</button><button class="secondary" type="button" data-skill-add-v63="specialization">+ СПЕЦИАЛИЗАЦИЯ</button>` : ''}
       </div>
     </div>`;
   }
@@ -17436,6 +17469,24 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
     SKILL_TREE_SELECTED_ID_V63 = id;
     SKILL_TREE_EDIT_MODE_V63 = true;
     await persistSkillTreeV63('skill-tree-add-v63');
+    rerenderSkillTreeModalV63();
+  }
+
+  // Recompute the tidy-tree layout and commit it as each node's manual treePos.
+  // Once committed, positions are stable: editing a node's dependencies only
+  // reroutes edges instead of re-flowing (and scattering) the whole tree.
+  async function autoSortSkillTreeV63() {
+    if (!canEditSkillTreeV63()) return;
+    const current = normalizePlayerProfileV2(App.state.users[App.currentUserId] || App.currentUser || {});
+    const layout = buildSkillTreeLayoutV51(current, { ignoreManual: true });
+    let count = 0;
+    layout.skills.forEach(skill => {
+      const pos = layout.positions.get(treeNodeIdV51('skill', skill.id));
+      if (pos && SKILLS_V50?.[skill.id]) { SKILLS_V50[skill.id].treePos = { x: Math.max(0, Math.round(pos.x)), y: Math.max(0, Math.round(pos.y)) }; count += 1; }
+    });
+    try { syncSkillsWorldDataV50(); } catch {}
+    await persistSkillTreeV63('skill-tree-autosort-v63');
+    Toast.show(`Дерево навыков отсортировано (${count})`, 'ok');
     rerenderSkillTreeModalV63();
   }
 
@@ -17494,6 +17545,11 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
       if (button.dataset.boundV63 === '1') return;
       button.dataset.boundV63 = '1';
       button.addEventListener('click', event => { event.preventDefault(); SKILL_TREE_EDIT_MODE_V63 = !SKILL_TREE_EDIT_MODE_V63; rerenderSkillTreeModalV63(); });
+    });
+    root.querySelectorAll?.('[data-skill-autosort-v63]').forEach(button => {
+      if (button.dataset.boundV63 === '1') return;
+      button.dataset.boundV63 = '1';
+      button.addEventListener('click', event => { event.preventDefault(); autoSortSkillTreeV63(); });
     });
     root.querySelectorAll?.('[data-skill-add-v63]').forEach(button => {
       if (button.dataset.boundV63 === '1') return;

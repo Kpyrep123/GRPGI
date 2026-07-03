@@ -330,6 +330,10 @@ body.combat-modal-open { overflow: hidden; }
 .skill-sections { margin: -4px 0 12px; }
 .reputation-mobile-list .entity-card { border-left: 3px solid rgba(125,249,255,0.24); }
 .spec-grid-mobile .stat { min-height: 72px; }
+/* v1.0.38 mobile ability progression */
+.ability-mobile-stat { min-height: 78px; }
+.ability-mobile-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 6px; }
+.ability-mobile-row .mini-btn { min-height: 0; padding: 6px 12px; }
 @media (max-width: 520px) {
   .bottom-nav { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .screens { padding-bottom: calc(240px + env(safe-area-inset-bottom)); }

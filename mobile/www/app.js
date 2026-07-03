@@ -1833,6 +1833,8 @@
   }
 
   const ABILITY_LABELS = { strength: 'Сила', dexterity: 'Ловкость', intelligence: 'Интеллект', endurance: 'Выносливость', will: 'Воля', glory: 'Слава' };
+  const ABILITY_ORDER = ['strength', 'dexterity', 'intelligence', 'endurance', 'will', 'glory'];
+  const ABILITY_MAX = 5;
 
   function skillIdArray(value) {
     return Array.from(new Set((Array.isArray(value) ? value : []).map(entry => String(entry?.id || entry || '').trim()).filter(Boolean)));
@@ -1912,6 +1914,41 @@
       else if (!next.skills.includes(skill.id)) next.skills.push(skill.id);
       next.specializations = applySkillSpecializationIncreases(next.specializations, skill);
     }, 'Навык обновлён');
+  }
+
+  async function upgradeAbility(abilityKey) {
+    if (!ABILITY_LABELS[abilityKey]) return;
+    if (isGuestSession()) return notify('Гость не может менять профиль', 'warn');
+    const player = currentPlayer();
+    if (!player) return;
+    if (abilityKey === 'glory') return notify('Славу выдаёт ДМ', 'warn');
+    const value = Number(player.abilities?.[abilityKey] || 0);
+    if (value >= ABILITY_MAX) return notify(`${ABILITY_LABELS[abilityKey]} уже на максимуме ${ABILITY_MAX}`, 'info');
+    if (Number(player.skillPoints || 0) < 1) return notify('Не хватает очков улучшения', 'warn');
+    if (!confirm(`Улучшить «${ABILITY_LABELS[abilityKey]}» до ${Math.min(ABILITY_MAX, value + 1)} за 1 очко улучшения?`)) return;
+    await commitPlayerMutation(next => {
+      next.abilities = { ...(next.abilities || {}) };
+      next.abilities[abilityKey] = Math.min(ABILITY_MAX, Number(next.abilities[abilityKey] || 0) + 1);
+      next.skillPoints = Math.max(0, Number(next.skillPoints || 0) - 1);
+    }, 'Характеристика улучшена');
+  }
+
+  function renderMobileAbilities(player) {
+    const points = Number(player.skillPoints || 0);
+    const guest = isGuestSession();
+    const abilities = player.abilities || {};
+    const tile = key => {
+      const value = Number(abilities[key] || 0);
+      const isGlory = key === 'glory';
+      const maxed = value >= ABILITY_MAX;
+      let btn;
+      if (isGlory) btn = '<button class="ghost-btn mini-btn" type="button" disabled title="Выдаёт ДМ">ДМ</button>';
+      else if (maxed) btn = '<button class="ghost-btn mini-btn" type="button" disabled>МАКС</button>';
+      else btn = `<button class="primary mini-btn" type="button" data-action="upgrade-ability" data-ability-key="${esc(key)}" ${(!guest && points > 0) ? '' : 'disabled'}>+1</button>`;
+      return `<div class="stat ability-mobile-stat"><div class="data-label">${esc(ABILITY_LABELS[key] || key)}</div><div class="ability-mobile-row"><div class="data-value">${value} / ${ABILITY_MAX}</div>${btn}</div></div>`;
+    };
+    return `<div class="section-head" style="margin-top:18px"><div class="section-title">Характеристики</div><div class="pill">Очки: ${points}</div></div>
+      <div class="stat-grid spec-grid-mobile">${ABILITY_ORDER.map(tile).join('')}</div>`;
   }
 
   function renderMobileSkills(player) {
@@ -2038,12 +2075,7 @@
           ${player.implants.map(implant => `<article class="entity-card"><div class="eyebrow">Имплант</div><h3>${esc(implant.name || 'Имплант')}</h3><div class="small-note">${esc(implant.desc || '')}</div></article>`).join('')}
         </div>
       ` : ''}
-      ${(player.abilities && Object.keys(player.abilities).length) ? `
-        <div class="section-head" style="margin-top:18px"><div class="section-title">Характеристики</div></div>
-        <div class="stat-grid">
-          ${Object.entries(player.abilities).map(([key, value]) => `<div class="stat"><div class="data-label">${esc(ABILITY_LABELS[key] || key)}</div><div class="data-value">${esc(value)}</div></div>`).join('')}
-        </div>
-      ` : ''}
+      ${renderMobileAbilities(player)}
       ${(player.specializations && Object.keys(player.specializations).length) ? `
         <div class="section-head" style="margin-top:18px"><div class="section-title">Специализации</div></div>
         <div class="stat-grid spec-grid-mobile">
@@ -2485,6 +2517,9 @@
       }
       if (action === 'upgrade-skill') {
         upgradeSkill(button.dataset.skillId).catch(error => notify(error.message, 'err'));
+      }
+      if (action === 'upgrade-ability') {
+        upgradeAbility(button.dataset.abilityKey).catch(error => notify(error.message, 'err'));
       }
       if (action === 'profile-refresh') {
         safeRefresh({ deferRender: false }).catch(error => notify(error.message, 'err'));
