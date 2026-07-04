@@ -1544,7 +1544,7 @@ body.media-preview-open{overflow:hidden}
 .rts-map-token-v36.selected img, .rts-map-token-v36.selected > span { box-shadow:0 0 0 4px rgba(255,214,120,.24),0 0 24px rgba(255,214,120,.48); border-color:#ffd678; }
 .rts-map-token-v36.moving img, .rts-map-token-v36.moving > span { animation:rtsPulseV36 1.2s infinite alternate; }
 @keyframes rtsPulseV36 { from { filter:brightness(1); } to { filter:brightness(1.35); } }
-.rts-fuel-range-v36 { position:absolute; z-index:2; transform:translate(-50%,-50%); border-radius:50%; border:1px dashed rgba(125,249,255,.46); background:radial-gradient(circle,rgba(125,249,255,.08),rgba(125,249,255,.02) 62%,rgba(125,249,255,0)); pointer-events:none; }
+.rts-fuel-range-v36 { position:absolute; z-index:9; transform:translate(-50%,-50%); border-radius:50%; border:1px dashed rgba(125,249,255,.46); background:radial-gradient(circle,rgba(125,249,255,.06),rgba(125,249,255,.015) 62%,rgba(125,249,255,0)); pointer-events:none; }
 .region-map-side-v36 { min-height:0; overflow:auto; border-left:1px solid rgba(125,249,255,.14); padding:18px; background:rgba(3,8,15,.86); }
 .rts-region-button-grid-v36 { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:8px; margin-top:10px; }
 .rts-region-button-grid-v36 button { justify-content:space-between; }
@@ -1565,7 +1565,7 @@ body.media-preview-open{overflow:hidden}
 .region-display-token-v36 img, .region-display-token-v36 > span { width:46px; height:46px; border-radius:50%; object-fit:cover; display:grid; place-items:center; background:rgba(8,16,26,.92); border:2px solid var(--rts-color,#7df9ff); box-shadow:0 0 22px rgba(125,249,255,.3); color:var(--rts-color,#7df9ff); font-size:20px; }
 .region-display-token-v36 b { font-size:12px; background:rgba(2,7,14,.8); border:1px solid rgba(125,249,255,.18); border-radius:999px; padding:3px 9px; white-space:nowrap; }
 .region-display-token-v36.moving img, .region-display-token-v36.moving > span { animation:rtsPulseV36 1.2s infinite alternate; }
-.region-display-range-v36 { position:absolute; z-index:2; transform:translate(-50%,-50%); border-radius:50%; border:1px dashed rgba(125,249,255,.5); background:radial-gradient(circle,rgba(125,249,255,.08),rgba(125,249,255,.02) 62%,rgba(125,249,255,0)); pointer-events:none; }
+.region-display-range-v36 { position:absolute; z-index:9; transform:translate(-50%,-50%); border-radius:50%; border:1px dashed rgba(125,249,255,.5); background:radial-gradient(circle,rgba(125,249,255,.06),rgba(125,249,255,.015) 62%,rgba(125,249,255,0)); pointer-events:none; }
 
 /* v1.0.38 ambient modal scroll fix — the global `.modal.open .card{overflow:visible !important}` rule was clipping/overflowing the ambient box off-screen */
 .modal.global-ambient-modal-v60.open { align-items:center; justify-content:center; padding:24px; }

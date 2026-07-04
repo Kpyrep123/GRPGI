@@ -18883,26 +18883,30 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
     const list = sortEntitiesForList(Object.values(REGION_MAPS_V36 || {}));
     return planetId ? list.filter(map => String(map.planetId || '') === String(planetId)) : list;
   }
-  function normalizeRegionMarkerV36(marker = {}) {
+  // maxX/maxY default to "no clamping": callers that know the map pass its real
+  // dimensions. The old hardcoded 0..1000 clamp silently snapped every token and
+  // marker on larger maps to the border on each normalize pass (= every save/sync),
+  // which is how positions "got lost".
+  function normalizeRegionMarkerV36(marker = {}, maxX = 1000000, maxY = 1000000) {
     return {
       id: String(marker.id || `marker_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,6)}`).trim(),
       name: String(marker.name || 'Метка').trim() || 'Метка',
       type: String(marker.type || 'point').trim() || 'point',
-      x: clamp(Number(marker.x ?? 500), 0, 1000),
-      y: clamp(Number(marker.y ?? 500), 0, 1000),
+      x: clamp(Number(marker.x ?? 500), 0, maxX),
+      y: clamp(Number(marker.y ?? 500), 0, maxY),
       color: String(marker.color || '#7df9ff').trim() || '#7df9ff',
       visibleToPlayers: marker.visibleToPlayers !== false,
       targetRegionId: String(marker.targetRegionId || '').trim(),
       notes: String(marker.notes || '').trim()
     };
   }
-  function normalizeRegionTokenV36(token = {}) {
+  function normalizeRegionTokenV36(token = {}, maxX = 1000000, maxY = 1000000) {
     return {
       id: String(token.id || `token_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,6)}`).trim(),
       name: String(token.name || 'Токен').trim() || 'Токен',
       type: ['player','ship','unit','convoy'].includes(String(token.type || '').trim()) ? String(token.type || '').trim() : 'unit',
-      x: clamp(Number(token.x ?? 500), 0, 1000),
-      y: clamp(Number(token.y ?? 500), 0, 1000),
+      x: clamp(Number(token.x ?? 500), 0, maxX),
+      y: clamp(Number(token.y ?? 500), 0, maxY),
       startX: Number(token.startX ?? token.x ?? 500),
       startY: Number(token.startY ?? token.y ?? 500),
       destX: Number(token.destX ?? token.x ?? 500),
@@ -18925,6 +18929,8 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
   }
   function normalizeRegionMapV36(map = {}) {
     const id = cleanIdV36(map.id || map.name, 'region');
+    const width = Math.max(300, Number(map.width || 1000));
+    const height = Math.max(200, Number(map.height || 700));
     return {
       id,
       name: String(map.name || id).trim() || id,
@@ -18933,12 +18939,12 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
       parentRegionId: String(map.parentRegionId || map.parentId || '').trim(),
       image: String(map.image || map.backgroundImage || '').trim(),
       color: String(map.color || '#7df9ff').trim() || '#7df9ff',
-      width: Math.max(300, Number(map.width || 1000)),
-      height: Math.max(200, Number(map.height || 700)),
+      width,
+      height,
       scaleLabel: String(map.scaleLabel || 'км').trim() || 'км',
       summary: String(map.summary || '').trim(),
-      markers: safeArrayV36(map.markers).map(normalizeRegionMarkerV36),
-      tokens: safeArrayV36(map.tokens).map(normalizeRegionTokenV36),
+      markers: safeArrayV36(map.markers).map(marker => normalizeRegionMarkerV36(marker, width, height)),
+      tokens: safeArrayV36(map.tokens).map(token => normalizeRegionTokenV36(token, width, height)),
       fog: {
         enabled: map.fog ? map.fog.enabled !== false : true,
         radius: Math.max(0, Number(map.fog?.radius ?? 50)),
@@ -18980,9 +18986,11 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
     return clamp((power / mass) * 150, 12, 260);
   }
   function shipFuelRangeV36(ship = {}) {
+    // Honest, uncapped range: the old 2500 ceiling pinned the fuel circle at a
+    // constant size for efficient ships, so it never visibly shrank.
     const fuel = Math.max(0, Number(ship.fuel || 0));
     const consumption = Math.max(0.01, Number(ship.fuelConsumption || 1));
-    return clamp((fuel / consumption) * 100, 0, 2500);
+    return Math.max(0, (fuel / consumption) * 100);
   }
   function shipMovementStatsMarkupV36(ship = {}) {
     const speed = shipSpeedV36(ship);
@@ -19002,7 +19010,9 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
       done: false
     };
   }
-  function settleRegionTokenV36(token = {}) {
+  function settleRegionTokenV36(token = {}, map = null) {
+    const maxX = Math.max(1, Number(map?.width || 1000000));
+    const maxY = Math.max(1, Number(map?.height || 1000000));
     const pos = currentTokenPositionV36(token);
     if (pos.done) {
       // Commit the fuel actually burned over the completed route (consumed progressively, deducted once here).
@@ -19014,8 +19024,8 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
       token.moveShipId = '';
       token.moveFuelStart = 0;
       token.moveFuelCost = 0;
-      token.x = clamp(Number(token.destX ?? pos.x), 0, 1000);
-      token.y = clamp(Number(token.destY ?? pos.y), 0, 1000);
+      token.x = clamp(Number(token.destX ?? pos.x), 0, maxX);
+      token.y = clamp(Number(token.destY ?? pos.y), 0, maxY);
       token.startX = token.x;
       token.startY = token.y;
       token.destX = token.x;
@@ -19026,7 +19036,7 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
     return token;
   }
   function settleAllRegionTokensV36() {
-    Object.values(REGION_MAPS_V36 || {}).forEach(map => { map.tokens = safeArrayV36(map.tokens).map(settleRegionTokenV36); });
+    Object.values(REGION_MAPS_V36 || {}).forEach(map => { map.tokens = safeArrayV36(map.tokens).map(token => settleRegionTokenV36(token, map)); });
   }
   function visibleRegionTokenV36(token, map) {
     if (isGmV36()) return true;
@@ -19055,6 +19065,7 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
     return App.state.toolState[RTS_REGION_STATE_KEY_V36];
   }
   async function persistRegionsShipsV36(message = '', opts = {}) {
+    touchRegionLocalV36();
     settleAllRegionTokensV36();
     REGION_MAP_LIST_V36 = sortEntitiesForList(Object.values(REGION_MAPS_V36));
     SHIP_LIST_V36 = sortEntitiesForList(Object.values(SHIPS_V36));
@@ -19070,13 +19081,35 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
   }
   // Debounced save so dragging / property tweaks / live movement don't spam the heavy world snapshot + sync push.
   function scheduleRegionPersistV36(message = '', opts = {}) {
+    touchRegionLocalV36();
     if (message) RTS_REGION_UI_V36.persistMsg = message;
     clearTimeout(RTS_REGION_UI_V36.persistTimer);
     const delay = Number(opts.delay != null ? opts.delay : 550);
     RTS_REGION_UI_V36.persistTimer = setTimeout(() => {
+      RTS_REGION_UI_V36.persistTimer = 0;
       const msg = RTS_REGION_UI_V36.persistMsg; RTS_REGION_UI_V36.persistMsg = '';
       persistRegionsShipsV36(msg, { silent: !msg }).catch(() => {});
     }, delay);
+  }
+  // Flush a pending debounced save immediately (modal close / app shutdown) so edits can't be lost.
+  function flushRegionPersistV36() {
+    if (!RTS_REGION_UI_V36.persistTimer) return;
+    clearTimeout(RTS_REGION_UI_V36.persistTimer);
+    RTS_REGION_UI_V36.persistTimer = 0;
+    const msg = RTS_REGION_UI_V36.persistMsg; RTS_REGION_UI_V36.persistMsg = '';
+    persistRegionsShipsV36(msg, { silent: !msg }).catch(() => {});
+  }
+  window.addEventListener('beforeunload', () => { try { flushRegionPersistV36(); } catch {} });
+  // While the GM is actively working with a region map, the local in-memory state
+  // is authoritative: a delayed/stale cloud snapshot echoing back must not roll
+  // token positions or ship fuel back. Players never mutate region data, so the
+  // guard is GM-only and they keep receiving live updates.
+  var REGION_LOCAL_TOUCH_MS_V36 = 0;
+  function touchRegionLocalV36() { REGION_LOCAL_TOUCH_MS_V36 = Date.now(); }
+  function shouldPreserveLocalRegionsV36() {
+    if (!isGmV36()) return false;
+    if (document.getElementById('region-map-modal-v36')?.classList.contains('open')) return true;
+    return (Date.now() - REGION_LOCAL_TOUCH_MS_V36) < 15000;
   }
 
   // ---- interactive camera (pan / zoom) ----
@@ -19154,7 +19187,7 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
   }
   function shipRangeFromFuelV36(ship, fuel) {
     const consumption = Math.max(0.01, Number(ship.fuelConsumption || 1));
-    return clamp((Math.max(0, fuel) / consumption) * 100, 0, 2500);
+    return Math.max(0, (Math.max(0, fuel) / consumption) * 100);
   }
 
   // Merge an incoming section into the in-memory map *in place* so existing object references
@@ -19178,9 +19211,15 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
   const __applyWorldData_v36 = applyWorldData;
   applyWorldData = function(payload = {}) {
     __applyWorldData_v36(payload);
-    REGION_MAPS_V36 = mergeWorldSectionInPlaceV36(REGION_MAPS_V36, payload?.regionMaps?.REGION_MAPS || payload?.regions?.REGION_MAPS || payload?.REGION_MAPS || {}, normalizeRegionMapV36);
+    // Stale-echo guard: while the GM is actively using the region map, keep the
+    // local region/ship state and only refresh the outgoing mirrors from it, so a
+    // late cloud pull can't roll back token positions or fuel. The mirrors below
+    // still carry the local data into the next snapshot, self-healing the cloud.
+    if (!(shouldPreserveLocalRegionsV36() && Object.keys(REGION_MAPS_V36).length)) {
+      REGION_MAPS_V36 = mergeWorldSectionInPlaceV36(REGION_MAPS_V36, payload?.regionMaps?.REGION_MAPS || payload?.regions?.REGION_MAPS || payload?.REGION_MAPS || {}, normalizeRegionMapV36);
+      SHIPS_V36 = mergeWorldSectionInPlaceV36(SHIPS_V36, payload?.ships?.SHIPS || payload?.SHIPS || {}, normalizeShipV36);
+    }
     REGION_MAP_LIST_V36 = sortEntitiesForList(Object.values(REGION_MAPS_V36));
-    SHIPS_V36 = mergeWorldSectionInPlaceV36(SHIPS_V36, payload?.ships?.SHIPS || payload?.SHIPS || {}, normalizeShipV36);
     SHIP_LIST_V36 = sortEntitiesForList(Object.values(SHIPS_V36));
     worldData.regionMaps = serializeWorldSection('regionMaps', REGION_MAPS_V36);
     worldData.ships = serializeWorldSection('ships', SHIPS_V36);
@@ -19472,6 +19511,7 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
     if (RTS_REGION_UI_V36.raf) cancelAnimationFrame(RTS_REGION_UI_V36.raf);
     RTS_REGION_UI_V36.raf = 0;
     RTS_REGION_UI_V36.arming = '';
+    flushRegionPersistV36();
     try { window.CombatAudioV37?.stopAmbient?.(); } catch {}
   }
   function regionMapTokenLabelV36(token) {
@@ -19862,7 +19902,9 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
     const token = safeArrayV36(map.tokens).find(t => t.id === RTS_REGION_UI_V36.selectedTokenId);
     const ship = token ? liveShipForTokenV36(token) : null;
     if (!token || !ship) { circle.style.display = 'none'; return; }
-    const range = shipRangeFromFuelV36(ship, liveFuelV36(token, ship, now));
+    // Cap the drawn radius at the map diagonal: beyond that the circle covers the
+    // whole map anyway, and the cap keeps the visual responsive to fuel changes.
+    const range = Math.min(shipRangeFromFuelV36(ship, liveFuelV36(token, ship, now)), Math.hypot(Number(map.width || 1000), Number(map.height || 700)));
     if (!(range > 0)) { circle.style.display = 'none'; return; }
     const pos = currentTokenPositionV36(token, now);
     circle.style.display = '';

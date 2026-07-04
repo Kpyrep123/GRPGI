@@ -314,7 +314,7 @@ function displayLiveFuelV36(token, ship, at) {
   }
   return Number(ship.fuel || 0);
 }
-function displayRangeV36(ship, fuel) { return clamp((Math.max(0, fuel) / Math.max(0.01, Number(ship.fuelConsumption || 1))) * 100, 0, 2500); }
+function displayRangeV36(ship, fuel) { return Math.max(0, (Math.max(0, fuel) / Math.max(0.01, Number(ship.fuelConsumption || 1))) * 100); }
 function isRegionDisplayActiveV36() { return playerDisplayMirror?.mode === 'region' || Boolean(playerDisplayMirror?.activeRegionMapId) || Boolean(regionDisplayV36.mapId); }
 
 function buildRegionDisplayStructureV36(map) {
@@ -410,7 +410,7 @@ function regionDisplayPositionV36(now) {
       const circle = regionDisplayV36.rangeNodes[id];
       if (circle) {
         const ship = displayShipForTokenV36(t);
-        const range = ship ? displayRangeV36(ship, displayLiveFuelV36(t, ship, now)) : 0;
+        const range = ship ? Math.min(displayRangeV36(ship, displayLiveFuelV36(t, ship, now)), Math.hypot(map.width, map.height)) : 0;
         if (ship && range > 0) {
           circle.style.display = '';
           circle.style.left = `${(p.x / map.width * 100).toFixed(3)}%`;
