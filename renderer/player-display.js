@@ -4,8 +4,11 @@ let playerDisplayMirror = { activeSceneId: '', cameraByScene: {}, updatedAt: nul
 
 function normalizeMirrorPayload(payload = {}) {
   return {
+    mode: String(payload?.mode || '').trim(),
+    activeRegionMapId: String(payload?.activeRegionMapId || '').trim(),
     activeSceneId: String(payload?.activeSceneId || '').trim(),
     cameraByScene: payload?.cameraByScene && typeof payload.cameraByScene === 'object' ? payload.cameraByScene : {},
+    regionCamera: payload?.regionCamera && typeof payload.regionCamera === 'object' ? payload.regionCamera : null,
     updatedAt: payload?.updatedAt || null
   };
 }
@@ -218,7 +221,13 @@ async function refresh() {
       window.electronAPI?.loadWorldData?.()
     ]);
     const world = worldRes?.world || {};
+    const regionActive = playerDisplayMirror?.mode === 'region' || playerDisplayMirror?.activeRegionMapId || state?.toolState?.regionRuntime?.activeMapId;
+    if (regionActive) { syncRegionDisplayV36(world, state || {}); return; }
+    stopRegionDisplayV36();
     const signature = JSON.stringify({
+      mode: playerDisplayMirror.mode || '',
+      activeRegionMapId: playerDisplayMirror.activeRegionMapId || state?.toolState?.regionRuntime?.activeMapId || '',
+      regionMap: world?.regionMaps?.REGION_MAPS?.[playerDisplayMirror.activeRegionMapId || state?.toolState?.regionRuntime?.activeMapId || ''] || null,
       activeSceneId: playerDisplayMirror.activeSceneId || state?.toolState?.combat?.activeSceneId || '',
       scene: world?.combatScenes?.COMBAT_SCENES?.[state?.toolState?.combat?.activeSceneId || ''] || world?.combatScenes?.[state?.toolState?.combat?.activeSceneId || ''] || null,
       runtime: state?.toolState?.combat?.scenes?.[state?.toolState?.combat?.activeSceneId || ''] || null,
@@ -247,5 +256,222 @@ window.electronAPI?.getPlayerDisplayView?.().then(res => {
 }).catch(() => {});
 window.electronAPI?.onPlayerDisplayView?.(payload => {
   playerDisplayMirror = normalizeMirrorPayload(payload);
+  if (playerDisplayMirror.mode === 'region' || playerDisplayMirror.activeRegionMapId) {
+    if (playerDisplayMirror.regionCamera) {
+      regionDisplayV36.cameraTarget = {
+        zoom: Number(playerDisplayMirror.regionCamera.zoom || 1),
+        panFracX: Number(playerDisplayMirror.regionCamera.panFracX || 0),
+        panFracY: Number(playerDisplayMirror.regionCamera.panFracY || 0)
+      };
+    }
+    ensureRegionDisplayRafV36();
+    if (playerDisplayMirror.activeRegionMapId && playerDisplayMirror.activeRegionMapId !== regionDisplayV36.mapId) refresh();
+    return;
+  }
   refresh();
 });
+
+
+/* v1.0.37 player display: smooth interactive region map — interpolated movement, mirrored DM camera, live fuel circles */
+let regionDisplayV36 = { mapId: '', structSig: '', map: null, ships: {}, users: {}, frame: null, stage: null, tokenNodes: {}, rangeNodes: {}, camera: { zoom: 1, panX: 0, panY: 0 }, cameraTarget: { zoom: 1, panFracX: 0, panFracY: 0 }, frameW: 0, frameH: 0, raf: 0 };
+
+function normalizeRegionMapDisplayV36(map = {}) {
+  return {
+    id: String(map.id || '').trim(),
+    name: String(map.name || 'Регион').trim() || 'Регион',
+    image: String(map.image || '').trim(),
+    width: Math.max(300, Number(map.width || 1000)),
+    height: Math.max(200, Number(map.height || 700)),
+    markers: Array.isArray(map.markers) ? map.markers : [],
+    tokens: Array.isArray(map.tokens) ? map.tokens : [],
+    fog: {
+      enabled: map.fog ? map.fog.enabled !== false : false,
+      radius: Math.max(0, Number(map.fog?.radius ?? 50)),
+      explored: typeof map.fog?.explored === 'string' ? map.fog.explored : ''
+    }
+  };
+}
+function regionTokenPosDisplayV36(token = {}, at = Date.now()) {
+  const start = Date.parse(token.moveStartedAt || '');
+  const end = Date.parse(token.moveEndsAt || '');
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start || at >= end) return { x: Number(token.destX ?? token.x ?? 0), y: Number(token.destY ?? token.y ?? 0) };
+  const t = clamp((at - start) / (end - start), 0, 1);
+  return { x: Number(token.startX ?? token.x ?? 0) + (Number(token.destX ?? token.x ?? 0) - Number(token.startX ?? token.x ?? 0)) * t, y: Number(token.startY ?? token.y ?? 0) + (Number(token.destY ?? token.y ?? 0) - Number(token.startY ?? token.y ?? 0)) * t };
+}
+function displayTokenVisibleV36(token) { return Boolean(token && token.visibleToPlayers); }
+function displayShipForTokenV36(token) {
+  const ships = regionDisplayV36.ships || {};
+  if (token.shipId && ships[token.shipId]) return ships[token.shipId];
+  const uid = token.playerId && regionDisplayV36.users?.[token.playerId]?.currentShipId;
+  return uid && ships[uid] ? ships[uid] : null;
+}
+function displayLiveFuelV36(token, ship, at) {
+  if (!ship) return 0;
+  const start = Date.parse(token.moveStartedAt || ''), end = Date.parse(token.moveEndsAt || '');
+  if (token.moveShipId === ship.id && Number.isFinite(start) && Number.isFinite(end) && end > start) {
+    const t = clamp((at - start) / (end - start), 0, 1);
+    return clamp(Number(token.moveFuelStart || ship.fuel || 0) - Number(token.moveFuelCost || 0) * t, 0, Math.max(1, Number(ship.fuelCapacity || ship.fuel || 0)));
+  }
+  return Number(ship.fuel || 0);
+}
+function displayRangeV36(ship, fuel) { return Math.max(0, (Math.max(0, fuel) / Math.max(0.01, Number(ship.fuelConsumption || 1))) * 100); }
+function isRegionDisplayActiveV36() { return playerDisplayMirror?.mode === 'region' || Boolean(playerDisplayMirror?.activeRegionMapId) || Boolean(regionDisplayV36.mapId); }
+
+function buildRegionDisplayStructureV36(map) {
+  const visibleTokens = (map.tokens || []).filter(displayTokenVisibleV36);
+  const markersHtml = (map.markers || []).filter(m => m.visibleToPlayers !== false).map(m =>
+    `<div class="region-display-marker-v36" style="left:${(Number(m.x||0)/map.width*100).toFixed(3)}%;top:${(Number(m.y||0)/map.height*100).toFixed(3)}%;--rts-color:${esc(m.color || '#7df9ff')}"><span></span><b>${esc(m.name || '')}</b></div>`).join('');
+  const tokensHtml = visibleTokens.map(t => {
+    const isShip = t.type === 'ship';
+    const ship = t.shipId && regionDisplayV36.ships[t.shipId] ? regionDisplayV36.ships[t.shipId] : null;
+    // Ships render as a plain coloured circle + name (no image).
+    const img = isShip ? '' : String(t.image || ship?.image || '').trim();
+    const inner = img ? `<img src="${esc(img)}" alt="" />` : `<span>${esc(isShip ? '' : t.type === 'player' ? '●' : '▲')}</span>`;
+    return `<div class="region-display-token-v36${isShip ? ' is-ship-v36' : ''}" data-token-id="${esc(String(t.id || ''))}" style="--rts-color:${esc(t.color || '#7df9ff')}">${inner}<b>${esc(t.name || t.id || '')}</b></div>`;
+  }).join('');
+  const rangesHtml = visibleTokens.filter(t => t.type !== 'unit').map(t => `<div class="region-display-range-v36" data-range-for="${esc(String(t.id || ''))}" style="display:none"></div>`).join('');
+  root.innerHTML = `<div class="player-display-stage"><div class="player-display-board-frame region-display-frame-v36" id="rd-frame-v36"><div class="region-display-stage-v36" id="rd-stage-v36" style="background-image:${map.image ? `url('${esc(map.image)}')` : 'none'}">${rangesHtml}<div class="rts-map-grid-v36"></div>${markersHtml}${tokensHtml}<canvas class="region-display-fog-canvas-v36" id="rd-fog-v36" style="display:none"></canvas></div><div class="region-display-title-v36">${esc(map.name)}</div></div></div>`;
+  regionDisplayV36.frame = document.getElementById('rd-frame-v36');
+  regionDisplayV36.stage = document.getElementById('rd-stage-v36');
+  regionDisplayV36.fogCanvas = document.getElementById('rd-fog-v36');
+  regionDisplayV36.fogBase = null;
+  regionDisplayV36.fogBaseSig = '';
+  regionDisplayV36.tokenNodes = {};
+  regionDisplayV36.rangeNodes = {};
+  if (regionDisplayV36.stage) {
+    regionDisplayV36.stage.querySelectorAll('[data-token-id]').forEach(node => { regionDisplayV36.tokenNodes[node.dataset.tokenId] = node; });
+    regionDisplayV36.stage.querySelectorAll('[data-range-for]').forEach(node => { regionDisplayV36.rangeNodes[node.dataset.rangeFor] = node; });
+  }
+  sizeRegionDisplayFrameV36();
+  regionDisplayPositionV36(Date.now());
+}
+function renderRegionDisplayFogV36(map, now) {
+  const canvas = regionDisplayV36.fogCanvas;
+  if (!canvas) return;
+  if (!map.fog || !map.fog.enabled) { canvas.style.display = 'none'; return; }
+  const cols = 64;
+  const rows = clamp(Math.round(cols * (map.height / Math.max(1, map.width))), 16, 110);
+  const len = cols * rows;
+  const explored = (typeof map.fog.explored === 'string' && map.fog.explored.length === len) ? map.fog.explored : '0'.repeat(len);
+  const W = 900, H = Math.max(1, Math.round(W * (map.height / Math.max(1, map.width))));
+  if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
+  canvas.style.display = '';
+  const ctx = canvas.getContext('2d');
+  const ones = (explored.match(/1/g) || []).length;
+  const sig = `${len}:${ones}`;
+  if (regionDisplayV36.fogBaseSig !== sig || !regionDisplayV36.fogBase) {
+    const base = document.createElement('canvas'); base.width = cols; base.height = rows;
+    const bc = base.getContext('2d');
+    bc.fillStyle = 'rgba(2,6,12,0.96)'; bc.fillRect(0, 0, cols, rows);
+    bc.globalCompositeOperation = 'destination-out'; bc.fillStyle = 'rgba(0,0,0,0.62)';
+    for (let i = 0; i < explored.length; i++) { if (explored[i] === '1') bc.fillRect(i % cols, Math.floor(i / cols), 1, 1); }
+    bc.globalCompositeOperation = 'source-over';
+    regionDisplayV36.fogBase = base; regionDisplayV36.fogBaseSig = sig;
+  }
+  ctx.clearRect(0, 0, W, H);
+  ctx.imageSmoothingEnabled = true;
+  try { ctx.drawImage(regionDisplayV36.fogBase, 0, 0, W, H); } catch {}
+  ctx.globalCompositeOperation = 'destination-out';
+  const baseR = Number(map.fog.radius || 50);
+  (map.tokens || []).filter(t => displayTokenVisibleV36(t) && t.type !== 'unit').forEach(t => {
+    const p = regionTokenPosDisplayV36(t, now);
+    const r = Math.max(2, Math.max(baseR, Number(t.radarRadius || 0)) / map.width * W);
+    const cx = p.x / map.width * W, cy = p.y / map.height * H;
+    const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+    g.addColorStop(0, 'rgba(0,0,0,1)'); g.addColorStop(0.72, 'rgba(0,0,0,1)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+  });
+  ctx.globalCompositeOperation = 'source-over';
+}
+function sizeRegionDisplayFrameV36() {
+  const map = regionDisplayV36.map, frame = regionDisplayV36.frame;
+  if (!map || !frame) return;
+  const vw = Math.max(1, window.innerWidth || document.documentElement?.clientWidth || 1280);
+  const vh = Math.max(1, window.innerHeight || document.documentElement?.clientHeight || 720);
+  const aspect = Math.max(.1, map.width / Math.max(1, map.height));
+  let w = vw, h = w / aspect;
+  if (h > vh) { h = vh; w = h * aspect; }
+  frame.style.width = `${w.toFixed(1)}px`;
+  frame.style.height = `${h.toFixed(1)}px`;
+  regionDisplayV36.frameW = w;
+  regionDisplayV36.frameH = h;
+}
+function regionDisplayPositionV36(now) {
+  const map = regionDisplayV36.map;
+  if (!map) return;
+  (map.tokens || []).forEach(t => {
+    const id = String(t.id || '');
+    const node = regionDisplayV36.tokenNodes[id];
+    if (node) {
+      const p = regionTokenPosDisplayV36(t, now);
+      node.style.left = `${(p.x / map.width * 100).toFixed(3)}%`;
+      node.style.top = `${(p.y / map.height * 100).toFixed(3)}%`;
+      node.classList.toggle('moving', Boolean(t.moveEndsAt) && Date.parse(t.moveEndsAt || '') > now);
+      const circle = regionDisplayV36.rangeNodes[id];
+      if (circle) {
+        const ship = displayShipForTokenV36(t);
+        const range = ship ? Math.min(displayRangeV36(ship, displayLiveFuelV36(t, ship, now)), Math.hypot(map.width, map.height)) : 0;
+        if (ship && range > 0) {
+          circle.style.display = '';
+          circle.style.left = `${(p.x / map.width * 100).toFixed(3)}%`;
+          circle.style.top = `${(p.y / map.height * 100).toFixed(3)}%`;
+          circle.style.width = `${(range / map.width * 100 * 2).toFixed(3)}%`;
+          circle.style.height = `${(range / map.height * 100 * 2).toFixed(3)}%`;
+        } else {
+          circle.style.display = 'none';
+        }
+      }
+    }
+  });
+}
+function regionDisplayTickV36() {
+  const map = regionDisplayV36.map;
+  if (!map || !isRegionDisplayActiveV36()) { regionDisplayV36.raf = 0; return; }
+  const now = Date.now();
+  const fw = regionDisplayV36.frameW || 1, fh = regionDisplayV36.frameH || 1;
+  const tgt = regionDisplayV36.cameraTarget, cam = regionDisplayV36.camera;
+  const targetPanX = Number(tgt.panFracX || 0) * fw, targetPanY = Number(tgt.panFracY || 0) * fh, targetZoom = Number(tgt.zoom || 1);
+  cam.zoom += (targetZoom - cam.zoom) * 0.2;
+  cam.panX += (targetPanX - cam.panX) * 0.2;
+  cam.panY += (targetPanY - cam.panY) * 0.2;
+  if (regionDisplayV36.stage) regionDisplayV36.stage.style.transform = `translate(${cam.panX.toFixed(1)}px, ${cam.panY.toFixed(1)}px) scale(${cam.zoom.toFixed(4)})`;
+  regionDisplayPositionV36(now);
+  try { renderRegionDisplayFogV36(map, now); } catch {}
+  regionDisplayV36.raf = requestAnimationFrame(regionDisplayTickV36);
+}
+function ensureRegionDisplayRafV36() { if (!regionDisplayV36.raf) regionDisplayV36.raf = requestAnimationFrame(regionDisplayTickV36); }
+function stopRegionDisplayV36() {
+  if (regionDisplayV36.raf) { cancelAnimationFrame(regionDisplayV36.raf); regionDisplayV36.raf = 0; }
+  if (regionDisplayV36.mapId) { regionDisplayV36.mapId = ''; regionDisplayV36.structSig = ''; regionDisplayV36.map = null; lastSignature = ''; }
+}
+function syncRegionDisplayV36(world = {}, state = {}) {
+  const maps = world?.regionMaps?.REGION_MAPS || world?.REGION_MAPS || {};
+  const activeMapId = String(playerDisplayMirror.activeRegionMapId || state?.toolState?.regionRuntime?.activeMapId || '').trim();
+  const rawMap = activeMapId && maps[activeMapId] ? maps[activeMapId] : null;
+  if (!rawMap) {
+    if (regionDisplayV36.raf) { cancelAnimationFrame(regionDisplayV36.raf); regionDisplayV36.raf = 0; }
+    regionDisplayV36.mapId = ''; regionDisplayV36.structSig = ''; regionDisplayV36.map = null;
+    root.innerHTML = '<div class="player-display-stage player-display-stage--blank"></div>';
+    return;
+  }
+  const map = normalizeRegionMapDisplayV36(rawMap);
+  regionDisplayV36.map = map;
+  regionDisplayV36.ships = world?.ships?.SHIPS || world?.SHIPS || {};
+  regionDisplayV36.users = state?.users || {};
+  if (playerDisplayMirror.regionCamera) {
+    regionDisplayV36.cameraTarget = { zoom: Number(playerDisplayMirror.regionCamera.zoom || 1), panFracX: Number(playerDisplayMirror.regionCamera.panFracX || 0), panFracY: Number(playerDisplayMirror.regionCamera.panFracY || 0) };
+  }
+  const structSig = JSON.stringify({
+    id: map.id, name: map.name, image: map.image, w: map.width, h: map.height,
+    markers: (map.markers || []).filter(m => m.visibleToPlayers !== false).map(m => [m.id, Math.round(m.x), Math.round(m.y), m.name, m.color]),
+    tokens: (map.tokens || []).filter(displayTokenVisibleV36).map(t => [t.id, t.type, t.color, t.image || (regionDisplayV36.ships[t.shipId]?.image || ''), t.name])
+  });
+  if (structSig !== regionDisplayV36.structSig || map.id !== regionDisplayV36.mapId) {
+    regionDisplayV36.structSig = structSig;
+    regionDisplayV36.mapId = map.id;
+    buildRegionDisplayStructureV36(map);
+  } else {
+    sizeRegionDisplayFrameV36();
+  }
+  ensureRegionDisplayRafV36();
+}
