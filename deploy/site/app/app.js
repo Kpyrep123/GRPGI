@@ -66,6 +66,8 @@
       selectedCampaignId: 'all',
       focusedSystemId: '',
       archiveQuery: '',
+      profileTab: 'main',
+      skillZoom: 1,
       combatFullscreen: false,
       combatViewByScene: {},
       lastLivePullAt: null,
@@ -1937,28 +1939,232 @@
     }, 'Навык обновлён');
   }
 
-  function renderMobileSkills(player) {
-    const rows = visibleSkills();
-    if (!rows.length) return '';
-    const owned = rows.filter(skill => playerOwnsSkill(player, skill));
-    const available = rows.filter(skill => !playerOwnsSkill(player, skill) && !skillRequirementReasons(player, skill).length);
-    const locked = rows.filter(skill => !playerOwnsSkill(player, skill) && skillRequirementReasons(player, skill).length);
-    const card = skill => {
-      const ownedSkill = playerOwnsSkill(player, skill);
-      const reasons = skillRequirementReasons(player, skill);
-      const specValue = isSpecialization(skill) ? Number(player.specializations?.[skill.id] || 0) : null;
-      return `<article class="entity-card skill-mobile-card ${ownedSkill ? 'owned' : reasons.length ? 'locked' : 'available'}">
-        ${renderEntityThumb(skill)}
-        <div class="eyebrow">${isSpecialization(skill) ? 'Специализация' : 'Навык'}${specValue ? ` · ${specValue}` : ''}</div>
-        <h3>${esc(skill.name || skill.id)}</h3>
-        <div class="small-note">${esc(skill.description || skill.category || '')}</div>
-        <div class="pill-row" style="margin-top:10px;"><div class="pill">Стоимость: ${Number(skill.cost || 1)}</div>${ownedSkill ? '<div class="pill">Изучено</div>' : reasons.length ? `<div class="pill">${esc(reasons.join(', '))}</div>` : '<div class="pill">Доступно</div>'}</div>
-        ${!ownedSkill && !reasons.length ? `<div class="entity-actions"><button class="primary" type="button" data-action="upgrade-skill" data-skill-id="${esc(skill.id)}">Прокачать</button></div>` : ''}
-      </article>`;
+  /* Web skill tree — mirrors the desktop app's tidy tree: ability roots on row 0,
+     compact skill nodes, solid primary edges only. Node positions come from the
+     skill's persisted treePos (committed by the app's АВТО-СОРТИРОВКА) when
+     present; otherwise the same tidy-forest layout is computed locally. */
+  const ABILITY_MODEL_WEB = [
+    { key: 'strength', label: 'Сила', short: 'СИЛ' },
+    { key: 'dexterity', label: 'Ловкость', short: 'ЛОВ' },
+    { key: 'intelligence', label: 'Интеллект', short: 'ИНТ' },
+    { key: 'endurance', label: 'Выносливость', short: 'ВЫН' },
+    { key: 'will', label: 'Воля', short: 'ВОЛ' },
+    { key: 'glory', label: 'Слава', short: 'СЛА' }
+  ];
+  const ABILITY_MAX_WEB = 5;
+  const TREE_NODE_W = 164, TREE_ABILITY_W = 170, TREE_SKILL_H = 84, TREE_ABILITY_H = 88;
+  const TREE_X_GAP = 42, TREE_ROW_GAP = 128, TREE_PAD_X = 34, TREE_PAD_TOP = 18;
+
+  function clampWebSkillZoom(value) {
+    return Math.min(2.4, Math.max(0.45, Number(value || 1) || 1));
+  }
+
+  function skillTreePosWeb(skill) {
+    const raw = skill?.treePos || skill?.layout || skill?.position || skill?.pos;
+    const x = Number(raw?.x);
+    const y = Number(raw?.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    return { x: Math.max(0, Math.round(x)), y: Math.max(0, Math.round(y)) };
+  }
+
+  function skillFallbackAbilityWeb(skill) {
+    const s = String(skill.category || skill.id || '');
+    let h = 0;
+    for (let i = 0; i < s.length; i += 1) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+    return ABILITY_MODEL_WEB[h % 5].key; // never glory as a fallback root
+  }
+
+  function buildWebSkillTreeLayout(player) {
+    const skills = visibleSkills();
+    const byId = new Map(skills.map(s => [String(s.id), s]));
+    const parentOf = new Map();
+    skills.forEach(skill => {
+      const id = String(skill.id);
+      let parent = '';
+      for (const reqId of skillIdArray(skill.requiredSkillIds || skill.requiredSkills)) {
+        if (reqId !== id && byId.has(reqId)) { parent = `skill:${reqId}`; break; }
+      }
+      if (!parent) {
+        const reqAb = (Array.isArray(skill.requiredAbilities) ? skill.requiredAbilities : []).find(req => ABILITY_LABELS[String(req.key || '').trim()]);
+        parent = `ability:${reqAb ? String(reqAb.key).trim() : skillFallbackAbilityWeb(skill)}`;
+      }
+      parentOf.set(id, parent);
+    });
+    // break dependency cycles: reroute to a fallback ability root
+    skills.forEach(skill => {
+      const id = String(skill.id);
+      const seen = new Set([id]);
+      let cursor = parentOf.get(id);
+      while (cursor && cursor.startsWith('skill:')) {
+        const pid = cursor.slice(6);
+        if (seen.has(pid)) { parentOf.set(id, `ability:${skillFallbackAbilityWeb(skill)}`); break; }
+        seen.add(pid);
+        cursor = parentOf.get(pid);
+      }
+    });
+    const rowMemo = new Map();
+    const rowOf = id => {
+      if (rowMemo.has(id)) return rowMemo.get(id);
+      rowMemo.set(id, 1);
+      const parent = parentOf.get(id) || '';
+      const row = parent.startsWith('skill:') ? rowOf(parent.slice(6)) + 1 : 1;
+      rowMemo.set(id, row);
+      return row;
     };
-    return `<div class="section-head" style="margin-top:18px"><div class="section-title">Навыки</div><div class="pill">Очки: ${Number(player.skillPoints || 0)}</div></div>
-      <div class="segmented skill-sections"><button class="chip-btn" type="button">Доступные: ${available.length}</button><button class="chip-btn" type="button">Изучено: ${owned.length}</button><button class="chip-btn" type="button">Закрыто: ${locked.length}</button></div>
-      <div class="card-list">${[...available, ...owned, ...locked].map(card).join('')}</div>`;
+    const children = new Map();
+    skills.forEach(skill => {
+      const parent = parentOf.get(String(skill.id));
+      if (!children.has(parent)) children.set(parent, []);
+      children.get(parent).push(`skill:${skill.id}`);
+    });
+    for (const list of children.values()) {
+      list.sort((a, b) => {
+        const as = byId.get(a.slice(6)) || {}, bs = byId.get(b.slice(6)) || {};
+        return String(as.category || '').localeCompare(String(bs.category || ''), 'ru')
+          || String(as.name || '').localeCompare(String(bs.name || ''), 'ru')
+          || String(as.id || '').localeCompare(String(bs.id || ''), 'ru');
+      });
+    }
+    const col = new Map();
+    let nextCol = 0;
+    const assignCols = (nodeId, stack = new Set()) => {
+      if (col.has(nodeId)) return col.get(nodeId);
+      if (stack.has(nodeId)) { const c = nextCol; nextCol += 1; col.set(nodeId, c); return c; }
+      stack.add(nodeId);
+      const kids = children.get(nodeId) || [];
+      let c;
+      if (!kids.length) { c = nextCol; nextCol += 1; }
+      else {
+        const kidCols = kids.map(kid => assignCols(kid, stack));
+        c = (kidCols[0] + kidCols[kidCols.length - 1]) / 2;
+      }
+      stack.delete(nodeId);
+      col.set(nodeId, c);
+      return c;
+    };
+    ABILITY_MODEL_WEB.forEach(item => { assignCols(`ability:${item.key}`); nextCol += 1; });
+    skills.forEach(skill => { const nodeId = `skill:${skill.id}`; if (!col.has(nodeId)) assignCols(nodeId); });
+    const positions = new Map();
+    const COL_STEP = TREE_NODE_W + TREE_X_GAP;
+    col.forEach((c, nodeId) => {
+      const ability = nodeId.startsWith('ability:');
+      const w = ability ? TREE_ABILITY_W : TREE_NODE_W;
+      const h = ability ? TREE_ABILITY_H : TREE_SKILL_H;
+      const row = ability ? 0 : rowOf(nodeId.slice(6));
+      positions.set(nodeId, { x: Math.round(TREE_PAD_X + c * COL_STEP + TREE_NODE_W / 2 - w / 2), y: TREE_PAD_TOP + row * TREE_ROW_GAP, w, h });
+    });
+    // persisted positions from the desktop app win
+    skills.forEach(skill => {
+      const manual = skillTreePosWeb(skill);
+      if (!manual) return;
+      const nodeId = `skill:${skill.id}`;
+      const current = positions.get(nodeId) || { w: TREE_NODE_W, h: TREE_SKILL_H };
+      positions.set(nodeId, { ...current, x: manual.x, y: manual.y });
+    });
+    // centre ability headers over their actual branch
+    ABILITY_MODEL_WEB.forEach(item => {
+      const abilityId = `ability:${item.key}`;
+      const centers = (children.get(abilityId) || []).map(kid => { const p = positions.get(kid); return p ? p.x + p.w / 2 : null; }).filter(v => v != null);
+      if (!centers.length) return;
+      const mid = (Math.min(...centers) + Math.max(...centers)) / 2;
+      const current = positions.get(abilityId);
+      if (current) positions.set(abilityId, { ...current, x: Math.round(mid - current.w / 2) });
+    });
+    const edges = skills.map(skill => ({ from: parentOf.get(String(skill.id)), to: `skill:${skill.id}` }));
+    const all = Array.from(positions.values());
+    const canvasW = Math.max(920, ...all.map(p => p.x + p.w)) + TREE_PAD_X;
+    const canvasH = Math.max(420, ...all.map(p => p.y + p.h)) + 60;
+    return { skills, positions, edges, canvasW, canvasH };
+  }
+
+  function webSkillNodeTitle(player, skill, reasons) {
+    const parts = [];
+    if (skill.description) parts.push(skill.description);
+    parts.push(`Стоимость: ${Number(skill.cost || 1)}`);
+    if (reasons.length) parts.push(`Требуется: ${reasons.join(', ')}`);
+    return parts.join('\n');
+  }
+
+  function webSkillNodeMarkup(player, skill, layout) {
+    const pos = layout.positions.get(`skill:${skill.id}`);
+    if (!pos) return '';
+    const owned = playerOwnsSkill(player, skill);
+    const reasons = owned ? [] : skillRequirementReasons(player, skill);
+    const state = owned ? 'owned' : reasons.length ? 'locked' : 'available';
+    const spec = isSpecialization(skill);
+    const specValue = spec ? Number(player.specializations?.[skill.id] || 0) : 0;
+    const image = mediaFromEntity(skill);
+    const thumb = image ? `<span class="web-skill-thumb"><img src="${esc(image)}" alt="" /></span>` : `<span class="web-skill-thumb">${esc(initials(skill.name || skill.id))}</span>`;
+    const action = !owned && !reasons.length && !isGuestSession()
+      ? `<button class="web-skill-learn" type="button" data-action="upgrade-skill" data-skill-id="${esc(skill.id)}">ПРОКАЧАТЬ</button>`
+      : `<span class="web-skill-state">${owned ? (spec ? `УР. ${specValue}` : 'ИЗУЧЕНО') : 'ЗАКРЫТО'}</span>`;
+    return `<div class="web-skill-node ${state} ${spec ? 'spec' : ''}" style="left:${pos.x}px;top:${pos.y}px;width:${pos.w}px;" title="${esc(webSkillNodeTitle(player, skill, reasons))}">
+      ${thumb}
+      <span class="web-skill-main"><b>${esc(skill.name || skill.id)}</b>${spec ? '<i>специализация</i>' : ''}${action}</span>
+    </div>`;
+  }
+
+  function webAbilityNodeMarkup(player, item, layout) {
+    const pos = layout.positions.get(`ability:${item.key}`);
+    if (!pos) return '';
+    const value = Number(player.abilities?.[item.key] || 0);
+    const points = Number(player.skillPoints || 0);
+    const isGlory = item.key === 'glory';
+    const canRaise = !isGlory && value < ABILITY_MAX_WEB && points > 0 && !isGuestSession();
+    const button = canRaise
+      ? `<button class="web-skill-learn" type="button" data-action="upgrade-ability" data-ability-key="${esc(item.key)}">+1</button>`
+      : `<span class="web-skill-state">${isGlory ? 'ДМ' : value >= ABILITY_MAX_WEB ? 'МАКС' : 'НЕТ ОЧКОВ'}</span>`;
+    return `<div class="web-skill-node web-ability-node" style="left:${pos.x}px;top:${pos.y}px;width:${pos.w}px;">
+      <span class="web-skill-thumb ability">${esc(item.short)}</span>
+      <span class="web-skill-main"><b>${esc(item.label)}</b><i>${value} / ${ABILITY_MAX_WEB}</i>${button}</span>
+    </div>`;
+  }
+
+  function renderWebSkillTree(player) {
+    const layout = buildWebSkillTreeLayout(player);
+    const zoom = clampWebSkillZoom(App.ui.skillZoom);
+    const edges = layout.edges.map(edge => {
+      const from = layout.positions.get(edge.from);
+      const to = layout.positions.get(edge.to);
+      if (!from || !to) return '';
+      const kind = String(edge.from || '').startsWith('ability:') ? 'ability' : 'primary';
+      return `<line class="web-skill-edge ${kind}" x1="${(from.x + from.w / 2).toFixed(1)}" y1="${(from.y + from.h).toFixed(1)}" x2="${(to.x + to.w / 2).toFixed(1)}" y2="${to.y.toFixed(1)}" />`;
+    }).join('');
+    return `<div class="web-skill-toolbar">
+        <div class="pill">Очки улучшения: ${Number(player.skillPoints || 0)}</div>
+        <div class="web-skill-zoom">
+          <button class="ghost-btn mini-btn" type="button" data-action="skill-zoom" data-zoom="out">−</button>
+          <span class="pill">${Math.round(zoom * 100)}%</span>
+          <button class="ghost-btn mini-btn" type="button" data-action="skill-zoom" data-zoom="in">＋</button>
+          <button class="ghost-btn mini-btn" type="button" data-action="skill-zoom" data-zoom="reset">100%</button>
+        </div>
+      </div>
+      <div class="web-skill-tree-scroll">
+        <div class="web-skill-tree-canvas" style="width:${Math.round(layout.canvasW * zoom)}px;height:${Math.round(layout.canvasH * zoom)}px;">
+          <div class="web-skill-tree-inner" style="width:${layout.canvasW}px;height:${layout.canvasH}px;transform:scale(${zoom.toFixed(3)});">
+            <svg class="web-skill-lines" width="${layout.canvasW}" height="${layout.canvasH}" viewBox="0 0 ${layout.canvasW} ${layout.canvasH}" aria-hidden="true">${edges}</svg>
+            ${ABILITY_MODEL_WEB.map(item => webAbilityNodeMarkup(player, item, layout)).join('')}
+            ${layout.skills.map(skill => webSkillNodeMarkup(player, skill, layout)).join('')}
+          </div>
+        </div>
+      </div>`;
+  }
+
+  async function upgradeAbility(abilityKey) {
+    if (!ABILITY_LABELS[abilityKey]) return;
+    if (isGuestSession()) return notify('Гость не может менять профиль', 'warn');
+    const player = currentPlayer();
+    if (!player) return;
+    if (abilityKey === 'glory') return notify('Славу выдаёт ДМ', 'warn');
+    const value = Number(player.abilities?.[abilityKey] || 0);
+    if (value >= ABILITY_MAX_WEB) return notify(`${ABILITY_LABELS[abilityKey]} уже на максимуме ${ABILITY_MAX_WEB}`, 'info');
+    if (Number(player.skillPoints || 0) < 1) return notify('Не хватает очков улучшения', 'warn');
+    if (!confirm(`Улучшить «${ABILITY_LABELS[abilityKey]}» до ${Math.min(ABILITY_MAX_WEB, value + 1)} за 1 очко улучшения?`)) return;
+    await commitPlayerMutation(next => {
+      next.abilities = { ...(next.abilities || {}) };
+      next.abilities[abilityKey] = Math.min(ABILITY_MAX_WEB, Number(next.abilities[abilityKey] || 0) + 1);
+      next.skillPoints = Math.max(0, Number(next.skillPoints || 0) - 1);
+    }, 'Характеристика улучшена');
   }
 
   function reputationRows(player) {
@@ -1982,20 +2188,32 @@
   }
 
   function renderProfile() {
-    setTopbar('Профиль', 'Личные данные игрока, экипировка, импланты и состояние синхронизации');
     const root = $('#screen-profile');
     const player = currentPlayer();
     const planet = currentPlanet();
     const row = App.data.playerRows.get(player?.id || '');
     if (!player) {
+      setTopbar('Профиль', 'Личные данные игрока, экипировка, импланты и состояние синхронизации');
       root.innerHTML = '<div class="placeholder">Профиль не выбран.</div>';
       return;
     }
+    const profileTab = App.ui.profileTab === 'skills' ? 'skills' : 'main';
+    const tabsRow = `<div class="segmented profile-tabs-web">
+      <button class="chip-btn ${profileTab === 'main' ? 'active' : ''}" type="button" data-action="profile-tab" data-tab="main">Профиль</button>
+      <button class="chip-btn ${profileTab === 'skills' ? 'active' : ''}" type="button" data-action="profile-tab" data-tab="skills">Навыки · ${Number(player.skillPoints || 0)} очк.</button>
+    </div>`;
+    if (profileTab === 'skills') {
+      setTopbar('Навыки', 'Древо навыков и характеристик — как в настольном интерфейсе');
+      root.innerHTML = `${tabsRow}${renderWebSkillTree(player)}`;
+      return;
+    }
+    setTopbar('Профиль', 'Личные данные игрока, экипировка, импланты и состояние синхронизации');
     const stats = player.stats || {};
     const inventory = Array.isArray(player.inventory) ? player.inventory : [];
     const equipmentSlots = player.equipmentSlots || {};
     const equippedCards = Object.entries(equipmentSlots).filter(([, itemId]) => itemId).map(([slot, itemId]) => ({ slot, item: App.data.items.get(itemId) || { id: itemId, name: itemId, desc: '' } }));
     root.innerHTML = `
+      ${tabsRow}
       <div class="profile-card" style="padding:16px;">
         <div class="profile-hero">
           ${renderAvatar(player)}
@@ -2074,7 +2292,6 @@
         </div>
       ` : ''}
       ${renderMobileReputation(player)}
-      ${renderMobileSkills(player)}
     `;
   }
 
@@ -2514,6 +2731,20 @@
       }
       if (action === 'upgrade-skill') {
         upgradeSkill(button.dataset.skillId).catch(error => notify(error.message, 'err'));
+      }
+      if (action === 'upgrade-ability') {
+        upgradeAbility(button.dataset.abilityKey).catch(error => notify(error.message, 'err'));
+      }
+      if (action === 'profile-tab') {
+        App.ui.profileTab = button.dataset.tab || 'main';
+        renderProfile();
+      }
+      if (action === 'skill-zoom') {
+        const mode = button.dataset.zoom;
+        if (mode === 'in') App.ui.skillZoom = clampWebSkillZoom((App.ui.skillZoom || 1) * 1.15);
+        else if (mode === 'out') App.ui.skillZoom = clampWebSkillZoom((App.ui.skillZoom || 1) / 1.15);
+        else App.ui.skillZoom = 1;
+        renderProfile();
       }
       if (action === 'profile-refresh') {
         safeRefresh({ deferRender: false }).catch(error => notify(error.message, 'err'));
