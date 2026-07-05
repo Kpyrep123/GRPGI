@@ -2061,6 +2061,25 @@
       const current = positions.get(nodeId) || { w: TREE_NODE_W, h: TREE_SKILL_H };
       positions.set(nodeId, { ...current, x: manual.x, y: manual.y });
     });
+    // De-overlap sweep: manual treePos coming from the desktop can collide with
+    // locally computed fallback positions (or with each other if the GM never
+    // auto-sorted). Push overlapping nodes right until the band is clean.
+    {
+      const nodes = Array.from(positions.entries()).filter(([id]) => id.startsWith('skill:')).map(([, p]) => p);
+      for (let pass = 0; pass < 4; pass += 1) {
+        nodes.sort((a, b) => a.x - b.x || a.y - b.y);
+        let moved = false;
+        for (let i = 0; i < nodes.length; i += 1) {
+          for (let j = i + 1; j < nodes.length; j += 1) {
+            const a = nodes[i], b = nodes[j];
+            const overY = b.y < a.y + a.h - 6 && a.y < b.y + b.h - 6;
+            const overX = b.x < a.x + a.w + 10 && a.x < b.x + b.w + 10;
+            if (overY && overX) { b.x = a.x + a.w + 14; moved = true; }
+          }
+        }
+        if (!moved) break;
+      }
+    }
     // centre ability headers over their actual branch
     ABILITY_MODEL_WEB.forEach(item => {
       const abilityId = `ability:${item.key}`;
@@ -2077,14 +2096,6 @@
     return { skills, positions, edges, canvasW, canvasH };
   }
 
-  function webSkillNodeTitle(player, skill, reasons) {
-    const parts = [];
-    if (skill.description) parts.push(skill.description);
-    parts.push(`Стоимость: ${Number(skill.cost || 1)}`);
-    if (reasons.length) parts.push(`Требуется: ${reasons.join(', ')}`);
-    return parts.join('\n');
-  }
-
   function webSkillNodeMarkup(player, skill, layout) {
     const pos = layout.positions.get(`skill:${skill.id}`);
     if (!pos) return '';
@@ -2098,7 +2109,7 @@
     const action = !owned && !reasons.length && !isGuestSession()
       ? `<button class="web-skill-learn" type="button" data-action="upgrade-skill" data-skill-id="${esc(skill.id)}">ПРОКАЧАТЬ</button>`
       : `<span class="web-skill-state">${owned ? (spec ? `УР. ${specValue}` : 'ИЗУЧЕНО') : 'ЗАКРЫТО'}</span>`;
-    return `<div class="web-skill-node ${state} ${spec ? 'spec' : ''}" style="left:${pos.x}px;top:${pos.y}px;width:${pos.w}px;" title="${esc(webSkillNodeTitle(player, skill, reasons))}">
+    return `<div class="web-skill-node ${state} ${spec ? 'spec' : ''}" data-skill-node="${esc(skill.id)}" style="left:${pos.x}px;top:${pos.y}px;width:${pos.w}px;">
       ${thumb}
       <span class="web-skill-main"><b>${esc(skill.name || skill.id)}</b>${spec ? '<i>специализация</i>' : ''}${action}</span>
     </div>`;
@@ -2148,6 +2159,90 @@
           </div>
         </div>
       </div>`;
+  }
+
+  function hideWebSkillTipEl() {
+    document.getElementById('web-skill-tip')?.remove();
+  }
+
+  function showWebSkillTip(node, skillId) {
+    hideWebSkillTipEl();
+    const skill = App.data.skills.get(skillId);
+    const player = currentPlayer();
+    if (!skill || !player) return;
+    const owned = playerOwnsSkill(player, skill);
+    const reasons = owned ? [] : skillRequirementReasons(player, skill);
+    const spec = isSpecialization(skill);
+    const specValue = spec ? Number(player.specializations?.[skill.id] || 0) : 0;
+    const tip = document.createElement('div');
+    tip.id = 'web-skill-tip';
+    tip.className = 'web-skill-tip';
+    tip.innerHTML = `
+      <div class="web-skill-tip-head"><b>${esc(skill.name || skill.id)}</b><span>${spec ? `Специализация${specValue ? ` · ур. ${specValue}` : ''}` : 'Навык'}</span></div>
+      ${skill.category ? `<div class="web-skill-tip-cat">${esc(skill.category)}</div>` : ''}
+      ${skill.description ? `<div class="web-skill-tip-desc">${esc(skill.description)}</div>` : '<div class="web-skill-tip-desc muted">Описание не задано.</div>'}
+      <div class="web-skill-tip-meta">
+        <span class="pill">Стоимость: ${Number(skill.cost || 1)}</span>
+        ${owned ? '<span class="pill ok">Изучено</span>' : reasons.length ? `<span class="pill warn">Требуется: ${esc(reasons.join(', '))}</span>` : '<span class="pill ok">Доступно</span>'}
+      </div>`;
+    document.body.appendChild(tip);
+    const rect = node.getBoundingClientRect();
+    const tipRect = tip.getBoundingClientRect();
+    let left = rect.left + rect.width / 2 - tipRect.width / 2;
+    left = Math.max(10, Math.min(left, window.innerWidth - tipRect.width - 10));
+    let top = rect.bottom + 10;
+    if (top + tipRect.height > window.innerHeight - 10) top = rect.top - tipRect.height - 10;
+    tip.style.left = `${Math.round(left)}px`;
+    tip.style.top = `${Math.round(Math.max(10, top))}px`;
+  }
+
+  function bindWebSkillTreeInteractions(root) {
+    const scroll = root.querySelector('.web-skill-tree-scroll');
+    if (!scroll) return;
+    // restore the view the player had before the re-render (realtime refreshes
+    // were resetting the tree to the top-left corner)
+    if (App.ui.skillScroll) {
+      scroll.scrollLeft = Number(App.ui.skillScroll.left || 0);
+      scroll.scrollTop = Number(App.ui.skillScroll.top || 0);
+    }
+    scroll.addEventListener('scroll', () => {
+      App.ui.skillScroll = { left: scroll.scrollLeft, top: scroll.scrollTop };
+      hideWebSkillTipEl();
+    }, { passive: true });
+    // drag-to-pan with the mouse (touch keeps native scrolling)
+    let pan = null;
+    scroll.addEventListener('pointerdown', event => {
+      if (event.button !== 0 || event.pointerType !== 'mouse') return;
+      if (event.target.closest('button')) return;
+      pan = { x: event.clientX, y: event.clientY, left: scroll.scrollLeft, top: scroll.scrollTop, moved: false };
+      try { scroll.setPointerCapture(event.pointerId); } catch {}
+    });
+    scroll.addEventListener('pointermove', event => {
+      if (!pan) return;
+      const dx = event.clientX - pan.x;
+      const dy = event.clientY - pan.y;
+      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) { pan.moved = true; scroll.classList.add('is-panning'); hideWebSkillTipEl(); }
+      scroll.scrollLeft = pan.left - dx;
+      scroll.scrollTop = pan.top - dy;
+    });
+    const endPan = event => {
+      if (!pan) return;
+      try { scroll.releasePointerCapture(event.pointerId); } catch {}
+      pan = null;
+      scroll.classList.remove('is-panning');
+    };
+    scroll.addEventListener('pointerup', endPan);
+    scroll.addEventListener('pointercancel', endPan);
+    // rich hover tooltip with the skill description
+    scroll.addEventListener('mouseover', event => {
+      const node = event.target.closest('[data-skill-node]');
+      if (!node || pan) return;
+      showWebSkillTip(node, node.dataset.skillNode);
+    });
+    scroll.addEventListener('mouseout', event => {
+      const node = event.target.closest('[data-skill-node]');
+      if (node && !node.contains(event.relatedTarget)) hideWebSkillTipEl();
+    });
   }
 
   async function upgradeAbility(abilityKey) {
@@ -2204,9 +2299,12 @@
     </div>`;
     if (profileTab === 'skills') {
       setTopbar('Навыки', 'Древо навыков и характеристик — как в настольном интерфейсе');
+      hideWebSkillTipEl();
       root.innerHTML = `${tabsRow}${renderWebSkillTree(player)}`;
+      bindWebSkillTreeInteractions(root);
       return;
     }
+    hideWebSkillTipEl();
     setTopbar('Профиль', 'Личные данные игрока, экипировка, импланты и состояние синхронизации');
     const stats = player.stats || {};
     const inventory = Array.isArray(player.inventory) ? player.inventory : [];

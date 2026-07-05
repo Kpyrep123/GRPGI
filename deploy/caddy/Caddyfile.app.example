@@ -5,4 +5,15 @@ sync.grpg-sync.ru {
 app.grpg-sync.ru {
     root * /var/www/grpg-app
     file_server
+
+    # HTML must always be revalidated so a deploy shows up immediately;
+    # JS/CSS carry ?v= cache-busters in the HTML, so a short cache is safe.
+    @html {
+        path / /app/ *.html
+    }
+    header @html Cache-Control "no-cache"
+    @assets {
+        path *.js *.css
+    }
+    header @assets Cache-Control "public, max-age=3600, must-revalidate"
 }

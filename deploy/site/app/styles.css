@@ -829,6 +829,30 @@ select.input option { background: #0a1220; color: #effcff; }
   border-color: rgba(125,249,255,.4);
   background: linear-gradient(180deg, rgba(19,31,46,.96), rgba(9,14,22,.96));
 }
+.web-skill-tree-scroll { cursor: grab; }
+.web-skill-tree-scroll.is-panning { cursor: grabbing; user-select: none; }
+.web-skill-tree-scroll.is-panning .web-skill-node { pointer-events: none; }
+.web-skill-tip {
+  position: fixed;
+  z-index: 90;
+  width: min(340px, calc(100vw - 24px));
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(125,249,255,.34);
+  background: linear-gradient(180deg, rgba(13,20,31,.98), rgba(7,11,18,.98));
+  box-shadow: 0 18px 48px rgba(0,0,0,.55);
+  pointer-events: none;
+  animation: webModuleIn 120ms ease-out;
+}
+.web-skill-tip-head { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+.web-skill-tip-head b { font-size: 13px; }
+.web-skill-tip-head span { font: 10px var(--mono); color: var(--accent); letter-spacing: .06em; white-space: nowrap; }
+.web-skill-tip-cat { margin-top: 2px; font: 10px var(--mono); color: var(--muted); text-transform: uppercase; letter-spacing: .1em; }
+.web-skill-tip-desc { margin-top: 8px; font-size: 12px; line-height: 1.5; color: #d9e4f0; }
+.web-skill-tip-meta { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+.web-skill-tip-meta .pill { font-size: 11px; padding: 4px 8px; }
+.web-skill-tip-meta .pill.ok { border-color: rgba(105,240,174,.36); color: #9df5c8; }
+.web-skill-tip-meta .pill.warn { border-color: rgba(255,209,102,.4); color: #ffe3a1; }
 @media (max-width: 900px) {
   .web-skill-tree-scroll { max-height: calc(100vh - 250px); }
 }
