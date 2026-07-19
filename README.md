@@ -1,42 +1,48 @@
-# Galactic RPG Interface — Supabase sync build
+# Galactic RPG Interface
+
+Electron-интерфейс настольной RPG с локальным хранением, синхронизацией через PocketBase и поддержкой собственного выделенного sync-сервера.
+
+## Поддерживаемые режимы
+
+- `pocketbase` — основной backend: снапшоты кампании, игроки, чат, боевой runtime, realtime и файлы.
+- `selfhost` — выделенный сервер из каталога `sync-server`.
+- локальный режим — синхронизация отключена, данные остаются в `userData/world-data`.
+
+Другие backend-провайдеры конфигурацией не принимаются.
 
 ## Запуск
+
+Для первого запуска в Windows можно открыть `INSTALL_AND_RUN.cmd`. Скрипт удалит старую папку `node_modules`, выполнит чистую установку и проверит загрузку исполняемого файла Electron.
+
+Вручную:
+
 ```bash
-npm install
+npm ci
+npm run electron:repair
 npm start
 ```
 
-## Что добавлено в этой версии
-- локальный runtime-state и мир по-прежнему сохраняются в Electron `userData`
-- добавлена настройка Supabase через `SYNC_PANEL`
-- на старте и при логине приложение проверяет, нет ли в облаке более новой ревизии
-- при сохранении приложение сначала пишет локально, потом проверяет ревизию в Supabase и пушит снапшот только если никто не успел изменить его раньше
-- при конфликте облако не перезаписывается автоматически
-- доступно ручное `TEST_CONNECTION`, `PULL_NEWER`, `PUSH_LOCAL`
+При обычном `npm start` проверка Electron запускается автоматически. Если загрузка Electron не проходит, проверьте доступ к GitHub, VPN/прокси и антивирус, затем повторите `npm run electron:repair`.
 
-## Структура данных
-- `renderer/data/*.json` — дефолтные шаблоны мира
-- `userData/world-data/*.json` — рабочий мир, который меняет ДМ-конфигуратор
-- `userData/world-data/assets/*` — изображения сущностей
-- `userData/galactic-state.json` — живое состояние профилей игроков
-- `userData/galactic-sync-config.json` — локальная конфигурация Supabase для текущего ПК
+## Сборка
 
-## Supabase
-В проект добавлены:
-- `supabase-setup.sql` — SQL для таблицы и RLS policy
-- `SUPABASE_SETUP.md` — краткая инструкция по подключению
+```bash
+npm run dist
+```
 
-## Тестовые пароли
-- Шепард — `1234`
-- V — `0000`
-- Ведущий — `admin`
+Перед сборкой настройте PocketBase по инструкции `POCKETBASE_SETUP.md` либо выделенный сервер по `SELFHOST_SYNC_SETUP.md`.
 
-## v1.0.21: мобильная публикация
+## Данные приложения
 
-Добавлена подготовка мобильного клиента к работе через PocketBase и домен `grpg-sync.ru`.
+- `userData/world-data` — редактируемые данные мира и ассеты.
+- `userData/galactic-state.json` — состояние приложения.
+- `userData/galactic-sync-config.json` — локальная конфигурация PocketBase или выделенного сервера.
+- `userData/galactic-read-markers.json` — отметки прочтения.
 
-- `sync.grpg-sync.ru` используется для PocketBase/API/realtime.
-- `app.grpg-sync.ru` предназначен для страницы загрузки ПК и Android-версий.
-- Инструкция публикации находится в `MOBILE_DOMAIN_DEPLOYMENT.md`.
-- Статический сайт находится в `deploy/site`.
-- Пример Caddy-конфига находится в `deploy/caddy/Caddyfile.app.example`.
+Старые готовые сборки намеренно не хранятся в исходном архиве: после изменения backend-кода приложение следует собрать заново.
+
+## DEV-публикация и автоматизация
+
+В профиле ДМа при запуске через `npm start` доступна панель для публикации patch-версии в GitHub `main`, прямого SSH-деплоя `deploy/site` и создания очищенного ZIP исходников. Установленная Electron-сборка эту панель не показывает.
+
+Настройка: [`DEV_AUTOMATION.md`](DEV_AUTOMATION.md).

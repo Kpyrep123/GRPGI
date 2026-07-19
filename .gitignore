@@ -18,3 +18,9 @@ pocketbase.exe
 
 .DS_Store
 Thumbs.db
+# Local transfer archives and generated mobile builds
+GRPGI-source-*.zip
+*.apk
+*.aab
+mobile/android/.gradle/
+mobile/android/**/build/

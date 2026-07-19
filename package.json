@@ -1,6 +1,6 @@
 {
   "name": "galactic-rpg-interface",
-  "version": "1.0.35",
+  "version": "1.0.40",
   "description": "Electron tabletop interface with isolated player/chat sync, guarded polling and draft-safe forms",
   "author": "qwq",
   "main": "main.js",
@@ -16,7 +16,10 @@
     "mobile:copy": "npm --prefix mobile run copy",
     "release": "electron-builder --win nsis --publish always",
     "release:draft": "electron-builder --win nsis --publish onTagOrDraft",
-    "release:local": "electron-builder --win nsis --publish never"
+    "release:local": "electron-builder --win nsis --publish never",
+    "prestart": "node tools/ensure-electron.cjs",
+    "electron:repair": "node tools/ensure-electron.cjs --force",
+    "electron:check": "node tools/ensure-electron.cjs"
   },
   "build": {
     "appId": "com.qwq.galacticrpg",
@@ -27,10 +30,9 @@
       "renderer/**/*",
       "package.json",
       "README.md",
-      "SUPABASE_SETUP.md",
-      "supabase-setup.sql",
       "SOUND_SETUP.md",
-      "POCKETBASE_SETUP.md"
+      "POCKETBASE_SETUP.md",
+      "SELFHOST_SYNC_SETUP.md"
     ],
     "win": {
       "target": [
@@ -42,7 +44,7 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true
     },
-    "buildVersion": "1.0.35.0",
+    "buildVersion": "1.0.40.0",
     "publish": [
       {
         "provider": "github",
@@ -53,12 +55,11 @@
     ]
   },
   "devDependencies": {
-    "electron": "^37.0.0",
-    "electron-builder": "^26.8.1"
+    "electron": "43.1.0",
+    "electron-builder": "26.15.3"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.57.4",
-    "electron-updater": "^6.8.3"
+    "electron-updater": "6.8.9"
   },
   "repository": {
     "type": "git",
@@ -67,5 +68,9 @@
   "bugs": {
     "url": "https://github.com/Kpyrep123/GRPGI/issues"
   },
-  "homepage": "https://github.com/Kpyrep123/GRPGI#readme"
+  "homepage": "https://github.com/Kpyrep123/GRPGI#readme",
+  "engines": {
+    "node": ">=22 <25",
+    "npm": ">=10"
+  }
 }

@@ -1,0 +1,89 @@
+{
+  "github": {
+    "remote": "origin",
+    "expectedRepository": "Kpyrep123/GRPGI",
+    "targetBranch": "main",
+    "createTag": false,
+    "protectedDeletionPrefixes": [
+      "mobile/",
+      "renderer/assets/",
+      "deploy/site/",
+      ".github/",
+      "sync-server/"
+    ],
+    "protectedDeletionPaths": [
+      "package.json",
+      "package-lock.json",
+      "main.js",
+      "preload.js",
+      "renderer/app.js",
+      "renderer/index.html"
+    ],
+    "maxUnprotectedDeletions": 20
+  },
+  "webDeploy": {
+    "source": "deploy/site",
+    "host": "161.104.35.195",
+    "port": 22,
+    "user": "root",
+    "target": "/var/www/grpg-app",
+    "identityFile": "~/.ssh/grpgi_deploy",
+    "healthUrls": [
+      "https://app.grpg-sync.ru/",
+      "https://app.grpg-sync.ru/app/"
+    ]
+  },
+  "archive": {
+    "maxFileSizeMb": 20,
+    "excludePrefixes": [
+      "renderer/assets/audio/",
+      "webapp_work/",
+      "mobile/android/.gradle/",
+      "mobile/android/build/",
+      "mobile/android/app/build/"
+    ],
+    "excludeDirectoryNames": [
+      ".git",
+      "node_modules",
+      "dist",
+      "out",
+      "release",
+      "build",
+      ".gradle",
+      ".idea",
+      ".cache",
+      "coverage",
+      "pb_data",
+      "user-data",
+      "world-data"
+    ],
+    "excludeExtensions": [
+      ".wav",
+      ".mp3",
+      ".ogg",
+      ".flac",
+      ".m4a",
+      ".aac",
+      ".exe",
+      ".msi",
+      ".msix",
+      ".appx",
+      ".dmg",
+      ".appimage",
+      ".deb",
+      ".rpm",
+      ".apk",
+      ".aab",
+      ".ipa",
+      ".jar",
+      ".zip",
+      ".7z",
+      ".rar",
+      ".tar",
+      ".gz",
+      ".tgz",
+      ".log",
+      ".pdb"
+    ]
+  }
+}

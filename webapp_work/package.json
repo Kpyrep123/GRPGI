@@ -27,10 +27,9 @@
       "renderer/**/*",
       "package.json",
       "README.md",
-      "SUPABASE_SETUP.md",
-      "supabase-setup.sql",
       "SOUND_SETUP.md",
-      "POCKETBASE_SETUP.md"
+      "POCKETBASE_SETUP.md",
+      "SELFHOST_SYNC_SETUP.md"
     ],
     "win": {
       "target": [
@@ -57,7 +56,6 @@
     "electron-builder": "^26.8.1"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.57.4",
     "electron-updater": "^6.8.3"
   },
   "repository": {

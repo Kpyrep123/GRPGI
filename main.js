@@ -11,12 +11,11 @@ try {
   updaterLoadError = error;
 }
 
-const WORLD_FILE_NAMES = ['players','systems','planets','npcs','equipment','flora','fauna','articles','news','tasks','organizations','factions','skills','campaigns','combatScenes','ui'];
+const WORLD_FILE_NAMES = ['players','systems','planets','npcs','equipment','flora','fauna','articles','news','tasks','organizations','factions','skills','campaigns','combatScenes','ui','regionMaps','ships','missiles','radars'];
 const DEFAULT_SYNC_TABLE = 'campaign_snapshots';
 const DEFAULT_CHAT_TABLE = 'campaign_messages';
 const DEFAULT_PLAYER_TABLE = 'campaign_players';
 const DEFAULT_COMBAT_RUNTIME_TABLE = 'campaign_combat_runtime';
-const DEFAULT_STORAGE_BUCKET = 'campaign-assets';
 const DEFAULT_POCKETBASE_USERS_COLLECTION = 'app_users';
 const DEFAULT_POCKETBASE_ASSETS_COLLECTION = 'campaign_assets';
 
@@ -54,7 +53,7 @@ function writableWorldAssetsDir() {
 }
 
 function writableWorldAudioDir() {
-  // Combat sounds are local editor assets, intentionally not part of Supabase/world-data sync.
+  // Combat sounds are local editor assets, intentionally not part of remote world-data sync.
   return path.join(__dirname, 'renderer', 'assets', 'audio');
 }
 
@@ -166,6 +165,14 @@ function getWorldSectionItemCount(sectionName, payload) {
     if (payload.CAMPAIGNS && typeof payload.CAMPAIGNS === 'object') return Object.keys(payload.CAMPAIGNS).length;
     return Array.isArray(payload.CAMPAIGN_LIST) ? payload.CAMPAIGN_LIST.length : 0;
   }
+  if (sectionName === 'regionMaps') {
+    if (payload.REGION_MAPS && typeof payload.REGION_MAPS === 'object') return Object.keys(payload.REGION_MAPS).length;
+    return Array.isArray(payload.REGION_MAP_LIST) ? payload.REGION_MAP_LIST.length : 0;
+  }
+  if (sectionName === 'ships') {
+    if (payload.SHIPS && typeof payload.SHIPS === 'object') return Object.keys(payload.SHIPS).length;
+    return Array.isArray(payload.SHIP_LIST) ? payload.SHIP_LIST.length : 0;
+  }
   if (sectionName === 'combatScenes') return payload.COMBAT_SCENES && typeof payload.COMBAT_SCENES === 'object' ? Object.keys(payload.COMBAT_SCENES).length : 0;
   if (sectionName === 'ui') return Array.isArray(payload.galaxyLegend) ? payload.galaxyLegend.length : 0;
   return 0;
@@ -220,14 +227,12 @@ function defaultSyncConfig() {
     pocketbaseUsersCollection: DEFAULT_POCKETBASE_USERS_COLLECTION,
     pocketbaseAssetsCollection: DEFAULT_POCKETBASE_ASSETS_COLLECTION,
     url: '',
-    anonKey: '',
     campaignId: '',
     deviceLabel: '',
     tableName: DEFAULT_SYNC_TABLE,
     chatTableName: DEFAULT_CHAT_TABLE,
     playerTableName: DEFAULT_PLAYER_TABLE,
     combatRuntimeTableName: DEFAULT_COMBAT_RUNTIME_TABLE,
-    storageBucket: DEFAULT_STORAGE_BUCKET,
     pollIntervalMs: 45000,
     connectTimeoutMs: 8000
   };
@@ -236,36 +241,26 @@ function defaultSyncConfig() {
 function normalizeSyncConfig(payload = {}) {
   const base = defaultSyncConfig();
   const providerRaw = String(payload?.provider || payload?.syncProvider || '').trim().toLowerCase();
-  let provider = providerRaw === 'supabase' || providerRaw === 'pocketbase' || providerRaw === 'selfhost' ? providerRaw : '';
-  if (!provider) {
-    if (payload?.pocketbaseEmail || payload?.pocketbasePassword) provider = 'pocketbase';
-    else if (payload?.serverUrl || payload?.accessToken) provider = 'selfhost';
-    else if (payload?.url && payload?.anonKey) provider = 'supabase';
-    else provider = 'pocketbase';
-  }
-  const serverUrl = String(payload?.serverUrl || (provider === 'selfhost' ? payload?.url : '') || base.serverUrl).trim().replace(/\/+$/, '');
-  const accessToken = String(payload?.accessToken || (provider === 'selfhost' ? payload?.anonKey : '') || base.accessToken).trim();
-  const url = String(provider === 'selfhost' ? (payload?.url || serverUrl || base.url) : (payload?.url || base.url)).trim().replace(/\/+$/, '');
+  const provider = providerRaw === 'selfhost' ? 'selfhost' : 'pocketbase';
+  const serverUrl = String(payload?.serverUrl || base.serverUrl).trim().replace(/\/+$/, '');
+  const url = String(provider === 'pocketbase' ? (payload?.url || base.url) : '').trim().replace(/\/+$/, '');
   return {
     ...base,
-    ...payload,
     enabled: Boolean(payload?.enabled),
     provider,
     serverUrl,
-    accessToken,
+    accessToken: String(payload?.accessToken || base.accessToken).trim(),
     pocketbaseEmail: String(payload?.pocketbaseEmail || payload?.pbEmail || '').trim(),
     pocketbasePassword: String(payload?.pocketbasePassword || payload?.pbPassword || '').trim(),
     pocketbaseUsersCollection: String(payload?.pocketbaseUsersCollection || DEFAULT_POCKETBASE_USERS_COLLECTION).trim() || DEFAULT_POCKETBASE_USERS_COLLECTION,
     pocketbaseAssetsCollection: String(payload?.pocketbaseAssetsCollection || DEFAULT_POCKETBASE_ASSETS_COLLECTION).trim() || DEFAULT_POCKETBASE_ASSETS_COLLECTION,
     url,
-    anonKey: String(provider === 'supabase' ? (payload?.anonKey || base.anonKey) : (payload?.anonKey || accessToken || base.anonKey)).trim(),
     campaignId: String(payload?.campaignId || base.campaignId).trim(),
     deviceLabel: String(payload?.deviceLabel || base.deviceLabel).trim(),
     tableName: String(payload?.tableName || base.tableName || DEFAULT_SYNC_TABLE).trim() || DEFAULT_SYNC_TABLE,
     chatTableName: String(payload?.chatTableName || base.chatTableName || DEFAULT_CHAT_TABLE).trim() || DEFAULT_CHAT_TABLE,
     playerTableName: String(payload?.playerTableName || base.playerTableName || DEFAULT_PLAYER_TABLE).trim() || DEFAULT_PLAYER_TABLE,
     combatRuntimeTableName: String(payload?.combatRuntimeTableName || base.combatRuntimeTableName || DEFAULT_COMBAT_RUNTIME_TABLE).trim() || DEFAULT_COMBAT_RUNTIME_TABLE,
-    storageBucket: String(payload?.storageBucket || base.storageBucket || DEFAULT_STORAGE_BUCKET).trim() || DEFAULT_STORAGE_BUCKET,
     pollIntervalMs: Math.max(3000, Number(payload?.pollIntervalMs || base.pollIntervalMs || 45000)),
     connectTimeoutMs: Math.max(3000, Number(payload?.connectTimeoutMs || base.connectTimeoutMs || 8000))
   };
@@ -394,53 +389,19 @@ function buildStorageImagePath(config = {}, options = {}) {
   return `${campaign}/${section}/${entityId}/${Date.now()}_${stem}.${ext}`;
 }
 
-function getPublicImageUrl(config = {}, storagePath = '') {
-  const client = getSupabaseClient(config);
-  const bucket = config.storageBucket || DEFAULT_STORAGE_BUCKET;
-  const { data } = client.storage.from(bucket).getPublicUrl(storagePath);
-  return data?.publicUrl || '';
-}
 
-async function uploadImageSourceToSupabase(config = {}, source = '', options = {}) {
-  if (isSelfhostSyncConfig(config)) return uploadImageSourceToSelfhost(config, source, options);
+async function uploadImageSourceToBackend(config = {}, source = '', options = {}) {
   if (isPocketBaseSyncConfig(config)) return uploadImageSourceToPocketBase(config, source, options);
-  if (!source) return { ok: false, message: 'Empty image source' };
-  if (!config.enabled) return { ok: false, message: 'Sync disabled' };
-  const kind = imageSourceKind(source);
-  if (kind === 'http-url') {
-    return { ok: true, url: source, publicUrl: source, storagePath: options.storagePath || null, skipped: true };
-  }
-  const bucket = config.storageBucket || DEFAULT_STORAGE_BUCKET;
-  const client = getSupabaseClient(config);
-  const contentType = inferImageContentType(source);
-  const ext = extensionFromContentType(contentType) || extensionFromPathLike(source);
-  const storagePath = options.storagePath || buildStorageImagePath(config, { ...options, ext });
-  const buffer = await imageSourceToBuffer(source);
-  const { error } = await client.storage.from(bucket).upload(storagePath, buffer, {
-    upsert: true,
-    cacheControl: '31536000',
-    contentType
-  });
-  if (error) {
-    throw new Error(formatSupabaseError(error));
-  }
-  const publicUrl = getPublicImageUrl(config, storagePath);
-  return {
-    ok: true,
-    bucket,
-    storagePath,
-    publicUrl,
-    url: publicUrl || source,
-    contentType
-  };
+  if (isSelfhostSyncConfig(config)) return uploadImageSourceToSelfhost(config, source, options);
+  throw new Error('Неподдерживаемый провайдер синхронизации');
 }
 
-async function ensureEntityImageOnSupabase(config = {}, entity = {}, options = {}) {
+async function ensureEntityImageOnBackend(config = {}, entity = {}, options = {}) {
   if (!entity || typeof entity !== 'object') return entity;
   const image = String(entity.image || '').trim();
   if (!image) return entity;
   if (imageSourceKind(image) === 'http-url') return entity;
-  const upload = await uploadImageSourceToSupabase(config, image, {
+  const upload = await uploadImageSourceToBackend(config, image, {
     section: options.section,
     entityId: entity.id || options.entityId,
     entityName: entity.name || entity.displayName || options.entityName,
@@ -536,49 +497,49 @@ async function normalizeSnapshotImagesForCloud(config = {}, snapshot = {}) {
   const clone = JSON.parse(JSON.stringify(snapshot || {}));
   const playersMap = clone?.world?.players?.PLAYER_TEMPLATES || {};
   for (const player of Object.values(playersMap)) {
-    await ensureEntityImageOnSupabase(config, player, { section: 'players' });
+    await ensureEntityImageOnBackend(config, player, { section: 'players' });
   }
   const systems = clone?.world?.systems?.SYSTEMS || [];
   for (const system of systems) {
-    await ensureEntityImageOnSupabase(config, system, { section: 'systems' });
+    await ensureEntityImageOnBackend(config, system, { section: 'systems' });
   }
   const planets = clone?.world?.planets?.PLANETS || {};
   for (const planet of Object.values(planets)) {
-    await ensureEntityImageOnSupabase(config, planet, { section: 'planets' });
+    await ensureEntityImageOnBackend(config, planet, { section: 'planets' });
   }
   const npcs = clone?.world?.npcs?.NPCS || {};
   for (const npc of Object.values(npcs)) {
-    await ensureEntityImageOnSupabase(config, npc, { section: 'npcs' });
+    await ensureEntityImageOnBackend(config, npc, { section: 'npcs' });
   }
   const equipment = clone?.world?.equipment?.EQUIPMENT || {};
   for (const item of Object.values(equipment)) {
-    await ensureEntityImageOnSupabase(config, item, { section: 'equipment' });
+    await ensureEntityImageOnBackend(config, item, { section: 'equipment' });
   }
   const flora = clone?.world?.flora?.FLORA || {};
   for (const entry of Object.values(flora)) {
-    await ensureEntityImageOnSupabase(config, entry, { section: 'flora' });
+    await ensureEntityImageOnBackend(config, entry, { section: 'flora' });
   }
   const fauna = clone?.world?.fauna?.FAUNA || {};
   for (const entry of Object.values(fauna)) {
-    await ensureEntityImageOnSupabase(config, entry, { section: 'fauna' });
+    await ensureEntityImageOnBackend(config, entry, { section: 'fauna' });
   }
   const articles = clone?.world?.articles?.ARTICLES || {};
   for (const entry of Object.values(articles)) {
-    await ensureEntityImageOnSupabase(config, entry, { section: 'articles' });
+    await ensureEntityImageOnBackend(config, entry, { section: 'articles' });
   }
   const news = clone?.world?.news?.NEWS || {};
   for (const entry of Object.values(news)) {
-    await ensureEntityImageOnSupabase(config, entry, { section: 'news' });
+    await ensureEntityImageOnBackend(config, entry, { section: 'news' });
   }
   const tasks = clone?.world?.tasks?.TASKS || {};
   for (const entry of Object.values(tasks)) {
-    await ensureEntityImageOnSupabase(config, entry, { section: 'tasks' });
+    await ensureEntityImageOnBackend(config, entry, { section: 'tasks' });
   }
   if (clone?.world?.organizations) {
     clone.world.organizations = normalizeOrganizationsSectionForSync(clone.world.organizations);
     const organizations = clone.world.organizations.ORGANIZATIONS || {};
     for (const entry of Object.values(organizations)) {
-      await ensureEntityImageOnSupabase(config, entry, { section: 'organizations' });
+      await ensureEntityImageOnBackend(config, entry, { section: 'organizations' });
     }
     clone.world.organizations.ORGANIZATION_LIST = Object.values(organizations).sort((a, b) => {
       const av = String(a.ticker || a.name || a.id || '').toLowerCase();
@@ -590,7 +551,7 @@ async function normalizeSnapshotImagesForCloud(config = {}, snapshot = {}) {
     clone.world.factions = normalizeFactionsSectionForSync(clone.world.factions);
     const factions = clone.world.factions.FACTIONS || {};
     for (const entry of Object.values(factions)) {
-      await ensureEntityImageOnSupabase(config, entry, { section: 'factions' });
+      await ensureEntityImageOnBackend(config, entry, { section: 'factions' });
     }
     clone.world.factions.FACTION_LIST = Object.values(factions).sort((a, b) => String(a.name || a.id || '').localeCompare(String(b.name || b.id || ''), 'ru'));
   }
@@ -598,7 +559,7 @@ async function normalizeSnapshotImagesForCloud(config = {}, snapshot = {}) {
     clone.world.skills = normalizeSkillsSectionForSync(clone.world.skills);
     const skills = clone.world.skills.SKILLS || {};
     for (const entry of Object.values(skills)) {
-      await ensureEntityImageOnSupabase(config, entry, { section: 'skills' });
+      await ensureEntityImageOnBackend(config, entry, { section: 'skills' });
     }
     clone.world.skills.SKILL_LIST = Object.values(skills).sort((a, b) => String(a.category || '').localeCompare(String(b.category || ''), 'ru') || String(a.name || a.id || '').localeCompare(String(b.name || b.id || ''), 'ru'));
   }
@@ -606,13 +567,28 @@ async function normalizeSnapshotImagesForCloud(config = {}, snapshot = {}) {
     clone.world.campaigns = normalizeCampaignsSectionForSync(clone.world.campaigns);
     const campaigns = clone.world.campaigns.CAMPAIGNS || {};
     for (const entry of Object.values(campaigns)) {
-      await ensureEntityImageOnSupabase(config, entry, { section: 'campaigns' });
+      await ensureEntityImageOnBackend(config, entry, { section: 'campaigns' });
     }
     clone.world.campaigns.CAMPAIGN_LIST = Object.values(campaigns).sort((a, b) => String(a.name || a.id || '').localeCompare(String(b.name || b.id || ''), 'ru'));
   }
+  if (clone?.world?.regionMaps) {
+    const regionMaps = clone.world.regionMaps.REGION_MAPS || {};
+    for (const entry of Object.values(regionMaps)) {
+      await ensureEntityImageOnBackend(config, entry, { section: 'regionMaps' });
+    }
+    clone.world.regionMaps.REGION_MAP_LIST = Object.values(regionMaps).sort((a, b) => String(a.name || a.id || '').localeCompare(String(b.name || b.id || ''), 'ru'));
+  }
+  if (clone?.world?.ships) {
+    const ships = clone.world.ships.SHIPS || {};
+    for (const entry of Object.values(ships)) {
+      await ensureEntityImageOnBackend(config, entry, { section: 'ships' });
+    }
+    clone.world.ships.SHIP_LIST = Object.values(ships).sort((a, b) => String(a.name || a.id || '').localeCompare(String(b.name || b.id || ''), 'ru'));
+  }
+
   const stateUsers = clone?.state?.users || {};
   for (const player of Object.values(stateUsers)) {
-    await ensureEntityImageOnSupabase(config, player, { section: 'players' });
+    await ensureEntityImageOnBackend(config, player, { section: 'players' });
   }
 
   if (clone?.world?.players) {
@@ -650,15 +626,15 @@ async function normalizeSnapshotImagesForCloud(config = {}, snapshot = {}) {
     if (!scene || typeof scene !== 'object') continue;
     if (scene.backgroundImage) {
       try {
-        const upload = await uploadImageSourceToSupabase(config, scene.backgroundImage, { section: 'combat-scenes', entityId: scene.id || 'scene', preferredStem: `scene_bg_${scene.id || 'scene'}` });
+        const upload = await uploadImageSourceToBackend(config, scene.backgroundImage, { section: 'combat-scenes', entityId: scene.id || 'scene', preferredStem: `scene_bg_${scene.id || 'scene'}` });
         scene.backgroundImage = upload.publicUrl || upload.url || scene.backgroundImage;
       } catch {}
     }
     for (const asset of Array.isArray(scene.assets) ? scene.assets : []) {
-      await ensureEntityImageOnSupabase(config, asset, { section: 'combat-assets', entityId: asset.id || scene.id, preferredStem: asset.name || asset.id || 'asset' });
+      await ensureEntityImageOnBackend(config, asset, { section: 'combat-assets', entityId: asset.id || scene.id, preferredStem: asset.name || asset.id || 'asset' });
     }
     for (const token of Array.isArray(scene.tokens) ? scene.tokens : []) {
-      await ensureEntityImageOnSupabase(config, token, { section: 'combat-tokens', entityId: token.id || scene.id, preferredStem: token.name || token.id || 'token' });
+      await ensureEntityImageOnBackend(config, token, { section: 'combat-tokens', entityId: token.id || scene.id, preferredStem: token.name || token.id || 'token' });
     }
   }
 
@@ -671,15 +647,15 @@ async function normalizeCombatPublishPayloadImages(config = {}, payload = {}) {
   if (scene && typeof scene === 'object') {
     if (scene.backgroundImage) {
       try {
-        const upload = await uploadImageSourceToSupabase(config, scene.backgroundImage, { section: 'combat-scenes', entityId: scene.id || 'scene', preferredStem: `scene_bg_${scene.id || 'scene'}` });
+        const upload = await uploadImageSourceToBackend(config, scene.backgroundImage, { section: 'combat-scenes', entityId: scene.id || 'scene', preferredStem: `scene_bg_${scene.id || 'scene'}` });
         scene.backgroundImage = upload.publicUrl || upload.url || scene.backgroundImage;
       } catch {}
     }
     for (const asset of Array.isArray(scene.assets) ? scene.assets : []) {
-      await ensureEntityImageOnSupabase(config, asset, { section: 'combat-assets', entityId: asset.id || scene.id, preferredStem: asset.name || asset.id || 'asset' });
+      await ensureEntityImageOnBackend(config, asset, { section: 'combat-assets', entityId: asset.id || scene.id, preferredStem: asset.name || asset.id || 'asset' });
     }
     for (const token of Array.isArray(scene.tokens) ? scene.tokens : []) {
-      await ensureEntityImageOnSupabase(config, token, { section: 'combat-tokens', entityId: token.id || scene.id, preferredStem: token.name || token.id || 'token' });
+      await ensureEntityImageOnBackend(config, token, { section: 'combat-tokens', entityId: token.id || scene.id, preferredStem: token.name || token.id || 'token' });
     }
   }
   return clone;
@@ -745,7 +721,7 @@ async function saveImageAsset(dataUrl, preferredStem = 'asset') {
   try {
     const config = await loadSyncConfig();
     if (config.enabled) {
-      const upload = await uploadImageSourceToSupabase(config, localUrl, {
+      const upload = await uploadImageSourceToBackend(config, localUrl, {
         section: 'world-config',
         entityId: sanitizeFileStem(preferredStem || 'asset'),
         preferredStem
@@ -819,6 +795,18 @@ function isWorldSectionUsable(name, payload) {
     return Boolean(
       (payload.CAMPAIGNS && typeof payload.CAMPAIGNS === 'object') ||
       Array.isArray(payload.CAMPAIGN_LIST)
+    );
+  }
+  if (name === 'regionMaps') {
+    return Boolean(
+      (payload.REGION_MAPS && typeof payload.REGION_MAPS === 'object') ||
+      Array.isArray(payload.REGION_MAP_LIST)
+    );
+  }
+  if (name === 'ships') {
+    return Boolean(
+      (payload.SHIPS && typeof payload.SHIPS === 'object') ||
+      Array.isArray(payload.SHIP_LIST)
     );
   }
   return true;
@@ -932,7 +920,7 @@ function isPocketBaseSyncConfig(config = {}) {
 function validateSyncConfig(config = {}) {
   const issues = [];
   if (isSelfhostSyncConfig(config)) {
-    if (!config.serverUrl && !config.url) issues.push('SERVER_URL пустой');
+    if (!config.serverUrl) issues.push('SERVER_URL пустой');
     if (!config.campaignId) issues.push('CAMPAIGN_ID пустой');
     return issues;
   }
@@ -943,44 +931,11 @@ function validateSyncConfig(config = {}) {
     if (!config.campaignId) issues.push('CAMPAIGN_ID пустой');
     return issues;
   }
-  if (!config.url) issues.push('SUPABASE_URL пустой');
-  if (!config.anonKey) issues.push('SUPABASE_KEY пустой');
-  if (!config.campaignId) issues.push('CAMPAIGN_ID пустой');
+  issues.push('Неподдерживаемый провайдер синхронизации');
   return issues;
 }
 
-function getSupabaseClient(config = {}) {
-  const issues = validateSyncConfig(config);
-  if (issues.length) {
-    throw new Error(issues.join('; '));
-  }
-  let createClient;
-  try {
-    ({ createClient } = require('@supabase/supabase-js'));
-  } catch (error) {
-    throw new Error(`Не установлен @supabase/supabase-js: ${error.message}`);
-  }
-  return createClient(config.url, config.anonKey, {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-      detectSessionInUrl: false
-    },
-    realtime: {
-      params: { eventsPerSecond: 2 }
-    },
-    global: {
-      headers: {
-        'x-application-name': 'galactic-rpg-interface'
-      }
-    }
-  });
-}
 
-function formatSupabaseError(error) {
-  if (!error) return 'unknown supabase error';
-  return [error.message, error.details, error.hint].filter(Boolean).join(' // ') || JSON.stringify(error);
-}
 
 
 function getSelfhostBaseUrl(config = {}) {
@@ -988,7 +943,7 @@ function getSelfhostBaseUrl(config = {}) {
 }
 
 function getSelfhostToken(config = {}) {
-  return String(config.accessToken || config.anonKey || '').trim();
+  return String(config.accessToken || '').trim();
 }
 
 function encodePathPart(value = '') {
@@ -1462,7 +1417,7 @@ async function pushPocketBaseSnapshot(config = {}, payload = {}) {
   const collection = encodePathPart(pocketbaseCollection(config, 'snapshot'));
   if (!remoteInfo.exists) {
     // A clean PocketBase backend is a valid migration target.
-    // Local metadata may still contain a Supabase/self-host revision from the previous backend,
+    // Local metadata may still contain a remote revision from the previous backend,
     // so an empty PocketBase snapshot must be seeded instead of treated as a conflict.
     const record = await pocketbaseFetch(config, `/api/collections/${collection}/records`, {
       method: 'POST',
@@ -1807,12 +1762,9 @@ async function downloadUpdateSafe() {
     return broadcastUpdaterStatus({ status: 'error', message: error?.message || String(error) });
   }
 }
-let combatRuntimeRealtime = null;
-let chatRealtime = null;
-let worldSnapshotRealtime = null;
 let mainWindow = null;
 let playerDisplayWindow = null;
-let playerDisplayMirrorState = { activeSceneId: '', cameraByScene: {}, updatedAt: null };
+let playerDisplayMirrorState = { mode: '', activeSceneId: '', activeRegionMapId: '', cameraByScene: {}, regionCamera: null, updatedAt: null };
 let updaterConfigured = false;
 let updaterLatestStatus = { status: 'idle', packaged: false, available: Boolean(autoUpdater), message: '' };
 
@@ -1824,74 +1776,12 @@ function broadcastCombatRuntimeEvent(payload = {}) {
   }
 }
 
-async function teardownCombatRuntimeRealtime() {
-  if (!combatRuntimeRealtime) return;
-  try {
-    await combatRuntimeRealtime.client.removeChannel(combatRuntimeRealtime.channel);
-  } catch {}
-  combatRuntimeRealtime = null;
-}
-
-async function setupCombatRuntimeRealtime(config = {}) {
-  await teardownCombatRuntimeRealtime();
-  if (!config?.enabled || !config?.campaignId) return;
-  const client = getSupabaseClient(config);
-  const tableName = config.combatRuntimeTableName || DEFAULT_COMBAT_RUNTIME_TABLE;
-  const channel = client
-    .channel(`combat-runtime-${config.campaignId}`)
-    .on('postgres_changes', {
-      event: '*',
-      schema: 'public',
-      table: tableName,
-      filter: `campaign_id=eq.${config.campaignId}`
-    }, payload => {
-      const row = normalizeCombatRuntimeRow(payload.new || payload.old || {});
-      broadcastCombatRuntimeEvent({ eventType: payload.eventType, row });
-    })
-    .subscribe(status => {
-      debugLog('COMBAT_RUNTIME_REALTIME_STATUS', { status, campaignId: config.campaignId, tableName });
-    });
-  combatRuntimeRealtime = { client, channel, campaignId: config.campaignId, tableName };
-}
-
-
-async function teardownChatRealtime() {
-  if (!chatRealtime) return;
-  try {
-    await chatRealtime.client.removeChannel(chatRealtime.channel);
-  } catch {}
-  chatRealtime = null;
-}
-
 function broadcastChatRealtimeEvent(payload = {}) {
   for (const win of BrowserWindow.getAllWindows()) {
     try {
       if (!win?.isDestroyed()) win.webContents.send('chat:remote:event', payload);
     } catch {}
   }
-}
-
-async function setupChatRealtime(config = {}) {
-  await teardownChatRealtime();
-  if (!config?.enabled || !config?.campaignId) return;
-  const client = getSupabaseClient(config);
-  const tableName = config.chatTableName || DEFAULT_CHAT_TABLE;
-  const channel = client
-    .channel(`chat-${config.campaignId}`)
-    .on('postgres_changes', {
-      event: '*',
-      schema: 'public',
-      table: tableName,
-      filter: `campaign_id=eq.${config.campaignId}`
-    }, payload => {
-      const row = payload.new || payload.old || null;
-      if (!row) return;
-      broadcastChatRealtimeEvent({ eventType: payload.eventType, row });
-    })
-    .subscribe(status => {
-      debugLog('CHAT_REALTIME_STATUS', { status, campaignId: config.campaignId, tableName });
-    });
-  chatRealtime = { client, channel, campaignId: config.campaignId, tableName };
 }
 
 function broadcastWorldSnapshotRealtimeEvent(payload = {}) {
@@ -1902,67 +1792,22 @@ function broadcastWorldSnapshotRealtimeEvent(payload = {}) {
   }
 }
 
-async function teardownWorldSnapshotRealtime() {
-  if (!worldSnapshotRealtime) return;
-  try {
-    await worldSnapshotRealtime.client.removeChannel(worldSnapshotRealtime.channel);
-  } catch {}
-  worldSnapshotRealtime = null;
-}
-
-function normalizeSnapshotRealtimeRow(row = {}) {
-  if (!row || typeof row !== 'object') return null;
-  return {
-    campaignId: row.campaign_id || null,
-    revision: Number(row.revision || 0),
-    updatedAt: row.updated_at || null,
-    updatedBy: row.updated_by || null,
-    clientUpdatedAt: row.client_updated_at || null
-  };
-}
-
-async function setupWorldSnapshotRealtime(config = {}) {
-  await teardownWorldSnapshotRealtime();
-  if (!config?.enabled || !config?.campaignId) return;
-  const client = getSupabaseClient(config);
-  const tableName = config.tableName || DEFAULT_SYNC_TABLE;
-  const channel = client
-    .channel(`world-snapshot-${config.campaignId}`)
-    .on('postgres_changes', {
-      event: '*',
-      schema: 'public',
-      table: tableName,
-      filter: `campaign_id=eq.${config.campaignId}`
-    }, payload => {
-      const row = normalizeSnapshotRealtimeRow(payload.new || payload.old || {});
-      if (!row) return;
-      broadcastWorldSnapshotRealtimeEvent({ eventType: payload.eventType, remote: row });
-    })
-    .subscribe(status => {
-      debugLog('WORLD_SNAPSHOT_REALTIME_STATUS', { status, campaignId: config.campaignId, tableName });
-    });
-  worldSnapshotRealtime = { client, channel, campaignId: config.campaignId, tableName };
-}
-
 async function setupNetworkRealtime(config = {}) {
+  await Promise.allSettled([teardownSelfhostRealtime(), teardownPocketBaseRealtime()]);
+  if (!config?.enabled) return;
   if (isSelfhostSyncConfig(config)) {
-    await Promise.allSettled([teardownCombatRuntimeRealtime(), teardownChatRealtime(), teardownWorldSnapshotRealtime(), setupSelfhostRealtime(config)]);
+    await setupSelfhostRealtime(config);
     return;
   }
   if (isPocketBaseSyncConfig(config)) {
-    await Promise.allSettled([teardownCombatRuntimeRealtime(), teardownChatRealtime(), teardownWorldSnapshotRealtime(), teardownSelfhostRealtime(), setupPocketBaseRealtime(config)]);
+    await setupPocketBaseRealtime(config);
     return;
   }
-  await teardownSelfhostRealtime();
-  await Promise.allSettled([setupCombatRuntimeRealtime(config), setupChatRealtime(config), setupWorldSnapshotRealtime(config)]);
+  throw new Error('Неподдерживаемый провайдер синхронизации');
 }
 
 async function teardownNetworkRealtime() {
-  await Promise.allSettled([teardownCombatRuntimeRealtime(), teardownChatRealtime(), teardownWorldSnapshotRealtime(), teardownSelfhostRealtime(), teardownPocketBaseRealtime()]);
-}
-
-function selectPlayerColumns(config = {}) {
-  return 'campaign_id, player_id, version, updated_at, updated_by, client_updated_at, profile_json, inventory_json, private_state_json';
+  await Promise.allSettled([teardownSelfhostRealtime(), teardownPocketBaseRealtime()]);
 }
 
 function sanitizePlayerObject(value) {
@@ -2026,25 +1871,6 @@ function normalizePlayerRowPayload(payload = {}) {
   };
 }
 
-function normalizePlayerRemoteRow(row = {}) {
-  if (!row) return null;
-  const player = combineSegmentedPlayerState(row);
-  const deletedAt = row.deleted_at || row.deletedAt || (player.__deleted ? row.updated_at || row.updatedAt || null : null);
-  return {
-    campaignId: row.campaign_id,
-    playerId: row.player_id,
-    version: Number(row.version || 0),
-    updatedAt: row.updated_at || null,
-    updatedBy: row.updated_by || null,
-    clientUpdatedAt: row.client_updated_at || null,
-    deletedAt,
-    player,
-    profile_json: sanitizePlayerObject(row.profile_json || {}),
-    inventory_json: sanitizeInventoryArray(row.inventory_json || []),
-    private_state_json: sanitizePlayerObject(row.private_state_json || {})
-  };
-}
-
 async function fetchRemotePlayerRows(config = {}, options = {}) {
   if (isPocketBaseSyncConfig(config)) return fetchPocketBasePlayerRows(config, options);
   if (isSelfhostSyncConfig(config)) {
@@ -2052,21 +1878,7 @@ async function fetchRemotePlayerRows(config = {}, options = {}) {
     if (!result?.ok) throw new Error(result?.message || 'Self-host players pull failed');
     return Array.isArray(result.rows) ? result.rows : [];
   }
-  const client = getSupabaseClient(config);
-  let query = client
-    .from(config.playerTableName || DEFAULT_PLAYER_TABLE)
-    .select(selectPlayerColumns(config))
-    .eq('campaign_id', config.campaignId)
-    .order('updated_at', { ascending: true })
-    .order('player_id', { ascending: true });
-
-  if (options.since) query = query.gt('updated_at', options.since);
-  if (options.playerId) query = query.eq('player_id', String(options.playerId));
-  if (options.limit) query = query.limit(Math.max(1, Math.min(5000, Number(options.limit || 500))));
-
-  const { data, error } = await query;
-  if (error) throw new Error(formatSupabaseError(error));
-  return Array.isArray(data) ? data.map(normalizePlayerRemoteRow).filter(Boolean) : [];
+  throw new Error('Неподдерживаемый провайдер синхронизации');
 }
 
 async function fetchRemotePlayerRow(config = {}, playerId = '') {
@@ -2074,59 +1886,7 @@ async function fetchRemotePlayerRow(config = {}, playerId = '') {
   return rows[0] || null;
 }
 
-async function insertPlayerSegments(client, config, row, actor, updatedAt) {
-  const insertRow = {
-    campaign_id: config.campaignId,
-    player_id: row.player_id,
-    version: 1,
-    updated_at: updatedAt,
-    updated_by: actor,
-    client_updated_at: row.clientUpdatedAt || updatedAt,
-    ...splitPlayerState(row.player, { privateState: row.private_state_json, deleted: Boolean(row.deletedAt) })
-  };
-  const { data, error } = await client
-    .from(config.playerTableName || DEFAULT_PLAYER_TABLE)
-    .insert(insertRow)
-    .select(selectPlayerColumns(config))
-    .maybeSingle();
-  if (error) throw error;
-  return normalizePlayerRemoteRow(data || insertRow);
-}
 
-async function updatePlayerSegments(client, config, row, remote, actor, updatedAt, patchOnly = false) {
-  const rowPlayer = sanitizePlayerObject(row.player || {});
-  const hasInventoryPatch = Object.prototype.hasOwnProperty.call(rowPlayer, 'inventory');
-  const nextPlayer = patchOnly
-    ? combineSegmentedPlayerState({
-        profile_json: { ...(remote?.profile_json || {}), ...(row.profile_json || {}) },
-        inventory_json: hasInventoryPatch ? row.inventory_json : (remote?.inventory_json || []),
-        private_state_json: { ...(remote?.private_state_json || {}), ...(row.private_state_json || {}) }
-      })
-    : combineSegmentedPlayerState({
-        profile_json: row.profile_json,
-        inventory_json: row.inventory_json,
-        private_state_json: row.private_state_json
-      });
-  const segments = splitPlayerState(nextPlayer, { privateState: nextPlayer.__deleted ? { ...(remote?.private_state_json || {}), ...(row.private_state_json || {}), __deleted: true } : { ...(remote?.private_state_json || {}), ...(row.private_state_json || {}) } });
-  const payload = {
-    version: Number.isFinite(Number(row.baseVersion)) ? Number(row.baseVersion) + 1 : Number(remote?.version || 0) + 1,
-    updated_at: updatedAt,
-    updated_by: actor,
-    client_updated_at: row.clientUpdatedAt || updatedAt,
-    ...segments
-  };
-  const { data, error } = await client
-    .from(config.playerTableName || DEFAULT_PLAYER_TABLE)
-    .update(payload)
-    .eq('campaign_id', config.campaignId)
-    .eq('player_id', row.player_id)
-    .eq('version', Number.isFinite(Number(row.baseVersion)) ? Number(row.baseVersion) : Number(remote?.version || 0))
-    .select(selectPlayerColumns(config))
-    .maybeSingle();
-  if (error) throw new Error(formatSupabaseError(error));
-  if (!data) return null;
-  return normalizePlayerRemoteRow(data);
-}
 
 async function pushRemotePlayerRow(config = {}, payload = {}) {
   if (isPocketBaseSyncConfig(config)) return writePocketBasePlayerRow(config, payload, { patchOnly: false, deleted: false });
@@ -2145,39 +1905,7 @@ async function pushRemotePlayerRow(config = {}, payload = {}) {
     });
     return result;
   }
-  const client = getSupabaseClient(config);
-  const row = normalizePlayerRowPayload(payload);
-  const updatedAt = new Date().toISOString();
-  const actor = String(row.updatedBy || config.deviceLabel || 'unknown-device').trim() || 'unknown-device';
-  const expectedVersion = Number.isFinite(Number(row.baseVersion)) ? Number(row.baseVersion) : 0;
-  const remote = await fetchRemotePlayerRow(config, row.player_id);
-
-  if (!remote) {
-    if (expectedVersion !== 0) {
-      return { ok: false, status: 'conflict', message: 'Игрок уже изменён другим клиентом', remote: null };
-    }
-    try {
-      const inserted = await insertPlayerSegments(client, config, row, actor, updatedAt);
-      return { ok: true, status: 'inserted', row: inserted };
-    } catch (error) {
-      if (String(error.code || '') === '23505') {
-        const latest = await fetchRemotePlayerRow(config, row.player_id);
-        return { ok: false, status: 'conflict', message: 'Игрок уже был создан на другом клиенте', remote: latest || null };
-      }
-      throw new Error(formatSupabaseError(error));
-    }
-  }
-
-  if (Number(remote.version || 0) !== expectedVersion) {
-    return { ok: false, status: 'conflict', message: 'У игрока уже есть более новая версия в облаке', remote };
-  }
-
-  const updated = await updatePlayerSegments(client, config, row, remote, actor, updatedAt, false);
-  if (!updated) {
-    const latest = await fetchRemotePlayerRow(config, row.player_id);
-    return { ok: false, status: 'conflict', message: 'Игрок был изменён до завершения сохранения', remote: latest || remote || null };
-  }
-  return { ok: true, status: 'updated', row: updated };
+  throw new Error('Неподдерживаемый провайдер синхронизации');
 }
 
 async function patchRemotePlayerRow(config = {}, payload = {}) {
@@ -2199,39 +1927,7 @@ async function patchRemotePlayerRow(config = {}, payload = {}) {
     });
     return result;
   }
-  const client = getSupabaseClient(config);
-  const row = normalizePlayerRowPayload(payload);
-  const updatedAt = new Date().toISOString();
-  const actor = String(row.updatedBy || config.deviceLabel || 'unknown-device').trim() || 'unknown-device';
-  const expectedVersion = Number.isFinite(Number(row.baseVersion)) ? Number(row.baseVersion) : 0;
-  const remote = await fetchRemotePlayerRow(config, row.player_id);
-
-  if (!remote) {
-    if (expectedVersion !== 0) {
-      return { ok: false, status: 'conflict', message: 'Игрок уже изменён другим клиентом', remote: null };
-    }
-    try {
-      const inserted = await insertPlayerSegments(client, config, row, actor, updatedAt);
-      return { ok: true, status: 'inserted', row: inserted };
-    } catch (error) {
-      if (String(error.code || '') === '23505') {
-        const latest = await fetchRemotePlayerRow(config, row.player_id);
-        return { ok: false, status: 'conflict', message: 'Игрок уже был создан на другом клиенте', remote: latest || null };
-      }
-      throw new Error(formatSupabaseError(error));
-    }
-  }
-
-  if (Number(remote.version || 0) !== expectedVersion) {
-    return { ok: false, status: 'conflict', message: 'У игрока уже есть более новая версия в облаке', remote };
-  }
-
-  const updated = await updatePlayerSegments(client, config, row, remote, actor, updatedAt, true);
-  if (!updated) {
-    const latest = await fetchRemotePlayerRow(config, row.player_id);
-    return { ok: false, status: 'conflict', message: 'Игрок был изменён до завершения сохранения', remote: latest || remote || null };
-  }
-  return { ok: true, status: 'updated', row: updated };
+  throw new Error('Неподдерживаемый провайдер синхронизации');
 }
 
 async function deleteRemotePlayerRow(config = {}, payload = {}) {
@@ -2249,40 +1945,7 @@ async function deleteRemotePlayerRow(config = {}, payload = {}) {
     });
     return result;
   }
-  const client = getSupabaseClient(config);
-  const row = normalizePlayerRowPayload(payload);
-  const updatedAt = new Date().toISOString();
-  const actor = String(row.updatedBy || config.deviceLabel || 'unknown-device').trim() || 'unknown-device';
-  const remote = await fetchRemotePlayerRow(config, row.player_id);
-  if (!remote) {
-    try {
-      const inserted = await insertPlayerSegments(client, config, {
-        ...row,
-        player: { id: row.player_id, inventory: [] },
-        private_state_json: { __deleted: true },
-        deletedAt: updatedAt
-      }, actor, updatedAt);
-      return { ok: true, status: 'deleted', row: inserted };
-    } catch (error) {
-      throw new Error(formatSupabaseError(error));
-    }
-  }
-  const expectedVersion = Number.isFinite(Number(row.baseVersion)) ? Number(row.baseVersion) : Number(remote.version || 0);
-  if (Number(remote.version || 0) !== expectedVersion) {
-    return { ok: false, status: 'conflict', message: 'Игрок уже изменён другим клиентом', remote };
-  }
-  const updated = await updatePlayerSegments(client, config, {
-    ...row,
-    baseVersion: expectedVersion,
-    player: { ...(remote.player || {}), __deleted: true },
-    private_state_json: { ...(remote.private_state_json || {}), __deleted: true },
-    deletedAt: updatedAt
-  }, remote, actor, updatedAt, false);
-  if (!updated) {
-    const latest = await fetchRemotePlayerRow(config, row.player_id);
-    return { ok: false, status: 'conflict', message: 'Игрок был изменён до завершения удаления', remote: latest || remote || null };
-  }
-  return { ok: true, status: 'deleted', row: updated };
+  throw new Error('Неподдерживаемый провайдер синхронизации');
 }
 
 function normalizeChatRowInput(payload = {}) {
@@ -2317,10 +1980,6 @@ function normalizeChatRowInput(payload = {}) {
   return row;
 }
 
-function selectChatColumns(config = {}) {
-  return 'campaign_id, message_id, kind, thread_key, sender_type, sender_id, recipient_player_id, npc_id, direct_a, direct_b, author_label, body_html, created_at, edited_at, deleted_at, updated_at, client_updated_at';
-}
-
 async function fetchRemoteChatRows(config = {}, options = {}) {
   if (isPocketBaseSyncConfig(config)) return fetchPocketBaseChatRows(config, options);
   if (isSelfhostSyncConfig(config)) {
@@ -2328,22 +1987,7 @@ async function fetchRemoteChatRows(config = {}, options = {}) {
     if (!result?.ok) throw new Error(result?.message || 'Self-host chat pull failed');
     return Array.isArray(result.rows) ? result.rows : [];
   }
-  const client = getSupabaseClient(config);
-  let query = client
-    .from(config.chatTableName || DEFAULT_CHAT_TABLE)
-    .select(selectChatColumns(config))
-    .eq('campaign_id', config.campaignId)
-    .order('updated_at', { ascending: true })
-    .order('message_id', { ascending: true });
-
-  const since = String(options.since || '').trim();
-  if (since) query = query.gte('updated_at', since);
-  if (options.threadKey) query = query.eq('thread_key', options.threadKey);
-  if (options.limit) query = query.limit(Math.max(1, Math.min(10000, Number(options.limit || 500))));
-
-  const { data, error } = await query;
-  if (error) throw new Error(formatSupabaseError(error));
-  return Array.isArray(data) ? data : [];
+  throw new Error('Неподдерживаемый провайдер синхронизации');
 }
 
 async function upsertRemoteChatRow(config = {}, payload = {}) {
@@ -2353,22 +1997,7 @@ async function upsertRemoteChatRow(config = {}, payload = {}) {
     if (!result?.ok) throw new Error(result?.message || 'Self-host chat upsert failed');
     return result.row || payload;
   }
-  const client = getSupabaseClient(config);
-  const row = normalizeChatRowInput(payload);
-  const now = new Date().toISOString();
-  const writeRow = {
-    campaign_id: config.campaignId,
-    ...row,
-    updated_at: now,
-    client_updated_at: row.client_updated_at || row.updated_at || now
-  };
-  const { data, error } = await client
-    .from(config.chatTableName || DEFAULT_CHAT_TABLE)
-    .upsert(writeRow, { onConflict: 'campaign_id,message_id' })
-    .select(selectChatColumns(config))
-    .maybeSingle();
-  if (error) throw new Error(formatSupabaseError(error));
-  return data || writeRow;
+  throw new Error('Неподдерживаемый провайдер синхронизации');
 }
 
 async function upsertRemoteChatRows(config = {}, rows = []) {
@@ -2379,23 +2008,7 @@ async function upsertRemoteChatRows(config = {}, rows = []) {
     if (!result?.ok) throw new Error(result?.message || 'Self-host chat batch upsert failed');
     return Array.isArray(result.rows) ? result.rows : rows;
   }
-  const client = getSupabaseClient(config);
-  const payload = rows.map(row => {
-    const normalized = normalizeChatRowInput(row);
-    const observedNow = new Date().toISOString();
-    return {
-      campaign_id: config.campaignId,
-      ...normalized,
-      updated_at: observedNow,
-      client_updated_at: normalized.client_updated_at || normalized.updated_at || observedNow
-    };
-  });
-  const { data, error } = await client
-    .from(config.chatTableName || DEFAULT_CHAT_TABLE)
-    .upsert(payload, { onConflict: 'campaign_id,message_id' })
-    .select(selectChatColumns(config));
-  if (error) throw new Error(formatSupabaseError(error));
-  return Array.isArray(data) ? data : payload;
+  throw new Error('Неподдерживаемый провайдер синхронизации');
 }
 
 async function fetchRemoteSnapshot(config = {}, options = {}) {
@@ -2403,39 +2016,7 @@ async function fetchRemoteSnapshot(config = {}, options = {}) {
   if (isSelfhostSyncConfig(config)) {
     return selfhostFetch(config, selfhostSnapshotPath(config), { query: { includePayload: options.includePayload === false ? '0' : '1' } });
   }
-  const client = getSupabaseClient(config);
-  const columns = options.includePayload !== false
-    ? 'campaign_id, revision, updated_at, updated_by, client_updated_at, world_json, state_json'
-    : 'campaign_id, revision, updated_at, updated_by, client_updated_at';
-
-  const query = client
-    .from(config.tableName || DEFAULT_SYNC_TABLE)
-    .select(columns)
-    .eq('campaign_id', config.campaignId)
-    .maybeSingle();
-
-  const { data, error } = await query;
-  if (error) {
-    throw new Error(formatSupabaseError(error));
-  }
-
-  return data ? {
-    ok: true,
-    exists: true,
-    remote: {
-      campaignId: data.campaign_id,
-      revision: Number(data.revision || 0),
-      updatedAt: data.updated_at || null,
-      updatedBy: data.updated_by || null,
-      clientUpdatedAt: data.client_updated_at || null,
-      world: data.world_json || null,
-      state: data.state_json || null
-    }
-  } : {
-    ok: true,
-    exists: false,
-    remote: null
-  };
+  throw new Error('Неподдерживаемый провайдер синхронизации');
 }
 
 async function pushRemoteSnapshot(config = {}, payload = {}) {
@@ -2452,124 +2033,7 @@ async function pushRemoteSnapshot(config = {}, payload = {}) {
       }
     });
   }
-  const client = getSupabaseClient(config);
-  const updatedAt = new Date().toISOString();
-  const actor = String(payload.updatedBy || config.deviceLabel || 'unknown-device').trim() || 'unknown-device';
-  const expectedRevision = Number.isFinite(Number(payload.baseRevision)) ? Number(payload.baseRevision) : 0;
-
-  const remoteInfo = await fetchRemoteSnapshot(config, { includePayload: false });
-  if (!remoteInfo.ok) return remoteInfo;
-
-  if (!remoteInfo.exists) {
-    const insertRow = {
-      campaign_id: config.campaignId,
-      revision: 1,
-      updated_at: updatedAt,
-      updated_by: actor,
-      client_updated_at: payload.clientUpdatedAt || updatedAt,
-      world_json: payload.world || {},
-      state_json: payload.state || {}
-    };
-    const { data, error } = await client
-      .from(config.tableName || DEFAULT_SYNC_TABLE)
-      .insert(insertRow)
-      .select('campaign_id, revision, updated_at, updated_by, client_updated_at')
-      .maybeSingle();
-
-    if (error) {
-      if (String(error.code || '') === '23505') {
-        const latest = await fetchRemoteSnapshot(config, { includePayload: false });
-        return {
-          ok: false,
-          status: 'conflict',
-          message: 'В Supabase уже появилась более новая запись кампании',
-          remote: latest.remote || null
-        };
-      }
-      throw new Error(formatSupabaseError(error));
-    }
-
-    return {
-      ok: true,
-      status: 'inserted',
-      remote: {
-        campaignId: data.campaign_id,
-        revision: Number(data.revision || 1),
-        updatedAt: data.updated_at || updatedAt,
-        updatedBy: data.updated_by || actor,
-        clientUpdatedAt: data.client_updated_at || payload.clientUpdatedAt || updatedAt
-      }
-    };
-  }
-
-  if (Number(remoteInfo.remote?.revision || 0) !== expectedRevision) {
-    return {
-      ok: false,
-      status: 'conflict',
-      message: 'В облаке есть более новая ревизия данных',
-      remote: remoteInfo.remote
-    };
-  }
-
-  const nextRevision = expectedRevision + 1;
-  const { data, error } = await client
-    .from(config.tableName || DEFAULT_SYNC_TABLE)
-    .update({
-      revision: nextRevision,
-      updated_at: updatedAt,
-      updated_by: actor,
-      client_updated_at: payload.clientUpdatedAt || updatedAt,
-      world_json: payload.world || {},
-      state_json: payload.state || {}
-    })
-    .eq('campaign_id', config.campaignId)
-    .eq('revision', expectedRevision)
-    .select('campaign_id, revision, updated_at, updated_by, client_updated_at')
-    .maybeSingle();
-
-  if (error) {
-    throw new Error(formatSupabaseError(error));
-  }
-
-  if (!data) {
-    const latest = await fetchRemoteSnapshot(config, { includePayload: false });
-    return {
-      ok: false,
-      status: 'conflict',
-      message: 'Запись была изменена другим клиентом до завершения вашего сохранения',
-      remote: latest.remote || remoteInfo.remote || null
-    };
-  }
-
-  return {
-    ok: true,
-    status: 'updated',
-    remote: {
-      campaignId: data.campaign_id,
-      revision: Number(data.revision || nextRevision),
-      updatedAt: data.updated_at || updatedAt,
-      updatedBy: data.updated_by || actor,
-      clientUpdatedAt: data.client_updated_at || payload.clientUpdatedAt || updatedAt
-    }
-  };
-}
-
-function selectCombatRuntimeColumns(config = {}) {
-  return 'campaign_id, revision, updated_at, updated_by, client_updated_at, active_scene_id, scene_json, runtime_json';
-}
-
-function normalizeCombatRuntimeRow(row = {}) {
-  if (!row) return null;
-  return {
-    campaignId: row.campaign_id,
-    revision: Number(row.revision || 0),
-    updatedAt: row.updated_at || null,
-    updatedBy: row.updated_by || null,
-    clientUpdatedAt: row.client_updated_at || null,
-    activeSceneId: String(row.active_scene_id || '').trim(),
-    scene: row.scene_json || {},
-    runtime: row.runtime_json || {}
-  };
+  throw new Error('Неподдерживаемый провайдер синхронизации');
 }
 
 async function fetchRemoteCombatRuntime(config = {}) {
@@ -2579,14 +2043,7 @@ async function fetchRemoteCombatRuntime(config = {}) {
     if (!result?.ok) throw new Error(result?.message || 'Self-host combat pull failed');
     return result.row || null;
   }
-  const client = getSupabaseClient(config);
-  const { data, error } = await client
-    .from(config.combatRuntimeTableName || DEFAULT_COMBAT_RUNTIME_TABLE)
-    .select(selectCombatRuntimeColumns(config))
-    .eq('campaign_id', config.campaignId)
-    .maybeSingle();
-  if (error) throw new Error(formatSupabaseError(error));
-  return data ? normalizeCombatRuntimeRow(data) : null;
+  throw new Error('Неподдерживаемый провайдер синхронизации');
 }
 
 async function pushRemoteCombatRuntime(config = {}, payload = {}) {
@@ -2603,57 +2060,7 @@ async function pushRemoteCombatRuntime(config = {}, payload = {}) {
     });
     return result;
   }
-  const client = getSupabaseClient(config);
-  const normalized = await normalizeCombatPublishPayloadImages(config, payload);
-  const now = new Date().toISOString();
-  const expectedRevision = Number.isFinite(Number(normalized.baseRevision)) ? Number(normalized.baseRevision) : 0;
-  const actor = String(normalized.updatedBy || config.deviceLabel || 'unknown-device').trim() || 'unknown-device';
-  const current = await fetchRemoteCombatRuntime(config);
-  if (!current) {
-    if (expectedRevision !== 0) return { ok: false, status: 'conflict', message: 'Combat runtime already changed remotely', remote: null };
-    const insertRow = {
-      campaign_id: config.campaignId,
-      revision: 1,
-      updated_at: now,
-      updated_by: actor,
-      client_updated_at: normalized.clientUpdatedAt || now,
-      active_scene_id: String(normalized.active_scene_id || normalized.activeSceneId || normalized.scene_json?.id || '').trim(),
-      scene_json: normalized.scene_json || normalized.scene || {},
-      runtime_json: normalized.runtime_json || normalized.runtime || {}
-    };
-    const { data, error } = await client
-      .from(config.combatRuntimeTableName || DEFAULT_COMBAT_RUNTIME_TABLE)
-      .insert(insertRow)
-      .select(selectCombatRuntimeColumns(config))
-      .maybeSingle();
-    if (error) throw new Error(formatSupabaseError(error));
-    return { ok: true, status: 'inserted', row: normalizeCombatRuntimeRow(data || insertRow) };
-  }
-  if (current.revision !== expectedRevision) {
-    return { ok: false, status: 'conflict', message: 'Combat runtime has newer remote version', remote: current };
-  }
-  const updateRow = {
-    revision: expectedRevision + 1,
-    updated_at: now,
-    updated_by: actor,
-    client_updated_at: normalized.clientUpdatedAt || now,
-    active_scene_id: String(normalized.active_scene_id || normalized.activeSceneId || normalized.scene_json?.id || '').trim(),
-    scene_json: normalized.scene_json || normalized.scene || {},
-    runtime_json: normalized.runtime_json || normalized.runtime || {}
-  };
-  const { data, error } = await client
-    .from(config.combatRuntimeTableName || DEFAULT_COMBAT_RUNTIME_TABLE)
-    .update(updateRow)
-    .eq('campaign_id', config.campaignId)
-    .eq('revision', expectedRevision)
-    .select(selectCombatRuntimeColumns(config))
-    .maybeSingle();
-  if (error) throw new Error(formatSupabaseError(error));
-  if (!data) {
-    const latest = await fetchRemoteCombatRuntime(config);
-    return { ok: false, status: 'conflict', message: 'Combat runtime changed before save finished', remote: latest || current || null };
-  }
-  return { ok: true, status: 'updated', row: normalizeCombatRuntimeRow(data) };
+  throw new Error('Неподдерживаемый провайдер синхронизации');
 }
 
 
@@ -2838,7 +2245,6 @@ ipcMain.handle('world:saveAll', async (_event, payload) => {
         worldPayload = normalized.world || worldPayload;
         debugLog('WORLD_SAVE_ALL_IMAGE_UPLOAD_DONE', {
           campaignId: config.campaignId,
-          bucket: config.storageBucket || DEFAULT_STORAGE_BUCKET
         });
       }
     } catch (error) {
@@ -2882,6 +2288,90 @@ ipcMain.handle('app:paths', async () => {
   };
 });
 
+
+
+function isDevOpsDmRole(role) {
+  const normalized = String(role || '').trim().toLowerCase();
+  return normalized === 'gm' || normalized === 'dm' || normalized === 'master';
+}
+
+function getDevOpsModule() {
+  return require(path.join(__dirname, 'tools', 'devops-automation.cjs'));
+}
+
+function serializeDevOpsError(error) {
+  return {
+    ok: false,
+    message: error?.message || String(error),
+    command: error?.command || '',
+    stdout: String(error?.stdout || '').trim(),
+    stderr: String(error?.stderr || '').trim()
+  };
+}
+
+function validateDevOpsRequest(event, payload = {}) {
+  if (app.isPackaged) throw new Error('DEV-инструменты недоступны в собранном приложении');
+  if (!isDevOpsDmRole(payload?.role)) throw new Error('DEV-инструменты доступны только ДМу');
+  if (mainWindow && !mainWindow.isDestroyed() && event?.sender !== mainWindow.webContents) {
+    throw new Error('DEV-команда отклонена: неизвестное окно');
+  }
+  return __dirname;
+}
+
+ipcMain.handle('devops:status', async (event, payload) => {
+  if (app.isPackaged || !isDevOpsDmRole(payload?.role)) {
+    return {
+      ok: true,
+      available: false,
+      reason: app.isPackaged ? 'packaged-build' : 'dm-required',
+      message: app.isPackaged ? 'DEV-инструменты доступны только при запуске исходного проекта' : 'Требуется режим ДМа'
+    };
+  }
+  try {
+    const rootDir = validateDevOpsRequest(event, payload);
+    return await getDevOpsModule().getStatus(rootDir);
+  } catch (error) {
+    return { ok: false, available: false, message: error?.message || String(error) };
+  }
+});
+
+ipcMain.handle('devops:publishPatch', async (event, payload) => {
+  try {
+    const rootDir = validateDevOpsRequest(event, payload);
+    return await getDevOpsModule().publishPatch(rootDir);
+  } catch (error) {
+    debugLog('DEVOPS_PUBLISH_FAILED', { message: error?.message, command: error?.command, stderr: error?.stderr });
+    return serializeDevOpsError(error);
+  }
+});
+
+ipcMain.handle('devops:deployWeb', async (event, payload) => {
+  try {
+    const rootDir = validateDevOpsRequest(event, payload);
+    return await getDevOpsModule().deployWeb(rootDir);
+  } catch (error) {
+    debugLog('DEVOPS_WEB_DEPLOY_FAILED', { message: error?.message, command: error?.command, stderr: error?.stderr });
+    return serializeDevOpsError(error);
+  }
+});
+
+ipcMain.handle('devops:createSourceArchive', async (event, payload) => {
+  try {
+    const rootDir = validateDevOpsRequest(event, payload);
+    const devops = getDevOpsModule();
+    const result = await dialog.showSaveDialog(mainWindow || undefined, {
+      title: 'Сохранить ZIP исходников для передачи',
+      defaultPath: path.join(app.getPath('documents'), devops.defaultArchiveName(rootDir)),
+      filters: [{ name: 'ZIP archive', extensions: ['zip'] }]
+    });
+    if (result.canceled || !result.filePath) return { ok: false, cancelled: true };
+    const outputPath = result.filePath.toLowerCase().endsWith('.zip') ? result.filePath : `${result.filePath}.zip`;
+    return await devops.createSourceArchive(rootDir, outputPath);
+  } catch (error) {
+    debugLog('DEVOPS_ARCHIVE_FAILED', { message: error?.message, command: error?.command, stderr: error?.stderr });
+    return serializeDevOpsError(error);
+  }
+});
 
 ipcMain.handle('updater:status', async () => {
   setupAutoUpdater();
@@ -2998,7 +2488,7 @@ ipcMain.handle('sync:pull', async (_event, payload) => {
     const force = Boolean(payload?.force);
     const remote = await fetchRemoteSnapshot(config, { includePayload: true });
     if (!remote.exists) {
-      return { ok: true, enabled: true, connected: true, status: 'empty', message: `В ${isPocketBaseSyncConfig(config) ? 'PocketBase' : (isSelfhostSyncConfig(config) ? 'self-host' : 'Supabase')} ещё нет снапшота кампании`, remote: null, config };
+      return { ok: true, enabled: true, connected: true, status: 'empty', message: `В ${isPocketBaseSyncConfig(config) ? 'PocketBase' : 'выделенном сервере'} ещё нет снапшота кампании`, remote: null, config };
     }
     const remoteRevision = Number(remote.remote?.revision || 0);
     const newer = force || remoteRevision > localRevision;
@@ -3028,7 +2518,6 @@ ipcMain.handle('sync:push', async (_event, payload) => {
     const normalizedSnapshot = await normalizeSnapshotImagesForCloud(config, snapshot);
     debugLog('SYNC_IMAGE_NORMALIZE_DONE', {
       campaignId: config.campaignId,
-      bucket: config.storageBucket || DEFAULT_STORAGE_BUCKET
     });
     const result = await pushRemoteSnapshot(config, {
       world: normalizedSnapshot.world || {},
@@ -3226,9 +2715,15 @@ ipcMain.handle('display:player:view:get', async () => ({
 ipcMain.handle('display:player:view:update', async (_event, payload) => {
   try {
     const next = payload && typeof payload === 'object' ? payload : {};
+    const hasMode = Object.prototype.hasOwnProperty.call(next, 'mode');
+    const hasRegionMap = Object.prototype.hasOwnProperty.call(next, 'activeRegionMapId');
+    const hasRegionCamera = Object.prototype.hasOwnProperty.call(next, 'regionCamera');
     playerDisplayMirrorState = {
+      mode: hasMode ? String(next.mode || '').trim() : (playerDisplayMirrorState.mode || ''),
       activeSceneId: String(next.activeSceneId || playerDisplayMirrorState.activeSceneId || '').trim(),
+      activeRegionMapId: hasRegionMap ? String(next.activeRegionMapId || '').trim() : (playerDisplayMirrorState.activeRegionMapId || ''),
       cameraByScene: next.cameraByScene && typeof next.cameraByScene === 'object' ? next.cameraByScene : (playerDisplayMirrorState.cameraByScene || {}),
+      regionCamera: hasRegionCamera ? (next.regionCamera && typeof next.regionCamera === 'object' ? next.regionCamera : null) : (playerDisplayMirrorState.regionCamera || null),
       updatedAt: next.updatedAt || new Date().toISOString()
     };
     if (playerDisplayWindow && !playerDisplayWindow.isDestroyed()) {

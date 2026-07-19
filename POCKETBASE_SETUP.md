@@ -1,66 +1,49 @@
-# PocketBase backend for Galactic RPG Interface
+# Настройка PocketBase
 
-Recommended public URL:
+Приложение использует PocketBase как основной удалённый backend.
+
+Рекомендуемый публичный адрес:
 
 ```text
 https://sync.grpg-sync.ru
 ```
 
-The app uses the following PocketBase collections by default:
+## Коллекции по умолчанию
 
-- `app_users` — Auth collection for application users.
-- `campaign_snapshots` — full world/state snapshot.
-- `campaign_players` — isolated player states.
-- `campaign_messages` — chat messages.
-- `campaign_combat_runtime` — active combat scene runtime.
-- `campaign_assets` — uploaded images and other campaign assets.
+- `app_users` — auth-коллекция пользователей приложения;
+- `campaign_snapshots` — снапшоты мира и общего состояния;
+- `campaign_players` — изолированное состояние игроков;
+- `campaign_messages` — сообщения чата;
+- `campaign_combat_runtime` — активная боевая сцена и runtime;
+- `campaign_assets` — изображения и другие ассеты кампании.
 
-Default campaign id used in examples: `main`.
+Во всех рабочих коллекциях должны присутствовать поля, которые использует приложение в `main.js`. Для доступа к данным задайте правила List/View/Create/Update, разрешающие работу авторизованным записям `app_users`.
 
-## Required app settings
-
-In the app, open Sync settings and choose:
-
-```text
-Backend: PocketBase
-URL: https://sync.grpg-sync.ru
-CAMPAIGN_ID: main
-APP_USER_EMAIL: dm@grpg-sync.local
-APP_USER_PASSWORD: password from app_users
-```
-
-The email/password must belong to a normal record in the `app_users` auth collection, not to a PocketBase superuser.
-
-## API rules
-
-For `campaign_snapshots`, `campaign_players`, `campaign_messages`, and `campaign_combat_runtime`, set List/View/Create/Update rules to:
+Пример базового условия:
 
 ```text
 @request.auth.id != ""
 ```
 
-Delete can stay empty/closed.
+Удаление записей можно оставить закрытым, если оно не требуется вашей схеме.
 
-For `campaign_assets`, the app can upload with auth, but image display through normal `<img>` URLs is easiest if View/List are public or otherwise accessible without a custom Authorization header. If images do not appear on player machines, check this collection first.
+## Настройка приложения
 
-## Current implementation notes
+В панели синхронизации выберите `PocketBase` и укажите:
 
-Version `1.0.17` adds a PocketBase backend provider without removing Supabase or the existing self-host provider.
+```text
+POCKETBASE_URL: https://sync.grpg-sync.ru
+CAMPAIGN_ID: main
+APP_USER_EMAIL: учётная запись из app_users
+APP_USER_PASSWORD: пароль этой записи
+```
 
-PocketBase realtime is not enabled in this patch. The app uses the existing guarded polling loop. This is intentional for the first migration step: it makes backend errors easier to diagnose in application logs before adding realtime subscriptions.
+Учётная запись должна быть обычной записью auth-коллекции `app_users`, а не суперпользователем PocketBase.
 
+## Realtime
 
-## Initial migration note (1.0.18)
+Приложение подключается к `/api/realtime` и подписывается на коллекции снапшотов, игроков, сообщений и боевого runtime. События дополнительно фильтруются по `campaignId`. Периодический polling остаётся резервным механизмом восстановления после разрыва соединения.
 
-If PocketBase has no campaign snapshot yet, the first `Отправить в облако` now seeds `campaign_snapshots` even when local metadata still contains an old Supabase/self-host revision. This is expected when moving an existing local campaign to a fresh PocketBase backend.
+## Ассеты
 
-## Realtime note (1.0.19)
-
-PocketBase realtime is enabled for:
-
-- `campaign_snapshots`
-- `campaign_players`
-- `campaign_messages`
-- `campaign_combat_runtime`
-
-The implementation uses PocketBase `/api/realtime` SSE directly. It subscribes to whole collections and filters records by `campaignId` inside the application. Existing polling remains as a fallback/healing mechanism.
+Загрузка выполняется в `campaign_assets`. Для отображения изображений через обычные URL настройте View-правило коллекции так, чтобы нужные клиенты могли читать файлы.

@@ -75,5 +75,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('display:player:view', handler);
     return () => ipcRenderer.removeListener('display:player:view', handler);
   },
+  getDevOpsStatus: role => ipcRenderer.invoke('devops:status', { role }),
+  publishDevPatch: role => ipcRenderer.invoke('devops:publishPatch', { role }),
+  deployDevWeb: role => ipcRenderer.invoke('devops:deployWeb', { role }),
+  createDevSourceArchive: role => ipcRenderer.invoke('devops:createSourceArchive', { role }),
   debugLog: (label, payload) => ipcRenderer.invoke('debug:log', label, payload)
 });

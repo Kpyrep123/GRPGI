@@ -13,13 +13,7 @@
         <h1>Подключение к кампании</h1>
         <p class="muted">Мобильная/веб-версия работает без режима ДМа и без тяжёлой галактической карты. Она подключается к серверу кампании, показывает навигацию, архив, терминал, чат, бой и профиль игрока. В браузере данные не сохраняются локально: всё читается из облака и записывается обратно в PocketBase.</p>
         <form id="setup-form" class="form stack-lg">
-          <label class="field">
-            <span>Backend</span>
-            <select class="input" name="backend">
-              <option value="pocketbase" selected>PocketBase</option>
-              <option value="supabase">Supabase legacy</option>
-            </select>
-          </label>
+          <input type="hidden" name="backend" value="pocketbase" />
           <label class="field">
             <span>SERVER_URL</span>
             <input class="input" name="url" placeholder="https://sync.grpg-sync.ru" autocomplete="off" />
@@ -34,10 +28,6 @@
               <input class="input" name="appUserPassword" type="password" placeholder="Пароль app_users" autocomplete="off" />
             </label>
           </div>
-          <label class="field">
-            <span>SUPABASE ANON KEY, только для legacy Supabase</span>
-            <textarea class="textarea monospace" name="anonKey" rows="3" placeholder="Можно оставить пустым для PocketBase"></textarea>
-          </label>
           <div class="grid-2">
             <label class="field">
               <span>CAMPAIGN_ID</span>
@@ -72,10 +62,6 @@
                 </label>
               </div>
               <div class="grid-2">
-                <label class="field">
-                  <span>STORAGE_BUCKET, Supabase</span>
-                  <input class="input" name="storageBucket" value="campaign-assets" />
-                </label>
                 <label class="field">
                   <span>PB_ASSETS</span>
                   <input class="input" name="assetsCollection" value="campaign_assets" />

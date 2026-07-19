@@ -9,7 +9,6 @@
     playerTableName: 'campaign_players',
     chatTableName: 'campaign_messages',
     combatRuntimeTableName: 'campaign_combat_runtime',
-    storageBucket: 'campaign-assets',
     assetsCollection: 'campaign_assets',
     snapshotPollMs: 30000,
     livePollMs: 5000
@@ -136,18 +135,15 @@
     return String(value || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
   }
 
-  function normalizeBackend(value) {
-    const raw = String(value || '').trim().toLowerCase();
-    return raw === 'supabase' ? 'supabase' : 'pocketbase';
+  function normalizeBackend() {
+    return 'pocketbase';
   }
 
   function normalizeConfig(payload = {}) {
-    const backend = normalizeBackend(payload.backend || payload.provider || payload.syncProvider || DEFAULTS.backend);
     return {
-      backend,
-      provider: backend,
-      url: String(payload.url || (backend === 'pocketbase' ? DEFAULTS.url : '')).trim(),
-      anonKey: String(payload.anonKey || '').trim(),
+      backend: 'pocketbase',
+      provider: 'pocketbase',
+      url: String(payload.url || DEFAULTS.url).trim(),
       appUserEmail: String(payload.appUserEmail || payload.pocketbaseEmail || payload.pbEmail || '').trim(),
       appUserPassword: String(payload.appUserPassword || payload.pocketbasePassword || payload.pbPassword || '').trim(),
       appUsersCollection: String(payload.appUsersCollection || payload.pocketbaseUsersCollection || DEFAULTS.appUsersCollection).trim() || DEFAULTS.appUsersCollection,
@@ -157,21 +153,18 @@
       playerTableName: String(payload.playerTableName || DEFAULTS.playerTableName).trim() || DEFAULTS.playerTableName,
       chatTableName: String(payload.chatTableName || DEFAULTS.chatTableName).trim() || DEFAULTS.chatTableName,
       combatRuntimeTableName: String(payload.combatRuntimeTableName || DEFAULTS.combatRuntimeTableName).trim() || DEFAULTS.combatRuntimeTableName,
-      storageBucket: String(payload.storageBucket || DEFAULTS.storageBucket).trim() || DEFAULTS.storageBucket,
       assetsCollection: String(payload.assetsCollection || payload.pocketbaseAssetsCollection || DEFAULTS.assetsCollection).trim() || DEFAULTS.assetsCollection,
       snapshotPollMs: Math.max(10000, Number(payload.snapshotPollMs || DEFAULTS.snapshotPollMs)),
       livePollMs: Math.max(2500, Number(payload.livePollMs || DEFAULTS.livePollMs))
     };
   }
 
-  function isPocketBaseConfig(config = App.config) {
-    return normalizeBackend(config?.backend || config?.provider) === 'pocketbase';
+  function isPocketBaseConfig() {
+    return true;
   }
 
   function hasConfig(config = App.config) {
-    if (!config?.url || !config?.campaignId) return false;
-    if (isPocketBaseConfig(config)) return Boolean(config.appUserEmail && config.appUserPassword);
-    return Boolean(config.anonKey);
+    return Boolean(config?.url && config?.campaignId && config?.appUserEmail && config?.appUserPassword);
   }
 
 
@@ -179,15 +172,9 @@
     return String(path || '').split('/').map(part => encodeURIComponent(part)).join('/');
   }
 
-  function publicStorageUrl(storagePath, bucket = App.config?.storageBucket || DEFAULTS.storageBucket) {
-    const base = String(App.config?.url || '').replace(/\/+$/, '');
-    const cleanPath = String(storagePath || '').replace(/^\/+/, '');
-    if (!base || !cleanPath) return '';
-    if (isPocketBaseConfig()) {
-      if (/^https?:/i.test(cleanPath)) return cleanPath;
-      return '';
-    }
-    return `${base}/storage/v1/object/public/${encodeURIComponent(bucket)}/${encodeStoragePath(cleanPath)}`;
+  function publicStorageUrl(storagePath) {
+    const cleanPath = String(storagePath || '').trim();
+    return /^https?:/i.test(cleanPath) ? cleanPath : '';
   }
 
   function resolveMediaUrl(source, storagePath = '') {
@@ -603,14 +590,6 @@
     return null;
   }
 
-  function requestHeaders(config, extra = {}) {
-    return {
-      apikey: config.anonKey,
-      Authorization: `Bearer ${config.anonKey}`,
-      'Content-Type': 'application/json',
-      ...extra
-    };
-  }
 
   function pbBaseUrl(config = App.config) {
     return String(config?.url || '').trim().replace(/\/+$/, '');
@@ -698,22 +677,6 @@
     return rows[0] || null;
   }
 
-  async function rest(config, table, query = '', options = {}) {
-    const base = String(config.url || '').replace(/\/+$/, '');
-    const url = `${base}/rest/v1/${table}${query ? (query.startsWith('?') ? query : `?${query}`) : ''}`;
-    const response = await fetch(url, {
-      method: options.method || 'GET',
-      headers: requestHeaders(config, options.headers || {}),
-      body: options.body == null ? undefined : JSON.stringify(options.body)
-    });
-    if (!response.ok) {
-      const text = await response.text().catch(() => '');
-      throw new Error(text || `${response.status} ${response.statusText}`);
-    }
-    if (response.status === 204) return null;
-    const text = await response.text();
-    return text ? JSON.parse(text) : null;
-  }
 
   function qs(params = {}) {
     const search = new URLSearchParams();
@@ -725,7 +688,7 @@
   }
 
   async function apiPing(config) {
-    if (isPocketBaseConfig(config)) await pbAuthToken(config, true);
+    await pbAuthToken(config, true);
     await apiPullSnapshot(config, false);
     return true;
   }
@@ -824,210 +787,95 @@
   }
 
   async function apiPullSnapshot(config, includePayload = true) {
-    if (isPocketBaseConfig(config)) {
-      const record = await pbFirst(config, 'snapshot', pbEq('campaignId', config.campaignId));
-      const row = normalizeSnapshotRow(record);
-      if (row && includePayload === false) { row.world_json = null; row.state_json = null; }
-      return row;
-    }
-    const select = includePayload
-      ? 'campaign_id,revision,updated_at,updated_by,client_updated_at,world_json,state_json'
-      : 'campaign_id,revision,updated_at';
-    const rows = await rest(config, config.tableName, qs({
-      campaign_id: `eq.${config.campaignId}`,
-      select,
-      order: 'updated_at.desc',
-      limit: '1'
-    }));
-    return Array.isArray(rows) ? rows[0] || null : null;
+    const record = await pbFirst(config, 'snapshot', pbEq('campaignId', config.campaignId));
+    const row = normalizeSnapshotRow(record);
+    if (row && includePayload === false) { row.world_json = null; row.state_json = null; }
+    return row;
   }
 
   async function apiPullPlayers(config) {
-    if (isPocketBaseConfig(config)) {
-      const rows = await pbList(config, 'players', { filter: pbEq('campaignId', config.campaignId), sort: 'updated,playerId', perPage: 1000 });
-      return rows.map(normalizePlayerRow).filter(Boolean);
-    }
-    const rows = await rest(config, config.playerTableName, qs({
-      campaign_id: `eq.${config.campaignId}`,
-      select: 'campaign_id,player_id,version,updated_at,updated_by,client_updated_at,profile_json,inventory_json,private_state_json',
-      order: 'updated_at.asc'
-    }));
-    return Array.isArray(rows) ? rows : [];
+    const rows = await pbList(config, 'players', { filter: pbEq('campaignId', config.campaignId), sort: 'updated,playerId', perPage: 1000 });
+    return rows.map(normalizePlayerRow).filter(Boolean);
   }
 
   async function apiPullPlayer(config, playerId) {
-    if (isPocketBaseConfig(config)) {
-      const record = await pbFirst(config, 'players', pbAnd(pbEq('campaignId', config.campaignId), pbEq('playerId', playerId)));
-      return normalizePlayerRow(record);
-    }
-    const rows = await rest(config, config.playerTableName, qs({
-      campaign_id: `eq.${config.campaignId}`,
-      player_id: `eq.${playerId}`,
-      select: 'campaign_id,player_id,version,updated_at,updated_by,client_updated_at,profile_json,inventory_json,private_state_json',
-      limit: '1'
-    }));
-    return Array.isArray(rows) ? rows[0] || null : null;
+    const record = await pbFirst(config, 'players', pbAnd(pbEq('campaignId', config.campaignId), pbEq('playerId', playerId)));
+    return normalizePlayerRow(record);
   }
 
   async function apiUpsertPlayer(config, payload) {
     const now = new Date().toISOString();
-    if (isPocketBaseConfig(config)) {
-      const existing = await pbFirst(config, 'players', pbAnd(pbEq('campaignId', config.campaignId), pbEq('playerId', payload.player_id)));
-      const body = {
-        campaignId: config.campaignId,
-        playerId: payload.player_id,
-        version: Number(payload.version || existing?.version || 0) || 1,
-        updatedBy: payload.updated_by || config.deviceLabel || 'mobile-player',
-        clientUpdatedAt: payload.client_updated_at || now,
-        playerJson: composePlayerJsonFromSegments(payload)
-      };
-      const collection = encodeURIComponent(pbCollection(config, 'players'));
-      const record = existing?.id
-        ? await pbFetch(config, `/api/collections/${collection}/records/${encodeURIComponent(existing.id)}`, { method: 'PATCH', json: body })
-        : await pbFetch(config, `/api/collections/${collection}/records`, { method: 'POST', json: body });
-      return normalizePlayerRow(record);
-    }
+    const existing = await pbFirst(config, 'players', pbAnd(pbEq('campaignId', config.campaignId), pbEq('playerId', payload.player_id)));
     const body = {
-      campaign_id: config.campaignId,
-      player_id: payload.player_id,
-      version: payload.version,
-      updated_at: now,
-      updated_by: payload.updated_by || config.deviceLabel || 'android-player',
-      client_updated_at: payload.client_updated_at || now,
-      profile_json: payload.profile_json || {},
-      inventory_json: payload.inventory_json || [],
-      private_state_json: payload.private_state_json || {}
+      campaignId: config.campaignId,
+      playerId: payload.player_id,
+      version: Number(payload.version || existing?.version || 0) || 1,
+      updatedBy: payload.updated_by || config.deviceLabel || 'mobile-player',
+      clientUpdatedAt: payload.client_updated_at || now,
+      playerJson: composePlayerJsonFromSegments(payload)
     };
-    const rows = await rest(config, config.playerTableName, 'select=campaign_id,player_id,version,updated_at,updated_by,client_updated_at,profile_json,inventory_json,private_state_json', {
-      method: 'POST',
-      headers: { Prefer: 'resolution=merge-duplicates,return=representation' },
-      body
-    });
-    return Array.isArray(rows) ? rows[0] || null : rows;
+    const collection = encodeURIComponent(pbCollection(config, 'players'));
+    const record = existing?.id
+      ? await pbFetch(config, `/api/collections/${collection}/records/${encodeURIComponent(existing.id)}`, { method: 'PATCH', json: body })
+      : await pbFetch(config, `/api/collections/${collection}/records`, { method: 'POST', json: body });
+    return normalizePlayerRow(record);
   }
 
   async function apiPatchPlayerWithVersion(config, playerId, expectedVersion, payload) {
     const now = new Date().toISOString();
-    if (isPocketBaseConfig(config)) {
-      const existing = await pbFirst(config, 'players', pbAnd(pbEq('campaignId', config.campaignId), pbEq('playerId', playerId)));
-      if (!existing || Number(existing.version || 0) !== Number(expectedVersion || 0)) return null;
-      const collection = encodeURIComponent(pbCollection(config, 'players'));
-      const record = await pbFetch(config, `/api/collections/${collection}/records/${encodeURIComponent(existing.id)}`, {
-        method: 'PATCH',
-        json: {
-          version: Number(expectedVersion || 0) + 1,
-          updatedBy: payload.updated_by || config.deviceLabel || 'mobile-player',
-          clientUpdatedAt: payload.client_updated_at || now,
-          playerJson: composePlayerJsonFromSegments(payload)
-        }
-      });
-      return normalizePlayerRow(record);
-    }
-    const query = qs({
-      campaign_id: `eq.${config.campaignId}`,
-      player_id: `eq.${playerId}`,
-      version: `eq.${expectedVersion}`,
-      select: 'campaign_id,player_id,version,updated_at,updated_by,client_updated_at,profile_json,inventory_json,private_state_json'
-    });
-    const rows = await rest(config, config.playerTableName, query, {
+    const existing = await pbFirst(config, 'players', pbAnd(pbEq('campaignId', config.campaignId), pbEq('playerId', playerId)));
+    if (!existing || Number(existing.version || 0) !== Number(expectedVersion || 0)) return null;
+    const collection = encodeURIComponent(pbCollection(config, 'players'));
+    const record = await pbFetch(config, `/api/collections/${collection}/records/${encodeURIComponent(existing.id)}`, {
       method: 'PATCH',
-      headers: { Prefer: 'return=representation' },
-      body: {
-        version: expectedVersion + 1,
-        updated_at: now,
-        updated_by: payload.updated_by || config.deviceLabel || 'android-player',
-        client_updated_at: payload.client_updated_at || now,
-        profile_json: payload.profile_json || {},
-        inventory_json: payload.inventory_json || [],
-        private_state_json: payload.private_state_json || {}
+      json: {
+        version: Number(expectedVersion || 0) + 1,
+        updatedBy: payload.updated_by || config.deviceLabel || 'mobile-player',
+        clientUpdatedAt: payload.client_updated_at || now,
+        playerJson: composePlayerJsonFromSegments(payload)
       }
     });
-    return Array.isArray(rows) ? rows[0] || null : rows;
+    return normalizePlayerRow(record);
   }
 
   async function apiPullChat(config, since = null) {
-    if (isPocketBaseConfig(config)) {
-      const filters = [pbEq('campaignId', config.campaignId)];
-      if (since) filters.push(`updated>="${pbFilterValue(since)}"`);
-      const rows = await pbList(config, 'chat', { filter: pbAnd(...filters), sort: 'updated,messageId', perPage: 1000 });
-      return rows.map(normalizeChatRow).filter(Boolean);
-    }
-    const params = {
-      campaign_id: `eq.${config.campaignId}`,
-      select: 'campaign_id,message_id,kind,thread_key,sender_type,sender_id,recipient_player_id,npc_id,direct_a,direct_b,author_label,body_html,created_at,edited_at,deleted_at,updated_at,client_updated_at',
-      order: 'updated_at.asc,message_id.asc'
-    };
-    if (since) params.updated_at = `gte.${since}`;
-    const rows = await rest(config, config.chatTableName, qs(params));
-    return Array.isArray(rows) ? rows : [];
+    const filters = [pbEq('campaignId', config.campaignId)];
+    if (since) filters.push(`updated>="${pbFilterValue(since)}"`);
+    const rows = await pbList(config, 'chat', { filter: pbAnd(...filters), sort: 'updated,messageId', perPage: 1000 });
+    return rows.map(normalizeChatRow).filter(Boolean);
   }
 
   async function apiUpsertChat(config, row) {
     const now = new Date().toISOString();
-    if (isPocketBaseConfig(config)) {
-      const body = {
-        campaignId: config.campaignId,
-        messageId: row.message_id,
-        kind: row.kind || 'direct',
-        threadKey: row.thread_key,
-        senderType: row.sender_type || 'player',
-        senderId: row.sender_id || null,
-        recipientPlayerId: row.recipient_player_id || null,
-        npcId: row.npc_id || null,
-        directA: row.direct_a || null,
-        directB: row.direct_b || null,
-        authorLabel: row.author_label || null,
-        bodyHtml: row.body_html || '',
-        clientCreatedAt: row.created_at || now,
-        editedAt: row.edited_at || null,
-        deletedAt: row.deleted_at || null,
-        clientUpdatedAt: row.client_updated_at || now
-      };
-      const existing = await pbFirst(config, 'chat', pbAnd(pbEq('campaignId', config.campaignId), pbEq('messageId', body.messageId)));
-      const collection = encodeURIComponent(pbCollection(config, 'chat'));
-      const record = existing?.id
-        ? await pbFetch(config, `/api/collections/${collection}/records/${encodeURIComponent(existing.id)}`, { method: 'PATCH', json: body })
-        : await pbFetch(config, `/api/collections/${collection}/records`, { method: 'POST', json: body });
-      return normalizeChatRow(record);
-    }
     const body = {
-      campaign_id: config.campaignId,
-      message_id: row.message_id,
+      campaignId: config.campaignId,
+      messageId: row.message_id,
       kind: row.kind || 'direct',
-      thread_key: row.thread_key,
-      sender_type: row.sender_type || 'player',
-      sender_id: row.sender_id || null,
-      recipient_player_id: row.recipient_player_id || null,
-      npc_id: row.npc_id || null,
-      direct_a: row.direct_a || null,
-      direct_b: row.direct_b || null,
-      author_label: row.author_label || null,
-      body_html: row.body_html || '',
-      created_at: row.created_at || now,
-      edited_at: row.edited_at || null,
-      deleted_at: row.deleted_at || null,
-      updated_at: now,
-      client_updated_at: row.client_updated_at || now
+      threadKey: row.thread_key,
+      senderType: row.sender_type || 'player',
+      senderId: row.sender_id || null,
+      recipientPlayerId: row.recipient_player_id || null,
+      npcId: row.npc_id || null,
+      directA: row.direct_a || null,
+      directB: row.direct_b || null,
+      authorLabel: row.author_label || null,
+      bodyHtml: row.body_html || '',
+      clientCreatedAt: row.created_at || now,
+      editedAt: row.edited_at || null,
+      deletedAt: row.deleted_at || null,
+      clientUpdatedAt: row.client_updated_at || now
     };
-    const rows = await rest(config, config.chatTableName, 'select=campaign_id,message_id,kind,thread_key,sender_type,sender_id,recipient_player_id,npc_id,direct_a,direct_b,author_label,body_html,created_at,edited_at,deleted_at,updated_at,client_updated_at', {
-      method: 'POST',
-      headers: { Prefer: 'resolution=merge-duplicates,return=representation' },
-      body
-    });
-    return Array.isArray(rows) ? rows[0] || null : rows;
+    const existing = await pbFirst(config, 'chat', pbAnd(pbEq('campaignId', config.campaignId), pbEq('messageId', body.messageId)));
+    const collection = encodeURIComponent(pbCollection(config, 'chat'));
+    const record = existing?.id
+      ? await pbFetch(config, `/api/collections/${collection}/records/${encodeURIComponent(existing.id)}`, { method: 'PATCH', json: body })
+      : await pbFetch(config, `/api/collections/${collection}/records`, { method: 'POST', json: body });
+    return normalizeChatRow(record);
   }
 
   async function apiPullCombatRuntime(config) {
-    if (isPocketBaseConfig(config)) {
-      const record = await pbFirst(config, 'combat', pbEq('campaignId', config.campaignId));
-      return normalizeCombatRow(record);
-    }
-    const rows = await rest(config, config.combatRuntimeTableName, qs({
-      campaign_id: `eq.${config.campaignId}`,
-      select: 'campaign_id,revision,updated_at,updated_by,client_updated_at,active_scene_id,scene_json,runtime_json',
-      limit: '1'
-    }));
-    return Array.isArray(rows) ? rows[0] || null : null;
+    const record = await pbFirst(config, 'combat', pbEq('campaignId', config.campaignId));
+    return normalizeCombatRow(record);
   }
 
   const GUEST_ID = '__guest__';
@@ -2066,18 +1914,7 @@
     }
   }
 
-  function realtimeWsUrl(config) {
-    const url = new URL(String(config.url || ''));
-    url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
-    url.pathname = '/realtime/v1/websocket';
-    url.search = `apikey=${encodeURIComponent(config.anonKey)}&vsn=1.0.0`;
-    return url.toString();
-  }
 
-  function nextRealtimeRef() {
-    App.realtime.ref += 1;
-    return String(App.realtime.ref);
-  }
 
   function scheduleRealtimeRefresh(kinds = {}) {
     App.realtime.pending.players = App.realtime.pending.players || !!kinds.players;
@@ -2102,24 +1939,6 @@
     }, 180);
   }
 
-  function handleRealtimePayload(message) {
-    if (isPocketBaseConfig()) return handlePocketBaseRealtimePayload(message);
-    const topic = String(message?.topic || '');
-    const event = String(message?.event || '');
-    if (event !== 'postgres_changes') return;
-    const payload = message?.payload || {};
-    const key = `${topic}:${payload?.ids?.join(',') || ''}:${payload?.data?.schema || ''}:${payload?.data?.table || ''}:${payload?.data?.commit_timestamp || payload?.data?.record?.updated_at || ''}`;
-    if (App.realtime.eventKeys.has(key)) return;
-    App.realtime.eventKeys.add(key);
-    if (App.realtime.eventKeys.size > 200) {
-      const first = App.realtime.eventKeys.values().next().value;
-      if (first) App.realtime.eventKeys.delete(first);
-    }
-    if (topic.endsWith(App.config.chatTableName)) scheduleRealtimeRefresh({ chat: true });
-    else if (topic.endsWith(App.config.combatRuntimeTableName)) scheduleRealtimeRefresh({ combat: true });
-    else if (topic.endsWith(App.config.playerTableName)) scheduleRealtimeRefresh({ players: true });
-    else scheduleRealtimeRefresh({ snapshot: true });
-  }
 
   function handlePocketBaseRealtimePayload(frame) {
     const event = String(frame?.event || '').trim();
@@ -2136,22 +1955,6 @@
     else scheduleRealtimeRefresh({ snapshot: true });
   }
 
-  function joinRealtimeTopic(tableName) {
-    if (!App.realtime.socket || App.realtime.socket.readyState !== WebSocket.OPEN) return;
-    const topic = `realtime:public:${tableName}`;
-    App.realtime.socket.send(JSON.stringify({
-      topic,
-      event: 'phx_join',
-      payload: {
-        config: {
-          broadcast: { ack: false, self: false },
-          presence: { key: '' },
-          postgres_changes: [{ event: '*', schema: 'public', table: tableName, filter: `campaign_id=eq.${App.config.campaignId}` }]
-        }
-      },
-      ref: nextRealtimeRef()
-    }));
-  }
 
   async function startPocketBaseRealtime() {
     const controller = new AbortController();
@@ -2202,37 +2005,12 @@
     }
   }
 
-  function startSupabaseRealtime() {
-    const socket = new WebSocket(realtimeWsUrl(App.config));
-    App.realtime.socket = socket;
-    socket.addEventListener('open', () => {
-      joinRealtimeTopic(App.config.chatTableName);
-      joinRealtimeTopic(App.config.combatRuntimeTableName);
-      joinRealtimeTopic(App.config.playerTableName);
-      App.realtime.heartbeat = setInterval(() => {
-        if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ topic: 'phoenix', event: 'heartbeat', payload: {}, ref: nextRealtimeRef() }));
-      }, 25000);
-    });
-    socket.addEventListener('message', event => {
-      try { handleRealtimePayload(JSON.parse(event.data)); } catch (error) { console.warn('realtime parse failed', error); }
-    });
-    socket.addEventListener('close', () => {
-      const shouldReconnect = App.session?.userId && !App.realtime.suppressClose;
-      if (App.realtime.heartbeat) clearInterval(App.realtime.heartbeat);
-      App.realtime.heartbeat = null;
-      App.realtime.socket = null;
-      App.realtime.suppressClose = false;
-      if (shouldReconnect) App.realtime.reconnectTimer = setTimeout(() => startRealtime(), 2200);
-    });
-    socket.addEventListener('error', () => { try { socket.close(); } catch {} });
-  }
 
   function startRealtime() {
     stopRealtime();
     if (!hasConfig() || !App.session?.userId) return;
     try {
-      if (isPocketBaseConfig()) startPocketBaseRealtime();
-      else startSupabaseRealtime();
+      startPocketBaseRealtime();
     } catch (error) {
       console.warn('realtime init failed', error);
     }
@@ -2528,9 +2306,7 @@
     const form = $('#setup-form');
     if (!form) return;
     const config = normalizeConfig(App.config || {});
-    if (form.backend) form.backend.value = config.backend || DEFAULTS.backend;
-    form.url.value = config.url || (config.backend === 'pocketbase' ? DEFAULTS.url : '');
-    if (form.anonKey) form.anonKey.value = config.anonKey || '';
+    form.url.value = config.url || DEFAULTS.url;
     if (form.appUserEmail) form.appUserEmail.value = config.appUserEmail || '';
     if (form.appUserPassword) form.appUserPassword.value = config.appUserPassword || '';
     if (form.appUsersCollection) form.appUsersCollection.value = config.appUsersCollection || DEFAULTS.appUsersCollection;
@@ -2540,7 +2316,6 @@
     form.playerTableName.value = config.playerTableName || DEFAULTS.playerTableName;
     form.chatTableName.value = config.chatTableName || DEFAULTS.chatTableName;
     form.combatRuntimeTableName.value = config.combatRuntimeTableName || DEFAULTS.combatRuntimeTableName;
-    if (form.storageBucket) form.storageBucket.value = config.storageBucket || DEFAULTS.storageBucket;
     if (form.assetsCollection) form.assetsCollection.value = config.assetsCollection || DEFAULTS.assetsCollection;
     form.snapshotPollMs.value = config.snapshotPollMs || DEFAULTS.snapshotPollMs;
     form.livePollMs.value = config.livePollMs || DEFAULTS.livePollMs;

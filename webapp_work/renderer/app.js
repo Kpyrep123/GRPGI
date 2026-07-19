@@ -1060,20 +1060,24 @@ const Tooling = {
   renderBootstrap() {
     const root = $('#login-sync-bootstrap');
     if (!root) return;
-    const config = this.config || { enabled: false, url: '', anonKey: '', campaignId: '', deviceLabel: '', tableName: 'campaign_snapshots', storageBucket: 'campaign-assets', pollIntervalMs: 45000 };
+    const config = this.config || { enabled: false, url: '', campaignId: '', deviceLabel: '', tableName: 'campaign_snapshots', pollIntervalMs: 45000 };
     root.innerHTML = `
       <div class="boot-sync-card">
         <div class="section-title">Подключение к кампании</div>
         
         <form id="bootstrap-sync-form" class="form">
-          <div class="field"><label>SUPABASE_URL</label><input class="input" name="url" value="${esc(config.url || '')}" placeholder="https://project.supabase.co" /></div>
-          <div class="field"><label>PUBLISHABLE / ANON KEY</label><input class="input" name="anonKey" value="${esc(config.anonKey || '')}" placeholder="sb_publishable_... или anon key" /></div>
+          <input type="hidden" name="provider" value="pocketbase" />
+          <div class="field"><label>POCKETBASE_URL</label><input class="input" name="url" value="${esc(config.url || 'https://sync.grpg-sync.ru')}" placeholder="https://sync.grpg-sync.ru" /></div>
+          <div class="cols2">
+            <div class="field"><label>APP_USER_EMAIL</label><input class="input" name="pocketbaseEmail" value="${esc(config.pocketbaseEmail || '')}" placeholder="dm@grpg-sync.local" /></div>
+            <div class="field"><label>APP_USER_PASSWORD</label><input class="input" type="password" name="pocketbasePassword" value="${esc(config.pocketbasePassword || '')}" /></div>
+          </div>
           <div class="cols2">
             <div class="field"><label>CAMPAIGN_ID</label><input class="input" name="campaignId" value="${esc(config.campaignId || '')}" placeholder="campaign-alpha" /></div>
             <div class="field"><label>DEVICE_LABEL</label><input class="input" name="deviceLabel" value="${esc(config.deviceLabel || '')}" placeholder="player-laptop / gm-main-pc" /></div>
           </div>
           <div class="cols2">
-            <div class="field"><label>STORAGE_BUCKET</label><input class="input" name="storageBucket" value="${esc(config.storageBucket || 'campaign-assets')}" placeholder="campaign-assets" /></div>
+            <div class="field"><label>PB_ASSETS</label><input class="input" name="pocketbaseAssetsCollection" value="${esc(config.pocketbaseAssetsCollection || 'campaign_assets')}" placeholder="campaign_assets" /></div>
             <div class="field"><label>TABLE_NAME</label><input class="input" name="tableName" value="${esc(config.tableName || 'campaign_snapshots')}" /></div>
           </div>
           <input type="hidden" name="enabled" value="1" />
@@ -1338,19 +1342,15 @@ const Sync = {
   pollTimer: null,
   provider(config = this.config) {
     const value = String(config?.provider || '').toLowerCase();
-    return value === 'pocketbase' || value === 'selfhost' || value === 'supabase' ? value : 'supabase';
+    return value === 'selfhost' ? 'selfhost' : 'pocketbase';
   },
   cloudName(config = this.config) {
-    const provider = this.provider(config);
-    if (provider === 'pocketbase') return 'PocketBase';
-    if (provider === 'selfhost') return 'Self-host';
-    return 'Supabase';
+    return this.provider(config) === 'selfhost' ? 'Self-host' : 'PocketBase';
   },
   isConfiguredConfig(config = this.config) {
     const provider = this.provider(config);
-    if (provider === 'pocketbase') return Boolean(config?.enabled && config?.url && config?.pocketbaseEmail && config?.pocketbasePassword && config?.campaignId);
-    if (provider === 'selfhost') return Boolean(config?.enabled && (config?.serverUrl || config?.url) && config?.campaignId);
-    return Boolean(config?.enabled && config?.url && config?.anonKey && config?.campaignId);
+    if (provider === 'selfhost') return Boolean(config?.enabled && config?.serverUrl && config?.campaignId);
+    return Boolean(config?.enabled && config?.url && config?.pocketbaseEmail && config?.pocketbasePassword && config?.campaignId);
   },
   isConfigured() {
     return this.isConfiguredConfig(this.config);
@@ -1368,11 +1368,11 @@ const Sync = {
   },
   async loadConfig() {
     if (!window.electronAPI?.loadSyncConfig) {
-      this.config = { enabled: false, campaignId: '', deviceLabel: '', storageBucket: 'campaign-assets', pollIntervalMs: 45000 };
+      this.config = { enabled: false, campaignId: '', deviceLabel: '', pollIntervalMs: 45000 };
       return this.config;
     }
     const res = await window.electronAPI.loadSyncConfig();
-    this.config = res?.config || { enabled: false, campaignId: '', deviceLabel: '', storageBucket: 'campaign-assets', pollIntervalMs: 45000 };
+    this.config = res?.config || { enabled: false, campaignId: '', deviceLabel: '', pollIntervalMs: 45000 };
     const current = App?.state?.meta?.sync || defaultSyncMeta();
     current.enabled = Boolean(this.config.enabled);
     current.configured = this.isConfiguredConfig(this.config);
@@ -1623,7 +1623,6 @@ const Sync = {
     const parts = [
       `campaign=${syncMeta.campaignId || this.config?.campaignId || '—'}`,
       `device=${syncMeta.deviceLabel || this.config?.deviceLabel || '—'}`,
-      `bucket=${this.config?.storageBucket || 'campaign-assets'}`,
       `remoteRevision=${syncMeta.remoteRevision || 0}`,
       `localDirty=${syncMeta.localDirty ? 'yes' : 'no'}`,
       `status=${syncMeta.lastStatus || 'LOCAL_ONLY'}`,
@@ -1657,11 +1656,10 @@ const Sync = {
     const formData = new FormData(formEl);
     const payload = {
       enabled: options.forceEnable ? true : Boolean(formData.get('enabled')),
-      provider: String(formData.get('provider') || this.config?.provider || 'supabase').trim().toLowerCase(),
+      provider: String(formData.get('provider') || this.config?.provider || 'pocketbase').trim().toLowerCase(),
       url: String(formData.get('url') || '').trim(),
       serverUrl: String(formData.get('serverUrl') || '').trim(),
       accessToken: String(formData.get('accessToken') || '').trim(),
-      anonKey: String(formData.get('anonKey') || '').trim(),
       pocketbaseEmail: String(formData.get('pocketbaseEmail') || '').trim(),
       pocketbasePassword: String(formData.get('pocketbasePassword') || '').trim(),
       pocketbaseUsersCollection: String(formData.get('pocketbaseUsersCollection') || 'app_users').trim() || 'app_users',
@@ -1672,7 +1670,6 @@ const Sync = {
       chatTableName: String(formData.get('chatTableName') || 'campaign_messages').trim() || 'campaign_messages',
       playerTableName: String(formData.get('playerTableName') || 'campaign_players').trim() || 'campaign_players',
       combatRuntimeTableName: String(formData.get('combatRuntimeTableName') || 'campaign_combat_runtime').trim() || 'campaign_combat_runtime',
-      storageBucket: String(formData.get('storageBucket') || 'campaign-assets').trim() || 'campaign-assets',
       pollIntervalMs: Number(formData.get('pollIntervalMs') || 45000)
     };
     const res = await window.electronAPI?.saveSyncConfig?.(payload);
@@ -1718,7 +1715,7 @@ const Sync = {
   renderBootstrap() {
     const root = $('#login-sync-bootstrap');
     if (!root) return;
-    const config = this.config || { enabled: false, provider: 'pocketbase', url: 'https://sync.grpg-sync.ru', pocketbaseEmail: '', pocketbasePassword: '', campaignId: 'main', deviceLabel: '', tableName: 'campaign_snapshots', storageBucket: 'campaign-assets', pollIntervalMs: 45000 };
+    const config = this.config || { enabled: false, provider: 'pocketbase', url: 'https://sync.grpg-sync.ru', pocketbaseEmail: '', pocketbasePassword: '', campaignId: 'main', deviceLabel: '', tableName: 'campaign_snapshots', pollIntervalMs: 45000 };
     root.innerHTML = `
       <div class="boot-sync-card">
         <div class="section-title">Подключение к кампании</div>
@@ -1769,7 +1766,7 @@ const Sync = {
   render() {
     const root = $('#sync-content');
     if (!root) return;
-    const config = this.config || { enabled: false, provider: 'pocketbase', url: 'https://sync.grpg-sync.ru', campaignId: 'main', deviceLabel: '', tableName: 'campaign_snapshots', storageBucket: 'campaign-assets', pollIntervalMs: 45000 };
+    const config = this.config || { enabled: false, provider: 'pocketbase', url: 'https://sync.grpg-sync.ru', campaignId: 'main', deviceLabel: '', tableName: 'campaign_snapshots', pollIntervalMs: 45000 };
     const provider = this.provider(config);
     const syncMeta = App?.state?.meta?.sync || defaultSyncMeta();
     root.innerHTML = `
@@ -1782,7 +1779,6 @@ const Sync = {
               <label>BACKEND</label>
               <select class="select" name="provider">
                 <option value="pocketbase" ${provider === 'pocketbase' ? 'selected' : ''}>PocketBase</option>
-                <option value="supabase" ${provider === 'supabase' ? 'selected' : ''}>Supabase</option>
                 <option value="selfhost" ${provider === 'selfhost' ? 'selected' : ''}>Custom self-host</option>
               </select>
             </div>
@@ -1793,10 +1789,6 @@ const Sync = {
             <div class="cols2 sync-provider-pocketbase" style="display:${provider === 'pocketbase' ? 'grid' : 'none'}">
               <div class="field"><label>APP_USER_EMAIL</label><input class="input" name="pocketbaseEmail" value="${esc(config.pocketbaseEmail || '')}" placeholder="dm@grpg-sync.local" /></div>
               <div class="field"><label>APP_USER_PASSWORD</label><input class="input" type="password" name="pocketbasePassword" value="${esc(config.pocketbasePassword || '')}" /></div>
-            </div>
-            <div class="cols2 sync-provider-supabase" style="display:${provider === 'supabase' ? 'grid' : 'none'}">
-              <div class="field"><label>SUPABASE_KEY</label><input class="input" name="anonKey" value="${esc(config.anonKey || '')}" placeholder="sb_publishable_... или anon key" /></div>
-              <div class="field"><label>STORAGE_BUCKET</label><input class="input" name="storageBucket" value="${esc(config.storageBucket || 'campaign-assets')}" placeholder="campaign-assets" /></div>
             </div>
             <div class="cols2 sync-provider-selfhost" style="display:${provider === 'selfhost' ? 'grid' : 'none'}">
               <div class="field"><label>SERVER_URL</label><input class="input" name="serverUrl" value="${esc(config.serverUrl || '')}" placeholder="https://server.example.com" /></div>
@@ -1845,9 +1837,8 @@ const Sync = {
       </div>
     `;
     $('#sync-config-form select[name="provider"]')?.addEventListener('change', event => {
-      const value = String(event.currentTarget.value || 'supabase');
+      const value = String(event.currentTarget.value || 'pocketbase');
       $$('.sync-provider-pocketbase').forEach(el => el.style.display = value === 'pocketbase' ? 'grid' : 'none');
-      $$('.sync-provider-supabase').forEach(el => el.style.display = value === 'supabase' ? 'grid' : 'none');
       $$('.sync-provider-selfhost').forEach(el => el.style.display = value === 'selfhost' ? 'grid' : 'none');
     });
     $('#sync-config-form')?.addEventListener('submit', async event => {
@@ -4078,20 +4069,24 @@ const GM = {
   renderBootstrap() {
     const root = $('#login-sync-bootstrap');
     if (!root) return;
-    const config = this.config || { enabled: false, url: '', anonKey: '', campaignId: '', deviceLabel: '', tableName: 'campaign_snapshots', storageBucket: 'campaign-assets', pollIntervalMs: 45000 };
+    const config = this.config || { enabled: false, url: '', campaignId: '', deviceLabel: '', tableName: 'campaign_snapshots', pollIntervalMs: 45000 };
     root.innerHTML = `
       <div class="boot-sync-card">
         <div class="section-title">Подключение к кампании</div>
         
         <form id="bootstrap-sync-form" class="form">
-          <div class="field"><label>SUPABASE_URL</label><input class="input" name="url" value="${esc(config.url || '')}" placeholder="https://project.supabase.co" /></div>
-          <div class="field"><label>PUBLISHABLE / ANON KEY</label><input class="input" name="anonKey" value="${esc(config.anonKey || '')}" placeholder="sb_publishable_... или anon key" /></div>
+          <input type="hidden" name="provider" value="pocketbase" />
+          <div class="field"><label>POCKETBASE_URL</label><input class="input" name="url" value="${esc(config.url || 'https://sync.grpg-sync.ru')}" placeholder="https://sync.grpg-sync.ru" /></div>
+          <div class="cols2">
+            <div class="field"><label>APP_USER_EMAIL</label><input class="input" name="pocketbaseEmail" value="${esc(config.pocketbaseEmail || '')}" placeholder="dm@grpg-sync.local" /></div>
+            <div class="field"><label>APP_USER_PASSWORD</label><input class="input" type="password" name="pocketbasePassword" value="${esc(config.pocketbasePassword || '')}" /></div>
+          </div>
           <div class="cols2">
             <div class="field"><label>CAMPAIGN_ID</label><input class="input" name="campaignId" value="${esc(config.campaignId || '')}" placeholder="campaign-alpha" /></div>
             <div class="field"><label>DEVICE_LABEL</label><input class="input" name="deviceLabel" value="${esc(config.deviceLabel || '')}" placeholder="player-laptop / gm-main-pc" /></div>
           </div>
           <div class="cols2">
-            <div class="field"><label>STORAGE_BUCKET</label><input class="input" name="storageBucket" value="${esc(config.storageBucket || 'campaign-assets')}" placeholder="campaign-assets" /></div>
+            <div class="field"><label>PB_ASSETS</label><input class="input" name="pocketbaseAssetsCollection" value="${esc(config.pocketbaseAssetsCollection || 'campaign_assets')}" placeholder="campaign_assets" /></div>
             <div class="field"><label>TABLE_NAME</label><input class="input" name="tableName" value="${esc(config.tableName || 'campaign_snapshots')}" /></div>
           </div>
           <input type="hidden" name="enabled" value="1" />
@@ -4270,20 +4265,24 @@ const Configurator = {
   renderBootstrap() {
     const root = $('#login-sync-bootstrap');
     if (!root) return;
-    const config = this.config || { enabled: false, url: '', anonKey: '', campaignId: '', deviceLabel: '', tableName: 'campaign_snapshots', storageBucket: 'campaign-assets', pollIntervalMs: 45000 };
+    const config = this.config || { enabled: false, url: '', campaignId: '', deviceLabel: '', tableName: 'campaign_snapshots', pollIntervalMs: 45000 };
     root.innerHTML = `
       <div class="boot-sync-card">
         <div class="section-title">Подключение к кампании</div>
         
         <form id="bootstrap-sync-form" class="form">
-          <div class="field"><label>SUPABASE_URL</label><input class="input" name="url" value="${esc(config.url || '')}" placeholder="https://project.supabase.co" /></div>
-          <div class="field"><label>PUBLISHABLE / ANON KEY</label><input class="input" name="anonKey" value="${esc(config.anonKey || '')}" placeholder="sb_publishable_... или anon key" /></div>
+          <input type="hidden" name="provider" value="pocketbase" />
+          <div class="field"><label>POCKETBASE_URL</label><input class="input" name="url" value="${esc(config.url || 'https://sync.grpg-sync.ru')}" placeholder="https://sync.grpg-sync.ru" /></div>
+          <div class="cols2">
+            <div class="field"><label>APP_USER_EMAIL</label><input class="input" name="pocketbaseEmail" value="${esc(config.pocketbaseEmail || '')}" placeholder="dm@grpg-sync.local" /></div>
+            <div class="field"><label>APP_USER_PASSWORD</label><input class="input" type="password" name="pocketbasePassword" value="${esc(config.pocketbasePassword || '')}" /></div>
+          </div>
           <div class="cols2">
             <div class="field"><label>CAMPAIGN_ID</label><input class="input" name="campaignId" value="${esc(config.campaignId || '')}" placeholder="campaign-alpha" /></div>
             <div class="field"><label>DEVICE_LABEL</label><input class="input" name="deviceLabel" value="${esc(config.deviceLabel || '')}" placeholder="player-laptop / gm-main-pc" /></div>
           </div>
           <div class="cols2">
-            <div class="field"><label>STORAGE_BUCKET</label><input class="input" name="storageBucket" value="${esc(config.storageBucket || 'campaign-assets')}" placeholder="campaign-assets" /></div>
+            <div class="field"><label>PB_ASSETS</label><input class="input" name="pocketbaseAssetsCollection" value="${esc(config.pocketbaseAssetsCollection || 'campaign_assets')}" placeholder="campaign_assets" /></div>
             <div class="field"><label>TABLE_NAME</label><input class="input" name="tableName" value="${esc(config.tableName || 'campaign_snapshots')}" /></div>
           </div>
           <input type="hidden" name="enabled" value="1" />

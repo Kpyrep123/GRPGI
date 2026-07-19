@@ -1060,20 +1060,24 @@ const Tooling = {
   renderBootstrap() {
     const root = $('#login-sync-bootstrap');
     if (!root) return;
-    const config = this.config || { enabled: false, url: '', anonKey: '', campaignId: '', deviceLabel: '', tableName: 'campaign_snapshots', storageBucket: 'campaign-assets', pollIntervalMs: 45000 };
+    const config = this.config || { enabled: false, url: '', campaignId: '', deviceLabel: '', tableName: 'campaign_snapshots', pollIntervalMs: 45000 };
     root.innerHTML = `
       <div class="boot-sync-card">
         <div class="section-title">Подключение к кампании</div>
         
         <form id="bootstrap-sync-form" class="form">
-          <div class="field"><label>SUPABASE_URL</label><input class="input" name="url" value="${esc(config.url || '')}" placeholder="https://project.supabase.co" /></div>
-          <div class="field"><label>PUBLISHABLE / ANON KEY</label><input class="input" name="anonKey" value="${esc(config.anonKey || '')}" placeholder="sb_publishable_... или anon key" /></div>
+          <input type="hidden" name="provider" value="pocketbase" />
+          <div class="field"><label>POCKETBASE_URL</label><input class="input" name="url" value="${esc(config.url || 'https://sync.grpg-sync.ru')}" placeholder="https://sync.grpg-sync.ru" /></div>
+          <div class="cols2">
+            <div class="field"><label>APP_USER_EMAIL</label><input class="input" name="pocketbaseEmail" value="${esc(config.pocketbaseEmail || '')}" placeholder="dm@grpg-sync.local" /></div>
+            <div class="field"><label>APP_USER_PASSWORD</label><input class="input" type="password" name="pocketbasePassword" value="${esc(config.pocketbasePassword || '')}" /></div>
+          </div>
           <div class="cols2">
             <div class="field"><label>CAMPAIGN_ID</label><input class="input" name="campaignId" value="${esc(config.campaignId || '')}" placeholder="campaign-alpha" /></div>
             <div class="field"><label>DEVICE_LABEL</label><input class="input" name="deviceLabel" value="${esc(config.deviceLabel || '')}" placeholder="player-laptop / gm-main-pc" /></div>
           </div>
           <div class="cols2">
-            <div class="field"><label>STORAGE_BUCKET</label><input class="input" name="storageBucket" value="${esc(config.storageBucket || 'campaign-assets')}" placeholder="campaign-assets" /></div>
+            <div class="field"><label>PB_ASSETS</label><input class="input" name="pocketbaseAssetsCollection" value="${esc(config.pocketbaseAssetsCollection || 'campaign_assets')}" placeholder="campaign_assets" /></div>
             <div class="field"><label>TABLE_NAME</label><input class="input" name="tableName" value="${esc(config.tableName || 'campaign_snapshots')}" /></div>
           </div>
           <input type="hidden" name="enabled" value="1" />
@@ -1338,19 +1342,15 @@ const Sync = {
   pollTimer: null,
   provider(config = this.config) {
     const value = String(config?.provider || '').toLowerCase();
-    return value === 'pocketbase' || value === 'selfhost' || value === 'supabase' ? value : 'supabase';
+    return value === 'selfhost' ? 'selfhost' : 'pocketbase';
   },
   cloudName(config = this.config) {
-    const provider = this.provider(config);
-    if (provider === 'pocketbase') return 'PocketBase';
-    if (provider === 'selfhost') return 'Self-host';
-    return 'Supabase';
+    return this.provider(config) === 'selfhost' ? 'Self-host' : 'PocketBase';
   },
   isConfiguredConfig(config = this.config) {
     const provider = this.provider(config);
-    if (provider === 'pocketbase') return Boolean(config?.enabled && config?.url && config?.pocketbaseEmail && config?.pocketbasePassword && config?.campaignId);
-    if (provider === 'selfhost') return Boolean(config?.enabled && (config?.serverUrl || config?.url) && config?.campaignId);
-    return Boolean(config?.enabled && config?.url && config?.anonKey && config?.campaignId);
+    if (provider === 'selfhost') return Boolean(config?.enabled && config?.serverUrl && config?.campaignId);
+    return Boolean(config?.enabled && config?.url && config?.pocketbaseEmail && config?.pocketbasePassword && config?.campaignId);
   },
   isConfigured() {
     return this.isConfiguredConfig(this.config);
@@ -1368,11 +1368,11 @@ const Sync = {
   },
   async loadConfig() {
     if (!window.electronAPI?.loadSyncConfig) {
-      this.config = { enabled: false, campaignId: '', deviceLabel: '', storageBucket: 'campaign-assets', pollIntervalMs: 45000 };
+      this.config = { enabled: false, campaignId: '', deviceLabel: '', pollIntervalMs: 45000 };
       return this.config;
     }
     const res = await window.electronAPI.loadSyncConfig();
-    this.config = res?.config || { enabled: false, campaignId: '', deviceLabel: '', storageBucket: 'campaign-assets', pollIntervalMs: 45000 };
+    this.config = res?.config || { enabled: false, campaignId: '', deviceLabel: '', pollIntervalMs: 45000 };
     const current = App?.state?.meta?.sync || defaultSyncMeta();
     current.enabled = Boolean(this.config.enabled);
     current.configured = this.isConfiguredConfig(this.config);
@@ -1623,7 +1623,6 @@ const Sync = {
     const parts = [
       `campaign=${syncMeta.campaignId || this.config?.campaignId || '—'}`,
       `device=${syncMeta.deviceLabel || this.config?.deviceLabel || '—'}`,
-      `bucket=${this.config?.storageBucket || 'campaign-assets'}`,
       `remoteRevision=${syncMeta.remoteRevision || 0}`,
       `localDirty=${syncMeta.localDirty ? 'yes' : 'no'}`,
       `status=${syncMeta.lastStatus || 'LOCAL_ONLY'}`,
@@ -1635,7 +1634,10 @@ const Sync = {
   },
   startPolling() {
     this.stopPolling();
-    const every = Math.max(10000, Number(this.config?.pollIntervalMs || 45000));
+    // Когда активен realtime-мост (PocketBase: события приходят мгновенно),
+    // опрос по таймеру — только страховка на случай пропущенного события.
+    const realtimeActive = Boolean(this._worldSnapshotRealtimeUnsubV1015);
+    const every = Math.max(realtimeActive ? 180000 : 10000, Number(this.config?.pollIntervalMs || 45000));
     this.pollTimer = setInterval(() => {
       (async () => {
         const canApplyWorld = !UiSyncGuard.isEditingCriticalForm() && !App?.state?.meta?.sync?.localDirty;
@@ -1657,11 +1659,10 @@ const Sync = {
     const formData = new FormData(formEl);
     const payload = {
       enabled: options.forceEnable ? true : Boolean(formData.get('enabled')),
-      provider: String(formData.get('provider') || this.config?.provider || 'supabase').trim().toLowerCase(),
+      provider: String(formData.get('provider') || this.config?.provider || 'pocketbase').trim().toLowerCase(),
       url: String(formData.get('url') || '').trim(),
       serverUrl: String(formData.get('serverUrl') || '').trim(),
       accessToken: String(formData.get('accessToken') || '').trim(),
-      anonKey: String(formData.get('anonKey') || '').trim(),
       pocketbaseEmail: String(formData.get('pocketbaseEmail') || '').trim(),
       pocketbasePassword: String(formData.get('pocketbasePassword') || '').trim(),
       pocketbaseUsersCollection: String(formData.get('pocketbaseUsersCollection') || 'app_users').trim() || 'app_users',
@@ -1672,7 +1673,6 @@ const Sync = {
       chatTableName: String(formData.get('chatTableName') || 'campaign_messages').trim() || 'campaign_messages',
       playerTableName: String(formData.get('playerTableName') || 'campaign_players').trim() || 'campaign_players',
       combatRuntimeTableName: String(formData.get('combatRuntimeTableName') || 'campaign_combat_runtime').trim() || 'campaign_combat_runtime',
-      storageBucket: String(formData.get('storageBucket') || 'campaign-assets').trim() || 'campaign-assets',
       pollIntervalMs: Number(formData.get('pollIntervalMs') || 45000)
     };
     const res = await window.electronAPI?.saveSyncConfig?.(payload);
@@ -1718,7 +1718,7 @@ const Sync = {
   renderBootstrap() {
     const root = $('#login-sync-bootstrap');
     if (!root) return;
-    const config = this.config || { enabled: false, provider: 'pocketbase', url: 'https://sync.grpg-sync.ru', pocketbaseEmail: '', pocketbasePassword: '', campaignId: 'main', deviceLabel: '', tableName: 'campaign_snapshots', storageBucket: 'campaign-assets', pollIntervalMs: 45000 };
+    const config = this.config || { enabled: false, provider: 'pocketbase', url: 'https://sync.grpg-sync.ru', pocketbaseEmail: '', pocketbasePassword: '', campaignId: 'main', deviceLabel: '', tableName: 'campaign_snapshots', pollIntervalMs: 45000 };
     root.innerHTML = `
       <div class="boot-sync-card">
         <div class="section-title">Подключение к кампании</div>
@@ -1769,7 +1769,7 @@ const Sync = {
   render() {
     const root = $('#sync-content');
     if (!root) return;
-    const config = this.config || { enabled: false, provider: 'pocketbase', url: 'https://sync.grpg-sync.ru', campaignId: 'main', deviceLabel: '', tableName: 'campaign_snapshots', storageBucket: 'campaign-assets', pollIntervalMs: 45000 };
+    const config = this.config || { enabled: false, provider: 'pocketbase', url: 'https://sync.grpg-sync.ru', campaignId: 'main', deviceLabel: '', tableName: 'campaign_snapshots', pollIntervalMs: 45000 };
     const provider = this.provider(config);
     const syncMeta = App?.state?.meta?.sync || defaultSyncMeta();
     root.innerHTML = `
@@ -1782,7 +1782,6 @@ const Sync = {
               <label>BACKEND</label>
               <select class="select" name="provider">
                 <option value="pocketbase" ${provider === 'pocketbase' ? 'selected' : ''}>PocketBase</option>
-                <option value="supabase" ${provider === 'supabase' ? 'selected' : ''}>Supabase</option>
                 <option value="selfhost" ${provider === 'selfhost' ? 'selected' : ''}>Custom self-host</option>
               </select>
             </div>
@@ -1793,10 +1792,6 @@ const Sync = {
             <div class="cols2 sync-provider-pocketbase" style="display:${provider === 'pocketbase' ? 'grid' : 'none'}">
               <div class="field"><label>APP_USER_EMAIL</label><input class="input" name="pocketbaseEmail" value="${esc(config.pocketbaseEmail || '')}" placeholder="dm@grpg-sync.local" /></div>
               <div class="field"><label>APP_USER_PASSWORD</label><input class="input" type="password" name="pocketbasePassword" value="${esc(config.pocketbasePassword || '')}" /></div>
-            </div>
-            <div class="cols2 sync-provider-supabase" style="display:${provider === 'supabase' ? 'grid' : 'none'}">
-              <div class="field"><label>SUPABASE_KEY</label><input class="input" name="anonKey" value="${esc(config.anonKey || '')}" placeholder="sb_publishable_... или anon key" /></div>
-              <div class="field"><label>STORAGE_BUCKET</label><input class="input" name="storageBucket" value="${esc(config.storageBucket || 'campaign-assets')}" placeholder="campaign-assets" /></div>
             </div>
             <div class="cols2 sync-provider-selfhost" style="display:${provider === 'selfhost' ? 'grid' : 'none'}">
               <div class="field"><label>SERVER_URL</label><input class="input" name="serverUrl" value="${esc(config.serverUrl || '')}" placeholder="https://server.example.com" /></div>
@@ -1845,9 +1840,8 @@ const Sync = {
       </div>
     `;
     $('#sync-config-form select[name="provider"]')?.addEventListener('change', event => {
-      const value = String(event.currentTarget.value || 'supabase');
+      const value = String(event.currentTarget.value || 'pocketbase');
       $$('.sync-provider-pocketbase').forEach(el => el.style.display = value === 'pocketbase' ? 'grid' : 'none');
-      $$('.sync-provider-supabase').forEach(el => el.style.display = value === 'supabase' ? 'grid' : 'none');
       $$('.sync-provider-selfhost').forEach(el => el.style.display = value === 'selfhost' ? 'grid' : 'none');
     });
     $('#sync-config-form')?.addEventListener('submit', async event => {
@@ -1935,6 +1929,8 @@ const Sync = {
   Sync.init = async function() {
     const result = await __syncInitV1015();
     this.initWorldSnapshotRealtimeBridgeV1015();
+    // перезапускаем опрос: с активным realtime он растягивается до страховочного
+    if (this._worldSnapshotRealtimeUnsubV1015 && this.pollTimer) this.startPolling();
     return result;
   };
 
@@ -4088,20 +4084,24 @@ const GM = {
   renderBootstrap() {
     const root = $('#login-sync-bootstrap');
     if (!root) return;
-    const config = this.config || { enabled: false, url: '', anonKey: '', campaignId: '', deviceLabel: '', tableName: 'campaign_snapshots', storageBucket: 'campaign-assets', pollIntervalMs: 45000 };
+    const config = this.config || { enabled: false, url: '', campaignId: '', deviceLabel: '', tableName: 'campaign_snapshots', pollIntervalMs: 45000 };
     root.innerHTML = `
       <div class="boot-sync-card">
         <div class="section-title">Подключение к кампании</div>
         
         <form id="bootstrap-sync-form" class="form">
-          <div class="field"><label>SUPABASE_URL</label><input class="input" name="url" value="${esc(config.url || '')}" placeholder="https://project.supabase.co" /></div>
-          <div class="field"><label>PUBLISHABLE / ANON KEY</label><input class="input" name="anonKey" value="${esc(config.anonKey || '')}" placeholder="sb_publishable_... или anon key" /></div>
+          <input type="hidden" name="provider" value="pocketbase" />
+          <div class="field"><label>POCKETBASE_URL</label><input class="input" name="url" value="${esc(config.url || 'https://sync.grpg-sync.ru')}" placeholder="https://sync.grpg-sync.ru" /></div>
+          <div class="cols2">
+            <div class="field"><label>APP_USER_EMAIL</label><input class="input" name="pocketbaseEmail" value="${esc(config.pocketbaseEmail || '')}" placeholder="dm@grpg-sync.local" /></div>
+            <div class="field"><label>APP_USER_PASSWORD</label><input class="input" type="password" name="pocketbasePassword" value="${esc(config.pocketbasePassword || '')}" /></div>
+          </div>
           <div class="cols2">
             <div class="field"><label>CAMPAIGN_ID</label><input class="input" name="campaignId" value="${esc(config.campaignId || '')}" placeholder="campaign-alpha" /></div>
             <div class="field"><label>DEVICE_LABEL</label><input class="input" name="deviceLabel" value="${esc(config.deviceLabel || '')}" placeholder="player-laptop / gm-main-pc" /></div>
           </div>
           <div class="cols2">
-            <div class="field"><label>STORAGE_BUCKET</label><input class="input" name="storageBucket" value="${esc(config.storageBucket || 'campaign-assets')}" placeholder="campaign-assets" /></div>
+            <div class="field"><label>PB_ASSETS</label><input class="input" name="pocketbaseAssetsCollection" value="${esc(config.pocketbaseAssetsCollection || 'campaign_assets')}" placeholder="campaign_assets" /></div>
             <div class="field"><label>TABLE_NAME</label><input class="input" name="tableName" value="${esc(config.tableName || 'campaign_snapshots')}" /></div>
           </div>
           <input type="hidden" name="enabled" value="1" />
@@ -4280,20 +4280,24 @@ const Configurator = {
   renderBootstrap() {
     const root = $('#login-sync-bootstrap');
     if (!root) return;
-    const config = this.config || { enabled: false, url: '', anonKey: '', campaignId: '', deviceLabel: '', tableName: 'campaign_snapshots', storageBucket: 'campaign-assets', pollIntervalMs: 45000 };
+    const config = this.config || { enabled: false, url: '', campaignId: '', deviceLabel: '', tableName: 'campaign_snapshots', pollIntervalMs: 45000 };
     root.innerHTML = `
       <div class="boot-sync-card">
         <div class="section-title">Подключение к кампании</div>
         
         <form id="bootstrap-sync-form" class="form">
-          <div class="field"><label>SUPABASE_URL</label><input class="input" name="url" value="${esc(config.url || '')}" placeholder="https://project.supabase.co" /></div>
-          <div class="field"><label>PUBLISHABLE / ANON KEY</label><input class="input" name="anonKey" value="${esc(config.anonKey || '')}" placeholder="sb_publishable_... или anon key" /></div>
+          <input type="hidden" name="provider" value="pocketbase" />
+          <div class="field"><label>POCKETBASE_URL</label><input class="input" name="url" value="${esc(config.url || 'https://sync.grpg-sync.ru')}" placeholder="https://sync.grpg-sync.ru" /></div>
+          <div class="cols2">
+            <div class="field"><label>APP_USER_EMAIL</label><input class="input" name="pocketbaseEmail" value="${esc(config.pocketbaseEmail || '')}" placeholder="dm@grpg-sync.local" /></div>
+            <div class="field"><label>APP_USER_PASSWORD</label><input class="input" type="password" name="pocketbasePassword" value="${esc(config.pocketbasePassword || '')}" /></div>
+          </div>
           <div class="cols2">
             <div class="field"><label>CAMPAIGN_ID</label><input class="input" name="campaignId" value="${esc(config.campaignId || '')}" placeholder="campaign-alpha" /></div>
             <div class="field"><label>DEVICE_LABEL</label><input class="input" name="deviceLabel" value="${esc(config.deviceLabel || '')}" placeholder="player-laptop / gm-main-pc" /></div>
           </div>
           <div class="cols2">
-            <div class="field"><label>STORAGE_BUCKET</label><input class="input" name="storageBucket" value="${esc(config.storageBucket || 'campaign-assets')}" placeholder="campaign-assets" /></div>
+            <div class="field"><label>PB_ASSETS</label><input class="input" name="pocketbaseAssetsCollection" value="${esc(config.pocketbaseAssetsCollection || 'campaign_assets')}" placeholder="campaign_assets" /></div>
             <div class="field"><label>TABLE_NAME</label><input class="input" name="tableName" value="${esc(config.tableName || 'campaign_snapshots')}" /></div>
           </div>
           <input type="hidden" name="enabled" value="1" />
@@ -18876,7 +18880,7 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
     const audioApi = window.CombatAudioV37;
     if (!audioApi) { body.innerHTML = '<div class="small-note">Локальная библиотека звуков недоступна.</div>'; return; }
     const ambientId = audioApi.state?.sceneAmbient?.global || '';
-    body.innerHTML = `<div class="small-note">Звуки хранятся локально в renderer/assets/audio. Панель доступна только ДМу. Эмбиент главного экрана использует тот же набор групп, что и боевые сцены.</div><div class="row combat-editor-actions"><input class="input" id="global-ambient-section-name-v60" placeholder="Новый раздел звуков" /><button class="secondary" type="button" id="global-ambient-add-section-v60">ДОБАВИТЬ РАЗДЕЛ</button><button class="ghost" type="button" id="global-ambient-stop-v60">СТОП ЭМБИЕНТ</button></div><div class="combat-sound-sections-v37">${audioApi.sections.map(section => `<div class="combat-sound-section-v37"><div class="combat-sound-section-head-v37"><b>${esc(section.name)}</b><div class="row combat-editor-actions"><button class="secondary" type="button" data-global-sound-add="${esc(section.id)}">ДОБАВИТЬ ФАЙЛЫ</button><button class="secondary" type="button" data-global-sound-random="${esc(section.id)}">СЛУЧАЙНЫЙ</button></div></div><div class="combat-sound-list-v37">${section.sounds.map(sound => `<div class="combat-sound-row-v37"><span>${esc(sound.name)}</span><div class="row combat-editor-actions"><button class="ghost" type="button" data-global-sound-play="${esc(sound.id)}">PLAY</button><button class="ghost ${ambientId === sound.id ? 'active' : ''}" type="button" data-global-sound-ambient="${esc(sound.id)}">AMBIENT</button></div></div>`).join('') || '<div class="small-note">В этом разделе пока нет файлов.</div>'}</div></div>`).join('')}</div>`;
+    body.innerHTML = `<div class="small-note">Звуки хранятся локально в renderer/assets/audio. Панель доступна только ДМу. Эмбиент главного экрана использует тот же набор групп, что и боевые сцены.</div><div class="row combat-editor-actions"><input class="input" id="global-ambient-section-name-v60" placeholder="Новый раздел звуков" /><button class="secondary" type="button" id="global-ambient-add-section-v60">ДОБАВИТЬ РАЗДЕЛ</button><button class="ghost" type="button" id="global-ambient-stop-v60">СТОП ЭМБИЕНТ</button></div><div class="combat-sound-sections-v37">${audioApi.sections.map(section => `<div class="combat-sound-section-v37"><div class="combat-sound-section-head-v37"><b>${esc(section.name)}</b><div class="row combat-editor-actions"><button class="secondary" type="button" data-global-sound-add="${esc(section.id)}">ДОБАВИТЬ ФАЙЛЫ</button><button class="secondary" type="button" data-global-sound-random="${esc(section.id)}">СЛУЧАЙНЫЙ</button></div></div><div class="combat-sound-list-v37">${section.sounds.map(sound => `<div class="combat-sound-row-v37"><span>${esc(sound.name)}</span><div class="row combat-editor-actions"><button class="ghost" type="button" data-global-sound-play="${esc(sound.id)}">PLAY</button><button class="ghost ${ambientId === sound.id ? 'active' : ''}" type="button" data-global-sound-ambient="${esc(sound.id)}">AMBIENT</button><button class="ghost" type="button" data-global-sound-stop="${esc(sound.id)}" title="Остановить эмбиент">⏹</button></div></div>`).join('') || '<div class="small-note">В этом разделе пока нет файлов.</div>'}</div></div>`).join('')}</div>`;
   }
   document.addEventListener('click', event => {
     const ambientBtn = event.target.closest?.('#ambient-mute-btn');
@@ -18886,13 +18890,13 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
     }
     const modal = document.getElementById('global-ambient-modal-v60');
     if (!modal?.classList.contains('open')) return;
-    const target = event.target.closest?.('#global-ambient-add-section-v60,#global-ambient-stop-v60,[data-global-sound-add],[data-global-sound-random],[data-global-sound-play],[data-global-sound-ambient]');
+    const target = event.target.closest?.('#global-ambient-add-section-v60,#global-ambient-stop-v60,[data-global-sound-add],[data-global-sound-random],[data-global-sound-play],[data-global-sound-ambient],[data-global-sound-stop]');
     if (!target) return;
     event.preventDefault(); event.stopPropagation();
     const audioApi = window.CombatAudioV37;
     if (!audioApi) return;
     if (target.id === 'global-ambient-add-section-v60') { const input = document.getElementById('global-ambient-section-name-v60'); audioApi.addSection(input?.value || ''); if (input) input.value = ''; }
-    else if (target.id === 'global-ambient-stop-v60') { delete audioApi.state.sceneAmbient.global; audioApi.save(); audioApi.stopAmbient(); }
+    else if (target.id === 'global-ambient-stop-v60' || target.dataset.globalSoundStop) { delete audioApi.state.sceneAmbient.global; audioApi.save(); audioApi.stopAmbient(); }
     else if (target.dataset.globalSoundAdd) audioApi.addSound(target.dataset.globalSoundAdd);
     else if (target.dataset.globalSoundRandom) audioApi.playRandom(target.dataset.globalSoundRandom);
     else if (target.dataset.globalSoundPlay) audioApi.play(target.dataset.globalSoundPlay);
@@ -18905,4 +18909,2277 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
   });
 
 
+})();
+
+
+/* v1.0.36 regions / ships / realtime map MVP */
+(function(){
+  if (window.__regionsShipsRtsV36) return;
+  window.__regionsShipsRtsV36 = true;
+
+  var REGION_MAPS_V36 = {};
+  var REGION_MAP_LIST_V36 = [];
+  var SHIPS_V36 = {};
+  var SHIP_LIST_V36 = [];
+  var RTS_REGION_UI_V36 = { mapId: '', mode: 'play', selectedTokenId: '', selectedMarkerId: '', dragging: null, raf: 0, view: { zoom: 1, panX: 0, panY: 0, frameW: 0, frameH: 0 }, persistTimer: 0, persistMsg: '', displayTimer: 0, resizeBound: false, arming: '', missiles: [], timeScale: 1, lastTickMs: 0, missileType: 'heat', contactSeen: { vis: new Set(), radar: new Set() }, fuelBucketByToken: {} };
+  const RTS_REGION_STATE_KEY_V36 = 'regionRuntime';
+  const RTS_MERGE_RANGE_V36 = 120; // дистанция сближения для объединения в эскадру
+
+  WORLD_SECTIONS.regionMaps = { label: 'Регионы / города', mapKey: 'REGION_MAPS', listKey: 'REGION_MAP_LIST' };
+  WORLD_SECTIONS.ships = { label: 'Корабли', mapKey: 'SHIPS', listKey: 'SHIP_LIST' };
+  WORLD_SECTIONS.missiles = { label: 'Ракеты', mapKey: 'MISSILES', listKey: 'MISSILE_LIST' };
+  WORLD_SECTIONS.radars = { label: 'Радары / РЭБ', mapKey: 'RADARS', listKey: 'RADAR_LIST' };
+  var MISSILES_V36 = {};
+  var RADARS_V36 = {};
+  function normalizeMissileV36(missile = {}) {
+    const id = cleanIdV36(missile.id || missile.name, 'missile');
+    return {
+      id,
+      name: String(missile.name || id).trim() || id,
+      guidance: ['heat', 'radar', 'anti'].includes(String(missile.guidance || '').trim()) ? String(missile.guidance).trim() : 'heat',
+      range: Math.max(10, Number(missile.range || 350)),
+      seek: Math.max(10, Number(missile.seek || 110)),
+      speed: Math.max(20, Number(missile.speed || 300)),
+      notes: String(missile.notes || '').trim()
+    };
+  }
+  function normalizeRadarV36(radar = {}) {
+    const id = cleanIdV36(radar.id || radar.name, 'radar');
+    return {
+      id,
+      name: String(radar.name || id).trim() || id,
+      kind: String(radar.kind || '').trim() === 'jammer' ? 'jammer' : 'radar',
+      range: Math.max(0, Number(radar.range || 200)),
+      notes: String(radar.notes || '').trim()
+    };
+  }
+
+  function safeArrayV36(value) { return Array.isArray(value) ? value : []; }
+  function cleanIdV36(value, fallback = 'id') { return slugifyId(String(value || '').trim() || `${fallback}_${Date.now().toString(36)}`, fallback); }
+  function uniqueV36(values) { return Array.from(new Set(safeArrayV36(values).map(v => String(v || '').trim()).filter(Boolean))); }
+  function nowIsoV36() { return new Date().toISOString(); }
+  function isGmV36(user = App?.currentUser) {
+    const role = String(user?.role || '').toLowerCase();
+    const id = String(user?.id || App?.currentUserId || '').toLowerCase();
+    return role === 'gm' || role === 'dm' || role === 'master' || id === 'gm' || id === 'dm';
+  }
+  function playerOptionsV36(includeGm = false) { return sortEntitiesForList(Object.values(App?.state?.users || PLAYER_TEMPLATES || {})).filter(p => includeGm || String(p.role || '') !== 'gm'); }
+  function npcOptionsV36() { return sortEntitiesForList(Object.values(NPCS || {})); }
+  function shipOptionsV36() { return sortEntitiesForList(Object.values(SHIPS_V36 || {})); }
+  function regionMapOptionsV36(planetId = '') {
+    const list = sortEntitiesForList(Object.values(REGION_MAPS_V36 || {}));
+    return planetId ? list.filter(map => String(map.planetId || '') === String(planetId)) : list;
+  }
+  // maxX/maxY default to "no clamping": callers that know the map pass its real
+  // dimensions. The old hardcoded 0..1000 clamp silently snapped every token and
+  // marker on larger maps to the border on each normalize pass (= every save/sync),
+  // which is how positions "got lost".
+  function normalizeRegionMarkerV36(marker = {}, maxX = 1000000, maxY = 1000000) {
+    return {
+      id: String(marker.id || `marker_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,6)}`).trim(),
+      name: String(marker.name || 'Метка').trim() || 'Метка',
+      type: String(marker.type || 'point').trim() || 'point',
+      x: clamp(Number(marker.x ?? 500), 0, maxX),
+      y: clamp(Number(marker.y ?? 500), 0, maxY),
+      color: String(marker.color || '#7df9ff').trim() || '#7df9ff',
+      visibleToPlayers: marker.visibleToPlayers !== false,
+      targetRegionId: String(marker.targetRegionId || '').trim(),
+      notes: String(marker.notes || '').trim()
+    };
+  }
+  function normalizeRegionTokenV36(token = {}, maxX = 1000000, maxY = 1000000) {
+    return {
+      id: String(token.id || `token_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,6)}`).trim(),
+      name: String(token.name || 'Токен').trim() || 'Токен',
+      type: ['player','ship','unit','convoy','city','squadron'].includes(String(token.type || '').trim()) ? String(token.type || '').trim() : 'unit',
+      shipIds: uniqueV36(token.shipIds || []),
+      x: clamp(Number(token.x ?? 500), 0, maxX),
+      y: clamp(Number(token.y ?? 500), 0, maxY),
+      startX: Number(token.startX ?? token.x ?? 500),
+      startY: Number(token.startY ?? token.y ?? 500),
+      destX: Number(token.destX ?? token.x ?? 500),
+      destY: Number(token.destY ?? token.y ?? 500),
+      moveStartedAt: String(token.moveStartedAt || '').trim(),
+      moveEndsAt: String(token.moveEndsAt || '').trim(),
+      color: String(token.color || '#7df9ff').trim() || '#7df9ff',
+      image: String(token.image || '').trim(),
+      playerId: String(token.playerId || '').trim(),
+      shipId: String(token.shipId || '').trim(),
+      npcId: String(token.npcId || '').trim(),
+      visibleToPlayers: Boolean(token.visibleToPlayers),
+      visionRadius: Math.max(0, Number(token.visionRadius || 0)), // 0 = наследует радиус обзора карты
+      radarRadius: Math.max(0, Number(token.radarRadius || 0)),
+      radarEnabled: token.radarEnabled !== false,
+      moveShipId: String(token.moveShipId || '').trim(),
+      moveFuelStart: Number(token.moveFuelStart || 0),
+      moveFuelCost: Number(token.moveFuelCost || 0),
+      movePausedMs: Math.max(0, Number(token.movePausedMs || 0)),
+      notes: String(token.notes || '').trim()
+    };
+  }
+  function normalizeRegionMapV36(map = {}) {
+    const id = cleanIdV36(map.id || map.name, 'region');
+    const width = Math.max(300, Number(map.width || 1000));
+    const height = Math.max(200, Number(map.height || 700));
+    return {
+      id,
+      name: String(map.name || id).trim() || id,
+      kind: ['region','city','building'].includes(String(map.kind || '').trim()) ? String(map.kind || '').trim() : 'region',
+      planetId: String(map.planetId || '').trim(),
+      parentRegionId: String(map.parentRegionId || map.parentId || '').trim(),
+      image: String(map.image || map.backgroundImage || '').trim(),
+      color: String(map.color || '#7df9ff').trim() || '#7df9ff',
+      width,
+      height,
+      scaleLabel: String(map.scaleLabel || 'км').trim() || 'км',
+      summary: String(map.summary || '').trim(),
+      markers: safeArrayV36(map.markers).map(marker => normalizeRegionMarkerV36(marker, width, height)),
+      tokens: safeArrayV36(map.tokens).map(token => normalizeRegionTokenV36(token, width, height)),
+      fog: {
+        enabled: map.fog ? map.fog.enabled !== false : true,
+        radius: Math.max(0, Number(map.fog?.radius ?? 50)),
+        explored: typeof map.fog?.explored === 'string' ? map.fog.explored : ''
+      },
+      visibility: map.visibility || { playerIds: [] },
+      relatedArticleIds: uniqueV36(map.relatedArticleIds || [])
+    };
+  }
+  function normalizeShipV36(ship = {}) {
+    const id = cleanIdV36(ship.id || ship.name, 'ship');
+    const fuelCapacity = Math.max(0, Number(ship.fuelCapacity ?? ship.maxFuel ?? 100));
+    const fuel = clamp(Number(ship.fuel ?? fuelCapacity), 0, Math.max(1, fuelCapacity));
+    return {
+      id,
+      name: String(ship.name || id).trim() || id,
+      model: String(ship.model || '').trim(),
+      image: String(ship.image || '').trim(),
+      ownerPlayerId: String(ship.ownerPlayerId || '').trim(),
+      currentRegionId: String(ship.currentRegionId || '').trim(),
+      currentPlanetId: String(ship.currentPlanetId || '').trim(),
+      fuel,
+      fuelCapacity,
+      fuelConsumption: Math.max(0.01, Number(ship.fuelConsumption || 1)),
+      mass: Math.max(1, Number(ship.mass || 100)),
+      enginePower: Math.max(1, Number(ship.enginePower || 100)),
+      visionRadius: Math.max(0, Number(ship.visionRadius || 0)), // 0 = радиус карты
+      radarRadius: Math.max(0, Number(ship.radarRadius || 0)), // legacy: перекрывается установленными радарами
+      radarEnabled: ship.radarEnabled !== false,
+      missileIds: uniqueV36(ship.missileIds || []),
+      radarIds: uniqueV36(ship.radarIds || []),
+      cargoMass: Math.max(0, Number(ship.cargoMass || 0)),
+      crewPlayerIds: uniqueV36(ship.crewPlayerIds || []),
+      crewNpcIds: uniqueV36(ship.crewNpcIds || []),
+      guns: safeArrayV36(ship.guns).map(gun => ({ name: String(gun?.name || '').trim(), type: String(gun?.type || '').trim(), damage: String(gun?.damage || '').trim(), range: Number(gun?.range || 0) })).filter(gun => gun.name),
+      notes: String(ship.notes || '').trim(),
+      visibility: ship.visibility || { playerIds: [] },
+      relatedArticleIds: uniqueV36(ship.relatedArticleIds || [])
+    };
+  }
+  function shipSpeedV36(ship = {}) {
+    const mass = Math.max(1, Number(ship.mass || 100) + Number(ship.cargoMass || 0));
+    const power = Math.max(1, Number(ship.enginePower || 100));
+    return clamp((power / mass) * 150, 12, 260);
+  }
+  function shipFuelRangeV36(ship = {}) {
+    // Honest, uncapped range: the old 2500 ceiling pinned the fuel circle at a
+    // constant size for efficient ships, so it never visibly shrank.
+    const fuel = Math.max(0, Number(ship.fuel || 0));
+    const consumption = Math.max(0.01, Number(ship.fuelConsumption || 1));
+    return Math.max(0, (fuel / consumption) * 100);
+  }
+  function shipMovementStatsMarkupV36(ship = {}) {
+    const speed = shipSpeedV36(ship);
+    const range = shipFuelRangeV36(ship);
+    return `<div class="small-note">Авторасчёт: скорость ${speed.toFixed(1)} ед/сек · запас хода ${range.toFixed(0)} ед карты</div>`;
+  }
+  function currentTokenPositionV36(token = {}, at = Date.now()) {
+    // на паузе токен стоит там, где остановился, а не в точке назначения
+    if (Number(token.movePausedMs || 0) > 0 && !token.moveEndsAt) return { x: Number(token.x ?? 0), y: Number(token.y ?? 0), done: false };
+    const start = Date.parse(token.moveStartedAt || '');
+    const end = Date.parse(token.moveEndsAt || '');
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start || at >= end) {
+      return { x: Number(token.destX ?? token.x ?? 0), y: Number(token.destY ?? token.y ?? 0), done: Boolean(token.moveEndsAt) && Number.isFinite(end) && at >= end };
+    }
+    const t = clamp((at - start) / (end - start), 0, 1);
+    return {
+      x: lerp(Number(token.startX ?? token.x ?? 0), Number(token.destX ?? token.x ?? 0), t),
+      y: lerp(Number(token.startY ?? token.y ?? 0), Number(token.destY ?? token.y ?? 0), t),
+      done: false
+    };
+  }
+  function settleRegionTokenV36(token = {}, map = null) {
+    const maxX = Math.max(1, Number(map?.width || 1000000));
+    const maxY = Math.max(1, Number(map?.height || 1000000));
+    const pos = currentTokenPositionV36(token);
+    if (pos.done) {
+      // Commit the fuel actually burned over the completed route (consumed progressively, deducted once here).
+      if (token.type === 'squadron' && Number(token.moveFuelCost || 0) > 0) {
+        // эскадра: расход делится между кораблями пропорционально их топливу
+        const ships = squadronShipsV36(token);
+        const total = ships.reduce((sum, ship) => sum + Number(ship.fuel || 0), 0);
+        const cost = Number(token.moveFuelCost || 0);
+        if (total > 0) ships.forEach(ship => {
+          const share = cost * Number(ship.fuel || 0) / total;
+          ship.fuel = clamp(Number(ship.fuel || 0) - share, 0, Math.max(1, Number(ship.fuelCapacity || ship.fuel || 0)));
+        });
+      } else if (token.moveShipId && SHIPS_V36[token.moveShipId] && Number(token.moveFuelCost || 0) > 0) {
+        const ship = SHIPS_V36[token.moveShipId];
+        const start = Number.isFinite(token.moveFuelStart) ? Number(token.moveFuelStart) : Number(ship.fuel || 0);
+        ship.fuel = clamp(start - Number(token.moveFuelCost || 0), 0, Math.max(1, Number(ship.fuelCapacity || ship.fuel || 0)));
+      }
+      token.moveShipId = '';
+      token.moveFuelStart = 0;
+      token.moveFuelCost = 0;
+      token.x = clamp(Number(token.destX ?? pos.x), 0, maxX);
+      token.y = clamp(Number(token.destY ?? pos.y), 0, maxY);
+      token.startX = token.x;
+      token.startY = token.y;
+      token.destX = token.x;
+      token.destY = token.y;
+      token.moveStartedAt = '';
+      token.moveEndsAt = '';
+    }
+    return token;
+  }
+  function settleAllRegionTokensV36() {
+    Object.values(REGION_MAPS_V36 || {}).forEach(map => { map.tokens = safeArrayV36(map.tokens).map(token => settleRegionTokenV36(token, map)); });
+  }
+  // ---- squadrons ----
+  function squadronShipsV36(token) {
+    return safeArrayV36(token?.shipIds).map(id => SHIPS_V36[id]).filter(Boolean);
+  }
+  function squadronStatsV36(token) {
+    const ships = squadronShipsV36(token);
+    if (!ships.length) return { ships, speed: 40, fuel: 0, fuelCapacity: 0, fuelConsumption: 0.01 };
+    return {
+      ships,
+      speed: Math.min(...ships.map(ship => shipSpeedV36(ship))), // скорость эскадры = самый медленный корабль
+      fuel: ships.reduce((sum, ship) => sum + Number(ship.fuel || 0), 0), // топливо объединяется
+      fuelCapacity: ships.reduce((sum, ship) => sum + Number(ship.fuelCapacity || 0), 0),
+      fuelConsumption: Math.max(0.01, ships.reduce((sum, ship) => sum + Math.max(0.01, Number(ship.fuelConsumption || 1)), 0))
+    };
+  }
+  // ---- view (обзор): only ships crewed by player characters + player tokens grant view ----
+  function shipHasPlayerCrewV36(shipId) {
+    const ship = SHIPS_V36[shipId];
+    if (!ship) return false;
+    if ((ship.crewPlayerIds || []).length) return true;
+    // также считаем экипаж по ссылке игрока на текущий корабль (профиль)
+    return Object.values(App?.state?.users || {}).some(user => String(user?.currentShipId || '') === String(shipId) && String(user?.role || '').toLowerCase() !== 'gm');
+  }
+  function tokenGrantsPlayerViewV36(token) {
+    // обзор дают ТОЛЬКО корабли/эскадры с игроками в экипаже
+    if (!token) return false;
+    if (token.type === 'ship' && token.shipId && shipHasPlayerCrewV36(token.shipId)) return true;
+    if (token.type === 'squadron' && safeArrayV36(token.shipIds).some(id => shipHasPlayerCrewV36(id))) return true;
+    return false;
+  }
+  function tokenViewRadiusV36(token, map) {
+    // WC первичен: для кораблей/эскадр обзор берётся из корабля (WC), иначе из
+    // радиуса карты (WC). Локальное значение токена — только для не-кораблей.
+    if (token?.type === 'ship' || token?.type === 'squadron') {
+      const shipVision = token.type === 'ship'
+        ? Number(SHIPS_V36[token.shipId]?.visionRadius || 0)
+        : Math.max(0, ...squadronShipsV36(token).map(ship => Number(ship.visionRadius || 0)), 0);
+      return shipVision > 0 ? shipVision : Math.max(0, Number(map?.fog?.radius ?? 50));
+    }
+    const own = Number(token?.visionRadius || 0);
+    return own > 0 ? own : Math.max(0, Number(map?.fog?.radius ?? 50));
+  }
+  // Радар корабля определяется установленными в WC радарами (лучший «radar» по
+  // дальности; legacy radarRadius как запасной вариант). «jammer» (РЭБ) скрывает
+  // носителя от чужих радаров. Эскадра суммирует дальности включённых радаров.
+  function shipRadarSpecV36(ship) {
+    const installed = safeArrayV36(ship?.radarIds).map(id => RADARS_V36[id]).filter(Boolean);
+    const ranges = installed.filter(radar => radar.kind !== 'jammer').map(radar => Number(radar.range || 0));
+    const range = Math.max(0, Number(ship?.radarRadius || 0), ...(ranges.length ? ranges : [0]));
+    return { range, jammer: installed.some(radar => radar.kind === 'jammer') };
+  }
+  function tokenRadarInfoV36(token) {
+    if (!token) return { r: 0, active: false, jammer: false };
+    if (token.type === 'ship' && token.shipId && SHIPS_V36[token.shipId]) {
+      const ship = SHIPS_V36[token.shipId];
+      const spec = shipRadarSpecV36(ship);
+      const on = ship.radarEnabled !== false && token.radarEnabled !== false;
+      return { r: spec.range, active: on && spec.range > 0, jammer: on && spec.jammer };
+    }
+    if (token.type === 'squadron') {
+      const members = squadronShipsV36(token);
+      const on = token.radarEnabled !== false;
+      const r = members.reduce((sum, member) => member.radarEnabled !== false ? sum + shipRadarSpecV36(member).range : sum, 0);
+      const jammer = members.some(member => member.radarEnabled !== false && shipRadarSpecV36(member).jammer);
+      return { r, active: on && r > 0, jammer: on && jammer };
+    }
+    const r = Math.max(0, Number(token.radarRadius || 0));
+    return { r, active: r > 0 && token.radarEnabled !== false, jammer: false };
+  }
+  function playerViewSourcesV36(map) {
+    return safeArrayV36(map.tokens).filter(tokenGrantsPlayerViewV36).map(token => {
+      const pos = currentTokenPositionV36(token);
+      return { x: pos.x, y: pos.y, r: Math.max(1, tokenViewRadiusV36(token, map)) };
+    });
+  }
+  function playerRadarSourcesV36(map) {
+    return safeArrayV36(map.tokens).filter(tokenGrantsPlayerViewV36).map(token => {
+      const info = tokenRadarInfoV36(token);
+      if (!info.active) return null;
+      const pos = currentTokenPositionV36(token);
+      return { x: pos.x, y: pos.y, r: info.r };
+    }).filter(Boolean);
+  }
+  // Радарные контакты игроков: не-города вне прямой видимости, но в зоне радара.
+  function playerRadarContactsV36(map, at = Date.now()) {
+    const radar = playerRadarSourcesV36(map);
+    if (!radar.length) return [];
+    const view = playerViewSourcesV36(map);
+    return safeArrayV36(map.tokens).filter(token => {
+      if (token.type === 'city' || tokenGrantsPlayerViewV36(token) || token.visibleToPlayers) return false;
+      if (tokenRadarInfoV36(token).jammer) return false; // РЭБ скрывает от радара
+      const pos = currentTokenPositionV36(token, at);
+      if (view.some(src => Math.hypot(pos.x - src.x, pos.y - src.y) <= src.r)) return false; // уже видим
+      return radar.some(src => Math.hypot(pos.x - src.x, pos.y - src.y) <= src.r);
+    }).map(token => ({ token, emitting: tokenRadarInfoV36(token).active }));
+  }
+  // ---- региональные звуки (renderer/assets/audio, wav) ----
+  const REGION_AUDIO_V36 = { last: {} };
+  function playRegionSoundV36(name, opts = {}) {
+    try {
+      const key = opts.key || name;
+      const now = Date.now();
+      if (REGION_AUDIO_V36.last[key] && now - REGION_AUDIO_V36.last[key] < Number(opts.cooldownMs ?? 2500)) return;
+      REGION_AUDIO_V36.last[key] = now;
+      const audio = new Audio(`./assets/audio/${name}.wav`);
+      audio.volume = clamp(Number(opts.volume ?? 0.7), 0, 1);
+      audio.play().catch(() => {});
+    } catch {}
+  }
+  function playRegionSoundRandomV36(base, count, opts = {}) {
+    playRegionSoundV36(`${base}0${1 + Math.floor(Math.random() * Math.max(1, count))}`, { key: base, ...opts });
+  }
+  function visibleRegionTokenV36(token, map) {
+    if (isGmV36()) return true;
+    // города видны поверх тумана, но только если ДМ их закрепил
+    if (token.type === 'city') return Boolean(token.visibleToPlayers);
+    if (tokenGrantsPlayerViewV36(token)) return true;
+    if (token.type === 'player' && token.playerId && token.playerId === App?.currentUser?.id) return true; // собственный персонаж
+    if (token.visibleToPlayers) return true; // явное закрепление ДМом
+    // всё остальное видно только в радиусе обзора кораблей с игроками
+    const pos = currentTokenPositionV36(token);
+    return playerViewSourcesV36(map).some(src => Math.hypot(pos.x - src.x, pos.y - src.y) <= src.r);
+  }
+  function canOpenRegionMapV36(map, user = App?.currentUser) {
+    if (!map) return false;
+    if (isGmV36(user)) return true;
+    if (String(user?.currentRegionId || '') === String(map.id)) return true;
+    const shipId = String(user?.currentShipId || '').trim();
+    if (shipId && SHIPS_V36[shipId]?.currentRegionId === map.id) return true;
+    return false;
+  }
+  function getRegionRuntimeV36() {
+    if (!App.state.toolState) App.state.toolState = {};
+    if (!App.state.toolState[RTS_REGION_STATE_KEY_V36] || typeof App.state.toolState[RTS_REGION_STATE_KEY_V36] !== 'object') App.state.toolState[RTS_REGION_STATE_KEY_V36] = { activeMapId: '', updatedAt: null };
+    return App.state.toolState[RTS_REGION_STATE_KEY_V36];
+  }
+  async function persistRegionsShipsV36(message = '', opts = {}) {
+    touchRegionLocalV36();
+    settleAllRegionTokensV36();
+    REGION_MAP_LIST_V36 = sortEntitiesForList(Object.values(REGION_MAPS_V36));
+    SHIP_LIST_V36 = sortEntitiesForList(Object.values(SHIPS_V36));
+    worldData.regionMaps = serializeWorldSection('regionMaps', REGION_MAPS_V36);
+    worldData.ships = serializeWorldSection('ships', SHIPS_V36);
+    try { mirrorPlayersIntoWorld(App.state); } catch {}
+    if (window.electronAPI?.saveWorldData) {
+      const res = await window.electronAPI.saveWorldData(buildWorldSnapshot());
+      if (res?.ok && res.world) applyWorldData(res.world);
+    }
+    try { Sync.markLocalDirty('REGION_RTS_EDIT'); await Sync.pushCurrentSnapshot('region-rts-edit', { silent: true }); } catch {}
+    if (message && !opts.silent) Toast.show(message, 'ok');
+  }
+  // Debounced save so dragging / property tweaks / live movement don't spam the heavy world snapshot + sync push.
+  function scheduleRegionPersistV36(message = '', opts = {}) {
+    touchRegionLocalV36();
+    if (message) RTS_REGION_UI_V36.persistMsg = message;
+    clearTimeout(RTS_REGION_UI_V36.persistTimer);
+    const delay = Number(opts.delay != null ? opts.delay : 550);
+    RTS_REGION_UI_V36.persistTimer = setTimeout(() => {
+      RTS_REGION_UI_V36.persistTimer = 0;
+      const msg = RTS_REGION_UI_V36.persistMsg; RTS_REGION_UI_V36.persistMsg = '';
+      persistRegionsShipsV36(msg, { silent: !msg }).catch(() => {});
+    }, delay);
+  }
+  // Flush a pending debounced save immediately (modal close / app shutdown) so edits can't be lost.
+  function flushRegionPersistV36() {
+    if (!RTS_REGION_UI_V36.persistTimer) return;
+    clearTimeout(RTS_REGION_UI_V36.persistTimer);
+    RTS_REGION_UI_V36.persistTimer = 0;
+    const msg = RTS_REGION_UI_V36.persistMsg; RTS_REGION_UI_V36.persistMsg = '';
+    persistRegionsShipsV36(msg, { silent: !msg }).catch(() => {});
+  }
+  window.addEventListener('beforeunload', () => { try { flushRegionPersistV36(); } catch {} });
+  // While the GM is actively working with a region map, the local in-memory state
+  // is authoritative: a delayed/stale cloud snapshot echoing back must not roll
+  // token positions or ship fuel back. Players never mutate region data, so the
+  // guard is GM-only and they keep receiving live updates.
+  var REGION_LOCAL_TOUCH_MS_V36 = 0;
+  function touchRegionLocalV36() { REGION_LOCAL_TOUCH_MS_V36 = Date.now(); }
+  function shouldPreserveLocalRegionsV36() {
+    if (!isGmV36()) return false;
+    if (document.getElementById('region-map-modal-v36')?.classList.contains('open')) return true;
+    return (Date.now() - REGION_LOCAL_TOUCH_MS_V36) < 15000;
+  }
+
+  // ---- interactive camera (pan / zoom) ----
+  function getRegionViewV36() { if (!RTS_REGION_UI_V36.view) RTS_REGION_UI_V36.view = { zoom: 1, panX: 0, panY: 0, frameW: 0, frameH: 0 }; return RTS_REGION_UI_V36.view; }
+  function clampRegionViewV36(view) {
+    const z = clamp(Number(view.zoom || 1), 0.6, 6);
+    const fw = Math.max(1, Number(view.frameW || 1));
+    const fh = Math.max(1, Number(view.frameH || 1));
+    const overX = fw * 0.45, overY = fh * 0.45;
+    view.zoom = z;
+    view.panX = clamp(Number(view.panX || 0), Math.min(0, fw * (1 - z)) - overX, overX);
+    view.panY = clamp(Number(view.panY || 0), Math.min(0, fh * (1 - z)) - overY, overY);
+    return view;
+  }
+  function applyRegionCameraV36() {
+    const stage = document.getElementById('region-map-stage-v36');
+    if (!stage) return;
+    const v = clampRegionViewV36(getRegionViewV36());
+    stage.style.transform = `translate(${v.panX.toFixed(1)}px, ${v.panY.toFixed(1)}px) scale(${v.zoom.toFixed(4)})`;
+  }
+  function sizeRegionBoardV36() {
+    const map = REGION_MAPS_V36[RTS_REGION_UI_V36.mapId];
+    const wrap = document.getElementById('region-map-board-wrap-v36');
+    const frame = document.getElementById('region-map-frame-v36');
+    if (!map || !wrap || !frame) return;
+    const availW = Math.max(1, wrap.clientWidth - 20);
+    const availH = Math.max(1, wrap.clientHeight - 20);
+    const aspect = Math.max(.1, Number(map.width || 1000) / Math.max(1, Number(map.height || 700)));
+    let w = availW, h = w / aspect;
+    if (h > availH) { h = availH; w = h * aspect; }
+    frame.style.width = `${w.toFixed(1)}px`;
+    frame.style.height = `${h.toFixed(1)}px`;
+    const v = getRegionViewV36(); v.frameW = w; v.frameH = h;
+    applyRegionCameraV36();
+  }
+  function regionZoomAtV36(factor, cx, cy) {
+    const v = getRegionViewV36();
+    const fw = Math.max(1, v.frameW || 1), fh = Math.max(1, v.frameH || 1);
+    const ax = cx == null ? fw / 2 : cx, ay = cy == null ? fh / 2 : cy;
+    const z0 = Math.max(0.0001, v.zoom), z1 = clamp(z0 * factor, 0.6, 6);
+    v.panX = ax - (z1 / z0) * (ax - v.panX);
+    v.panY = ay - (z1 / z0) * (ay - v.panY);
+    v.zoom = z1;
+    applyRegionCameraV36();
+    queueRegionDisplayMirrorV36();
+  }
+  function resetRegionViewV36() {
+    const v = getRegionViewV36(); v.zoom = 1; v.panX = 0; v.panY = 0;
+    applyRegionCameraV36(); queueRegionDisplayMirrorV36();
+  }
+  // ---- second-screen camera mirror (normalized pan so it scales to any display size) ----
+  function regionDisplayPayloadV36() {
+    const v = getRegionViewV36();
+    const fw = Math.max(1, v.frameW || 1), fh = Math.max(1, v.frameH || 1);
+    return { mode: 'region', activeRegionMapId: RTS_REGION_UI_V36.mapId || '', regionCamera: { zoom: Number(v.zoom || 1), panFracX: Number(v.panX || 0) / fw, panFracY: Number(v.panY || 0) / fh }, updatedAt: nowIsoV36() };
+  }
+  function queueRegionDisplayMirrorV36() {
+    clearTimeout(RTS_REGION_UI_V36.displayTimer);
+    RTS_REGION_UI_V36.displayTimer = setTimeout(() => { try { window.electronAPI?.updatePlayerDisplayView?.(regionDisplayPayloadV36()); } catch {} }, 45);
+  }
+  // ---- live fuel helpers (consume progressively while moving) ----
+  function liveShipForTokenV36(token) {
+    if (token.type === 'squadron') {
+      const stats = squadronStatsV36(token);
+      if (!stats.ships.length) return null;
+      // виртуальный «корабль» эскадры: общее топливо, суммарный расход, скорость самого медленного
+      return { id: `squadron:${token.id}`, name: token.name || 'Эскадра', fuel: stats.fuel, fuelCapacity: stats.fuelCapacity, fuelConsumption: stats.fuelConsumption, __squadron: true, __speed: stats.speed };
+    }
+    let ship = token.shipId ? SHIPS_V36[token.shipId] : null;
+    if (!ship && token.playerId) ship = SHIPS_V36[(App.state.users[token.playerId] || PLAYER_TEMPLATES[token.playerId])?.currentShipId];
+    return ship || null;
+  }
+  function liveFuelV36(token, ship, at = Date.now()) {
+    if (!ship) return 0;
+    const start = Date.parse(token.moveStartedAt || ''), end = Date.parse(token.moveEndsAt || '');
+    const moving = Number.isFinite(start) && Number.isFinite(end) && end > start;
+    const matchesMove = ship.__squadron ? (token.type === 'squadron' && Number(token.moveFuelCost || 0) > 0) : token.moveShipId === ship.id;
+    if (moving && matchesMove) {
+      const t = clamp((at - start) / (end - start), 0, 1);
+      return clamp(Number(token.moveFuelStart || ship.fuel || 0) - Number(token.moveFuelCost || 0) * t, 0, Math.max(1, Number(ship.fuelCapacity || ship.fuel || 0)));
+    }
+    return Number(ship.fuel || 0);
+  }
+  function shipRangeFromFuelV36(ship, fuel) {
+    const consumption = Math.max(0.01, Number(ship.fuelConsumption || 1));
+    return Math.max(0, (Math.max(0, fuel) / consumption) * 100);
+  }
+
+  // Merge an incoming section into the in-memory map *in place* so existing object references
+  // (held by open-modal event handlers, the rAF loop, etc.) stay valid across saves / remote syncs.
+  // Replacing the objects wholesale made edits land on a stale `map` and silently vanish.
+  function mergeWorldSectionInPlaceV36(target, rawEntries, normalize) {
+    const next = {};
+    Object.entries(rawEntries || {}).forEach(([id, raw]) => {
+      const normalized = normalize({ id, ...raw });
+      const existing = target[normalized.id];
+      if (existing && typeof existing === 'object') {
+        Object.keys(existing).forEach(key => { delete existing[key]; });
+        Object.assign(existing, normalized);
+        next[normalized.id] = existing;
+      } else {
+        next[normalized.id] = normalized;
+      }
+    });
+    return next;
+  }
+  const __applyWorldData_v36 = applyWorldData;
+  applyWorldData = function(payload = {}) {
+    __applyWorldData_v36(payload);
+    // Stale-echo guard: while the GM is actively using the region map, keep the
+    // local region/ship state and only refresh the outgoing mirrors from it, so a
+    // late cloud pull can't roll back token positions or fuel. The mirrors below
+    // still carry the local data into the next snapshot, self-healing the cloud.
+    if (!(shouldPreserveLocalRegionsV36() && Object.keys(REGION_MAPS_V36).length)) {
+      REGION_MAPS_V36 = mergeWorldSectionInPlaceV36(REGION_MAPS_V36, payload?.regionMaps?.REGION_MAPS || payload?.regions?.REGION_MAPS || payload?.REGION_MAPS || {}, normalizeRegionMapV36);
+      SHIPS_V36 = mergeWorldSectionInPlaceV36(SHIPS_V36, payload?.ships?.SHIPS || payload?.SHIPS || {}, normalizeShipV36);
+      MISSILES_V36 = mergeWorldSectionInPlaceV36(MISSILES_V36, payload?.missiles?.MISSILES || payload?.MISSILES || {}, normalizeMissileV36);
+      RADARS_V36 = mergeWorldSectionInPlaceV36(RADARS_V36, payload?.radars?.RADARS || payload?.RADARS || {}, normalizeRadarV36);
+    }
+    REGION_MAP_LIST_V36 = sortEntitiesForList(Object.values(REGION_MAPS_V36));
+    SHIP_LIST_V36 = sortEntitiesForList(Object.values(SHIPS_V36));
+    worldData.regionMaps = serializeWorldSection('regionMaps', REGION_MAPS_V36);
+    worldData.ships = serializeWorldSection('ships', SHIPS_V36);
+    worldData.missiles = serializeWorldSection('missiles', MISSILES_V36);
+    worldData.radars = serializeWorldSection('radars', RADARS_V36);
+    Data.regionMaps = REGION_MAPS_V36;
+    Data.ships = SHIPS_V36;
+    Data.missiles = MISSILES_V36;
+    Data.radars = RADARS_V36;
+  };
+
+  const __buildWorldSnapshot_v36 = buildWorldSnapshot;
+  buildWorldSnapshot = function() {
+    settleAllRegionTokensV36();
+    const snap = __buildWorldSnapshot_v36();
+    snap.regionMaps = serializeWorldSection('regionMaps', REGION_MAPS_V36);
+    snap.ships = serializeWorldSection('ships', SHIPS_V36);
+    snap.missiles = serializeWorldSection('missiles', MISSILES_V36);
+    snap.radars = serializeWorldSection('radars', RADARS_V36);
+    return snap;
+  };
+
+  const __createBlankEntity_v36 = createBlankEntity;
+  createBlankEntity = function(type) {
+    const stamp = Date.now().toString(36).slice(-6);
+    if (type === 'regionMaps') return normalizeRegionMapV36({ id: `region_${stamp}`, name: 'Новый регион', kind: 'region', planetId: UI?.selectedPlanetId || Object.keys(PLANETS)[0] || '', width: 1000, height: 700, markers: [], tokens: [] });
+    if (type === 'ships') return normalizeShipV36({ id: `ship_${stamp}`, name: 'Новый корабль', model: '', fuel: 100, fuelCapacity: 100, fuelConsumption: 1, mass: 100, enginePower: 100, crewPlayerIds: [], crewNpcIds: [], guns: [] });
+    if (type === 'missiles') return normalizeMissileV36({ id: `missile_${stamp}`, name: 'Новая ракета', guidance: 'heat', range: 350, seek: 110, speed: 300 });
+    if (type === 'radars') return normalizeRadarV36({ id: `radar_${stamp}`, name: 'Новый радар', kind: 'radar', range: 200 });
+    return __createBlankEntity_v36(type);
+  };
+
+  function regionMapSelectOptionsV36(selected = '', planetId = '') {
+    return `<option value="">Не задано</option>${regionMapOptionsV36(planetId).map(map => `<option value="${esc(map.id)}" ${map.id === selected ? 'selected' : ''}>${esc(map.name)} · ${esc(map.kind)}</option>`).join('')}`;
+  }
+  function shipSelectOptionsV36(selected = '') {
+    return `<option value="">Не задан</option>${shipOptionsV36().map(ship => `<option value="${esc(ship.id)}" ${ship.id === selected ? 'selected' : ''}>${esc(ship.name)}${ship.model ? ` · ${esc(ship.model)}` : ''}</option>`).join('')}`;
+  }
+  function renderShipGunRowsV36(guns = []) {
+    const rows = safeArrayV36(guns).length ? safeArrayV36(guns) : [{ name: '', type: '', damage: '', range: 0 }];
+    return rows.map((gun, index) => `<div class="dynamic-row ship-gun-row-v36">
+      <input class="input" name="gunName" value="${esc(gun.name || '')}" placeholder="Орудие" />
+      <input class="input" name="gunType" value="${esc(gun.type || '')}" placeholder="Тип" />
+      <input class="input" name="gunDamage" value="${esc(gun.damage || '')}" placeholder="Урон" />
+      <input class="input" type="number" name="gunRange" value="${Number(gun.range || 0)}" placeholder="Дальность" />
+      <button class="ghost rts-remove-row" type="button">×</button>
+    </div>`).join('');
+  }
+  function readShipGunsV36(formEl) {
+    return Array.from(formEl.querySelectorAll('.ship-gun-row-v36')).map(row => ({
+      name: row.querySelector('[name="gunName"]')?.value || '',
+      type: row.querySelector('[name="gunType"]')?.value || '',
+      damage: row.querySelector('[name="gunDamage"]')?.value || '',
+      range: Number(row.querySelector('[name="gunRange"]')?.value || 0)
+    })).filter(gun => String(gun.name || '').trim());
+  }
+  function renderRegionMapEditorV36(map) {
+    const parentOptions = `<option value="">Нет</option>${Object.values(REGION_MAPS_V36).filter(item => item.id !== map.id && (!map.planetId || item.planetId === map.planetId)).map(item => `<option value="${esc(item.id)}" ${item.id === map.parentRegionId ? 'selected' : ''}>${esc(item.name)}</option>`).join('')}`;
+    return `<form id="config-editor-form" class="form" data-entity-type="regionMaps">
+      ${Configurator.renderHeader(map, 'Карта региона, города или здания. Её можно открыть с планеты на галактической карте и вывести на второй экран.')}
+      ${imageFieldMarkup(map, 'Карта / фон региона')}
+      <div class="cols3">
+        <div class="field"><label>ID</label><input class="input" name="id" value="${esc(map.id)}" /></div>
+        <div class="field"><label>Название</label><input class="input" name="name" value="${esc(map.name)}" /></div>
+        <div class="field"><label>Тип</label><select class="select" name="kind"><option value="region" ${map.kind === 'region' ? 'selected' : ''}>Регион</option><option value="city" ${map.kind === 'city' ? 'selected' : ''}>Город</option><option value="building" ${map.kind === 'building' ? 'selected' : ''}>Здание</option></select></div>
+      </div>
+      <div class="cols3">
+        <div class="field"><label>Планета</label><select class="select" name="planetId">${Object.values(PLANETS).map(planet => `<option value="${esc(planet.id)}" ${planet.id === map.planetId ? 'selected' : ''}>${esc(planet.name || planet.id)}</option>`).join('')}</select></div>
+        <div class="field"><label>Родительский регион / город</label><select class="select" name="parentRegionId">${parentOptions}</select></div>
+        <div class="field"><label>Цвет</label><input class="input" name="color" value="${esc(map.color || '#7df9ff')}" /></div>
+      </div>
+      <div class="cols3">
+        <div class="field"><label>Ширина карты</label><input class="input" type="number" name="width" value="${Number(map.width || 1000)}" /></div>
+        <div class="field"><label>Высота карты</label><input class="input" type="number" name="height" value="${Number(map.height || 700)}" /></div>
+        <div class="field"><label>Единицы</label><input class="input" name="scaleLabel" value="${esc(map.scaleLabel || 'км')}" /></div>
+      </div>
+      <div class="cols3">
+        <div class="field"><label>Туман войны</label><select class="select" name="fogEnabled"><option value="1" ${map.fog?.enabled !== false ? 'selected' : ''}>Включён</option><option value="0" ${map.fog?.enabled === false ? 'selected' : ''}>Выключен</option></select></div>
+        <div class="field"><label>Радиус обзора (${esc(map.scaleLabel || 'км')})</label><input class="input" type="number" name="fogRadius" value="${Number(map.fog?.radius ?? 50)}" /><div class="small-note">Обзор дают корабли с игроками в экипаже. Токен с Обзор=0 наследует этот радиус.</div></div>
+        <div></div>
+      </div>
+      <div class="field"><label>Описание</label><textarea class="area" name="summary">${esc(map.summary || '')}</textarea></div>
+      ${Configurator.renderVisibilityField(map)}
+      <div class="field"><label>Связанные статьи</label>${renderRelatedArticlesEditor(map.relatedArticleIds || [])}</div>
+      <div class="row" style="gap:10px;flex-wrap:wrap"><button class="primary" type="submit">SAVE_REGION_MAP</button><button class="secondary" type="button" data-open-region-map="${esc(map.id)}">ОТКРЫТЬ КАРТУ</button></div>
+    </form>`;
+  }
+  function renderShipEditorV36(ship) {
+    return `<form id="config-editor-form" class="form" data-entity-type="ships">
+      ${Configurator.renderHeader(ship, 'Корабль имеет экипаж, топливо и автоматически рассчитываемую скорость/запас хода на картах регионов.')}
+      ${imageFieldMarkup(ship, 'Изображение корабля')}
+      <div class="cols3">
+        <div class="field"><label>ID</label><input class="input" name="id" value="${esc(ship.id)}" /></div>
+        <div class="field"><label>Имя собственное</label><input class="input" name="name" value="${esc(ship.name)}" /></div>
+        <div class="field"><label>Модель</label><input class="input" name="model" value="${esc(ship.model || '')}" /></div>
+      </div>
+      <div class="cols3">
+        <div class="field"><label>Текущий регион</label><select class="select" name="currentRegionId">${regionMapSelectOptionsV36(ship.currentRegionId)}</select></div>
+        <div class="field"><label>Текущая планета</label><select class="select" name="currentPlanetId"><option value="">Не задана</option>${Object.values(PLANETS).map(planet => `<option value="${esc(planet.id)}" ${planet.id === ship.currentPlanetId ? 'selected' : ''}>${esc(planet.name || planet.id)}</option>`).join('')}</select></div>
+        <div class="field"><label>Владелец / капитан</label><select class="select" name="ownerPlayerId"><option value="">Не задан</option>${playerOptionsV36(true).map(player => `<option value="${esc(player.id)}" ${player.id === ship.ownerPlayerId ? 'selected' : ''}>${esc(player.displayName || player.id)}</option>`).join('')}</select></div>
+      </div>
+      <div class="cols3">
+        <div class="field"><label>Топливо</label><input class="input" type="number" name="fuel" value="${Number(ship.fuel || 0)}" /></div>
+        <div class="field"><label>Макс. топливо</label><input class="input" type="number" name="fuelCapacity" value="${Number(ship.fuelCapacity || 0)}" /></div>
+        <div class="field"><label>Расход / 100 ед.</label><input class="input" type="number" step="0.01" name="fuelConsumption" value="${Number(ship.fuelConsumption || 1)}" /></div>
+      </div>
+      <div class="cols3">
+        <div class="field"><label>Масса</label><input class="input" type="number" name="mass" value="${Number(ship.mass || 100)}" /></div>
+        <div class="field"><label>Мощность двигателя</label><input class="input" type="number" name="enginePower" value="${Number(ship.enginePower || 100)}" /></div>
+        <div class="field"><label>Грузовая масса</label><input class="input" type="number" name="cargoMass" value="${Number(ship.cargoMass || 0)}" />${shipMovementStatsMarkupV36(ship)}</div>
+      </div>
+      <div class="cols3">
+        <div class="field"><label>Обзор (0 = радиус карты)</label><input class="input" type="number" name="visionRadius" value="${Number(ship.visionRadius || 0)}" /></div>
+        <div class="field"><label>Радар — дальность (0 = нет радара)</label><input class="input" type="number" name="radarRadius" value="${Number(ship.radarRadius || 0)}" /></div>
+        <div></div>
+      </div>
+      <div class="field"><label>Экипаж игроки</label>${renderCheckboxSelector('crewPlayerIds', playerOptionsV36(false), ship.crewPlayerIds || [], 'player', 'Нет игроков')}</div>
+      <div class="field"><label>Экипаж NPC</label>${renderCheckboxSelector('crewNpcIds', npcOptionsV36(), ship.crewNpcIds || [], 'npc', 'Нет NPC')}</div>
+      <div class="field"><label>Ракеты (вооружение)</label>${renderCheckboxSelector('missileIds', sortEntitiesForList(Object.values(MISSILES_V36)), ship.missileIds || [], 'item', 'Ракеты не заданы в World Config')}</div>
+      <div class="field"><label>Радары / РЭБ</label>${renderCheckboxSelector('radarIds', sortEntitiesForList(Object.values(RADARS_V36)), ship.radarIds || [], 'item', 'Радары не заданы в World Config')}</div>
+      <div class="field"><label>Пушки</label><div id="ship-gun-rows" class="dynamic-list">${renderShipGunRowsV36(ship.guns)}</div><button class="secondary" type="button" id="ship-add-gun-row">ADD_GUN</button></div>
+      <div class="field"><label>Заметки</label><textarea class="area" name="notes">${esc(ship.notes || '')}</textarea></div>
+      ${Configurator.renderVisibilityField(ship)}
+      <div class="field"><label>Связанные статьи</label>${renderRelatedArticlesEditor(ship.relatedArticleIds || [])}</div>
+      <button class="primary" type="submit">SAVE_SHIP</button>
+    </form>`;
+  }
+
+  function renderMissileEditorV36(missile) {
+    return `<form id="config-editor-form" class="form" data-entity-type="missiles">
+      ${Configurator.renderHeader(missile, 'Ракета: тип наведения, дальность пуска, радиус поиска цели и скорость. Устанавливается на корабли в редакторе кораблей.')}
+      <div class="cols3">
+        <div class="field"><label>ID</label><input class="input" name="id" value="${esc(missile.id)}" /></div>
+        <div class="field"><label>Название</label><input class="input" name="name" value="${esc(missile.name)}" /></div>
+        <div class="field"><label>Наведение</label><select class="select" name="guidance"><option value="heat" ${missile.guidance === 'heat' ? 'selected' : ''}>Тепловое (корабли и ракеты)</option><option value="radar" ${missile.guidance === 'radar' ? 'selected' : ''}>Радарное (города и корабли с радаром)</option><option value="anti" ${missile.guidance === 'anti' ? 'selected' : ''}>Противоракета (только ракеты)</option></select></div>
+      </div>
+      <div class="cols3">
+        <div class="field"><label>Дальность пуска</label><input class="input" type="number" name="range" value="${Number(missile.range || 350)}" /></div>
+        <div class="field"><label>Радиус поиска цели</label><input class="input" type="number" name="seek" value="${Number(missile.seek || 110)}" /></div>
+        <div class="field"><label>Скорость</label><input class="input" type="number" name="speed" value="${Number(missile.speed || 300)}" /></div>
+      </div>
+      <div class="field"><label>Заметки</label><textarea class="area" name="notes">${esc(missile.notes || '')}</textarea></div>
+      <button class="primary" type="submit">SAVE_MISSILE</button>
+    </form>`;
+  }
+  function renderRadarEditorV36(radar) {
+    return `<form id="config-editor-form" class="form" data-entity-type="radars">
+      ${Configurator.renderHeader(radar, 'Радар или станция РЭБ. Радар даёт обнаружение направлений за пределами обзора; глушилка (РЭБ) скрывает корабль от чужих радаров.')}
+      <div class="cols3">
+        <div class="field"><label>ID</label><input class="input" name="id" value="${esc(radar.id)}" /></div>
+        <div class="field"><label>Название</label><input class="input" name="name" value="${esc(radar.name)}" /></div>
+        <div class="field"><label>Тип</label><select class="select" name="kind"><option value="radar" ${radar.kind !== 'jammer' ? 'selected' : ''}>Радар</option><option value="jammer" ${radar.kind === 'jammer' ? 'selected' : ''}>Глушилка (Radar Jammer)</option></select></div>
+      </div>
+      <div class="cols3">
+        <div class="field"><label>Дальность</label><input class="input" type="number" name="range" value="${Number(radar.range || 200)}" /></div>
+        <div></div><div></div>
+      </div>
+      <div class="field"><label>Заметки</label><textarea class="area" name="notes">${esc(radar.notes || '')}</textarea></div>
+      <button class="primary" type="submit">SAVE_RADAR</button>
+    </form>`;
+  }
+  const __cfgGetItemsV36 = Configurator.getItems.bind(Configurator);
+  Configurator.getItems = function(type) {
+    if (type === 'regionMaps') return sortEntitiesForList(Object.values(REGION_MAPS_V36));
+    if (type === 'ships') return sortEntitiesForList(Object.values(SHIPS_V36));
+    if (type === 'missiles') return sortEntitiesForList(Object.values(MISSILES_V36));
+    if (type === 'radars') return sortEntitiesForList(Object.values(RADARS_V36));
+    return __cfgGetItemsV36(type);
+  };
+  const __cfgRenderEditorV36 = Configurator.renderEditor.bind(Configurator);
+  Configurator.renderEditor = function(entity) {
+    if (this.selectedType === 'regionMaps') return renderRegionMapEditorV36(normalizeRegionMapV36(entity));
+    if (this.selectedType === 'ships') return renderShipEditorV36(normalizeShipV36(entity));
+    if (this.selectedType === 'missiles') return renderMissileEditorV36(normalizeMissileV36(entity));
+    if (this.selectedType === 'radars') return renderRadarEditorV36(normalizeRadarV36(entity));
+    return __cfgRenderEditorV36(entity);
+  };
+  const __cfgInsertEntityV36 = Configurator.insertEntity.bind(Configurator);
+  Configurator.insertEntity = function(type, entity) {
+    if (type === 'regionMaps') { const item = normalizeRegionMapV36(entity); REGION_MAPS_V36[item.id] = item; REGION_MAP_LIST_V36 = sortEntitiesForList(Object.values(REGION_MAPS_V36)); worldData.regionMaps = serializeWorldSection('regionMaps', REGION_MAPS_V36); return; }
+    if (type === 'ships') { const item = normalizeShipV36(entity); SHIPS_V36[item.id] = item; SHIP_LIST_V36 = sortEntitiesForList(Object.values(SHIPS_V36)); worldData.ships = serializeWorldSection('ships', SHIPS_V36); return; }
+    if (type === 'missiles') { const item = normalizeMissileV36(entity); MISSILES_V36[item.id] = item; worldData.missiles = serializeWorldSection('missiles', MISSILES_V36); return; }
+    if (type === 'radars') { const item = normalizeRadarV36(entity); RADARS_V36[item.id] = item; worldData.radars = serializeWorldSection('radars', RADARS_V36); return; }
+    return __cfgInsertEntityV36(type, entity);
+  };
+  const __cfgRemoveEntityV36 = Configurator.removeEntity.bind(Configurator);
+  Configurator.removeEntity = function(type, id) {
+    // ВАЖНО: removeEntity вызывается и при обычном РЕДАКТИРОВАНИИ (replaceEntity =
+    // remove + insert), поэтому здесь нельзя каскадно чистить ссылки — из-за этого
+    // редактирование корабля удаляло его токены с карт, а редактирование ракеты
+    // срывало её со всех кораблей. Осиротевшие ссылки безопасны: все места
+    // использования фильтруют отсутствующие id.
+    if (type === 'regionMaps') { delete REGION_MAPS_V36[id]; return; }
+    if (type === 'ships') { delete SHIPS_V36[id]; return; }
+    if (type === 'missiles') { delete MISSILES_V36[id]; return; }
+    if (type === 'radars') { delete RADARS_V36[id]; return; }
+    return __cfgRemoveEntityV36(type, id);
+  };
+  const __cfgCollectEntityV36 = Configurator.collectEntity.bind(Configurator);
+  Configurator.collectEntity = function(type, formEl, formData = new FormData(formEl)) {
+    if (type === 'regionMaps') {
+      const old = this.getSelectedEntity() || {};
+      const mediaField = formEl.querySelector('.media-field');
+      const hiddenImage = formEl.querySelector('input[name="imageData"]')?.value || '';
+      const image = String(hiddenImage || formData.get('imageData') || mediaField?.dataset?.savedImageValue || mediaField?.dataset?.pendingImageValue || old.image || '').trim();
+      return normalizeRegionMapV36({
+        ...old,
+        id: slugifyId(formData.get('id') || formData.get('name') || '', 'region'),
+        name: String(formData.get('name') || '').trim(),
+        kind: String(formData.get('kind') || 'region').trim(),
+        planetId: String(formData.get('planetId') || '').trim(),
+        parentRegionId: String(formData.get('parentRegionId') || '').trim(),
+        color: String(formData.get('color') || '#7df9ff').trim(),
+        width: Number(formData.get('width') || 1000),
+        height: Number(formData.get('height') || 700),
+        scaleLabel: String(formData.get('scaleLabel') || 'км').trim(),
+        summary: String(formData.get('summary') || '').trim(),
+        fog: {
+          enabled: String(formData.get('fogEnabled') ?? '1') !== '0',
+          radius: Math.max(0, Number(formData.get('fogRadius') ?? 50)),
+          explored: old.fog?.explored || ''
+        },
+        image,
+        relatedArticleIds: getCheckedValues(formEl, 'relatedArticleIds'),
+        visibility: { playerIds: getCheckedValues(formEl, 'visibilityPlayerIds') }
+      });
+    }
+    if (type === 'ships') {
+      const old = this.getSelectedEntity() || {};
+      const mediaField = formEl.querySelector('.media-field');
+      const hiddenImage = formEl.querySelector('input[name="imageData"]')?.value || '';
+      const image = String(hiddenImage || formData.get('imageData') || mediaField?.dataset?.savedImageValue || mediaField?.dataset?.pendingImageValue || old.image || '').trim();
+      return normalizeShipV36({
+        ...old,
+        id: slugifyId(formData.get('id') || formData.get('name') || '', 'ship'),
+        name: String(formData.get('name') || '').trim(),
+        model: String(formData.get('model') || '').trim(),
+        ownerPlayerId: String(formData.get('ownerPlayerId') || '').trim(),
+        currentRegionId: String(formData.get('currentRegionId') || '').trim(),
+        currentPlanetId: String(formData.get('currentPlanetId') || '').trim(),
+        fuel: Number(formData.get('fuel') || 0),
+        fuelCapacity: Number(formData.get('fuelCapacity') || 0),
+        fuelConsumption: Number(formData.get('fuelConsumption') || 1),
+        mass: Number(formData.get('mass') || 100),
+        enginePower: Number(formData.get('enginePower') || 100),
+        cargoMass: Number(formData.get('cargoMass') || 0),
+        visionRadius: Number(formData.get('visionRadius') || 0),
+        radarRadius: Number(formData.get('radarRadius') || 0),
+        radarEnabled: old.radarEnabled !== false,
+        crewPlayerIds: getCheckedValues(formEl, 'crewPlayerIds'),
+        crewNpcIds: getCheckedValues(formEl, 'crewNpcIds'),
+        missileIds: getCheckedValues(formEl, 'missileIds'),
+        radarIds: getCheckedValues(formEl, 'radarIds'),
+        guns: readShipGunsV36(formEl),
+        notes: String(formData.get('notes') || '').trim(),
+        image,
+        relatedArticleIds: getCheckedValues(formEl, 'relatedArticleIds'),
+        visibility: { playerIds: getCheckedValues(formEl, 'visibilityPlayerIds') }
+      });
+    }
+    if (type === 'missiles') {
+      const old = this.getSelectedEntity() || {};
+      return normalizeMissileV36({
+        ...old,
+        id: slugifyId(formData.get('id') || formData.get('name') || '', 'missile'),
+        name: String(formData.get('name') || '').trim(),
+        guidance: String(formData.get('guidance') || 'heat').trim(),
+        range: Number(formData.get('range') || 350),
+        seek: Number(formData.get('seek') || 110),
+        speed: Number(formData.get('speed') || 300),
+        notes: String(formData.get('notes') || '').trim()
+      });
+    }
+    if (type === 'radars') {
+      const old = this.getSelectedEntity() || {};
+      return normalizeRadarV36({
+        ...old,
+        id: slugifyId(formData.get('id') || formData.get('name') || '', 'radar'),
+        name: String(formData.get('name') || '').trim(),
+        kind: String(formData.get('kind') || 'radar').trim(),
+        range: Number(formData.get('range') || 200),
+        notes: String(formData.get('notes') || '').trim()
+      });
+    }
+    const base = __cfgCollectEntityV36(type, formEl, formData);
+    if (type === 'players' && base) {
+      base.currentRegionId = String(formData.get('currentRegionId') || base.currentRegionId || '').trim();
+      base.currentShipId = String(formData.get('currentShipId') || base.currentShipId || '').trim();
+    }
+    return base;
+  };
+  const __cfgBuildPayloadV36 = Configurator.buildPayload.bind(Configurator);
+  Configurator.buildPayload = function(type) {
+    if (type === 'regionMaps') return serializeWorldSection('regionMaps', REGION_MAPS_V36);
+    if (type === 'ships') return serializeWorldSection('ships', SHIPS_V36);
+    if (type === 'missiles') return serializeWorldSection('missiles', MISSILES_V36);
+    if (type === 'radars') return serializeWorldSection('radars', RADARS_V36);
+    return __cfgBuildPayloadV36(type);
+  };
+  const __cfgRenderV36 = Configurator.render.bind(Configurator);
+  Configurator.render = function() {
+    __cfgRenderV36();
+    bindRtsConfigEnhancementsV36();
+  };
+  const __cfgPlayerEditorV36 = Configurator.renderPlayerEditor?.bind(Configurator);
+  if (__cfgPlayerEditorV36) {
+    Configurator.renderPlayerEditor = function(user) {
+      const html = __cfgPlayerEditorV36(user);
+      const fields = `<div class="cols2 rts-player-location-fields-v36">
+        <div class="field"><label>Текущий регион / город</label><select class="select" name="currentRegionId">${regionMapSelectOptionsV36(user.currentRegionId || '', user.currentPlanetId || '')}</select></div>
+        <div class="field"><label>Текущий корабль</label><select class="select" name="currentShipId">${shipSelectOptionsV36(user.currentShipId || '')}</select></div>
+      </div>`;
+      return html.replace('<div class="cols3">\n          <div class="field"><label>HP</label>', `${fields}<div class="cols3">\n          <div class="field"><label>HP</label>`);
+    };
+  }
+  function bindRtsConfigEnhancementsV36() {
+    document.querySelectorAll('[data-open-region-map]').forEach(button => {
+      if (button.dataset.rtsBound === '1') return;
+      button.dataset.rtsBound = '1';
+      button.addEventListener('click', () => openRegionMapV36(button.dataset.openRegionMap));
+    });
+    document.getElementById('ship-add-gun-row')?.addEventListener('click', () => {
+      document.getElementById('ship-gun-rows')?.insertAdjacentHTML('beforeend', renderShipGunRowsV36([{ name: '', type: '', damage: '', range: 0 }]));
+      bindRtsConfigEnhancementsV36();
+    });
+    document.querySelectorAll('.rts-remove-row').forEach(button => {
+      if (button.dataset.rtsBound === '1') return;
+      button.dataset.rtsBound = '1';
+      button.addEventListener('click', () => button.closest('.dynamic-row')?.remove());
+    });
+  }
+
+  async function createRegionForPlanetV36(planetId, kind = 'region') {
+    const planet = PLANETS[planetId];
+    if (!planet) return;
+    const id = cleanIdV36(`${kind}_${planet.id}_${Date.now().toString(36).slice(-5)}`, 'region');
+    REGION_MAPS_V36[id] = normalizeRegionMapV36({ id, name: kind === 'city' ? 'Новый город' : 'Новый регион', kind, planetId: planet.id, width: 1000, height: 700 });
+    Configurator.selectedType = 'regionMaps';
+    Configurator.selectedId = id;
+    await persistRegionsShipsV36('Карта региона создана');
+    UI.openModule('config');
+  }
+  function regionButtonsForPlanetV36(planetId) {
+    const maps = regionMapOptionsV36(planetId);
+    const currentUser = App?.currentUser || {};
+    const visibleMaps = maps.filter(map => canOpenRegionMapV36(map, currentUser));
+    const gm = isGmV36();
+    return `<div class="analysis-section rts-planet-region-panel-v36">
+      <div class="section-title">Регионы / города</div>
+      <div class="small-note">Игроки открывают только карту того региона или города, где находится их персонаж или корабль.</div>
+      <div class="rts-region-button-grid-v36">${visibleMaps.map(map => `<button class="secondary" type="button" data-open-region-map="${esc(map.id)}">${esc(map.name)} <span>${esc(map.kind)}</span></button>`).join('') || '<div class="small-note">Нет доступных карт региона.</div>'}</div>
+      ${gm ? `<div class="row" style="margin-top:10px;gap:8px;flex-wrap:wrap"><button class="secondary" type="button" data-create-region-map="region" data-planet-id="${esc(planetId)}">+ РЕГИОН</button><button class="secondary" type="button" data-create-region-map="city" data-planet-id="${esc(planetId)}">+ ГОРОД</button><button class="secondary" type="button" data-create-region-map="building" data-planet-id="${esc(planetId)}">+ ЗДАНИЕ</button></div>` : ''}
+    </div>`;
+  }
+  const __renderPlanetAnalysisV36 = UI.renderPlanetAnalysis.bind(UI);
+  UI.renderPlanetAnalysis = function(planetId, systemId) {
+    __renderPlanetAnalysisV36(planetId, systemId);
+    const container = document.getElementById('analysis-content');
+    if (container) {
+      container.insertAdjacentHTML('beforeend', regionButtonsForPlanetV36(planetId));
+      bindRtsRegionButtonsV36(container);
+    }
+  };
+  function bindRtsRegionButtonsV36(root = document) {
+    root.querySelectorAll('[data-open-region-map]').forEach(button => {
+      if (button.dataset.rtsBound === '1') return;
+      button.dataset.rtsBound = '1';
+      button.addEventListener('click', () => openRegionMapV36(button.dataset.openRegionMap));
+    });
+    root.querySelectorAll('[data-create-region-map]').forEach(button => {
+      if (button.dataset.rtsBound === '1') return;
+      button.dataset.rtsBound = '1';
+      button.addEventListener('click', () => createRegionForPlanetV36(button.dataset.planetId, button.dataset.createRegionMap || 'region'));
+    });
+  }
+
+  function ensureRegionModalV36() {
+    let modal = document.getElementById('region-map-modal-v36');
+    if (modal) return modal;
+    modal = document.createElement('div');
+    modal.id = 'region-map-modal-v36';
+    modal.className = 'modal region-map-modal-v36';
+    modal.innerHTML = `<div class="region-map-shell-v36"><div id="region-map-body-v36"></div></div>`;
+    document.body.appendChild(modal);
+    modal.addEventListener('click', event => { if (event.target === modal) closeRegionMapV36(); });
+    return modal;
+  }
+  function closeRegionMapV36() {
+    const modal = document.getElementById('region-map-modal-v36');
+    if (modal) modal.classList.remove('open');
+    if (RTS_REGION_UI_V36.raf) cancelAnimationFrame(RTS_REGION_UI_V36.raf);
+    RTS_REGION_UI_V36.raf = 0;
+    RTS_REGION_UI_V36.arming = '';
+    flushRegionPersistV36();
+    try { window.CombatAudioV37?.stopAmbient?.(); } catch {}
+  }
+  function regionMapTokenLabelV36(token) {
+    if (token.shipId && SHIPS_V36[token.shipId]) return SHIPS_V36[token.shipId].name;
+    if (token.playerId && (App.state.users[token.playerId] || PLAYER_TEMPLATES[token.playerId])) return (App.state.users[token.playerId] || PLAYER_TEMPLATES[token.playerId]).displayName || token.playerId;
+    if (token.npcId && NPCS[token.npcId]) return NPCS[token.npcId].name || token.npcId;
+    return token.name || token.id;
+  }
+  function regionMapAccessBannerV36(map) {
+    const planet = PLANETS[map.planetId];
+    const parent = REGION_MAPS_V36[map.parentRegionId];
+    return `<div class="small-note">${planet ? `Планета: <b>${esc(planet.name)}</b>` : 'Планета не задана'}${parent ? ` · Внутри: <b>${esc(parent.name)}</b>` : ''} · ${esc(map.kind)}</div>`;
+  }
+  function renderRegionTokenMarkupV36(map, token) {
+    const pos = currentTokenPositionV36(token);
+    const selectedClass = token.id === RTS_REGION_UI_V36.selectedTokenId ? ' selected' : '';
+    const movingClass = token.moveEndsAt ? ' moving' : '';
+    const hiddenClass = isGmV36() && !token.visibleToPlayers ? ' player-hidden' : '';
+    const isShip = token.type === 'ship' || token.type === 'squadron';
+    const isCity = token.type === 'city';
+    const ship = token.shipId ? SHIPS_V36[token.shipId] : null;
+    // Ships/squadrons are drawn as a plain coloured circle + name (no image).
+    const img = isShip ? '' : (token.image || ship?.image || '');
+    const glyph = isShip ? '' : isCity ? '⬢' : token.type === 'player' ? '●' : '▲';
+    const inner = img ? `<img src="${esc(img)}" alt="" />` : `<span>${esc(glyph)}</span>`;
+    const label = token.type === 'squadron' ? `${regionMapTokenLabelV36(token)} ×${safeArrayV36(token.shipIds).length}` : regionMapTokenLabelV36(token);
+    return `<button class="rts-map-token-v36${selectedClass}${movingClass}${hiddenClass}${isShip ? ' is-ship-v36' : ''}${isCity ? ' is-city-v36' : ''}" data-token-id="${esc(token.id)}" style="left:${(pos.x / map.width * 100).toFixed(3)}%;top:${(pos.y / map.height * 100).toFixed(3)}%;--rts-color:${esc(token.color)}" title="${esc(label)}">${inner}<b>${esc(label)}</b></button>`;
+  }
+  function renderRegionSidePanelV36(map) {
+    const isEdit = RTS_REGION_UI_V36.mode === 'edit';
+    const selected = safeArrayV36(map.tokens).find(t => t.id === RTS_REGION_UI_V36.selectedTokenId) || null;
+    const selectedMarker = isEdit ? safeArrayV36(map.markers).find(m => m.id === RTS_REGION_UI_V36.selectedMarkerId) : null;
+    const selectedShip = selected ? liveShipForTokenV36(selected) : null;
+    const playerOpts = playerOptionsV36(false).map(p => `<option value="${esc(p.id)}">${esc(p.displayName || p.id)}</option>`).join('');
+    const addTools = `<div class="rts-panel-group-v36">
+      <div class="section-title">Добавить на карту</div>
+      <div class="rts-add-row-v36"><select class="select" id="rts-player-token-v36"><option value="">Игрок…</option>${playerOpts}</select><button class="secondary rts-add-btn-v36" type="button" data-rts-add="player" title="Добавить игрока">+</button></div>
+      <div class="rts-add-row-v36"><select class="select" id="rts-ship-token-v36"><option value="">Корабль…</option>${shipOptionsV36().map(s => `<option value="${esc(s.id)}">${esc(s.name)}</option>`).join('')}</select><button class="secondary rts-add-btn-v36" type="button" data-rts-add="ship" title="Добавить корабль">+</button></div>
+      <div class="rts-add-row-v36"><select class="select" id="rts-npc-token-v36"><option value="">NPC…</option>${npcOptionsV36().map(n => `<option value="${esc(n.id)}">${esc(n.name || n.id)}</option>`).join('')}</select><button class="secondary rts-add-btn-v36" type="button" data-rts-add="npc" title="Добавить NPC">+</button></div>
+      <div class="row" style="gap:8px;flex-wrap:wrap"><button class="secondary" type="button" data-rts-add="unit">+ Нейтральный отряд</button><button class="secondary" type="button" data-rts-add="city">+ Город</button><button class="secondary" type="button" data-rts-add="marker">+ Метка</button></div>
+    </div>
+    <div class="rts-panel-group-v36">
+      <div class="section-title">Туман войны</div>
+      <label class="check-line"><input type="checkbox" id="rts-fog-enabled-v36" ${map.fog?.enabled !== false ? 'checked' : ''}/> Включён</label>
+      <div class="field"><label>Радиус обзора (${esc(map.scaleLabel || 'ед')})</label><input class="input" type="number" id="rts-fog-radius-v36" value="${Number(map.fog?.radius ?? 50)}" /></div>
+      <div class="small-note">Игроки видят только зону обзора кораблей со своими персонажами; покинутая зона снова закрывается плотным туманом. Кнопка «ТУМАН» в шапке показывает туман как у игроков.</div>
+    </div>`;
+    const assignTools = `<div class="rts-panel-group-v36">
+      <div class="section-title">Присвоить положение игроку</div>
+      <div class="rts-add-row-v36"><select class="select" id="rts-assign-player-v36"><option value="">Игрок…</option>${playerOpts}</select><button class="secondary" type="button" id="rts-assign-player-btn-v36">OK</button></div>
+      <div class="small-note">Игрок сможет открыть карту региона, где находится его персонаж или корабль.</div>
+    </div>`;
+    let inspector = '';
+    if (selected) {
+      const moving = Boolean(selected.moveEndsAt);
+      const isSquad = selected.type === 'squadron';
+      const realShip = selected.type === 'ship' && selected.shipId ? SHIPS_V36[selected.shipId] : null;
+      const squadStats = isSquad ? squadronStatsV36(selected) : null;
+      // объединяться можно только с кораблями поблизости (нужно сблизиться)
+      const MERGE_RANGE = RTS_MERGE_RANGE_V36;
+      const selPos = currentTokenPositionV36(selected);
+      const mergeTargets = (realShip || isSquad) ? safeArrayV36(map.tokens).filter(t => {
+        if (t.id === selected.id || (t.type !== 'ship' && t.type !== 'squadron')) return false;
+        const p = currentTokenPositionV36(t);
+        return Math.hypot(p.x - selPos.x, p.y - selPos.y) <= MERGE_RANGE;
+      }) : [];
+      const crewMarkup = realShip ? `
+        <div class="field"><label>Экипаж — игроки</label><div class="rts-crew-list-v36">${playerOptionsV36(false).map(p => `<label class="check-line"><input type="checkbox" data-rts-crew-player="${esc(p.id)}" ${(realShip.crewPlayerIds || []).includes(p.id) ? 'checked' : ''}/> ${esc(p.displayName || p.id)}</label>`).join('') || '<div class="small-note">Нет игроков</div>'}</div></div>
+        <div class="field"><label>Экипаж — NPC</label><div class="rts-crew-list-v36">${npcOptionsV36().map(n => `<label class="check-line"><input type="checkbox" data-rts-crew-npc="${esc(n.id)}" ${(realShip.crewNpcIds || []).includes(n.id) ? 'checked' : ''}/> ${esc(n.name || n.id)}</label>`).join('') || '<div class="small-note">Нет NPC</div>'}</div></div>` : '';
+      const squadMarkup = isSquad ? `<div class="field"><label>Состав эскадры</label>${squadStats.ships.map(s => `<div class="rts-squad-row-v36"><span>${esc(s.name)} · ⛽ ${Number(s.fuel || 0).toFixed(0)}/${Number(s.fuelCapacity || 0).toFixed(0)}</span><button class="ghost" type="button" data-rts-detach="${esc(s.id)}">ОТЦЕПИТЬ</button></div>`).join('') || '<div class="small-note">Эскадра пуста.</div>'}</div>` : '';
+      const mergeMarkup = mergeTargets.length
+        ? `<div class="field"><label>Объединить в эскадру (рядом, ≤ ${MERGE_RANGE} ед)</label><div class="rts-add-row-v36"><select class="select" id="rts-merge-target-v36">${mergeTargets.map(t => `<option value="${esc(t.id)}">${esc(regionMapTokenLabelV36(t))}</option>`).join('')}</select><button class="secondary" type="button" id="rts-merge-btn-v36">OK</button></div></div>`
+        : (realShip || isSquad) ? `<div class="small-note">Для объединения подведи корабли ближе (≤ ${MERGE_RANGE} ед).</div>` : '';
+      inspector = `<div class="rts-panel-group-v36 rts-inspector-v36">
+        <div class="section-title">${isSquad ? 'Эскадра' : selected.type === 'city' ? 'Город' : 'Юнит'}: ${esc(regionMapTokenLabelV36(selected))}</div>
+        ${isEdit ? `<div class="cols2"><div class="field"><label>Имя на карте</label><input class="input" id="rts-token-name-v36" value="${esc(selected.name || '')}" /></div><div class="field"><label>Цвет</label><input class="input" type="color" id="rts-token-color-v36" value="${esc(/^#[0-9a-fA-F]{6}$/.test(selected.color || '') ? selected.color : '#7df9ff')}" /></div></div>` : ''}
+        <label class="check-line"><input type="checkbox" id="rts-token-visible-v36" ${selected.visibleToPlayers ? 'checked' : ''}/> ${selected.type === 'city' ? 'Закреплён — виден игрокам поверх тумана' : 'Видим игрокам (закреплён ДМом)'}</label>
+        ${realShip ? `
+        <div class="small-note">Характеристики корабля (World Config) — можно менять прямо здесь:</div>
+        <div class="cols3">
+          <div class="field"><label>Обзор</label><input class="input" type="number" id="rts-ship-vision-v36" value="${Number(realShip.visionRadius || 0)}" /></div>
+          <div class="field"><label>Радар — дальность</label><input class="input" type="number" id="rts-ship-radar-v36" value="${Number(realShip.radarRadius || 0)}" /></div>
+          <div class="field"><label>Топливо</label><input class="input" type="number" step="0.1" id="rts-ship-fuel-v36" value="${Number(realShip.fuel || 0)}" /></div>
+        </div>
+        ${tokenRadarInfoV36(selected).r > 0 ? `<label class="check-line"><input type="checkbox" id="rts-ship-radar-on-v36" ${tokenRadarInfoV36(selected).active ? 'checked' : ''}/> Радар включён · итоговая дальность ${tokenRadarInfoV36(selected).r} ед (выключенный радар не видит и не «светится»)</label>` : '<div class="small-note">Радар не установлен — добавь корабль радар в World Config.</div>'}
+        ` : isSquad ? `
+        <div class="small-note">Обзор, радар и топливо эскадры определяются кораблями в её составе (World Config).</div>
+        ${tokenRadarInfoV36(selected).r > 0 ? `<label class="check-line"><input type="checkbox" id="rts-squad-radar-on-v36" ${selected.radarEnabled !== false ? 'checked' : ''}/> Радар эскадры включён · ${tokenRadarInfoV36(selected).r} ед</label>` : ''}
+        ` : `
+        <div class="cols2"><div class="field"><label>Обзор (0 = радиус карты)</label><input class="input" type="number" id="rts-token-vision-v36" value="${Number(selected.visionRadius || 0)}" /></div><div class="field"><label>Радар токена</label><input class="input" type="number" id="rts-token-radar-v36" value="${Number(selected.radarRadius || 0)}" /></div></div>
+        ${tokenRadarInfoV36(selected).r > 0 ? `<label class="check-line"><input type="checkbox" id="rts-token-radar-on-v36" ${tokenRadarInfoV36(selected).active ? 'checked' : ''}/> Радар включён · дальность ${tokenRadarInfoV36(selected).r} ед</label>` : ''}
+        `}
+        ${crewMarkup}
+        ${squadMarkup}
+        ${mergeMarkup}
+        ${selectedShip && !isSquad ? `<div class="rts-ship-stat-card-v36"><b>${esc(selectedShip.name)}</b>${shipMovementStatsMarkupV36(selectedShip)}<div class="small-note">Топливо: <span id="rts-ship-fuel-readout-v36">${Number(liveFuelV36(selected, selectedShip)).toFixed(1)} / ${Number(selectedShip.fuelCapacity).toFixed(1)}</span></div></div>` : ''}
+        ${isSquad ? `<div class="rts-ship-stat-card-v36"><b>${esc(selected.name || 'Эскадра')}</b><div class="small-note">Скорость эскадры: ${squadStats.speed.toFixed(1)} ед/сек (по самому медленному)</div><div class="small-note">Общее топливо: <span id="rts-ship-fuel-readout-v36">${Number(liveFuelV36(selected, liveShipForTokenV36(selected) || {})).toFixed(1)} / ${squadStats.fuelCapacity.toFixed(1)}</span></div></div>` : ''}
+        <div class="rts-inspector-actions-v36">
+          ${!isEdit ? (() => {
+            const installedIds = realShip ? safeArrayV36(realShip.missileIds) : isSquad ? uniqueV36(squadStats.ships.flatMap(s => safeArrayV36(s.missileIds))) : [];
+            const installed = installedIds.map(id => MISSILES_V36[id]).filter(Boolean);
+            const options = installed.length
+              ? installed.map(m => `<option value="wc:${esc(m.id)}" ${`wc:${m.id}` === (RTS_REGION_UI_V36.missileType || '') ? 'selected' : ''}>${esc(m.name)} · ${Number(m.range)}</option>`).join('')
+              : Object.entries(MISSILE_TYPES_V36).map(([key, spec]) => `<option value="${esc(key)}" ${key === (RTS_REGION_UI_V36.missileType || 'heat') ? 'selected' : ''}>${esc(spec.label)} · ${spec.range}</option>`).join('');
+            return `<button class="secondary" type="button" id="rts-stop-v36" ${moving ? '' : 'disabled'}>СТОП</button><select class="select rts-missile-type-sel-v36" id="rts-missile-type-v36" title="${installed.length ? 'Ракеты, установленные на корабле' : 'Встроенные типы (ракеты в WC не установлены)'}">${options}</select><button class="secondary" type="button" id="rts-missile-v36">РАКЕТА</button>`;
+          })() : ''}
+          <button class="ghost" type="button" id="rts-delete-token-v36">Удалить юнит</button>
+        </div>
+      </div>`;
+    } else if (selectedMarker) {
+      const targetOpts = `<option value="">Нет перехода</option>${regionMapOptionsV36().filter(m => m.id !== map.id).map(m => `<option value="${esc(m.id)}" ${m.id === selectedMarker.targetRegionId ? 'selected' : ''}>${esc(m.name)} · ${esc(m.kind)}</option>`).join('')}`;
+      inspector = `<div class="rts-panel-group-v36 rts-inspector-v36">
+        <div class="section-title">Метка</div>
+        <div class="cols2"><div class="field"><label>Название</label><input class="input" id="rts-marker-name-v36" value="${esc(selectedMarker.name || '')}" /></div><div class="field"><label>Цвет</label><input class="input" type="color" id="rts-marker-color-v36" value="${esc(/^#[0-9a-fA-F]{6}$/.test(selectedMarker.color || '') ? selectedMarker.color : '#7df9ff')}" /></div></div>
+        <label class="check-line"><input type="checkbox" id="rts-marker-visible-v36" ${selectedMarker.visibleToPlayers !== false ? 'checked' : ''}/> Видна игрокам</label>
+        <div class="field"><label>Переход в регион / город</label><select class="select" id="rts-marker-target-v36">${targetOpts}</select></div>
+        <div class="rts-inspector-actions-v36"><button class="ghost" type="button" id="rts-delete-marker-v36">Удалить метку</button></div>
+      </div>`;
+    }
+    return `<div class="small-note">${isEdit ? 'Редактор: добавляй объекты кнопками ниже, перетаскивай их по карте, тяни пустоту — панорама, колесо — зум.' : 'Игра: выбери юнит и кликни по карте — проложишь курс. Колесо — зум, тяни пустоту — панорама.'}</div>
+      ${isEdit ? addTools : assignTools}
+      ${inspector || '<div class="small-note" style="margin-top:12px">Объект не выбран — кликни по юниту или метке на карте.</div>'}`;
+  }
+  function renderRegionMapV36(map) {
+    const gm = isGmV36();
+    const toolbar = `<div class="region-map-toolbar-v36">
+      <div><div class="section-title">Карта региона</div><h2>${esc(map.name)}</h2>${regionMapAccessBannerV36(map)}</div>
+      <div class="row" style="gap:8px;flex-wrap:wrap;justify-content:flex-end">
+        ${gm ? `<button class="secondary" type="button" id="rts-mode-toggle-v36">${RTS_REGION_UI_V36.mode === 'edit' ? 'РЕЖИМ: РЕДАКТОР' : 'РЕЖИМ: ИГРА'}</button><button class="secondary ${RTS_REGION_UI_V36.timeScale === 0 ? 'rts-arm-active-v36' : ''}" type="button" data-rts-time-v36="0" title="Пауза">⏸</button><button class="secondary ${RTS_REGION_UI_V36.timeScale === 1 ? 'rts-arm-active-v36' : ''}" type="button" data-rts-time-v36="1" title="Обычная скорость">1×</button><button class="secondary ${RTS_REGION_UI_V36.timeScale === 2 ? 'rts-arm-active-v36' : ''}" type="button" data-rts-time-v36="2" title="Двойная скорость">2×</button><button class="secondary ${RTS_REGION_UI_V36.fogPreview ? 'rts-arm-active-v36' : ''}" type="button" id="rts-fog-toggle-v36" title="Показать туман войны как у игроков">ТУМАН</button><button class="secondary" type="button" id="rts-ambient-v36">ЭМБИЕНТ</button><button class="secondary" type="button" id="rts-show-display-v36">НА 2 ЭКРАН</button>` : ''}
+        <button class="ghost" type="button" id="rts-close-map-v36">ЗАКРЫТЬ</button>
+      </div>
+    </div>`;
+    const markers = safeArrayV36(map.markers).filter(marker => gm || marker.visibleToPlayers).map(marker => { const sel = gm && marker.id === RTS_REGION_UI_V36.selectedMarkerId ? ' selected' : ''; return `<button class="rts-map-marker-v36${sel}" data-marker-id="${esc(marker.id)}" style="left:${(marker.x / map.width * 100).toFixed(3)}%;top:${(marker.y / map.height * 100).toFixed(3)}%;--rts-color:${esc(marker.color)}" title="${esc(marker.name)}"><span></span><b>${esc(marker.name)}</b></button>`; }).join('');
+    const tokens = safeArrayV36(map.tokens).filter(token => visibleRegionTokenV36(token, map)).map(token => renderRegionTokenMarkupV36(map, token)).join('');
+    const hint = RTS_REGION_UI_V36.mode === 'edit'
+      ? 'Перетаскивай токены и метки · колесо — зум · тяни пустоту — панорама'
+      : 'Shift+клик — выбрать/редактировать · клик по объекту — приказ (курс/ракета) · клик по пустому месту — курс';
+    return `${toolbar}<div class="region-map-layout-v36">
+      <div class="region-map-board-wrap-v36" id="region-map-board-wrap-v36">
+        <div class="region-map-frame-v36 ${RTS_REGION_UI_V36.mode === 'edit' ? 'is-edit' : 'is-play'}" id="region-map-frame-v36" data-map-id="${esc(map.id)}">
+          <div class="region-map-stage-v36" id="region-map-stage-v36" style="background-color:#08111b;${map.image ? `background-image:url('${esc(map.image)}')` : ''}">
+            <div class="rts-fuel-range-v36" id="region-fuel-range-v36" style="display:none"></div>
+            <div class="rts-radar-range-v36" id="region-radar-range-v36" style="display:none"></div>
+            <div class="rts-map-grid-v36"></div>
+            <svg class="rts-course-svg-v36" id="rts-course-svg-v36" viewBox="0 0 ${Number(map.width || 1000)} ${Number(map.height || 700)}" preserveAspectRatio="none" style="display:none"><line class="rts-course-line-v36" id="rts-course-line-v36" x1="0" y1="0" x2="0" y2="0" /></svg>
+            ${markers}${tokens}
+            <div class="rts-missiles-layer-v36" id="rts-missiles-layer-v36"></div>
+            <canvas class="rts-fog-canvas-v36" id="rts-fog-canvas-v36" style="display:none"></canvas>
+          </div>
+          <div class="region-map-zoom-controls-v36">
+            <button type="button" id="rts-zoom-in-v36" title="Приблизить">＋</button>
+            <button type="button" id="rts-zoom-out-v36" title="Отдалить">－</button>
+            <button type="button" id="rts-zoom-reset-v36" title="Сбросить вид">⟲</button>
+          </div>
+          <div class="region-map-hint-v36">${hint}</div>
+          <div class="rts-course-label-v36" id="rts-course-label-v36" style="display:none"></div>
+        </div>
+      </div>
+      <aside class="region-map-side-v36" id="region-map-side-v36"${gm ? '' : ' style="display:none"'}>${gm ? renderRegionSidePanelV36(map) : ''}</aside>
+    </div>`;
+  }
+  function openRegionMapV36(mapId) {
+    const map = REGION_MAPS_V36[mapId];
+    if (!map) return Toast.show('Карта региона не найдена', 'err');
+    if (!canOpenRegionMapV36(map)) return Toast.show('Персонаж не находится в этом регионе', 'err');
+    RTS_REGION_UI_V36.mapId = map.id;
+    RTS_REGION_UI_V36.view = { zoom: 1, panX: 0, panY: 0, frameW: 0, frameH: 0 };
+    const runtime = getRegionRuntimeV36();
+    runtime.activeMapId = map.id;
+    runtime.updatedAt = nowIsoV36();
+    const modal = ensureRegionModalV36();
+    modal.classList.add('open');
+    if (!RTS_REGION_UI_V36.resizeBound) {
+      RTS_REGION_UI_V36.resizeBound = true;
+      window.addEventListener('resize', () => { if (document.getElementById('region-map-modal-v36')?.classList.contains('open')) sizeRegionBoardV36(); });
+    }
+    rerenderRegionMapV36();
+    queueRegionDisplayMirrorV36();
+    try { window.CombatAudioV37?.startAmbient?.(regionAmbientKeyV36()); } catch {}
+  }
+  function rerenderRegionMapV36() {
+    const map = REGION_MAPS_V36[RTS_REGION_UI_V36.mapId];
+    const body = document.getElementById('region-map-body-v36');
+    if (!map || !body) return;
+    body.innerHTML = renderRegionMapV36(map);
+    bindRegionMapModalV36(map);
+    sizeRegionBoardV36();
+    requestAnimationFrame(() => sizeRegionBoardV36());
+    setTimeout(() => sizeRegionBoardV36(), 80);
+    startRegionMapAnimationV36();
+  }
+  function refreshRegionSideV36(map) {
+    const aside = document.getElementById('region-map-side-v36');
+    if (!aside || !isGmV36()) return;
+    aside.innerHTML = renderRegionSidePanelV36(map);
+    bindRegionSideControlsV36(map);
+  }
+  function selectRegionTokenV36(map, id) {
+    RTS_REGION_UI_V36.selectedTokenId = id;
+    RTS_REGION_UI_V36.selectedMarkerId = '';
+    document.querySelectorAll('.rts-map-token-v36').forEach(node => node.classList.toggle('selected', node.dataset.tokenId === id));
+    document.querySelectorAll('.rts-map-marker-v36').forEach(node => node.classList.remove('selected'));
+    refreshRegionSideV36(map);
+  }
+  function selectRegionMarkerV36(map, id) {
+    RTS_REGION_UI_V36.selectedMarkerId = id;
+    RTS_REGION_UI_V36.selectedTokenId = '';
+    document.querySelectorAll('.rts-map-marker-v36').forEach(node => node.classList.toggle('selected', node.dataset.markerId === id));
+    document.querySelectorAll('.rts-map-token-v36').forEach(node => node.classList.remove('selected'));
+    refreshRegionSideV36(map);
+  }
+  function boardCoordsFromEventV36(event, map) {
+    const stage = document.getElementById('region-map-stage-v36');
+    const rect = stage.getBoundingClientRect();
+    return { x: clamp(((event.clientX - rect.left) / Math.max(1, rect.width)) * map.width, 0, map.width), y: clamp(((event.clientY - rect.top) / Math.max(1, rect.height)) * map.height, 0, map.height) };
+  }
+  function bindRegionMapModalV36(map) {
+    document.getElementById('rts-close-map-v36')?.addEventListener('click', closeRegionMapV36);
+    document.getElementById('rts-mode-toggle-v36')?.addEventListener('click', () => { RTS_REGION_UI_V36.mode = RTS_REGION_UI_V36.mode === 'edit' ? 'play' : 'edit'; RTS_REGION_UI_V36.arming = ''; rerenderRegionMapV36(); });
+    document.getElementById('rts-show-display-v36')?.addEventListener('click', () => showRegionMapOnDisplayV36(map.id));
+    document.getElementById('rts-ambient-v36')?.addEventListener('click', openRegionAmbientV36);
+    document.getElementById('rts-fog-toggle-v36')?.addEventListener('click', () => { RTS_REGION_UI_V36.fogPreview = !RTS_REGION_UI_V36.fogPreview; rerenderRegionMapV36(); });
+    document.querySelectorAll('[data-rts-time-v36]').forEach(btn => btn.addEventListener('click', () => setRegionTimeScaleV36(Number(btn.dataset.rtsTimeV36))));
+    document.getElementById('rts-zoom-in-v36')?.addEventListener('click', () => regionZoomAtV36(1.2));
+    document.getElementById('rts-zoom-out-v36')?.addEventListener('click', () => regionZoomAtV36(1 / 1.2));
+    document.getElementById('rts-zoom-reset-v36')?.addEventListener('click', resetRegionViewV36);
+    document.querySelectorAll('.rts-map-token-v36').forEach(node => {
+      node.addEventListener('click', event => {
+        event.stopPropagation();
+        const id = node.dataset.tokenId;
+        // Shift+клик = выбор/редактирование. Обычный клик в режиме игры = приказ
+        // (ракета при вооружении, иначе — курс выбранного юнита к цели).
+        if (RTS_REGION_UI_V36.mode === 'edit' || event.shiftKey || !isGmV36()) { selectRegionTokenV36(map, id); return; }
+        const target = map.tokens.find(t => t.id === id);
+        const selected = map.tokens.find(t => t.id === RTS_REGION_UI_V36.selectedTokenId);
+        if (!target) return;
+        const targetPos = currentTokenPositionV36(target);
+        if (RTS_REGION_UI_V36.arming) {
+          const carrier = map.tokens.find(t => t.id === RTS_REGION_UI_V36.arming);
+          if (carrier) { const cp = currentTokenPositionV36(carrier); if (launchMissileV36(map, cp.x, cp.y, targetPos.x, targetPos.y)) Toast.show('Ракета запущена', 'ok'); }
+          RTS_REGION_UI_V36.arming = '';
+          document.getElementById('region-map-frame-v36')?.classList.remove('is-arming');
+          document.getElementById('rts-missile-v36')?.classList.remove('rts-arm-active-v36');
+          return;
+        }
+        if (selected && selected.id !== id) { startRegionTokenMoveV36(map, selected, targetPos.x, targetPos.y); return; }
+        selectRegionTokenV36(map, id);
+      });
+      node.addEventListener('pointerdown', event => { event.stopPropagation(); startRegionDragV36(event, map, 'token', node.dataset.tokenId); });
+    });
+    document.querySelectorAll('.rts-map-marker-v36').forEach(node => {
+      node.addEventListener('pointerdown', event => { event.stopPropagation(); startRegionDragV36(event, map, 'marker', node.dataset.markerId); });
+      node.addEventListener('click', event => {
+        event.stopPropagation();
+        const marker = map.markers.find(m => m.id === node.dataset.markerId);
+        if (!marker) return;
+        if (isGmV36() && RTS_REGION_UI_V36.mode === 'edit') { selectRegionMarkerV36(map, marker.id); return; }
+        // play mode: a selected unit gets a course to the marker; otherwise follow the region transition.
+        const token = isGmV36() ? map.tokens.find(t => t.id === RTS_REGION_UI_V36.selectedTokenId) : null;
+        if (token) { startRegionTokenMoveV36(map, token, marker.x, marker.y); return; }
+        if (marker.targetRegionId && REGION_MAPS_V36[marker.targetRegionId] && canOpenRegionMapV36(REGION_MAPS_V36[marker.targetRegionId])) openRegionMapV36(marker.targetRegionId);
+      });
+    });
+    bindRegionBoardInteractionsV36(map);
+    bindRegionSideControlsV36(map);
+  }
+  function bindRegionBoardInteractionsV36(map) {
+    const frame = document.getElementById('region-map-frame-v36');
+    if (!frame) return;
+    frame.addEventListener('wheel', event => {
+      event.preventDefault();
+      const rect = frame.getBoundingClientRect();
+      regionZoomAtV36(event.deltaY < 0 ? 1.12 : 1 / 1.12, event.clientX - rect.left, event.clientY - rect.top);
+    }, { passive: false });
+    let pan = null;
+    frame.addEventListener('pointerdown', event => {
+      if (event.button !== 0) return;
+      if (event.target.closest('.rts-map-token-v36,.rts-map-marker-v36,.region-map-zoom-controls-v36')) return;
+      const v = getRegionViewV36();
+      pan = { startX: event.clientX, startY: event.clientY, panX: v.panX, panY: v.panY, moved: false, pointerId: event.pointerId };
+      try { frame.setPointerCapture(event.pointerId); } catch {}
+      frame.classList.add('is-panning');
+      hideRegionCoursePreviewV36();
+    });
+    frame.addEventListener('pointermove', event => {
+      if (!pan) { updateRegionCoursePreviewV36(map, event); return; }
+      const dx = event.clientX - pan.startX, dy = event.clientY - pan.startY;
+      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) pan.moved = true;
+      const v = getRegionViewV36();
+      v.panX = pan.panX + dx; v.panY = pan.panY + dy;
+      applyRegionCameraV36();
+      if (pan.moved) queueRegionDisplayMirrorV36();
+    });
+    frame.addEventListener('pointerleave', hideRegionCoursePreviewV36);
+    frame.addEventListener('pointerup', event => {
+      if (!pan) return;
+      const wasPan = pan.moved;
+      try { frame.releasePointerCapture(event.pointerId); } catch {}
+      frame.classList.remove('is-panning');
+      pan = null;
+      if (wasPan) { queueRegionDisplayMirrorV36(); return; }
+      if (!isGmV36() || RTS_REGION_UI_V36.mode !== 'play') return;
+      if (event.target.closest('.rts-map-token-v36,.rts-map-marker-v36,.region-map-zoom-controls-v36')) return;
+      const point = boardCoordsFromEventV36(event, map);
+      // missile strike: when armed, the next empty click fires at the target instead of moving.
+      if (RTS_REGION_UI_V36.arming) {
+        const carrier = map.tokens.find(t => t.id === RTS_REGION_UI_V36.arming);
+        if (carrier) { const cp = currentTokenPositionV36(carrier); if (launchMissileV36(map, cp.x, cp.y, point.x, point.y)) Toast.show('Ракета запущена', 'ok'); }
+        RTS_REGION_UI_V36.arming = '';
+        frame.classList.remove('is-arming');
+        document.getElementById('rts-missile-v36')?.classList.remove('rts-arm-active-v36');
+        return;
+      }
+      const token = map.tokens.find(t => t.id === RTS_REGION_UI_V36.selectedTokenId);
+      if (!token) { Toast.show('Сначала выбери юнит для движения', 'err'); return; }
+      startRegionTokenMoveV36(map, token, point.x, point.y);
+      hideRegionCoursePreviewV36();
+    });
+    frame.addEventListener('pointercancel', () => { pan = null; frame.classList.remove('is-panning'); });
+  }
+  function selectedRegionTokenV36(map) { return safeArrayV36(map.tokens).find(t => t.id === RTS_REGION_UI_V36.selectedTokenId) || null; }
+  function selectedRegionMarkerV36(map) { return safeArrayV36(map.markers).find(m => m.id === RTS_REGION_UI_V36.selectedMarkerId) || null; }
+  function addRegionEntityV36(map, kind) {
+    const at = viewCenterMapCoordsV36(map);
+    if (kind === 'marker') {
+      const marker = normalizeRegionMarkerV36({ name: 'Новая метка', x: at.x, y: at.y });
+      map.markers.push(marker);
+      RTS_REGION_UI_V36.selectedMarkerId = marker.id; RTS_REGION_UI_V36.selectedTokenId = '';
+      scheduleRegionPersistV36('Метка добавлена', { delay: 120 });
+      rerenderRegionMapV36();
+      return;
+    }
+    let token = null;
+    if (kind === 'ship') {
+      const id = document.getElementById('rts-ship-token-v36')?.value || '';
+      if (!id || !SHIPS_V36[id]) return Toast.show('Выбери корабль из списка', 'err');
+      // корабли по умолчанию скрыты: игроки видят их только в зоне обзора своих кораблей
+      token = normalizeRegionTokenV36({ type: 'ship', shipId: id, name: SHIPS_V36[id].name, image: SHIPS_V36[id].image, x: at.x, y: at.y, visibleToPlayers: false });
+    } else if (kind === 'player') {
+      const id = document.getElementById('rts-player-token-v36')?.value || '';
+      if (!id) return Toast.show('Выбери игрока из списка', 'err');
+      token = normalizeRegionTokenV36({ type: 'player', playerId: id, name: getPlayerDisplayName(id), x: at.x, y: at.y, visibleToPlayers: true });
+    } else if (kind === 'npc') {
+      const id = document.getElementById('rts-npc-token-v36')?.value || '';
+      if (!id || !NPCS[id]) return Toast.show('Выбери NPC из списка', 'err');
+      token = normalizeRegionTokenV36({ type: 'unit', npcId: id, name: NPCS[id].name, image: NPCS[id].image, x: at.x, y: at.y, visibleToPlayers: false });
+    } else if (kind === 'city') {
+      // города видны игрокам поверх тумана только после закрепления ДМом
+      token = normalizeRegionTokenV36({ type: 'city', name: 'Город', x: at.x, y: at.y, visibleToPlayers: false, color: '#ffd678' });
+    } else {
+      token = normalizeRegionTokenV36({ type: 'unit', name: 'Нейтральный отряд', x: at.x, y: at.y, visibleToPlayers: false });
+    }
+    map.tokens.push(token);
+    RTS_REGION_UI_V36.selectedTokenId = token.id; RTS_REGION_UI_V36.selectedMarkerId = '';
+    scheduleRegionPersistV36('Токен добавлен', { delay: 120 });
+    rerenderRegionMapV36();
+  }
+  function shipIdsOfTokenV36(token) {
+    if (token.type === 'squadron') return uniqueV36(token.shipIds || []);
+    if (token.type === 'ship' && token.shipId) return [token.shipId];
+    return [];
+  }
+  function mergeIntoSquadronV36(map, tokenA, tokenB) {
+    const idsA = shipIdsOfTokenV36(tokenA);
+    const idsB = shipIdsOfTokenV36(tokenB);
+    if (!idsA.length || !idsB.length) return Toast.show('Оба токена должны быть кораблями или эскадрами (с привязанным кораблём из WC)', 'err');
+    const ships = uniqueV36([...idsA, ...idsB]);
+    if (ships.length < 2) return Toast.show('Это один и тот же корабль — эскадре нужны два разных', 'err');
+    const posA = currentTokenPositionV36(tokenA);
+    const posB = currentTokenPositionV36(tokenB);
+    if (Math.hypot(posB.x - posA.x, posB.y - posA.y) > RTS_MERGE_RANGE_V36 + 10) return Toast.show(`Слишком далеко для объединения (нужно ≤ ${RTS_MERGE_RANGE_V36} ед)`, 'err');
+    const pos = posA;
+    const lead = SHIPS_V36[ships[0]];
+    const squad = normalizeRegionTokenV36({
+      type: 'squadron',
+      name: `Эскадра «${lead?.name || ships[0]}»`,
+      shipIds: ships,
+      x: pos.x, y: pos.y,
+      color: tokenA.color,
+      visibleToPlayers: Boolean(tokenA.visibleToPlayers || tokenB.visibleToPlayers)
+    });
+    map.tokens = map.tokens.filter(t => t.id !== tokenA.id && t.id !== tokenB.id);
+    map.tokens.push(squad);
+    RTS_REGION_UI_V36.selectedTokenId = squad.id;
+    playRegionSoundRandomV36('mission_end_', 3); // воссоединение эскадры
+    scheduleRegionPersistV36('Эскадра сформирована', { delay: 120 });
+    rerenderRegionMapV36();
+  }
+  function detachShipFromSquadronV36(map, token, shipId) {
+    if (token.type !== 'squadron') return;
+    token.shipIds = uniqueV36(token.shipIds || []).filter(id => id !== shipId);
+    const pos = currentTokenPositionV36(token);
+    const ship = SHIPS_V36[shipId];
+    if (ship) {
+      map.tokens.push(normalizeRegionTokenV36({ type: 'ship', shipId, name: ship.name, x: Math.max(0, pos.x - 40), y: Math.max(0, pos.y - 40), visibleToPlayers: token.visibleToPlayers, color: token.color }));
+    }
+    if (token.shipIds.length === 1) {
+      // осталась одна единица — эскадра снова становится кораблём
+      const lastId = token.shipIds[0];
+      token.type = 'ship';
+      token.shipId = lastId;
+      token.name = SHIPS_V36[lastId]?.name || token.name;
+      token.shipIds = [];
+    } else if (!token.shipIds.length) {
+      map.tokens = map.tokens.filter(t => t.id !== token.id);
+      RTS_REGION_UI_V36.selectedTokenId = '';
+    }
+    playRegionSoundRandomV36('mission_start_', 3); // корабль уходит на задание
+    scheduleRegionPersistV36('Корабль отцеплен от эскадры', { delay: 120 });
+    rerenderRegionMapV36();
+  }
+  function bindRegionSideControlsV36(map) {
+    document.querySelectorAll('[data-rts-add]').forEach(btn => btn.addEventListener('click', () => addRegionEntityV36(map, btn.dataset.rtsAdd)));
+    // экипаж корабля прямо с карты
+    document.querySelectorAll('[data-rts-crew-player],[data-rts-crew-npc]').forEach(box => box.addEventListener('change', () => {
+      const token = selectedRegionTokenV36(map);
+      const ship = token?.shipId ? SHIPS_V36[token.shipId] : null;
+      if (!ship) return;
+      const pid = box.dataset.rtsCrewPlayer;
+      const nid = box.dataset.rtsCrewNpc;
+      if (pid) {
+        ship.crewPlayerIds = uniqueV36([...(ship.crewPlayerIds || []).filter(id => id !== pid), ...(box.checked ? [pid] : [])]);
+        if (box.checked && App.state.users[pid]) { App.state.users[pid].currentShipId = ship.id; if (ship.currentRegionId) App.state.users[pid].currentRegionId = ship.currentRegionId; }
+      }
+      if (nid) ship.crewNpcIds = uniqueV36([...(ship.crewNpcIds || []).filter(id => id !== nid), ...(box.checked ? [nid] : [])]);
+      scheduleRegionPersistV36('Экипаж обновлён');
+    }));
+    document.getElementById('rts-merge-btn-v36')?.addEventListener('click', () => {
+      const selected = selectedRegionTokenV36(map);
+      const targetId = document.getElementById('rts-merge-target-v36')?.value || '';
+      const target = map.tokens.find(t => t.id === targetId);
+      if (selected && target) mergeIntoSquadronV36(map, selected, target);
+    });
+    document.querySelectorAll('[data-rts-detach]').forEach(btn => btn.addEventListener('click', () => {
+      const token = selectedRegionTokenV36(map);
+      if (token) detachShipFromSquadronV36(map, token, btn.dataset.rtsDetach);
+    }));
+    document.getElementById('rts-assign-player-btn-v36')?.addEventListener('click', async () => {
+      const playerId = document.getElementById('rts-assign-player-v36')?.value || '';
+      if (!playerId) return Toast.show('Выбери игрока из списка', 'err');
+      const player = App.state.users[playerId] || PLAYER_TEMPLATES[playerId];
+      if (!player) return;
+      player.currentRegionId = map.id;
+      player.currentPlanetId = map.planetId;
+      if (App.state.users[playerId]) { App.state.users[playerId].currentRegionId = map.id; App.state.users[playerId].currentPlanetId = map.planetId; }
+      if (PLAYER_TEMPLATES[playerId]) { PLAYER_TEMPLATES[playerId].currentRegionId = map.id; PLAYER_TEMPLATES[playerId].currentPlanetId = map.planetId; }
+      if (!safeArrayV36(map.tokens).some(token => token.playerId === playerId)) map.tokens.push(normalizeRegionTokenV36({ type: 'player', playerId, name: player.displayName || playerId, x: map.width / 2, y: map.height / 2, visibleToPlayers: true }));
+      try { await App.saveState('Положение игрока обновлено'); } catch {}
+      scheduleRegionPersistV36('Игрок присвоен региону', { delay: 120 });
+      rerenderRegionMapV36();
+    });
+    // token inspector
+    document.getElementById('rts-token-name-v36')?.addEventListener('change', event => { const token = selectedRegionTokenV36(map); if (token) { token.name = String(event.target.value || '').trim() || token.name; document.querySelector(`[data-token-id="${CSS.escape(token.id)}"] b`)?.replaceChildren(document.createTextNode(regionMapTokenLabelV36(token))); scheduleRegionPersistV36('Имя обновлено'); } });
+    document.getElementById('rts-token-color-v36')?.addEventListener('change', event => { const token = selectedRegionTokenV36(map); if (token) { token.color = event.target.value; document.querySelector(`[data-token-id="${CSS.escape(token.id)}"]`)?.style.setProperty('--rts-color', token.color); scheduleRegionPersistV36('Цвет обновлён'); } });
+    document.getElementById('rts-token-visible-v36')?.addEventListener('change', event => {
+      const token = selectedRegionTokenV36(map);
+      if (!token) return;
+      token.visibleToPlayers = event.target.checked;
+      document.querySelector(`[data-token-id="${CSS.escape(token.id)}"]`)?.classList.toggle('player-hidden', !token.visibleToPlayers);
+      scheduleRegionPersistV36('Видимость токена обновлена');
+    });
+    document.getElementById('rts-token-vision-v36')?.addEventListener('change', event => { const token = selectedRegionTokenV36(map); if (token) { token.visionRadius = Number(event.target.value || 0); scheduleRegionPersistV36('Обзор токена обновлён'); } });
+    document.getElementById('rts-token-radar-v36')?.addEventListener('change', event => { const token = selectedRegionTokenV36(map); if (token) { token.radarRadius = Number(event.target.value || 0); scheduleRegionPersistV36('Радар токена обновлён'); } });
+    // Прямое редактирование корабля (World Config) с карты
+    const editSelectedShip = (mutate, msg) => {
+      const token = selectedRegionTokenV36(map);
+      const ship = token?.type === 'ship' && token.shipId ? SHIPS_V36[token.shipId] : null;
+      if (!ship) return;
+      mutate(ship);
+      worldData.ships = serializeWorldSection('ships', SHIPS_V36);
+      scheduleRegionPersistV36(msg);
+    };
+    document.getElementById('rts-ship-vision-v36')?.addEventListener('change', event => editSelectedShip(ship => { ship.visionRadius = Math.max(0, Number(event.target.value || 0)); }, 'Обзор корабля обновлён (WC)'));
+    document.getElementById('rts-ship-radar-v36')?.addEventListener('change', event => editSelectedShip(ship => { ship.radarRadius = Math.max(0, Number(event.target.value || 0)); }, 'Радар корабля обновлён (WC)'));
+    document.getElementById('rts-ship-fuel-v36')?.addEventListener('change', event => editSelectedShip(ship => { ship.fuel = clamp(Number(event.target.value || 0), 0, Math.max(1, Number(ship.fuelCapacity || ship.fuel || 0))); }, 'Топливо корабля обновлено (WC)'));
+    document.getElementById('rts-ship-radar-on-v36')?.addEventListener('change', event => { const token = selectedRegionTokenV36(map); editSelectedShip(ship => { ship.radarEnabled = event.target.checked; if (token) token.radarEnabled = event.target.checked; }, event.target.checked ? 'Радар включён' : 'Радар выключен'); });
+    document.getElementById('rts-squad-radar-on-v36')?.addEventListener('change', event => { const token = selectedRegionTokenV36(map); if (token) { token.radarEnabled = event.target.checked; scheduleRegionPersistV36(event.target.checked ? 'Радар эскадры включён' : 'Радар эскадры выключен'); } });
+    document.getElementById('rts-token-radar-on-v36')?.addEventListener('change', event => {
+      const token = selectedRegionTokenV36(map);
+      if (!token) return;
+      token.radarEnabled = event.target.checked;
+      if (token.type === 'ship' && token.shipId && SHIPS_V36[token.shipId]) SHIPS_V36[token.shipId].radarEnabled = event.target.checked;
+      scheduleRegionPersistV36(event.target.checked ? 'Радар включён' : 'Радар выключен');
+    });
+    document.getElementById('rts-missile-type-v36')?.addEventListener('change', event => { RTS_REGION_UI_V36.missileType = event.target.value || 'heat'; });
+    document.getElementById('rts-delete-token-v36')?.addEventListener('click', () => { map.tokens = map.tokens.filter(t => t.id !== RTS_REGION_UI_V36.selectedTokenId); RTS_REGION_UI_V36.selectedTokenId = ''; scheduleRegionPersistV36('Токен удалён', { delay: 120 }); rerenderRegionMapV36(); });
+    document.getElementById('rts-stop-v36')?.addEventListener('click', () => stopRegionTokenMoveV36(map));
+    document.getElementById('rts-missile-v36')?.addEventListener('click', () => armMissileV36(map));
+    // marker inspector
+    document.getElementById('rts-marker-name-v36')?.addEventListener('change', event => { const marker = selectedRegionMarkerV36(map); if (marker) { marker.name = String(event.target.value || '').trim() || marker.name; const node = document.querySelector(`[data-marker-id="${CSS.escape(marker.id)}"] b`); if (node) node.textContent = marker.name; scheduleRegionPersistV36('Метка обновлена'); } });
+    document.getElementById('rts-marker-color-v36')?.addEventListener('change', event => { const marker = selectedRegionMarkerV36(map); if (marker) { marker.color = event.target.value; document.querySelector(`[data-marker-id="${CSS.escape(marker.id)}"]`)?.style.setProperty('--rts-color', marker.color); scheduleRegionPersistV36('Цвет метки обновлён'); } });
+    document.getElementById('rts-marker-visible-v36')?.addEventListener('change', event => { const marker = selectedRegionMarkerV36(map); if (marker) { marker.visibleToPlayers = event.target.checked; scheduleRegionPersistV36('Видимость метки обновлена'); } });
+    document.getElementById('rts-marker-target-v36')?.addEventListener('change', event => { const marker = selectedRegionMarkerV36(map); if (marker) { marker.targetRegionId = event.target.value; scheduleRegionPersistV36('Переход метки обновлён'); } });
+    document.getElementById('rts-delete-marker-v36')?.addEventListener('click', () => { map.markers = map.markers.filter(m => m.id !== RTS_REGION_UI_V36.selectedMarkerId); RTS_REGION_UI_V36.selectedMarkerId = ''; scheduleRegionPersistV36('Метка удалена', { delay: 120 }); rerenderRegionMapV36(); });
+    // fog of war settings
+    document.getElementById('rts-fog-enabled-v36')?.addEventListener('change', event => { if (!map.fog) map.fog = { enabled: true, radius: 50, explored: '' }; map.fog.enabled = event.target.checked; scheduleRegionPersistV36('Туман войны обновлён'); });
+    document.getElementById('rts-fog-radius-v36')?.addEventListener('change', event => { if (!map.fog) map.fog = { enabled: true, radius: 50, explored: '' }; map.fog.radius = Math.max(0, Number(event.target.value || 0)); scheduleRegionPersistV36('Радиус тумана обновлён'); });
+  }
+  function startRegionDragV36(event, map, kind, id) {
+    if (!isGmV36() || RTS_REGION_UI_V36.mode !== 'edit') return;
+    event.preventDefault();
+    const item = kind === 'token' ? map.tokens.find(t => t.id === id) : map.markers.find(m => m.id === id);
+    if (!item) return;
+    if (kind === 'token') selectRegionTokenV36(map, id);
+    else selectRegionMarkerV36(map, id);
+    RTS_REGION_UI_V36.dragging = { kind, id, mapId: map.id };
+    const node = document.querySelector(kind === 'token' ? `[data-token-id="${CSS.escape(id)}"]` : `[data-marker-id="${CSS.escape(id)}"]`);
+    const move = e => {
+      const p = boardCoordsFromEventV36(e, map);
+      item.x = p.x; item.y = p.y;
+      if (kind === 'token') { item.startX = p.x; item.startY = p.y; item.destX = p.x; item.destY = p.y; item.moveStartedAt = ''; item.moveEndsAt = ''; item.moveShipId = ''; item.moveFuelCost = 0; item.movePausedMs = 0; }
+      if (node) { node.style.left = `${(p.x / map.width * 100).toFixed(3)}%`; node.style.top = `${(p.y / map.height * 100).toFixed(3)}%`; }
+    };
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      RTS_REGION_UI_V36.dragging = null;
+      scheduleRegionPersistV36('Положение на карте сохранено');
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up, { once: true });
+  }
+  // Фиксирует топливо, сожжённое за пройденную часть маршрута, и уменьшает
+  // остаток стоимости. Вызывается перед новым приказом / стопом / паузой —
+  // иначе недолетевший маршрут «возвращал» топливо (баг сброса топлива).
+  function commitPartialMoveFuelV36(token, at = Date.now()) {
+    const cost = Number(token.moveFuelCost || 0);
+    const start = Date.parse(token.moveStartedAt || '');
+    const end = Date.parse(token.moveEndsAt || '');
+    if (!(cost > 0) || !Number.isFinite(start) || !Number.isFinite(end) || end <= start) return;
+    const burned = cost * clamp((at - start) / (end - start), 0, 1);
+    if (!(burned > 0)) return;
+    if (token.type === 'squadron') {
+      const ships = squadronShipsV36(token);
+      const total = ships.reduce((sum, ship) => sum + Number(ship.fuel || 0), 0);
+      if (total > 0) ships.forEach(ship => {
+        ship.fuel = clamp(Number(ship.fuel || 0) - burned * Number(ship.fuel || 0) / total, 0, Math.max(1, Number(ship.fuelCapacity || ship.fuel || 0)));
+      });
+      token.moveFuelStart = squadronStatsV36(token).fuel;
+    } else if (token.moveShipId && SHIPS_V36[token.moveShipId]) {
+      const ship = SHIPS_V36[token.moveShipId];
+      ship.fuel = clamp(Number(token.moveFuelStart || ship.fuel || 0) - burned, 0, Math.max(1, Number(ship.fuelCapacity || ship.fuel || 0)));
+      token.moveFuelStart = Number(ship.fuel || 0);
+    }
+    token.moveFuelCost = Math.max(0, cost - burned);
+  }
+  function startRegionTokenMoveV36(map, token, destX, destY) {
+    if ((RTS_REGION_UI_V36.timeScale ?? 1) === 0) { Toast.show('Пауза: возобнови время, чтобы отдавать приказы', 'err'); return; }
+    // Новый приказ во время полёта: сначала фиксируем уже сожжённое топливо.
+    if (token.moveEndsAt) commitPartialMoveFuelV36(token);
+    token.movePausedMs = 0;
+    const pos = currentTokenPositionV36(token);
+    const distance = Math.hypot(destX - pos.x, destY - pos.y);
+    let speed = 40;
+    const ship = liveShipForTokenV36(token);
+    if (ship) {
+      speed = ship.__squadron ? Number(ship.__speed || 40) : shipSpeedV36(ship);
+      const fuelCost = distance * Math.max(0.01, Number(ship.fuelConsumption || 1)) / 100;
+      if (fuelCost > Number(ship.fuel || 0)) { Toast.show('Недостаточно топлива для маршрута', 'err'); return; }
+      // Fuel is consumed progressively during the move and committed once on arrival (settleRegionTokenV36).
+      token.moveShipId = ship.__squadron ? '' : ship.id;
+      token.moveFuelStart = Number(ship.fuel || 0);
+      token.moveFuelCost = fuelCost;
+      const memberShips = ship.__squadron ? squadronShipsV36(token) : [ship];
+      memberShips.forEach(member => {
+        member.currentRegionId = map.id;
+        if (map.planetId) member.currentPlanetId = map.planetId;
+        (member.crewPlayerIds || []).forEach(pid => {
+          if (App.state.users[pid]) { App.state.users[pid].currentRegionId = map.id; App.state.users[pid].currentPlanetId = map.planetId; App.state.users[pid].currentShipId = member.id; }
+          if (PLAYER_TEMPLATES[pid]) { PLAYER_TEMPLATES[pid].currentRegionId = map.id; PLAYER_TEMPLATES[pid].currentPlanetId = map.planetId; PLAYER_TEMPLATES[pid].currentShipId = member.id; }
+        });
+      });
+    } else {
+      token.moveShipId = ''; token.moveFuelStart = 0; token.moveFuelCost = 0;
+    }
+    const durationMs = clamp((distance / Math.max(1, speed)) * 1000 / Math.max(1, RTS_REGION_UI_V36.timeScale || 1), 350, 120000);
+    const nowMs = Date.now();
+    token.startX = pos.x; token.startY = pos.y; token.x = pos.x; token.y = pos.y;
+    token.destX = destX; token.destY = destY;
+    token.moveStartedAt = new Date(nowMs).toISOString();
+    token.moveEndsAt = new Date(nowMs + durationMs).toISOString();
+    document.querySelector(`[data-token-id="${CSS.escape(token.id)}"]`)?.classList.add('moving');
+    // No re-render: the rAF loop animates the token; persist soon so the second screen + other clients pick up the route.
+    scheduleRegionPersistV36('Маршрут запущен', { delay: 120 });
+  }
+  function updateRegionFuelRangeV36(map, now) {
+    const circle = document.getElementById('region-fuel-range-v36');
+    if (!circle) return;
+    const token = safeArrayV36(map.tokens).find(t => t.id === RTS_REGION_UI_V36.selectedTokenId);
+    const ship = token ? liveShipForTokenV36(token) : null;
+    if (!token || !ship) { circle.style.display = 'none'; return; }
+    // Cap the drawn radius at the map diagonal: beyond that the circle covers the
+    // whole map anyway, and the cap keeps the visual responsive to fuel changes.
+    const range = Math.min(shipRangeFromFuelV36(ship, liveFuelV36(token, ship, now)), Math.hypot(Number(map.width || 1000), Number(map.height || 700)));
+    if (!(range > 0)) { circle.style.display = 'none'; return; }
+    const pos = currentTokenPositionV36(token, now);
+    circle.style.display = '';
+    circle.style.left = `${(pos.x / map.width * 100).toFixed(3)}%`;
+    circle.style.top = `${(pos.y / map.height * 100).toFixed(3)}%`;
+    circle.style.width = `${(range / map.width * 100 * 2).toFixed(3)}%`;
+    circle.style.height = `${(range / map.height * 100 * 2).toFixed(3)}%`;
+  }
+  function patchRegionSideFuelV36(map, now) {
+    const readout = document.getElementById('rts-ship-fuel-readout-v36');
+    if (!readout) return;
+    const token = safeArrayV36(map.tokens).find(t => t.id === RTS_REGION_UI_V36.selectedTokenId);
+    const ship = token ? liveShipForTokenV36(token) : null;
+    if (!ship) return;
+    readout.textContent = `${Number(liveFuelV36(token, ship, now)).toFixed(1)} / ${Number(ship.fuelCapacity).toFixed(1)}`;
+  }
+  // Радарная сетка вокруг выбранного корабля (если радар есть и включён).
+  function updateRegionRadarRangeV36(map, now) {
+    const circle = document.getElementById('region-radar-range-v36');
+    if (!circle) return;
+    const token = safeArrayV36(map.tokens).find(t => t.id === RTS_REGION_UI_V36.selectedTokenId);
+    const info = token ? tokenRadarInfoV36(token) : null;
+    if (!token || !info || !info.active) { circle.style.display = 'none'; return; }
+    const pos = currentTokenPositionV36(token, now);
+    circle.style.display = '';
+    circle.style.left = `${(pos.x / map.width * 100).toFixed(3)}%`;
+    circle.style.top = `${(pos.y / map.height * 100).toFixed(3)}%`;
+    circle.style.width = `${(info.r / map.width * 100 * 2).toFixed(3)}%`;
+    circle.style.height = `${(info.r / map.height * 100 * 2).toFixed(3)}%`;
+  }
+  // Радио-озвучка: новые контакты (обзор/радар) и пороги топлива.
+  function regionSoundTickV36(map, now) {
+    const seen = RTS_REGION_UI_V36.contactSeen || (RTS_REGION_UI_V36.contactSeen = { vis: new Set(), radar: new Set() });
+    const view = playerViewSourcesV36(map);
+    safeArrayV36(map.tokens).forEach(token => {
+      if (token.type === 'city' || tokenGrantsPlayerViewV36(token)) return;
+      const pos = currentTokenPositionV36(token, now);
+      const inView = view.length && view.some(src => Math.hypot(pos.x - src.x, pos.y - src.y) <= src.r);
+      if (inView) {
+        if (!seen.vis.has(token.id)) { seen.vis.add(token.id); playRegionSoundV36('mapmode_contact_vis_01', { key: 'contact_vis', cooldownMs: 6000 }); }
+      } else {
+        seen.vis.delete(token.id);
+      }
+    });
+    const contacts = playerRadarContactsV36(map, now);
+    const contactIds = new Set(contacts.map(c => c.token.id));
+    contacts.forEach(({ token, emitting }) => {
+      if (seen.radar.has(token.id)) return;
+      seen.radar.add(token.id);
+      if (emitting) playRegionSoundV36('mapmode_contact_elint_01', { key: 'contact_elint', cooldownMs: 5000 });
+      else if (token.type === 'ship' || token.type === 'squadron') playRegionSoundV36('mapmode_contact_ir_01', { key: 'contact_ir', cooldownMs: 5000 });
+      else playRegionSoundV36('mapmode_contact_radar_01', { key: 'contact_radar', cooldownMs: 5000 });
+    });
+    Array.from(seen.radar).forEach(id => { if (!contactIds.has(id)) seen.radar.delete(id); });
+    // топливные пороги (в % от бака): 50 / 30 / 20 / 10 / 0
+    const buckets = [50, 30, 20, 10, 0];
+    safeArrayV36(map.tokens).forEach(token => {
+      if (!tokenGrantsPlayerViewV36(token)) return;
+      const ship = liveShipForTokenV36(token);
+      if (!ship || !(Number(ship.fuelCapacity) > 0)) return;
+      const pct = liveFuelV36(token, ship, now) / Number(ship.fuelCapacity) * 100;
+      const crossed = buckets.filter(b => pct <= b);
+      const bucket = crossed.length ? crossed[crossed.length - 1] : null;
+      const prev = RTS_REGION_UI_V36.fuelBucketByToken[token.id];
+      if (prev === undefined) { RTS_REGION_UI_V36.fuelBucketByToken[token.id] = bucket === null ? 999 : bucket; return; } // базовая линия без звука
+      if (bucket !== null && bucket < prev) {
+        RTS_REGION_UI_V36.fuelBucketByToken[token.id] = bucket;
+        playRegionSoundV36(`radio_fuel_${bucket === 0 ? '00' : bucket}`, { key: `fuel_${token.id}`, cooldownMs: 1500 });
+      } else if (bucket === null && prev !== 999) {
+        RTS_REGION_UI_V36.fuelBucketByToken[token.id] = 999; // заправился
+      }
+    });
+  }
+  function viewCenterMapCoordsV36(map) {
+    const v = getRegionViewV36();
+    const fw = Math.max(1, v.frameW || 1), fh = Math.max(1, v.frameH || 1);
+    const z = Math.max(0.0001, v.zoom || 1);
+    const lx = (fw / 2 - (v.panX || 0)) / z;
+    const ly = (fh / 2 - (v.panY || 0)) / z;
+    return { x: clamp(lx / fw * map.width, 0, map.width), y: clamp(ly / fh * map.height, 0, map.height) };
+  }
+  // ---- пауза / 1x / 2x ----
+  // Тайминги маршрутов хранятся как wall-clock, поэтому смена скорости выполняется
+  // «перебазированием»: фиксируем текущую позицию/топливо и переписываем интервал
+  // с новым остатком. Пауза складывает остаток (в 1x-эквиваленте) в movePausedMs.
+  // Всё это уходит в снапшот, так что второй экран и клиенты синхронны.
+  function setRegionTimeScaleV36(newScale) {
+    const map = REGION_MAPS_V36[RTS_REGION_UI_V36.mapId];
+    const oldScale = Number(RTS_REGION_UI_V36.timeScale ?? 1);
+    newScale = Number(newScale);
+    if (!map || oldScale === newScale) return;
+    const now = Date.now();
+    safeArrayV36(map.tokens).forEach(token => {
+      const end = Date.parse(token.moveEndsAt || '');
+      const moving = Number.isFinite(end) && end > now;
+      if (moving) {
+        commitPartialMoveFuelV36(token, now);
+        const pos = currentTokenPositionV36(token, now);
+        token.startX = pos.x; token.startY = pos.y; token.x = pos.x; token.y = pos.y;
+        const remainingWall = end - now;
+        if (newScale === 0) {
+          token.movePausedMs = remainingWall * Math.max(1, oldScale);
+          token.moveStartedAt = ''; token.moveEndsAt = '';
+        } else {
+          token.moveStartedAt = new Date(now).toISOString();
+          token.moveEndsAt = new Date(now + remainingWall * Math.max(1, oldScale) / newScale).toISOString();
+        }
+      } else if (newScale > 0 && Number(token.movePausedMs || 0) > 0) {
+        token.moveStartedAt = new Date(now).toISOString();
+        token.moveEndsAt = new Date(now + Number(token.movePausedMs) / newScale).toISOString();
+        token.movePausedMs = 0;
+      }
+    });
+    RTS_REGION_UI_V36.timeScale = newScale;
+    RTS_REGION_UI_V36.lastTickMs = now;
+    document.querySelectorAll('[data-rts-time-v36]').forEach(btn => btn.classList.toggle('rts-arm-active-v36', Number(btn.dataset.rtsTimeV36) === newScale));
+    scheduleRegionPersistV36(newScale === 0 ? 'Пауза' : newScale === 2 ? 'Скорость ×2' : 'Обычная скорость', { delay: 120 });
+  }
+  function stopRegionTokenMoveV36(map) {
+    const token = safeArrayV36(map.tokens).find(t => t.id === RTS_REGION_UI_V36.selectedTokenId);
+    if (!token || !token.moveEndsAt) return;
+    const pos = currentTokenPositionV36(token);
+    commitPartialMoveFuelV36(token); // фиксируем сожжённое за частичный маршрут (в т.ч. для эскадры)
+    token.x = pos.x; token.y = pos.y; token.startX = pos.x; token.startY = pos.y; token.destX = pos.x; token.destY = pos.y;
+    token.moveStartedAt = ''; token.moveEndsAt = ''; token.moveShipId = ''; token.moveFuelStart = 0; token.moveFuelCost = 0; token.movePausedMs = 0;
+    document.querySelector(`[data-token-id="${CSS.escape(token.id)}"]`)?.classList.remove('moving');
+    scheduleRegionPersistV36('Движение остановлено', { delay: 120 });
+    refreshRegionSideV36(map);
+  }
+  function hideRegionCoursePreviewV36() {
+    const svg = document.getElementById('rts-course-svg-v36'); if (svg) svg.style.display = 'none';
+    const label = document.getElementById('rts-course-label-v36'); if (label) label.style.display = 'none';
+  }
+  function updateRegionCoursePreviewV36(map, event) {
+    const svg = document.getElementById('rts-course-svg-v36');
+    const line = document.getElementById('rts-course-line-v36');
+    const label = document.getElementById('rts-course-label-v36');
+    const frame = document.getElementById('region-map-frame-v36');
+    if (!svg || !line || !frame) return;
+    if (!isGmV36() || RTS_REGION_UI_V36.mode !== 'play' || RTS_REGION_UI_V36.arming) { hideRegionCoursePreviewV36(); return; }
+    const token = safeArrayV36(map.tokens).find(t => t.id === RTS_REGION_UI_V36.selectedTokenId);
+    if (!token) { hideRegionCoursePreviewV36(); return; }
+    const from = currentTokenPositionV36(token);
+    const to = boardCoordsFromEventV36(event, map);
+    line.setAttribute('x1', from.x.toFixed(1)); line.setAttribute('y1', from.y.toFixed(1));
+    line.setAttribute('x2', to.x.toFixed(1)); line.setAttribute('y2', to.y.toFixed(1));
+    svg.style.display = '';
+    const dist = Math.hypot(to.x - from.x, to.y - from.y);
+    const ship = liveShipForTokenV36(token);
+    const speed = ship ? (ship.__squadron ? Number(ship.__speed || 40) : shipSpeedV36(ship)) : 40;
+    const eta = dist / Math.max(1, speed);
+    let text = `${dist.toFixed(0)} ${map.scaleLabel || 'ед'} · ⏱ ${eta.toFixed(0)}с`;
+    let bad = false;
+    if (ship) {
+      const cost = dist * Math.max(0.01, Number(ship.fuelConsumption || 1)) / 100;
+      text += ` · ⛽ ${cost.toFixed(1)}`;
+      if (cost > Number(ship.fuel || 0)) { bad = true; text += ' · нет топлива'; }
+    }
+    if (label) {
+      const rect = frame.getBoundingClientRect();
+      label.style.left = `${(event.clientX - rect.left + 16).toFixed(0)}px`;
+      label.style.top = `${(event.clientY - rect.top + 16).toFixed(0)}px`;
+      label.textContent = text;
+      label.classList.toggle('bad', bad);
+      label.style.display = '';
+    }
+  }
+  function armMissileV36(map) {
+    const token = safeArrayV36(map.tokens).find(t => t.id === RTS_REGION_UI_V36.selectedTokenId);
+    if (!token) return Toast.show('Выбери юнит-носитель', 'err');
+    const sel = document.getElementById('rts-missile-type-v36');
+    if (sel?.value) RTS_REGION_UI_V36.missileType = sel.value;
+    RTS_REGION_UI_V36.arming = RTS_REGION_UI_V36.arming === token.id ? '' : token.id;
+    const armed = Boolean(RTS_REGION_UI_V36.arming);
+    document.getElementById('region-map-frame-v36')?.classList.toggle('is-arming', armed);
+    document.getElementById('rts-missile-v36')?.classList.toggle('rts-arm-active-v36', armed);
+    hideRegionCoursePreviewV36();
+    Toast.show(armed ? 'Кликни по цели для запуска ракеты' : 'Запуск отменён', 'ok');
+  }
+  // ---- ракеты: типы наведения, точка поиска, максимальная дальность ----
+  const MISSILE_TYPES_V36 = {
+    heat: { label: 'ИК', range: 350, seek: 110, speed: 300 },   // тепловые: корабли и ракеты, не города
+    radar: { label: 'РЛС', range: 500, seek: 140, speed: 260 }, // радарные: города и корабли с включённым радаром, не ракеты
+    anti: { label: 'ПРО', range: 250, seek: 130, speed: 380 }   // противоракеты: только ракеты
+  };
+  function missileCanTargetTokenV36(type, token) {
+    if (!token) return false;
+    if (type === 'heat') return token.type === 'ship' || token.type === 'squadron';
+    if (type === 'radar') return token.type === 'city' || ((token.type === 'ship' || token.type === 'squadron') && tokenRadarInfoV36(token).active);
+    return false; // anti — только ракеты
+  }
+  // Спецификация ракеты: встроенный тип ('heat'/'radar'/'anti') или ракета из
+  // World Config ('wc:<id>') с собственными дальностью/поиском/скоростью.
+  function getMissileSpecV36(value) {
+    const raw = String(value || 'heat');
+    if (raw.startsWith('wc:')) {
+      const missile = MISSILES_V36[raw.slice(3)];
+      if (missile) return { label: missile.name, guidance: missile.guidance, range: Number(missile.range || 350), seek: Number(missile.seek || 110), speed: Number(missile.speed || 300) };
+    }
+    const builtin = MISSILE_TYPES_V36[raw] || MISSILE_TYPES_V36.heat;
+    return { label: builtin.label, guidance: MISSILE_TYPES_V36[raw] ? raw : 'heat', range: builtin.range, seek: builtin.seek, speed: builtin.speed };
+  }
+  function launchMissileV36(map, fromX, fromY, searchX, searchY, type = RTS_REGION_UI_V36.missileType || 'heat') {
+    const spec = getMissileSpecV36(type);
+    if (Math.hypot(searchX - fromX, searchY - fromY) > spec.range) {
+      Toast.show(`Точка поиска дальше радиуса ракеты ${spec.label} (${spec.range} ед)`, 'err');
+      return false;
+    }
+    if (!Array.isArray(RTS_REGION_UI_V36.missiles)) RTS_REGION_UI_V36.missiles = [];
+    RTS_REGION_UI_V36.missiles.push({ id: `m_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`, type, guidance: spec.guidance, seek: spec.seek, speed: spec.speed, x: fromX, y: fromY, sx: searchX, sy: searchY, phase: 'transit', targetTokenId: '', targetMissileId: '', dead: false, boomAt: 0 });
+    playRegionSoundRandomV36('radio_missile_', 3, { cooldownMs: 700 });
+    return true;
+  }
+  function missileAcquireV36(map, missile) {
+    const guidance = missile.guidance || missile.type || 'heat';
+    const seek = Number(missile.seek || MISSILE_TYPES_V36.heat.seek);
+    let best = null;
+    if (guidance === 'heat' || guidance === 'anti') {
+      (RTS_REGION_UI_V36.missiles || []).forEach(other => {
+        if (other === missile || other.dead) return;
+        const d = Math.hypot(other.x - missile.x, other.y - missile.y);
+        if (d <= seek && (!best || d < best.d)) best = { d, missileId: other.id };
+      });
+    }
+    if (guidance !== 'anti') {
+      safeArrayV36(map.tokens).forEach(token => {
+        if (!missileCanTargetTokenV36(guidance, token)) return;
+        const p = currentTokenPositionV36(token);
+        const d = Math.hypot(p.x - missile.x, p.y - missile.y);
+        if (d <= seek && (!best || d < best.d)) best = { d, tokenId: token.id };
+      });
+    }
+    if (best?.tokenId) { missile.targetTokenId = best.tokenId; missile.phase = 'homing'; return true; }
+    if (best?.missileId) { missile.targetMissileId = best.missileId; missile.phase = 'homing'; return true; }
+    return false;
+  }
+  function detonateMissileV36(missile, layer, map) {
+    missile.dead = true;
+    missile.boomAt = Date.now();
+    layer.querySelector(`[data-missile="${CSS.escape(missile.id)}"]`)?.remove();
+    const boom = document.createElement('div');
+    boom.className = 'rts-missile-impact-v36';
+    boom.style.left = `${(missile.x / map.width * 100).toFixed(3)}%`;
+    boom.style.top = `${(missile.y / map.height * 100).toFixed(3)}%`;
+    layer.appendChild(boom);
+    setTimeout(() => boom.remove(), 600);
+  }
+  function updateMissilesV36(map, dtMs) {
+    const layer = document.getElementById('rts-missiles-layer-v36');
+    if (!layer) return;
+    const now = Date.now();
+    const list = Array.isArray(RTS_REGION_UI_V36.missiles) ? RTS_REGION_UI_V36.missiles : [];
+    list.forEach(missile => {
+      if (missile.dead) return;
+      const spec = { speed: Number(missile.speed || MISSILE_TYPES_V36.heat.speed) };
+      let tx = missile.sx, ty = missile.sy;
+      if (missile.phase === 'homing') {
+        let live = false;
+        if (missile.targetMissileId) {
+          const target = list.find(m => m.id === missile.targetMissileId && !m.dead);
+          if (target) { tx = target.x; ty = target.y; live = true; }
+        } else if (missile.targetTokenId) {
+          const target = safeArrayV36(map.tokens).find(t => t.id === missile.targetTokenId);
+          if (target) { const p = currentTokenPositionV36(target, now); tx = p.x; ty = p.y; live = true; }
+        }
+        if (!live) { detonateMissileV36(missile, layer, map); return; }
+      }
+      const dist = Math.hypot(tx - missile.x, ty - missile.y);
+      const step = spec.speed * Math.max(0, dtMs) / 1000;
+      if (dist <= Math.max(6, step)) {
+        missile.x = tx; missile.y = ty;
+        // достигла точки поиска: захват цели или подрыв
+        if (missile.phase === 'transit' && missileAcquireV36(map, missile)) return;
+        if (missile.phase === 'homing' && missile.targetMissileId) {
+          const target = list.find(m => m.id === missile.targetMissileId && !m.dead);
+          if (target) detonateMissileV36(target, layer, map);
+        }
+        detonateMissileV36(missile, layer, map);
+        return;
+      }
+      missile.x += (tx - missile.x) / dist * step;
+      missile.y += (ty - missile.y) / dist * step;
+      let node = layer.querySelector(`[data-missile="${CSS.escape(missile.id)}"]`);
+      if (!node) { node = document.createElement('div'); node.className = 'rts-missile-v36'; node.dataset.missile = missile.id; layer.appendChild(node); }
+      node.style.left = `${(missile.x / map.width * 100).toFixed(3)}%`;
+      node.style.top = `${(missile.y / map.height * 100).toFixed(3)}%`;
+    });
+    RTS_REGION_UI_V36.missiles = list.filter(m => !m.dead || now - Number(m.boomAt || 0) < 900);
+  }
+  // ---- fog of war ----
+  function fogActiveV36(map) {
+    if (!map.fog?.enabled) return false;
+    if (RTS_REGION_UI_V36.mode === 'edit') return false;
+    if (isGmV36()) return Boolean(RTS_REGION_UI_V36.fogPreview);
+    return true;
+  }
+  // Серо-чёрные «облака» тумана войны: детерминированная текстура из клубов,
+  // медленно дрейфующая; зона обзора мягко «раздвигает» облака.
+  function buildFogCloudsV36(w, h) {
+    const cv = document.createElement('canvas');
+    cv.width = w; cv.height = h;
+    const c = cv.getContext('2d');
+    c.fillStyle = 'rgb(7,9,13)';
+    c.fillRect(0, 0, w, h);
+    let seed = 1337;
+    const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+    for (let i = 0; i < 260; i += 1) {
+      const x = rnd() * w, y = rnd() * h, r = 18 + rnd() * 95;
+      const shade = 16 + Math.floor(rnd() * 46); // от почти чёрного к серому
+      const g = c.createRadialGradient(x, y, 0, x, y, r);
+      g.addColorStop(0, `rgba(${shade},${shade + 3},${shade + 7},${(0.22 + rnd() * 0.34).toFixed(2)})`);
+      g.addColorStop(1, 'rgba(0,0,0,0)');
+      c.fillStyle = g;
+      c.beginPath(); c.arc(x, y, r, 0, Math.PI * 2); c.fill();
+    }
+    return cv;
+  }
+  function renderFogV36(map) {
+    const canvas = document.getElementById('rts-fog-canvas-v36');
+    if (!canvas) return;
+    if (!fogActiveV36(map)) { canvas.style.display = 'none'; return; }
+    const W = 900, H = Math.max(1, Math.round(W * (Number(map.height || 1) / Math.max(1, Number(map.width || 1)))));
+    if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; RTS_REGION_UI_V36.fogClouds = null; }
+    canvas.style.display = '';
+    if (!RTS_REGION_UI_V36.fogClouds) RTS_REGION_UI_V36.fogClouds = buildFogCloudsV36(W, H);
+    const clouds = RTS_REGION_UI_V36.fogClouds;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, W, H);
+    // медленный дрейф облаков (тайлим 2×2 для бесшовности)
+    const t = Date.now() * 0.006;
+    const dx = Math.floor(t % W), dy = Math.floor((t * 0.55) % H);
+    ctx.globalAlpha = 0.97;
+    ctx.drawImage(clouds, -dx, -dy);
+    ctx.drawImage(clouds, W - dx, -dy);
+    ctx.drawImage(clouds, -dx, H - dy);
+    ctx.drawImage(clouds, W - dx, H - dy);
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'destination-out';
+    playerViewSourcesV36(map).forEach(src => {
+      const cx = src.x / map.width * W, cy = src.y / map.height * H, r = Math.max(2, src.r / map.width * W);
+      // мягкий широкий край — облака «расступаются» вокруг корабля
+      const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+      g.addColorStop(0, 'rgba(0,0,0,1)');
+      g.addColorStop(0.55, 'rgba(0,0,0,1)');
+      g.addColorStop(0.82, 'rgba(0,0,0,0.55)');
+      g.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+    });
+    ctx.globalCompositeOperation = 'source-over';
+  }
+  function regionAmbientKeyV36() { return 'region:' + (RTS_REGION_UI_V36.mapId || ''); }
+  function ensureRegionAmbientModalV36() {
+    let modal = document.getElementById('region-ambient-modal-v36');
+    if (modal) return modal;
+    modal = document.createElement('div');
+    modal.id = 'region-ambient-modal-v36';
+    modal.className = 'modal region-ambient-modal-v36';
+    modal.innerHTML = `<div class="region-ambient-box-v36"><div class="row" style="justify-content:space-between;align-items:flex-start"><div><div class="section-title">Эмбиент региона</div><h2 style="margin:0" id="region-ambient-title-v36"></h2></div><button class="ghost" type="button" id="region-ambient-close-v36">ЗАКРЫТЬ</button></div><div class="region-ambient-body-v36" id="region-ambient-body-v36"></div></div>`;
+    document.body.appendChild(modal);
+    modal.addEventListener('click', event => {
+      if (event.target === modal || event.target.closest('#region-ambient-close-v36')) { modal.classList.remove('open'); return; }
+      const target = event.target.closest('[data-ra-add-section],[data-ra-add],[data-ra-random],[data-ra-play],[data-ra-ambient],[data-ra-stop],#region-ambient-stop-v36');
+      if (!target) return;
+      const audioApi = window.CombatAudioV37;
+      if (!audioApi) return;
+      event.preventDefault(); event.stopPropagation();
+      const key = regionAmbientKeyV36();
+      if (target.id === 'region-ambient-stop-v36' || target.dataset.raStop !== undefined) { delete audioApi.state.sceneAmbient[key]; audioApi.save(); audioApi.stopAmbient(); }
+      else if (target.dataset.raAddSection !== undefined) { const input = document.getElementById('region-ambient-section-name-v36'); audioApi.addSection(input?.value || ''); if (input) input.value = ''; }
+      else if (target.dataset.raAdd) audioApi.addSound(target.dataset.raAdd);
+      else if (target.dataset.raRandom) audioApi.playRandom(target.dataset.raRandom);
+      else if (target.dataset.raPlay) audioApi.play(target.dataset.raPlay);
+      else if (target.dataset.raAmbient) audioApi.setAmbient(key, target.dataset.raAmbient);
+      setTimeout(renderRegionAmbientBodyV36, 80);
+    });
+    return modal;
+  }
+  function renderRegionAmbientBodyV36() {
+    const modal = ensureRegionAmbientModalV36();
+    const map = REGION_MAPS_V36[RTS_REGION_UI_V36.mapId];
+    const titleEl = modal.querySelector('#region-ambient-title-v36');
+    if (titleEl) titleEl.textContent = map?.name || 'Регион';
+    const body = modal.querySelector('#region-ambient-body-v36');
+    const audioApi = window.CombatAudioV37;
+    if (!audioApi) { body.innerHTML = '<div class="small-note">Локальная библиотека звуков недоступна.</div>'; return; }
+    const ambientId = audioApi.state?.sceneAmbient?.[regionAmbientKeyV36()] || '';
+    body.innerHTML = `<div class="small-note">Звуки хранятся локально в renderer/assets/audio. Эмбиент привязан к этой карте региона и запускается при её открытии.</div>
+      <div class="row combat-editor-actions" style="margin-top:10px;gap:8px;flex-wrap:wrap"><input class="input" id="region-ambient-section-name-v36" placeholder="Новый раздел звуков" /><button class="secondary" type="button" data-ra-add-section="1">ДОБАВИТЬ РАЗДЕЛ</button><button class="ghost" type="button" id="region-ambient-stop-v36">СТОП ЭМБИЕНТ</button></div>
+      <div class="combat-sound-sections-v37" style="margin-top:10px">${audioApi.sections.map(section => `<div class="combat-sound-section-v37"><div class="combat-sound-section-head-v37"><b>${esc(section.name)}</b><div class="row combat-editor-actions"><button class="secondary" type="button" data-ra-add="${esc(section.id)}">ДОБАВИТЬ ФАЙЛЫ</button><button class="secondary" type="button" data-ra-random="${esc(section.id)}">СЛУЧАЙНЫЙ</button></div></div><div class="combat-sound-list-v37">${section.sounds.map(sound => `<div class="combat-sound-row-v37"><span>${esc(sound.name)}</span><div class="row combat-editor-actions"><button class="ghost" type="button" data-ra-play="${esc(sound.id)}">PLAY</button><button class="ghost ${ambientId === sound.id ? 'active' : ''}" type="button" data-ra-ambient="${esc(sound.id)}">AMBIENT</button><button class="ghost" type="button" data-ra-stop="${esc(sound.id)}" title="Остановить эмбиент">⏹</button></div></div>`).join('') || '<div class="small-note">В этом разделе пока нет файлов.</div>'}</div></div>`).join('')}</div>`;
+  }
+  function openRegionAmbientV36() {
+    if (!window.CombatAudioV37) return Toast.show('Библиотека звуков недоступна', 'err');
+    renderRegionAmbientBodyV36();
+    ensureRegionAmbientModalV36().classList.add('open');
+  }
+  function startRegionMapAnimationV36() {
+    if (RTS_REGION_UI_V36.raf) cancelAnimationFrame(RTS_REGION_UI_V36.raf);
+    const tick = () => {
+      const modal = document.getElementById('region-map-modal-v36');
+      const map = REGION_MAPS_V36[RTS_REGION_UI_V36.mapId];
+      if (!map || !modal?.classList.contains('open')) { RTS_REGION_UI_V36.raf = 0; return; }
+      const now = Date.now();
+      let settled = false;
+      safeArrayV36(map.tokens).forEach(token => {
+        const pos = currentTokenPositionV36(token, now);
+        const node = document.querySelector(`[data-token-id="${CSS.escape(token.id)}"]`);
+        if (node) {
+          node.style.left = `${(pos.x / map.width * 100).toFixed(3)}%`;
+          node.style.top = `${(pos.y / map.height * 100).toFixed(3)}%`;
+          node.classList.toggle('moving', Boolean(token.moveEndsAt) && !pos.done);
+        }
+        if (pos.done) settled = true;
+      });
+      updateRegionFuelRangeV36(map, now);
+      updateRegionRadarRangeV36(map, now);
+      patchRegionSideFuelV36(map, now);
+      const dtWall = RTS_REGION_UI_V36.lastTickMs ? Math.min(200, now - RTS_REGION_UI_V36.lastTickMs) : 16;
+      RTS_REGION_UI_V36.lastTickMs = now;
+      updateMissilesV36(map, dtWall * (RTS_REGION_UI_V36.timeScale ?? 1));
+      try { regionSoundTickV36(map, now); } catch {}
+      try { renderFogV36(map); } catch {}
+      if (settled) {
+        settleAllRegionTokensV36();
+        scheduleRegionPersistV36('', { delay: 150 });
+        // прибытие меняет доступные действия (например, «объединить в эскадру»)
+        refreshRegionSideV36(map);
+      }
+      RTS_REGION_UI_V36.raf = requestAnimationFrame(tick);
+    };
+    RTS_REGION_UI_V36.raf = requestAnimationFrame(tick);
+  }
+  async function showRegionMapOnDisplayV36(mapId) {
+    const map = REGION_MAPS_V36[mapId];
+    if (!map) return;
+    try { await window.electronAPI?.openPlayerDisplay?.(); } catch {}
+    try { await window.electronAPI?.updatePlayerDisplayView?.(regionDisplayPayloadV36()); } catch {}
+    scheduleRegionPersistV36('', { delay: 50 }); // flush fog config / explored so the second screen picks it up
+    const runtime = getRegionRuntimeV36(); runtime.activeMapId = map.id; runtime.updatedAt = nowIsoV36();
+    try { await App.saveState('Карта региона выведена на второй экран'); } catch {}
+  }
+
+  const __renderProfileV36 = UI.renderProfile.bind(UI);
+  UI.renderProfile = function() {
+    __renderProfileV36();
+    injectProfileLocationV36();
+  };
+  function injectProfileLocationV36() {
+    const root = document.getElementById('profile-content');
+    if (!root || root.querySelector('.profile-rts-location-card-v36')) return;
+    const user = App.currentUser || App.state.users?.[App.currentUserId] || {};
+    const map = REGION_MAPS_V36[user.currentRegionId || ''];
+    const ship = SHIPS_V36[user.currentShipId || ''];
+    const planet = PLANETS[user.currentPlanetId || map?.planetId || ship?.currentPlanetId || ''];
+    const html = `<div class="card profile-card profile-rts-location-card-v36"><div class="section-title">Текущее положение</div>
+      <div class="data-row"><span class="data-label">Планета</span><span class="data-value">${esc(planet?.name || '—')}</span></div>
+      <div class="data-row"><span class="data-label">Регион / город</span><span class="data-value">${esc(map?.name || '—')}</span></div>
+      <div class="data-row"><span class="data-label">Корабль</span><span class="data-value">${esc(ship?.name || '—')}${ship?.model ? ` · ${esc(ship.model)}` : ''}</span></div>
+      ${ship ? `<div class="small-note">Топливо ${Number(ship.fuel || 0).toFixed(1)} / ${Number(ship.fuelCapacity || 0).toFixed(1)} · скорость ${shipSpeedV36(ship).toFixed(1)}</div>` : ''}
+      ${map && canOpenRegionMapV36(map, user) ? `<button class="secondary" type="button" data-open-region-map="${esc(map.id)}" style="margin-top:10px">ОТКРЫТЬ КАРТУ</button>` : '<div class="small-note" style="margin-top:10px">Карта доступна, когда персонаж находится в регионе.</div>'}
+    </div>`;
+    root.insertAdjacentHTML('afterbegin', html);
+    bindRtsRegionButtonsV36(root);
+  }
+
+  window.RegionMapsV36 = { open: openRegionMapV36, persist: persistRegionsShipsV36, maps: () => REGION_MAPS_V36, ships: () => SHIPS_V36 };
+})();
+
+/* v64 DEV automation: GitHub source publish, web deploy and clean source archive */
+(function(){
+  if (window.__devOpsProfilePanelV64) return;
+  window.__devOpsProfilePanelV64 = true;
+
+  const devOpsStateV64 = {
+    status: null,
+    busy: false,
+    refreshPromise: null
+  };
+
+  function isDmDevOpsUserV64() {
+    const role = String(App?.currentUser?.role || '').trim().toLowerCase();
+    return role === 'gm' || role === 'dm' || role === 'master';
+  }
+
+  function currentDevOpsRoleV64() {
+    return String(App?.currentUser?.role || '').trim().toLowerCase();
+  }
+
+  function escapeDevOpsV64(value) {
+    return String(value ?? '').replace(/[&<>"']/g, char => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[char]));
+  }
+
+  function formatBytesDevOpsV64(value) {
+    const bytes = Number(value || 0);
+    if (!Number.isFinite(bytes) || bytes <= 0) return '0 Б';
+    if (bytes < 1024) return `${bytes} Б`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} КБ`;
+    return `${(bytes / 1024 / 1024).toFixed(1)} МБ`;
+  }
+
+  function removeDevOpsPanelV64() {
+    document.getElementById('devops-profile-panel-v64')?.remove();
+  }
+
+  function getDevOpsPanelV64() {
+    return document.getElementById('devops-profile-panel-v64');
+  }
+
+  function ensureDevOpsPanelV64() {
+    if (!isDmDevOpsUserV64()) {
+      removeDevOpsPanelV64();
+      return null;
+    }
+    const form = document.getElementById('profile-edit-form');
+    if (!form) return null;
+    let panel = getDevOpsPanelV64();
+    if (panel) return panel;
+    panel = document.createElement('div');
+    panel.id = 'devops-profile-panel-v64';
+    panel.className = 'card pad18 devops-profile-panel-v64';
+    panel.innerHTML = `
+      <div class="devops-profile-head-v64">
+        <div>
+          <div class="section-title">DEV: публикация и автоматизация</div>
+          <div class="small-note devops-status-summary-v64">Проверка рабочего окружения…</div>
+        </div>
+        <span class="devops-badge-v64">DEV + ДМ</span>
+      </div>
+      <div class="devops-grid-v64">
+        <div><span>Версия</span><b data-devops-field="version">—</b></div>
+        <div><span>Следующая</span><b data-devops-field="nextVersion">—</b></div>
+        <div><span>Ветка</span><b data-devops-field="branch">—</b></div>
+        <div><span>Публикация</span><b data-devops-field="targetBranch">main</b></div>
+        <div><span>Изменений</span><b data-devops-field="changeCount">0</b></div>
+        <div><span>Удалений заблокировано</span><b data-devops-field="blockedDeletionCount">0</b></div>
+      </div>
+      <div class="row devops-actions-v64">
+        <button class="primary" type="button" data-devops-action="publish">PATCH → GITHUB MAIN</button>
+        <button class="secondary" type="button" data-devops-action="deploy-web">ДЕПЛОЙ WEB</button>
+        <button class="secondary" type="button" data-devops-action="archive">ZIP ДЛЯ ПЕРЕДАЧИ</button>
+        <button class="ghost" type="button" data-devops-action="refresh">ОБНОВИТЬ СТАТУС</button>
+      </div>
+      <div class="small-note devops-help-v64">
+        GitHub: commit + patch-версия + push HEAD напрямую в main; сборка приложения не запускается. ZIP исключает .git, node_modules, сборки, Android build, audio, архивы, секреты и крупные файлы.
+      </div>
+      <pre class="devops-output-v64" aria-live="polite">Ожидание команды.</pre>
+    `;
+    const anchor = document.getElementById('updater-profile-panel') || form;
+    anchor.insertAdjacentElement('afterend', panel);
+    bindDevOpsPanelV64(panel);
+    return panel;
+  }
+
+  function setDevOpsOutputV64(message, kind = '') {
+    const panel = getDevOpsPanelV64();
+    const output = panel?.querySelector('.devops-output-v64');
+    if (!output) return;
+    output.className = `devops-output-v64 ${kind ? `is-${kind}` : ''}`.trim();
+    output.textContent = String(message || '');
+  }
+
+  function setDevOpsBusyV64(busy, label = '') {
+    devOpsStateV64.busy = Boolean(busy);
+    const panel = getDevOpsPanelV64();
+    panel?.querySelectorAll('[data-devops-action]').forEach(button => {
+      button.disabled = devOpsStateV64.busy;
+    });
+    if (busy && label) setDevOpsOutputV64(label, 'busy');
+  }
+
+  function updateDevOpsPanelV64(status = {}) {
+    devOpsStateV64.status = status;
+    if (!isDmDevOpsUserV64() || !status?.available) {
+      removeDevOpsPanelV64();
+      return;
+    }
+    const panel = ensureDevOpsPanelV64();
+    if (!panel) return;
+    const setField = (name, value) => {
+      const node = panel.querySelector(`[data-devops-field="${name}"]`);
+      if (node) node.textContent = String(value ?? '—');
+    };
+    setField('version', status.version || '—');
+    setField('nextVersion', status.nextVersion || '—');
+    setField('branch', status.branch || '—');
+    setField('targetBranch', status.targetBranch || 'main');
+    setField('changeCount', Number(status.changeCount || 0));
+    setField('blockedDeletionCount', Number(status.blockedDeletions?.length || 0));
+    const summary = panel.querySelector('.devops-status-summary-v64');
+    if (summary) {
+      const toolState = [status.tools?.git?.available ? 'Git OK' : 'Git нет', status.tools?.ssh?.available ? 'SSH OK' : 'SSH нет'].join(' · ');
+      summary.textContent = `${status.message || 'Готово'} · ${toolState}`;
+    }
+    panel.classList.toggle('has-blocked-deletions', Boolean(status.blockedDeletions?.length));
+    const publishButton = panel.querySelector('[data-devops-action="publish"]');
+    if (publishButton) publishButton.disabled = devOpsStateV64.busy || Boolean(status.blockedDeletions?.length || status.blockedSecrets?.length);
+  }
+
+  async function refreshDevOpsStatusV64(options = {}) {
+    if (!isDmDevOpsUserV64() || !window.electronAPI?.getDevOpsStatus) {
+      removeDevOpsPanelV64();
+      return null;
+    }
+    if (devOpsStateV64.refreshPromise) return devOpsStateV64.refreshPromise;
+    devOpsStateV64.refreshPromise = window.electronAPI.getDevOpsStatus(currentDevOpsRoleV64())
+      .then(status => {
+        updateDevOpsPanelV64(status || {});
+        if (options.showOutput && status?.available) {
+          const blocked = status.blockedDeletions || [];
+          const lines = [
+            `Репозиторий: ${status.remoteUrl || '—'}`,
+            `Ветка: ${status.branch || '—'} → ${status.targetBranch || 'main'}`,
+            `Версия: ${status.version || '—'} → ${status.nextVersion || '—'}`,
+            `Изменений: ${Number(status.changeCount || 0)}`
+          ];
+          if (blocked.length) lines.push(`Запрещённые удаления (${blocked.length}):\n${blocked.slice(0, 25).join('\n')}`);
+          setDevOpsOutputV64(lines.join('\n'), blocked.length ? 'error' : 'ok');
+        }
+        return status;
+      })
+      .catch(error => {
+        removeDevOpsPanelV64();
+        if (options.showOutput) Toast.show(`DEV-инструменты: ${error?.message || error}`, 'err');
+        return null;
+      })
+      .finally(() => { devOpsStateV64.refreshPromise = null; });
+    return devOpsStateV64.refreshPromise;
+  }
+
+  function resultErrorTextV64(result) {
+    return [result?.message, result?.stderr, result?.stdout].filter(Boolean).join('\n').trim() || 'Неизвестная ошибка';
+  }
+
+  async function publishPatchV64() {
+    const status = await refreshDevOpsStatusV64();
+    if (!status?.available) return;
+    if (status.blockedDeletions?.length) {
+      setDevOpsOutputV64(`Публикация остановлена. Восстановите или явно разрешите удаления:\n${status.blockedDeletions.join('\n')}`, 'error');
+      Toast.show('Публикация заблокирована из-за неожиданных удалений', 'err');
+      return;
+    }
+    if (status.blockedSecrets?.length) {
+      setDevOpsOutputV64(`Публикация остановлена: потенциальные секреты:\n${status.blockedSecrets.join('\n')}`, 'error');
+      Toast.show('Публикация заблокирована из-за потенциальных секретов', 'err');
+      return;
+    }
+    const confirmed = window.confirm(
+      `Опубликовать ${status.version} → ${status.nextVersion}?\n\n` +
+      `Текущий HEAD будет закоммичен и отправлен напрямую в origin/${status.targetBranch}.\n` +
+      (status.createTag ? `Будет создан тег v${status.nextVersion}.\n` : 'Git tag и сборка Electron создаваться не будут.\n') +
+      `\n` +
+      `Изменённых файлов: ${Number(status.changeCount || 0)}`
+    );
+    if (!confirmed) return;
+    setDevOpsBusyV64(true, `Публикация v${status.nextVersion} в GitHub…`);
+    try {
+      const result = await window.electronAPI?.publishDevPatch?.(currentDevOpsRoleV64());
+      if (!result?.ok) {
+        setDevOpsOutputV64(resultErrorTextV64(result), 'error');
+        Toast.show('GitHub-публикация завершилась ошибкой', 'err');
+        return;
+      }
+      setDevOpsOutputV64(
+        `Опубликовано успешно.\nВерсия: ${result.version}\nTag: ${result.tag || 'не создавался'}\nCommit: ${result.commit}\nВетка: ${result.targetBranch}\nФайлов в коммите: ${result.staged?.length || 0}`,
+        'ok'
+      );
+      Toast.show(`Версия ${result.version} отправлена в GitHub`, 'ok');
+    } finally {
+      setDevOpsBusyV64(false);
+      await refreshDevOpsStatusV64();
+    }
+  }
+
+  async function deployWebV64() {
+    const confirmed = window.confirm(
+      'Задеплоить содержимое deploy/site на root@161.104.35.195:/var/www/grpg-app?\n\n' +
+      'Каталог downloads будет сохранён. При ошибке HTTP-проверки сервер автоматически вернёт предыдущую web-версию.'
+    );
+    if (!confirmed) return;
+    setDevOpsBusyV64(true, 'Загрузка web-версии на сервер…');
+    try {
+      const result = await window.electronAPI?.deployDevWeb?.(currentDevOpsRoleV64());
+      if (!result?.ok) {
+        setDevOpsOutputV64(resultErrorTextV64(result), 'error');
+        Toast.show('Web-деплой завершился ошибкой', 'err');
+        return;
+      }
+      setDevOpsOutputV64(
+        `Web задеплоен успешно.\nИсточник: ${result.source}\nСервер: ${result.endpoint}\nКаталог: ${result.target}\nПроверки:\n${(result.healthUrls || []).join('\n')}`,
+        'ok'
+      );
+      Toast.show('Web-версия опубликована', 'ok');
+    } finally {
+      setDevOpsBusyV64(false);
+    }
+  }
+
+  async function createArchiveV64() {
+    setDevOpsBusyV64(true, 'Подготовка чистого ZIP исходников…');
+    try {
+      const result = await window.electronAPI?.createDevSourceArchive?.(currentDevOpsRoleV64());
+      if (result?.cancelled) {
+        setDevOpsOutputV64('Создание ZIP отменено.');
+        return;
+      }
+      if (!result?.ok) {
+        setDevOpsOutputV64(resultErrorTextV64(result), 'error');
+        Toast.show('Не удалось создать ZIP исходников', 'err');
+        return;
+      }
+      setDevOpsOutputV64(
+        `ZIP создан.\n${result.outputPath}\nРазмер: ${formatBytesDevOpsV64(result.archiveSize)}\nВключено файлов: ${result.includedCount}\nИсключено: ${result.excludedCount}`,
+        'ok'
+      );
+      Toast.show('Чистый ZIP исходников создан', 'ok');
+    } finally {
+      setDevOpsBusyV64(false);
+    }
+  }
+
+  function bindDevOpsPanelV64(panel) {
+    if (panel.dataset.devopsBound === '1') return;
+    panel.dataset.devopsBound = '1';
+    panel.addEventListener('click', async event => {
+      const button = event.target.closest('[data-devops-action]');
+      if (!button || devOpsStateV64.busy) return;
+      const action = button.dataset.devopsAction;
+      if (action === 'refresh') await refreshDevOpsStatusV64({ showOutput: true });
+      if (action === 'publish') await publishPatchV64();
+      if (action === 'deploy-web') await deployWebV64();
+      if (action === 'archive') await createArchiveV64();
+    });
+  }
+
+  const __renderProfileDevOpsV64 = UI.renderProfile.bind(UI);
+  UI.renderProfile = function() {
+    __renderProfileDevOpsV64();
+    if (!isDmDevOpsUserV64()) {
+      removeDevOpsPanelV64();
+      return;
+    }
+    refreshDevOpsStatusV64().catch(() => {});
+  };
+
+  document.addEventListener('DOMContentLoaded', () => {
+    setTimeout(() => refreshDevOpsStatusV64().catch(() => {}), 0);
+  });
 })();

@@ -1,0 +1,59 @@
+{
+  "schema": 1,
+  "name": "GRPGI DEV automation overlay patch",
+  "baseVersion": "1.0.39",
+  "targetPublishVersion": "1.0.40",
+  "createdAt": "2026-07-19T14:39:57.073973+00:00",
+  "files": [
+    {
+      "path": ".gitignore",
+      "size": 322,
+      "sha256": "07ba5b12d9cd584242b2dabbd67351202ae2ffd823169adde74ab770c994b398"
+    },
+    {
+      "path": "DEV_AUTOMATION.md",
+      "size": 4384,
+      "sha256": "e937f8a3317cf6b0284512838b422f1db0879ad067f95fa900843f91d14c669f"
+    },
+    {
+      "path": "PATCH_NOTES_DEV_AUTOMATION.md",
+      "size": 872,
+      "sha256": "e44d8ea5edf25890307dbbdca514f7b9a434ce2faeb41b5ae0ed92336a2a3455"
+    },
+    {
+      "path": "README.md",
+      "size": 2862,
+      "sha256": "5a3f65145467ebb3a45559349ffa5dbf0c7b5cc6059876dea3707486987a707a"
+    },
+    {
+      "path": "devops.config.json",
+      "size": 1680,
+      "sha256": "5f438705ed00ad352a91b24ad670c14e08839465bc3d4fc13bcea4a6b9727985"
+    },
+    {
+      "path": "main.js",
+      "size": 117874,
+      "sha256": "912c0d4cfd41ec06e4fb76e4accee196f53f35fa41012b82cbcdc7314be2245e"
+    },
+    {
+      "path": "preload.js",
+      "size": 4868,
+      "sha256": "8ccb4d5f9823ea201b3cd0db03668ea2ca5e3c6a162d9a032d1c296380cb319b"
+    },
+    {
+      "path": "renderer/app.js",
+      "size": 1145719,
+      "sha256": "375e06f4c50883ae1cabc2227f04076c8e97a6da5548da7488fb5f7ff697ce20"
+    },
+    {
+      "path": "renderer/styles.css",
+      "size": 105771,
+      "sha256": "1a97ece0829a4e5275ee9dd32a7bb4a4047674a35ce769d1f5103c23e84276ba"
+    },
+    {
+      "path": "tools/devops-automation.cjs",
+      "size": 28919,
+      "sha256": "8ca34f61a16d5cc0e654396f1a4235b403a7a1b2d84d3d62b86bc927f923c083"
+    }
+  ]
+}

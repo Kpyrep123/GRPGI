@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#05080d" />
     <title>GRPGI Web Client</title>
-    <link rel="stylesheet" href="./styles.css?v=1.0.39" />
+    <link rel="stylesheet" href="./styles.css?v=1.0.41" />
     <script>
       window.GRPG_WEB_CLIENT = true;
       window.GRPG_CLOUD_ONLY = true;
@@ -24,13 +24,7 @@
         <h1>Подключение к кампании</h1>
         <p class="muted">Браузерная версия использует внешний вид ПК-интерфейса, но работает как player-only клиент. Режима ДМа, World Config и боевых сцен здесь нет. Данные не сохраняются постоянным локальным кешем: при входе они подтягиваются из PocketBase и записываются обратно в облако.</p>
         <form id="setup-form" class="form stack-lg">
-          <label class="field">
-            <span>Backend</span>
-            <select class="input" name="backend">
-              <option value="pocketbase" selected>PocketBase</option>
-              <option value="supabase">Supabase legacy</option>
-            </select>
-          </label>
+          <input type="hidden" name="backend" value="pocketbase" />
           <label class="field">
             <span>SERVER_URL</span>
             <input class="input" name="url" placeholder="https://sync.grpg-sync.ru" autocomplete="off" />
@@ -45,10 +39,6 @@
               <input class="input" name="appUserPassword" type="password" placeholder="Пароль app_users" autocomplete="off" />
             </label>
           </div>
-          <label class="field supabase-only-note">
-            <span>SUPABASE ANON KEY, только для legacy Supabase</span>
-            <textarea class="textarea monospace" name="anonKey" rows="3" placeholder="Можно оставить пустым для PocketBase"></textarea>
-          </label>
           <div class="grid-2">
             <label class="field">
               <span>CAMPAIGN_ID</span>
@@ -83,10 +73,6 @@
                 </label>
               </div>
               <div class="grid-2">
-                <label class="field">
-                  <span>STORAGE_BUCKET, Supabase</span>
-                  <input class="input" name="storageBucket" value="campaign-assets" />
-                </label>
                 <label class="field">
                   <span>PB_ASSETS</span>
                   <input class="input" name="assetsCollection" value="campaign_assets" />
@@ -189,6 +175,6 @@
     </div>
 
     <div id="toast-stack" class="toast-stack"></div>
-    <script src="./app.js?v=1.0.39"></script>
+    <script src="./app.js?v=1.0.41"></script>
   </body>
 </html>
