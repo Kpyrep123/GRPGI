@@ -1,59 +1,85 @@
 {
-  "schema": 1,
-  "name": "GRPGI DEV automation overlay patch",
-  "baseVersion": "1.0.39",
-  "targetPublishVersion": "1.0.40",
-  "createdAt": "2026-07-19T14:39:57.073973+00:00",
+  "name": "GRPGI Web PocketBase persistent login patch",
+  "version": "1.0.40",
+  "applyMode": "overlay",
+  "generatedAt": "2026-07-19T00:00:00Z",
+  "summary": [
+    "PocketBase-only web configuration and legacy browser-state cleanup",
+    "Opt-in persistent login for up to 30 days without storing passwords",
+    "PocketBase auth token refresh and device-forget control",
+    "Web deploy guard against legacy backend artifacts",
+    "Privacy notice and Caddy security/cache example updates"
+  ],
   "files": [
     {
-      "path": ".gitignore",
-      "size": 322,
-      "sha256": "07ba5b12d9cd584242b2dabbd67351202ae2ffd823169adde74ab770c994b398"
+      "path": "LEGAL_AND_PERSISTENT_LOGIN.md",
+      "size": 3605,
+      "sha256": "61a4d54e89dd17e4141ab7eee26cb8699e5143a91c9e1cc75450e8ef87ddb9c7"
     },
     {
-      "path": "DEV_AUTOMATION.md",
-      "size": 4384,
-      "sha256": "e937f8a3317cf6b0284512838b422f1db0879ad067f95fa900843f91d14c669f"
+      "path": "PATCH_NOTES_v1.0.40.md",
+      "size": 1379,
+      "sha256": "31c371676ddb0594561cfacbc41b40ce3d27f9bd9f208927d51b8646c8210ef5"
     },
     {
-      "path": "PATCH_NOTES_DEV_AUTOMATION.md",
-      "size": 872,
-      "sha256": "e44d8ea5edf25890307dbbdca514f7b9a434ce2faeb41b5ae0ed92336a2a3455"
+      "path": "package-lock.json",
+      "size": 128484,
+      "sha256": "3c20115f680bf8392c2fbbf203c9b2ffad495cf3a06962aa63d9f26964a4e367"
     },
     {
-      "path": "README.md",
-      "size": 2862,
-      "sha256": "5a3f65145467ebb3a45559349ffa5dbf0c7b5cc6059876dea3707486987a707a"
+      "path": "package.json",
+      "size": 2188,
+      "sha256": "72d5bb78420701c91a2dfc9894c75bcbb721804523d6a689d41e3dc4239ed2ca"
     },
     {
-      "path": "devops.config.json",
-      "size": 1680,
-      "sha256": "5f438705ed00ad352a91b24ad670c14e08839465bc3d4fc13bcea4a6b9727985"
+      "path": "deploy/caddy/Caddyfile.app.example",
+      "size": 1085,
+      "sha256": "c29abf4fe9f58f4ac46e580973e14607f067145172bd44ddbd979d6b00fcb24c"
     },
     {
-      "path": "main.js",
-      "size": 117874,
-      "sha256": "912c0d4cfd41ec06e4fb76e4accee196f53f35fa41012b82cbcdc7314be2245e"
+      "path": "deploy/site/build-info.json",
+      "size": 150,
+      "sha256": "51e5367ce7714bcaa5c997f49138cfd92178b333c5aff1314c738fc5f38a3248"
     },
     {
-      "path": "preload.js",
-      "size": 4868,
-      "sha256": "8ccb4d5f9823ea201b3cd0db03668ea2ca5e3c6a162d9a032d1c296380cb319b"
+      "path": "deploy/site/index.html",
+      "size": 4763,
+      "sha256": "d5df86de0000d3020d56854a1739fc1662c36e14ad7fe075253b48a2ac9a4b14"
     },
     {
-      "path": "renderer/app.js",
-      "size": 1145719,
-      "sha256": "375e06f4c50883ae1cabc2227f04076c8e97a6da5548da7488fb5f7ff697ce20"
+      "path": "deploy/site/privacy-consent.js",
+      "size": 205,
+      "sha256": "979549189ed5d4aa562159195ef8bbabdd50ec3c18231de705db8164d7f40e53"
     },
     {
-      "path": "renderer/styles.css",
-      "size": 105771,
-      "sha256": "1a97ece0829a4e5275ee9dd32a7bb4a4047674a35ce769d1f5103c23e84276ba"
+      "path": "deploy/site/privacy.html",
+      "size": 12766,
+      "sha256": "65f9637eda5a0754b741034e68d0767552558350605c5a10223d744bbb4fd282"
+    },
+    {
+      "path": "deploy/site/styles.css",
+      "size": 2705,
+      "sha256": "f069bc6f3b950cb86186d66d09addd5f51da5767d87fbc443463fc3c2dfb9854"
+    },
+    {
+      "path": "deploy/site/app/app.js",
+      "size": 145357,
+      "sha256": "a31f425dbdc9d55d0c2c476cad376722cc1949a4de2c6d8c6da7584c86d42b96"
+    },
+    {
+      "path": "deploy/site/app/index.html",
+      "size": 10282,
+      "sha256": "77a87d35809741893c1dcfe3c54c609b178910630f1b538009106fb02796f23c"
+    },
+    {
+      "path": "deploy/site/app/styles.css",
+      "size": 37975,
+      "sha256": "3c7b6bbab7b6f8e7e774fed3ba460cb0d7bc84b94461e875f2f374a6ccd4e441"
     },
     {
       "path": "tools/devops-automation.cjs",
-      "size": 28919,
-      "sha256": "8ca34f61a16d5cc0e654396f1a4235b403a7a1b2d84d3d62b86bc927f923c083"
+      "size": 30316,
+      "sha256": "ae7bf17b2ea04dd55464978de164b2b556efcd2d5515400a733e6c8cf6de27c8"
     }
   ]
 }

@@ -1,7 +1,10 @@
 const { app, BrowserWindow, ipcMain, screen, shell, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const { pathToFileURL } = require('url');
+const crypto = require('crypto');
+const http = require('http');
+const https = require('https');
+const { pathToFileURL, fileURLToPath } = require('url');
 
 let autoUpdater = null;
 let updaterLoadError = null;
@@ -380,6 +383,108 @@ async function imageSourceToBuffer(source = '') {
   throw new Error('Unsupported image source for buffer conversion');
 }
 
+function imageSourceLocalPath(source = '') {
+  const kind = imageSourceKind(source);
+  if (kind === 'file-url') {
+    try { return fileURLToPath(new URL(String(source))); } catch { return ''; }
+  }
+  if (kind === 'file-path') return path.resolve(String(source));
+  return '';
+}
+
+async function hashFileSha256(filePath) {
+  return new Promise((resolve, reject) => {
+    const hash = crypto.createHash('sha256');
+    const stream = fs.createReadStream(filePath);
+    stream.on('data', chunk => hash.update(chunk));
+    stream.on('error', reject);
+    stream.on('end', () => resolve(hash.digest('hex')));
+  });
+}
+
+async function materializeImageSource(source = '', options = {}) {
+  const directPath = imageSourceLocalPath(source);
+  if (directPath) {
+    const stat = await fs.promises.stat(directPath);
+    if (!stat.isFile()) throw new Error('Image source is not a file');
+    return { filePath: directPath, size: stat.size, cleanup: false };
+  }
+  if (imageSourceKind(source) !== 'data-url') throw new Error('Unsupported image source');
+  const match = /^data:([^;]+);base64,(.*)$/is.exec(String(source));
+  if (!match) throw new Error('Invalid image data URL');
+  const ext = extensionFromContentType(match[1]);
+  const tempDir = path.join(app.getPath('temp'), 'grpgi-image-upload');
+  await fs.promises.mkdir(tempDir, { recursive: true });
+  const filePath = path.join(tempDir, `${Date.now()}_${crypto.randomBytes(6).toString('hex')}.${ext}`);
+  const buffer = Buffer.from(match[2], 'base64');
+  await fs.promises.writeFile(filePath, buffer);
+  const size = buffer.length;
+  return { filePath, size, cleanup: true };
+}
+
+function multipartFieldBuffer(boundary, name, value) {
+  return Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${String(name).replaceAll('"', '')}"\r\n\r\n${String(value ?? '')}\r\n`, 'utf8');
+}
+
+async function pocketbaseStreamMultipart(config = {}, pathname = '/', fields = {}, file = {}) {
+  const base = getPocketBaseBaseUrl(config);
+  if (!base) throw new Error('POCKETBASE_URL пустой');
+  const url = new URL(pathname, `${base}/`);
+  const boundary = `----GRPGI${crypto.randomBytes(16).toString('hex')}`;
+  const fieldBuffers = Object.entries(fields).map(([name, value]) => multipartFieldBuffer(boundary, name, value));
+  const safeName = String(file.fileName || path.basename(file.filePath || 'asset.bin')).replace(/["\r\n]/g, '_');
+  const fileHeader = Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${safeName}"\r\nContent-Type: ${file.contentType || 'application/octet-stream'}\r\n\r\n`, 'utf8');
+  const suffix = Buffer.from(`\r\n--${boundary}--\r\n`, 'utf8');
+  const contentLength = fieldBuffers.reduce((sum, part) => sum + part.length, 0) + fileHeader.length + Number(file.size || 0) + suffix.length;
+  const timeoutMs = Math.max(60000, Number(config.uploadTimeoutMs || 10 * 60 * 1000));
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const token = await pocketbaseAuthToken(config, { forceRefresh: attempt > 0 });
+    const result = await new Promise((resolve, reject) => {
+      const transport = url.protocol === 'http:' ? http : https;
+      const req = transport.request(url, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': `multipart/form-data; boundary=${boundary}`,
+          'Content-Length': String(contentLength)
+        }
+      }, res => {
+        const chunks = [];
+        let total = 0;
+        res.on('data', chunk => {
+          total += chunk.length;
+          if (total <= 8 * 1024 * 1024) chunks.push(chunk);
+        });
+        res.on('end', () => {
+          const raw = Buffer.concat(chunks).toString('utf8');
+          let payload = {};
+          try { payload = raw ? JSON.parse(raw) : {}; } catch { payload = { text: raw }; }
+          resolve({ status: Number(res.statusCode || 0), payload });
+        });
+      });
+      req.setTimeout(timeoutMs, () => req.destroy(new Error(`PocketBase upload timeout after ${Math.round(timeoutMs / 1000)}s`)));
+      req.on('error', reject);
+      for (const part of fieldBuffers) req.write(part);
+      req.write(fileHeader);
+      const input = fs.createReadStream(file.filePath);
+      input.on('error', error => req.destroy(error));
+      input.on('end', () => req.end(suffix));
+      input.pipe(req, { end: false });
+    });
+    if (result.status === 401 && attempt === 0) {
+      pocketbaseAuthCache.delete(pocketbaseAuthCacheKey(config));
+      continue;
+    }
+    if (result.status < 200 || result.status >= 300) {
+      const detail = result.payload?.data && typeof result.payload.data === 'object' ? ` // ${JSON.stringify(result.payload.data)}` : '';
+      throw new Error(`${result.payload?.message || 'PocketBase request failed'}: HTTP ${result.status}${detail}`);
+    }
+    return result.payload;
+  }
+  throw new Error('PocketBase upload authorization failed');
+}
+
 function buildStorageImagePath(config = {}, options = {}) {
   const campaign = sanitizeFileStem(config.campaignId || 'campaign');
   const section = sanitizeFileStem(options.section || 'misc');
@@ -399,8 +504,15 @@ async function uploadImageSourceToBackend(config = {}, source = '', options = {}
 async function ensureEntityImageOnBackend(config = {}, entity = {}, options = {}) {
   if (!entity || typeof entity !== 'object') return entity;
   const image = String(entity.image || '').trim();
-  if (!image) return entity;
-  if (imageSourceKind(image) === 'http-url') return entity;
+  if (!image) {
+    if (String(entity.imageLocal || '').startsWith('data:image/')) entity.imageLocal = null;
+    return entity;
+  }
+  if (imageSourceKind(image) === 'http-url') {
+    if (String(entity.imageLocal || '').startsWith('data:image/')) entity.imageLocal = null;
+    return entity;
+  }
+  const localKind = imageSourceKind(image);
   const upload = await uploadImageSourceToBackend(config, image, {
     section: options.section,
     entityId: entity.id || options.entityId,
@@ -409,7 +521,7 @@ async function ensureEntityImageOnBackend(config = {}, entity = {}, options = {}
   });
   entity.image = upload.publicUrl || upload.url || image;
   entity.imageStoragePath = upload.storagePath || entity.imageStoragePath || null;
-  entity.imageLocal = imageSourceKind(image) === 'http-url' ? (entity.imageLocal || null) : image;
+  entity.imageLocal = localKind === 'file-url' || localKind === 'file-path' ? image : null;
   return entity;
 }
 
@@ -494,7 +606,9 @@ function normalizeCampaignsSectionForSync(section = {}) {
 }
 
 async function normalizeSnapshotImagesForCloud(config = {}, snapshot = {}) {
-  const clone = JSON.parse(JSON.stringify(snapshot || {}));
+  // IPC already gives the main process an isolated object. Mutating it avoids a second
+  // full JSON copy, which was catastrophic when legacy Base64 images were present.
+  const clone = snapshot && typeof snapshot === 'object' ? snapshot : {};
   const playersMap = clone?.world?.players?.PLAYER_TEMPLATES || {};
   for (const player of Object.values(playersMap)) {
     await ensureEntityImageOnBackend(config, player, { section: 'players' });
@@ -642,7 +756,7 @@ async function normalizeSnapshotImagesForCloud(config = {}, snapshot = {}) {
 }
 
 async function normalizeCombatPublishPayloadImages(config = {}, payload = {}) {
-  const clone = JSON.parse(JSON.stringify(payload || {}));
+  const clone = payload && typeof payload === 'object' ? payload : {};
   const scene = clone.scene_json || clone.scene || null;
   if (scene && typeof scene === 'object') {
     if (scene.backgroundImage) {
@@ -738,6 +852,101 @@ async function saveImageAsset(dataUrl, preferredStem = 'asset') {
   }
 
   return payload;
+}
+
+
+async function saveImageFileAsset(sourcePath = '', preferredStem = 'asset') {
+  const source = path.resolve(String(sourcePath || ''));
+  const stat = await fs.promises.stat(source);
+  if (!stat.isFile()) throw new Error('Выбранный путь не является файлом');
+  const assetsDir = writableWorldAssetsDir();
+  await fs.promises.mkdir(assetsDir, { recursive: true });
+  const sourceExt = extensionFromPathLike(source);
+  const ext = sourceExt && sourceExt !== 'png' ? sourceExt : sourceExt || 'png';
+  const filename = `${Date.now()}_${sanitizeFileStem(preferredStem)}.${ext}`;
+  const target = path.join(assetsDir, filename);
+  await fs.promises.copyFile(source, target);
+  const localUrl = pathToFileURL(target).href;
+  const payload = { ok: true, file: target, url: localUrl, localUrl, assetsDir, cloudUrl: null, storagePath: null, warning: null, size: stat.size };
+  try {
+    const config = await loadSyncConfig();
+    if (config.enabled) {
+      const upload = await uploadImageSourceToBackend(config, localUrl, {
+        section: 'world-config',
+        entityId: sanitizeFileStem(preferredStem || 'asset'),
+        preferredStem
+      });
+      if (upload?.ok && (upload.publicUrl || upload.url)) {
+        payload.cloudUrl = upload.publicUrl || upload.url;
+        payload.storagePath = upload.storagePath || null;
+        payload.url = payload.cloudUrl;
+      }
+    }
+  } catch (error) {
+    payload.warning = error?.message || String(error);
+    debugLog('WORLD_SAVE_IMAGE_FILE_CLOUD_UPLOAD_FAILED', { file: target, size: stat.size, message: payload.warning });
+  }
+  return payload;
+}
+
+const LEGACY_IMAGE_DATA_KEYS = new Set([
+  'image', 'imageLocal', 'backgroundImage', 'avatar', 'portrait', 'coverImage', 'thumbnail'
+]);
+
+async function saveLegacyImageDataUrlLocal(dataUrl = '', preferredStem = 'legacy-image') {
+  const raw = String(dataUrl || '');
+  if (!raw.startsWith('data:image/')) return '';
+  const comma = raw.indexOf(',');
+  if (comma < 0 || !/;base64$/i.test(raw.slice(0, comma))) return '';
+  const contentType = raw.slice(5, raw.indexOf(';', 5));
+  const ext = extensionFromContentType(contentType) || 'png';
+  const digest = crypto.createHash('sha256').update(raw).digest('hex');
+  const assetsDir = writableWorldAssetsDir();
+  await fs.promises.mkdir(assetsDir, { recursive: true });
+  const file = path.join(assetsDir, `legacy_${sanitizeFileStem(preferredStem)}_${digest.slice(0, 20)}.${ext}`);
+  if (!fs.existsSync(file)) {
+    const decoded = Buffer.from(raw.slice(comma + 1), 'base64');
+    await fs.promises.writeFile(file, decoded);
+  }
+  return pathToFileURL(file).href;
+}
+
+async function localizeLegacyImageDataUrls(root, label = 'world') {
+  if (!root || typeof root !== 'object') return { changed: 0, bytesRemoved: 0 };
+  const stack = [{ value: root, path: label }];
+  const visited = new Set();
+  const resolved = new Map();
+  let changed = 0;
+  let bytesRemoved = 0;
+  while (stack.length) {
+    const current = stack.pop();
+    const value = current.value;
+    if (!value || typeof value !== 'object' || visited.has(value)) continue;
+    visited.add(value);
+    for (const [key, child] of Object.entries(value)) {
+      if (typeof child === 'string' && child.startsWith('data:image/') && LEGACY_IMAGE_DATA_KEYS.has(key)) {
+        if (key === 'imageLocal' && typeof value.image === 'string' && /^(https?:|file:)/i.test(value.image)) {
+          bytesRemoved += child.length;
+          value[key] = null;
+          changed += 1;
+          continue;
+        }
+        let localUrl = resolved.get(child);
+        if (!localUrl) {
+          localUrl = await saveLegacyImageDataUrlLocal(child, `${label}_${key}`);
+          if (localUrl) resolved.set(child, localUrl);
+        }
+        if (localUrl) {
+          bytesRemoved += child.length;
+          value[key] = localUrl;
+          changed += 1;
+        }
+        continue;
+      }
+      if (child && typeof child === 'object') stack.push({ value: child, path: `${current.path}.${key}` });
+    }
+  }
+  return { changed, bytesRemoved };
 }
 
 async function ensureWorldDataDir() {
@@ -851,6 +1060,21 @@ async function readWorldData() {
 
     payload = best.payload || payload;
 
+    const legacyMigration = await localizeLegacyImageDataUrls(payload, name);
+    if (legacyMigration.changed > 0) {
+      try {
+        await backupWorldSectionFile(name, file);
+        await fs.promises.writeFile(file, JSON.stringify(payload, null, 2), 'utf8');
+        debugLog('WORLD_LEGACY_IMAGE_DATA_LOCALIZED', {
+          section: name,
+          changed: legacyMigration.changed,
+          removedMb: Math.round(legacyMigration.bytesRemoved / 1024 / 1024)
+        });
+      } catch (error) {
+        debugLog('WORLD_LEGACY_IMAGE_MIGRATION_FAILED', { section: name, message: error.message });
+      }
+    }
+
     if (best.source !== 'current' && scoreWorldSectionPayload(name, best.payload, best.source) >= 0) {
       try {
         await fs.promises.writeFile(file, JSON.stringify(best.payload, null, 2), 'utf8');
@@ -877,6 +1101,7 @@ async function writeWorldSection(sectionName, payload) {
   }
   const dataDir = await ensureWorldDataDir();
   const file = path.join(dataDir, `${sectionName}.json`);
+  await localizeLegacyImageDataUrls(payload, sectionName);
   await backupWorldSectionFile(sectionName, file);
   await fs.promises.writeFile(file, JSON.stringify(payload, null, 2), 'utf8');
   return { file, dataDir };
@@ -896,6 +1121,7 @@ async function writeWorldData(worldPayload = {}) {
       const fallbackPayload = fs.existsSync(fallbackFile) ? await readJsonIfExists(fallbackFile) : null;
       payload = currentPayload ?? fallbackPayload ?? {};
     }
+    await localizeLegacyImageDataUrls(payload, name);
     await backupWorldSectionFile(name, file);
     await fs.promises.writeFile(file, JSON.stringify(payload ?? {}, null, 2), 'utf8');
   }
@@ -1633,27 +1859,98 @@ async function pushPocketBaseCombatRuntime(config = {}, payload = {}) {
   return { ok: true, status: 'updated', row: normalizePocketBaseCombatRecord(record) };
 }
 
+const pocketbaseAssetUploadPromises = new Map();
+const pocketbaseAssetFailureCache = new Map();
+const POCKETBASE_ASSET_FAILURE_COOLDOWN_MS = 60 * 1000;
+
+function pocketbaseAssetPublicUrl(config = {}, collection = '', record = {}, fallbackFileName = '') {
+  const fileName = String(record?.file || fallbackFileName || '').trim();
+  if (!record?.id || !fileName) return '';
+  return `${getPocketBaseBaseUrl(config)}/api/files/${encodePathPart(collection)}/${encodePathPart(record.id)}/${encodeURIComponent(fileName)}`;
+}
+
+function deterministicPocketBaseAssetPath(config = {}, options = {}, digest = '', ext = 'png') {
+  const campaign = sanitizeFileStem(config.campaignId || 'campaign');
+  const section = sanitizeFileStem(options.section || 'misc');
+  const entityId = sanitizeFileStem(options.entityId || options.preferredStem || 'asset');
+  const stem = sanitizeFileStem(options.preferredStem || options.entityName || entityId || 'asset');
+  return `${campaign}/${section}/${entityId}/${digest.slice(0, 32)}_${stem}.${sanitizeFileStem(ext || 'png') || 'png'}`;
+}
+
+function pocketbaseUploadLimitMessage(error) {
+  const message = String(error?.message || error || '');
+  if (!/HTTP\s*413|payload too large|request entity too large|file too large/i.test(message)) return message;
+  return 'HTTP 413: запрос с файлом отклонён до проверки поля PocketBase. Проверьте лимит reverse proxy/CDN (Caddy, Nginx или Cloudflare) и фактический размер multipart-запроса.';
+}
+
 async function uploadImageSourceToPocketBase(config = {}, source = '', options = {}) {
   if (!source) return { ok: false, message: 'Empty image source' };
   if (!config.enabled) return { ok: false, message: 'Sync disabled' };
   const kind = imageSourceKind(source);
   if (kind === 'http-url') return { ok: true, url: source, publicUrl: source, storagePath: options.storagePath || null, skipped: true };
+
   const contentType = inferImageContentType(source);
   const ext = extensionFromContentType(contentType) || extensionFromPathLike(source);
-  const storagePath = options.storagePath || buildStorageImagePath(config, { ...options, ext });
-  const buffer = await imageSourceToBuffer(source);
-  const collection = pocketbaseCollection(config, 'assets');
-  const form = new FormData();
-  form.append('campaignId', config.campaignId);
-  form.append('section', String(options.section || 'misc'));
-  form.append('entityId', String(options.entityId || options.preferredStem || 'asset'));
-  form.append('assetPath', storagePath);
-  form.append('clientUpdatedAt', new Date().toISOString());
-  form.append('file', new Blob([buffer], { type: contentType }), path.basename(storagePath));
-  const record = await pocketbaseFetch(config, `/api/collections/${encodePathPart(collection)}/records`, { method: 'POST', form });
-  const fileName = record?.file || path.basename(storagePath);
-  const publicUrl = `${getPocketBaseBaseUrl(config)}/api/files/${encodePathPart(collection)}/${encodePathPart(record.id)}/${encodeURIComponent(fileName)}`;
-  return { ok: true, bucket: collection, storagePath, publicUrl, url: publicUrl || source, contentType };
+  const prepared = await materializeImageSource(source, { ext });
+  try {
+    const digest = await hashFileSha256(prepared.filePath);
+    const storagePath = options.storagePath || deterministicPocketBaseAssetPath(config, options, digest, ext);
+    const collection = pocketbaseCollection(config, 'assets');
+    const uploadKey = [getPocketBaseBaseUrl(config), collection, config.campaignId, storagePath].join('|');
+
+    const cachedFailure = pocketbaseAssetFailureCache.get(uploadKey);
+    if (cachedFailure && Date.now() - cachedFailure.at < POCKETBASE_ASSET_FAILURE_COOLDOWN_MS) throw new Error(cachedFailure.message);
+    pocketbaseAssetFailureCache.delete(uploadKey);
+    if (pocketbaseAssetUploadPromises.has(uploadKey)) return pocketbaseAssetUploadPromises.get(uploadKey);
+
+    const task = (async () => {
+      const existing = await pocketbaseFirst(config, 'assets', pocketbaseAnd(
+        pocketbaseEq('campaignId', config.campaignId),
+        pocketbaseEq('assetPath', storagePath)
+      ));
+      if (existing?.id && existing?.file) {
+        const publicUrl = pocketbaseAssetPublicUrl(config, collection, existing, path.basename(storagePath));
+        return { ok: true, bucket: collection, storagePath, publicUrl, url: publicUrl || source, contentType, reused: true, recordId: existing.id };
+      }
+
+      try {
+        const record = await pocketbaseStreamMultipart(config, `/api/collections/${encodePathPart(collection)}/records`, {
+          campaignId: config.campaignId,
+          section: String(options.section || 'misc'),
+          entityId: String(options.entityId || options.preferredStem || 'asset'),
+          assetPath: storagePath,
+          clientUpdatedAt: new Date().toISOString()
+        }, {
+          filePath: prepared.filePath,
+          fileName: path.basename(storagePath),
+          contentType,
+          size: prepared.size
+        });
+        const publicUrl = pocketbaseAssetPublicUrl(config, collection, record, path.basename(storagePath));
+        pocketbaseAssetFailureCache.delete(uploadKey);
+        return { ok: true, bucket: collection, storagePath, publicUrl, url: publicUrl || source, contentType, recordId: record?.id || null };
+      } catch (error) {
+        try {
+          const recovered = await pocketbaseFirst(config, 'assets', pocketbaseAnd(
+            pocketbaseEq('campaignId', config.campaignId),
+            pocketbaseEq('assetPath', storagePath)
+          ));
+          if (recovered?.id && recovered?.file) {
+            const publicUrl = pocketbaseAssetPublicUrl(config, collection, recovered, path.basename(storagePath));
+            return { ok: true, bucket: collection, storagePath, publicUrl, url: publicUrl || source, contentType, recovered: true, recordId: recovered.id };
+          }
+        } catch {}
+        const normalizedMessage = pocketbaseUploadLimitMessage(error);
+        pocketbaseAssetFailureCache.set(uploadKey, { at: Date.now(), message: normalizedMessage });
+        throw new Error(normalizedMessage);
+      }
+    })().finally(() => pocketbaseAssetUploadPromises.delete(uploadKey));
+
+    pocketbaseAssetUploadPromises.set(uploadKey, task);
+    return await task;
+  } finally {
+    if (prepared.cleanup) fs.promises.rm(prepared.filePath, { force: true }).catch(() => {});
+  }
 }
 
 
@@ -1764,7 +2061,7 @@ async function downloadUpdateSafe() {
 }
 let mainWindow = null;
 let playerDisplayWindow = null;
-let playerDisplayMirrorState = { mode: '', activeSceneId: '', activeRegionMapId: '', cameraByScene: {}, regionCamera: null, updatedAt: null };
+let playerDisplayMirrorState = { mode: '', activeSceneId: '', activeRegionMapId: '', cameraByScene: {}, regionCamera: null, regionDisplay: null, regionRuntime: null, selectedRegionTokenId: '', updatedAt: null };
 let updaterConfigured = false;
 let updaterLatestStatus = { status: 'idle', packaged: false, available: Boolean(autoUpdater), message: '' };
 
@@ -2146,6 +2443,16 @@ function openPlayerDisplayWindow() {
   return playerDisplayWindow;
 }
 
+function notifyPlayerDisplayDataChanged(kind = 'all') {
+  if (!playerDisplayWindow || playerDisplayWindow.isDestroyed()) return;
+  try {
+    playerDisplayWindow.webContents.send('display:player:data-changed', {
+      kind: String(kind || 'all'),
+      updatedAt: new Date().toISOString()
+    });
+  } catch {}
+}
+
 function closePlayerDisplayWindow() {
   if (playerDisplayWindow && !playerDisplayWindow.isDestroyed()) {
     playerDisplayWindow.close();
@@ -2160,7 +2467,16 @@ ipcMain.handle('state:load', async () => {
   try {
     if (!fs.existsSync(file)) return null;
     const raw = await fs.promises.readFile(file, 'utf8');
-    return JSON.parse(raw);
+    const payload = JSON.parse(raw);
+    const migration = await localizeLegacyImageDataUrls(payload, 'state');
+    if (migration.changed > 0) {
+      await fs.promises.writeFile(file, JSON.stringify(payload, null, 2), 'utf8');
+      debugLog('STATE_LEGACY_IMAGE_DATA_LOCALIZED', {
+        changed: migration.changed,
+        removedMb: Math.round(migration.bytesRemoved / 1024 / 1024)
+      });
+    }
+    return payload;
   } catch (error) {
     return { __error: true, message: error.message };
   }
@@ -2170,7 +2486,9 @@ ipcMain.handle('state:save', async (_event, payload) => {
   const file = stateFilePath();
   try {
     await fs.promises.mkdir(path.dirname(file), { recursive: true });
+    await localizeLegacyImageDataUrls(payload, 'state');
     await fs.promises.writeFile(file, JSON.stringify(payload, null, 2), 'utf8');
+    notifyPlayerDisplayDataChanged('state');
     return { ok: true, file };
   } catch (error) {
     return { ok: false, message: error.message };
@@ -2234,31 +2552,21 @@ ipcMain.handle('world:saveAll', async (_event, payload) => {
       sections: Object.keys(payload || {}),
       planets: Object.keys(payload?.planets?.PLANETS || {}).length,
       systems: (payload?.systems?.SYSTEMS || []).length,
-      npcs: Object.keys(payload?.npcs?.NPCS || {}).length
+      npcs: Object.keys(payload?.npcs?.NPCS || {}).length,
+      heapMb: Math.round(process.memoryUsage().heapUsed / 1024 / 1024)
     });
-
-    let worldPayload = payload || {};
-    try {
-      const config = await loadSyncConfig();
-      if (config.enabled) {
-        const normalized = await normalizeSnapshotImagesForCloud(config, { world: worldPayload, state: {} });
-        worldPayload = normalized.world || worldPayload;
-        debugLog('WORLD_SAVE_ALL_IMAGE_UPLOAD_DONE', {
-          campaignId: config.campaignId,
-        });
-      }
-    } catch (error) {
-      debugLog('WORLD_SAVE_ALL_IMAGE_UPLOAD_FAILED', { message: error.message, stack: error.stack });
-      throw new Error(`Cloud asset upload failed: ${error.message}`);
-    }
-
+    // Local persistence must not upload every image again. Image selection uploads once,
+    // while sync:push performs the single cloud-normalization pass.
+    const worldPayload = payload && typeof payload === 'object' ? payload : {};
     await writeWorldData(worldPayload);
+    notifyPlayerDisplayDataChanged('world');
     const { dataDir, world } = await readWorldData();
     debugLog('WORLD_SAVE_ALL_DONE', {
       dataDir,
       planets: Object.keys(world?.planets?.PLANETS || {}).length,
       systems: (world?.systems?.SYSTEMS || []).length,
-      npcs: Object.keys(world?.npcs?.NPCS || {}).length
+      npcs: Object.keys(world?.npcs?.NPCS || {}).length,
+      heapMb: Math.round(process.memoryUsage().heapUsed / 1024 / 1024)
     });
     return { ok: true, dataDir, world };
   } catch (error) {
@@ -2426,6 +2734,20 @@ ipcMain.handle('world:saveImage', async (_event, payload) => {
   }
 });
 
+
+ipcMain.handle('world:saveImageFile', async (_event, payload) => {
+  try {
+    const filePath = payload?.filePath || '';
+    const preferredStem = payload?.preferredStem || path.basename(filePath || 'asset');
+    const result = await saveImageFileAsset(filePath, preferredStem);
+    debugLog('WORLD_SAVE_IMAGE_FILE', { ok: result.ok, file: result.file, size: result.size, url: result.url });
+    return result;
+  } catch (error) {
+    debugLog('WORLD_SAVE_IMAGE_FILE_FAILED', { message: error.message, stack: error.stack });
+    return { ok: false, message: error.message };
+  }
+});
+
 ipcMain.handle('combat:sound:save', async (_event, payload) => {
   try {
     const dataUrl = payload?.dataUrl || '';
@@ -2511,14 +2833,10 @@ ipcMain.handle('sync:pull', async (_event, payload) => {
 ipcMain.handle('sync:push', async (_event, payload) => {
   try {
     const config = await loadSyncConfig();
-    if (!config.enabled) {
-      return { ok: true, enabled: false, status: 'disabled', message: 'Синхронизация выключена', config };
-    }
-    const snapshot = payload?.snapshot || {};
+    if (!config.enabled) return { ok: true, enabled: false, status: 'disabled', message: 'Синхронизация выключена', config };
+    const snapshot = payload?.snapshot && typeof payload.snapshot === 'object' ? payload.snapshot : {};
     const normalizedSnapshot = await normalizeSnapshotImagesForCloud(config, snapshot);
-    debugLog('SYNC_IMAGE_NORMALIZE_DONE', {
-      campaignId: config.campaignId,
-    });
+    debugLog('SYNC_IMAGE_NORMALIZE_DONE', { campaignId: config.campaignId, heapMb: Math.round(process.memoryUsage().heapUsed / 1024 / 1024) });
     const result = await pushRemoteSnapshot(config, {
       world: normalizedSnapshot.world || {},
       state: normalizedSnapshot.state || {},
@@ -2526,14 +2844,29 @@ ipcMain.handle('sync:push', async (_event, payload) => {
       updatedBy: payload?.updatedBy || config.deviceLabel || 'unknown-device',
       clientUpdatedAt: payload?.clientUpdatedAt || new Date().toISOString()
     });
+    let worldPersisted = false;
+    if (result?.ok && normalizedSnapshot.world) {
+      await writeWorldData(normalizedSnapshot.world);
+      notifyPlayerDisplayDataChanged('world');
+      worldPersisted = true;
+    }
     debugLog('SYNC_PUSH_RESULT', {
       ok: result.ok,
       status: result.status,
       revision: result.remote?.revision || null,
       updatedBy: result.remote?.updatedBy || null,
-      campaignId: config.campaignId
+      campaignId: config.campaignId,
+      worldPersisted,
+      heapMb: Math.round(process.memoryUsage().heapUsed / 1024 / 1024)
     });
-    return { ...result, enabled: true, connected: true, config, snapshot: normalizedSnapshot };
+    return {
+      ...result,
+      enabled: true,
+      connected: true,
+      config,
+      worldPersisted,
+      normalizedUsers: normalizedSnapshot?.state?.users || null
+    };
   } catch (error) {
     debugLog('SYNC_PUSH_FAILED', { message: error.message, stack: error.stack });
     return { ok: false, enabled: true, connected: false, status: 'error', message: error.message };
@@ -2724,6 +3057,9 @@ ipcMain.handle('display:player:view:update', async (_event, payload) => {
       activeRegionMapId: hasRegionMap ? String(next.activeRegionMapId || '').trim() : (playerDisplayMirrorState.activeRegionMapId || ''),
       cameraByScene: next.cameraByScene && typeof next.cameraByScene === 'object' ? next.cameraByScene : (playerDisplayMirrorState.cameraByScene || {}),
       regionCamera: hasRegionCamera ? (next.regionCamera && typeof next.regionCamera === 'object' ? next.regionCamera : null) : (playerDisplayMirrorState.regionCamera || null),
+      regionDisplay: next.regionDisplay && typeof next.regionDisplay === 'object' ? next.regionDisplay : (playerDisplayMirrorState.regionDisplay || null),
+      regionRuntime: next.regionRuntime && typeof next.regionRuntime === 'object' ? next.regionRuntime : (playerDisplayMirrorState.regionRuntime || null),
+      selectedRegionTokenId: Object.prototype.hasOwnProperty.call(next, 'selectedRegionTokenId') ? String(next.selectedRegionTokenId || '').trim() : (playerDisplayMirrorState.selectedRegionTokenId || ''),
       updatedAt: next.updatedAt || new Date().toISOString()
     };
     if (playerDisplayWindow && !playerDisplayWindow.isDestroyed()) {

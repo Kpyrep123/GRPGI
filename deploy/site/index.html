@@ -3,9 +3,10 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; upgrade-insecure-requests" />
+  <meta name="referrer" content="same-origin" />
   <title>GRPGI · клиент кампании</title>
-  <link rel="stylesheet" href="./styles.css?v=1.0.38" />
-  <script defer src="./privacy-consent.js?v=1.0.38"></script>
+  <link rel="stylesheet" href="./styles.css?v=1.0.40" />
 </head>
 <body>
   <main class="shell">
@@ -21,15 +22,15 @@
         <div class="tag">Windows / ПК</div>
         <h2>Полное приложение</h2>
         <p>Полная Electron-версия: режим ДМа, World Config, глобальная карта, второй экран, редакторы, боевые сцены, архив, чат, профиль и PocketBase-синхронизация.</p>
-        <a class="button consent-gated" href="./downloads/GRPGI-Setup-latest.exe">Скачать ПК-версию</a>
+        <a class="button" href="./downloads/GRPGI-Setup-latest.exe">Скачать ПК-версию</a>
         <p class="note">После сборки переименуй установщик в <code>GRPGI-Setup-latest.exe</code> и положи в <code>downloads</code>.</p>
       </article>
 
       <article class="card featured">
         <div class="tag">Web / ПК и телефон</div>
         <h2>Открыть в браузере</h2>
-        <p>Player-only web-клиент с визуальным стилем ПК-приложения. Данных в постоянный локальный кеш не пишет: подключается к PocketBase, читает облако и отправляет изменения обратно.</p>
-        <a class="button consent-gated" href="./app/">Открыть web-версию</a>
+        <p>Player-only web-клиент с визуальным стилем ПК-приложения. Игровой мир в браузере не кешируется. По явному выбору пользователя web-клиент может запомнить токен входа, параметры подключения без пароля и выбранный профиль на срок до 30 дней.</p>
+        <a class="button" href="./app/">Открыть web-версию</a>
         <p class="note">Нет режима ДМа, World Config и тяжёлых боевых сцен. Для управления миром используй ПК-приложение.</p>
       </article>
 
@@ -37,18 +38,15 @@
         <div class="tag">Android / телефон</div>
         <h2>Мобильная версия</h2>
         <p>Игровой клиент без режима ДМа. Вместо галактической карты используется лёгкая навигация по системам и планетам.</p>
-        <a class="button consent-gated" href="./downloads/GRPGI-Mobile-latest.apk">Скачать APK</a>
+        <a class="button" href="./downloads/GRPGI-Mobile-latest.apk">Скачать APK</a>
         <p class="note">После сборки APK переименуй его в <code>GRPGI-Mobile-latest.apk</code> и положи в <code>downloads</code>.</p>
       </article>
     </section>
 
     <section class="card wide consent-panel">
-      <h2>Согласие и конфиденциальность</h2>
-      <label class="consent-check">
-        <input type="checkbox" id="site-privacy-consent" />
-        <span>Я ознакомлен(а) с <a href="./privacy.html" target="_blank" rel="noopener">политикой обработки персональных данных</a> и согласен(на) на обработку технических и игровых данных для подключения к кампании.</span>
-      </label>
-      <p class="note">Без согласия ссылки на web-клиент и загрузку приложений остаются заблокированными.</p>
+      <h2>Конфиденциальность</h2>
+      <p>Для открытия сайта и загрузки приложений отдельное согласие не требуется. Web-клиент сохраняет вход только после включения опции «Запомнить вход на этом устройстве».</p>
+      <p class="note"><a href="./privacy.html">Политика конфиденциальности</a> описывает серверную обработку, техническое локальное хранение и способы удалить сохранённый вход.</p>
     </section>
 
     <section class="card wide">

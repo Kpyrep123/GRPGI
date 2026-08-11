@@ -6,12 +6,21 @@ app.grpg-sync.ru {
     root * /var/www/grpg-app
     file_server
 
-    # HTML must always be revalidated so a deploy shows up immediately;
-    # JS/CSS carry ?v= cache-busters in the HTML, so a short cache is safe.
-    @html {
-        path / /app/ *.html
+    header {
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Referrer-Policy "same-origin"
+        Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+        Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://sync.grpg-sync.ru; img-src 'self' data: blob: https:; media-src 'self' data: blob: https:; font-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests"
     }
-    header @html Cache-Control "no-cache"
+
+    # HTML and build metadata must always be revalidated so a deploy appears immediately.
+    @html {
+        path / /app/ *.html /build-info.json
+    }
+    header @html Cache-Control "no-cache, no-store, must-revalidate"
+
+    # JS/CSS use version query strings in HTML.
     @assets {
         path *.js *.css
     }

@@ -1565,16 +1565,15 @@ const Sync = {
       return res;
     }
 
-    if (res?.snapshot?.world && window.electronAPI?.saveWorldData) {
+    if (res?.worldPersisted) await App.loadWorldData();
+    else if (res?.snapshot?.world && window.electronAPI?.saveWorldData) {
+      // Backward compatibility with an older main process.
       const worldSave = await window.electronAPI.saveWorldData(res.snapshot.world);
-      if (!worldSave?.ok) {
-        Debug.error('SYNC_POST_PUSH_WORLD_SAVE_FAILED', { message: worldSave?.message || 'unknown error' });
-      } else {
-        await App.loadWorldData();
-      }
+      if (worldSave?.ok) await App.loadWorldData();
     }
-    if (res?.snapshot?.state?.users) {
-      App.state.users = deep(res.snapshot.state.users || App.state.users);
+    const normalizedUsers = res?.normalizedUsers || res?.snapshot?.state?.users || null;
+    if (normalizedUsers) {
+      App.state.users = deep(normalizedUsers);
       mirrorPlayersIntoWorld(App.state);
     }
 
@@ -3378,7 +3377,7 @@ function bindImageInputs(root) {
         name: entityNameInput?.value || '',
         displayName: entityNameInput?.value || '',
         avatarGlyph: glyphInput?.value || '',
-        image: hidden.value || ''
+        image: field._previewObjectUrl || hidden.value || ''
       };
       preview.innerHTML = renderThumb(pseudo, { size: 'xl', type: 'entity', glyph: pseudo.avatarGlyph || '✦' });
     };
@@ -3389,37 +3388,46 @@ function bindImageInputs(root) {
       const token = `${Date.now()}_${Math.random().toString(36).slice(2)}`;
       field.dataset.imageToken = token;
       field.dataset.imagePending = '1';
+      if (field._previewObjectUrl) URL.revokeObjectURL(field._previewObjectUrl);
+      field._previewObjectUrl = URL.createObjectURL(file);
+      renderPreview();
+      let task = null;
       try {
-        const dataUrl = await readImageFileAsRenderableDataUrlV51(file);
-        hidden.value = dataUrl;
-        field.dataset.pendingImageValue = dataUrl;
-        renderPreview();
-        const saveTask = (async () => {
-            if (window.electronAPI?.saveWorldImage) {
-              const stem = [root.dataset.entityType || 'entity', root.querySelector('[name="id"]')?.value || '', entityNameInput?.value || file.name].filter(Boolean).join('_');
-              const result = await window.electronAPI.saveWorldImage({ dataUrl, preferredStem: stem });
-              if (!result?.ok || !result?.url) {
-                throw new Error(result?.message || 'unknown error');
-              }
-              if (field.dataset.imageToken === token) {
-                hidden.value = result.url || result.localUrl || dataUrl;
-                field.dataset.savedImageValue = hidden.value;
-                renderPreview();
-              }
-              if (result?.warning) {
-                Toast.show(`Локальный файл сохранён, но upload в backend не удался: ${result.warning}`, 'info');
-              }
-              return result;
-            }
-            return { ok: true, url: dataUrl };
-        })();
-        field._imageTask = saveTask.finally(() => {
+        const stem = [root.dataset.entityType || 'entity', root.querySelector('[name="id"]')?.value || '', entityNameInput?.value || file.name].filter(Boolean).join('_');
+        const nativePath = !isDdsFileV51(file) ? window.electronAPI?.getPathForFile?.(file) : '';
+        if (nativePath && window.electronAPI?.saveWorldImageFile) {
+          field.dataset.pendingImageValue = nativePath;
+          task = window.electronAPI.saveWorldImageFile({ filePath: nativePath, preferredStem: stem });
+        } else {
+          const dataUrl = await readImageFileAsRenderableDataUrlV51(file);
+          field.dataset.pendingImageValue = isDdsFileV51(file) ? 'dds-conversion' : 'legacy-data-url';
+          task = window.electronAPI?.saveWorldImage
+            ? window.electronAPI.saveWorldImage({ dataUrl, preferredStem: stem })
+            : Promise.resolve({ ok: true, url: dataUrl });
+        }
+        const tracked = Promise.resolve(task).then(result => {
+          if (!result?.ok || !result?.url) throw new Error(result?.message || 'unknown error');
+          if (field.dataset.imageToken === token) {
+            hidden.value = result.url || result.localUrl || '';
+            field.dataset.savedImageValue = hidden.value;
+            if (field._previewObjectUrl) URL.revokeObjectURL(field._previewObjectUrl);
+            field._previewObjectUrl = '';
+            renderPreview();
+          }
+          if (result?.warning) Toast.show(`Локальный файл сохранён, но upload в backend не удался: ${result.warning}`, 'info');
+          return result;
+        }).finally(() => {
           if (field.dataset.imageToken === token) delete field.dataset.imagePending;
+          root._imagePendingTasks = (root._imagePendingTasks || []).filter(item => item !== tracked);
         });
-        root._imagePendingTasks.push(field._imageTask);
-        await field._imageTask;
+        field._imageTask = tracked;
+        root._imagePendingTasks.push(tracked);
+        await tracked;
       } catch (error) {
         delete field.dataset.imagePending;
+        if (field._previewObjectUrl) URL.revokeObjectURL(field._previewObjectUrl);
+        field._previewObjectUrl = '';
+        renderPreview();
         Toast.show(`Не удалось обработать изображение: ${error.message}`, 'err');
       }
     });
@@ -3430,6 +3438,8 @@ function bindImageInputs(root) {
       field.dataset.pendingImageValue = '';
       delete field.dataset.imagePending;
       field._imageTask = null;
+      if (field._previewObjectUrl) URL.revokeObjectURL(field._previewObjectUrl);
+      field._previewObjectUrl = '';
       if (fileInput) fileInput.value = '';
       renderPreview();
     });
@@ -18940,6 +18950,9 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
       range: Math.max(10, Number(missile.range || 350)),
       seek: Math.max(10, Number(missile.seek || 110)),
       speed: Math.max(20, Number(missile.speed || 300)),
+      damage: String(missile.damage || '').trim(),
+      blastRadius: Math.max(0, Number(missile.blastRadius || 0)),
+      ammoLabel: String(missile.ammoLabel || '').trim(),
       notes: String(missile.notes || '').trim()
     };
   }
@@ -18948,8 +18961,9 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
     return {
       id,
       name: String(radar.name || id).trim() || id,
-      kind: String(radar.kind || '').trim() === 'jammer' ? 'jammer' : 'radar',
+      kind: ['radar', 'passive', 'jammer'].includes(String(radar.kind || '').trim()) ? String(radar.kind).trim() : 'radar',
       range: Math.max(0, Number(radar.range || 200)),
+      power: clamp(Number(radar.power ?? 100), 0, 100),
       notes: String(radar.notes || '').trim()
     };
   }
@@ -18979,6 +18993,9 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
       id: String(marker.id || `marker_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,6)}`).trim(),
       name: String(marker.name || 'Метка').trim() || 'Метка',
       type: String(marker.type || 'point').trim() || 'point',
+      category: String(marker.category || marker.type || 'point').trim() || 'point',
+      icon: String(marker.icon || '').trim(),
+      locked: Boolean(marker.locked),
       x: clamp(Number(marker.x ?? 500), 0, maxX),
       y: clamp(Number(marker.y ?? 500), 0, maxY),
       color: String(marker.color || '#7df9ff').trim() || '#7df9ff',
@@ -18991,7 +19008,11 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
     return {
       id: String(token.id || `token_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,6)}`).trim(),
       name: String(token.name || 'Токен').trim() || 'Токен',
-      type: ['player','ship','unit','convoy','city','squadron'].includes(String(token.type || '').trim()) ? String(token.type || '').trim() : 'unit',
+      type: ['player','ship','unit','convoy','city','squadron','aircraft','facility'].includes(String(token.type || '').trim()) ? String(token.type || '').trim() : 'unit',
+      layer: ['surface','air','orbit'].includes(String(token.layer || '').trim()) ? String(token.layer).trim() : 'surface',
+      factionId: String(token.factionId || '').trim(),
+      status: String(token.status || 'active').trim() || 'active',
+      locked: Boolean(token.locked),
       shipIds: uniqueV36(token.shipIds || []),
       x: clamp(Number(token.x ?? 500), 0, maxX),
       y: clamp(Number(token.y ?? 500), 0, maxY),
@@ -19032,6 +19053,9 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
       width,
       height,
       scaleLabel: String(map.scaleLabel || 'км').trim() || 'км',
+      gridSize: Math.max(1, Number(map.gridSize || 50)),
+      snapToGrid: Boolean(map.snapToGrid),
+      defaultLayer: ['surface','air','orbit'].includes(String(map.defaultLayer || '').trim()) ? String(map.defaultLayer).trim() : 'surface',
       summary: String(map.summary || '').trim(),
       markers: safeArrayV36(map.markers).map(marker => normalizeRegionMarkerV36(marker, width, height)),
       tokens: safeArrayV36(map.tokens).map(token => normalizeRegionTokenV36(token, width, height)),
@@ -19048,23 +19072,36 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
     const id = cleanIdV36(ship.id || ship.name, 'ship');
     const fuelCapacity = Math.max(0, Number(ship.fuelCapacity ?? ship.maxFuel ?? 100));
     const fuel = clamp(Number(ship.fuel ?? fuelCapacity), 0, Math.max(1, fuelCapacity));
+    const missileIds = uniqueV36(ship.missileIds || []);
+    const rawMissileStock = ship.missileStock && typeof ship.missileStock === 'object' ? ship.missileStock : {};
+    const missileStock = {};
+    missileIds.forEach(missileId => {
+      const value = Number(rawMissileStock[missileId]);
+      missileStock[missileId] = Number.isFinite(value) ? Math.max(-1, Math.floor(value)) : -1;
+    });
     return {
       id,
       name: String(ship.name || id).trim() || id,
+      callsign: String(ship.callsign || '').trim(),
       model: String(ship.model || '').trim(),
+      factionId: String(ship.factionId || '').trim(),
+      status: ['operational','damaged','disabled','destroyed'].includes(String(ship.status || '').trim()) ? String(ship.status).trim() : 'operational',
       image: String(ship.image || '').trim(),
       ownerPlayerId: String(ship.ownerPlayerId || '').trim(),
       currentRegionId: String(ship.currentRegionId || '').trim(),
       currentPlanetId: String(ship.currentPlanetId || '').trim(),
       fuel,
       fuelCapacity,
+      hullCapacity: Math.max(1, Number(ship.hullCapacity || 100)),
+      hull: clamp(Number(ship.hull ?? ship.hullCapacity ?? 100), 0, Math.max(1, Number(ship.hullCapacity || 100))),
       fuelConsumption: Math.max(0.01, Number(ship.fuelConsumption || 1)),
       mass: Math.max(1, Number(ship.mass || 100)),
       enginePower: Math.max(1, Number(ship.enginePower || 100)),
       visionRadius: Math.max(0, Number(ship.visionRadius || 0)), // 0 = радиус карты
       radarRadius: Math.max(0, Number(ship.radarRadius || 0)), // legacy: перекрывается установленными радарами
       radarEnabled: ship.radarEnabled !== false,
-      missileIds: uniqueV36(ship.missileIds || []),
+      missileIds,
+      missileStock,
       radarIds: uniqueV36(ship.radarIds || []),
       cargoMass: Math.max(0, Number(ship.cargoMass || 0)),
       crewPlayerIds: uniqueV36(ship.crewPlayerIds || []),
@@ -19191,9 +19228,9 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
   // носителя от чужих радаров. Эскадра суммирует дальности включённых радаров.
   function shipRadarSpecV36(ship) {
     const installed = safeArrayV36(ship?.radarIds).map(id => RADARS_V36[id]).filter(Boolean);
-    const ranges = installed.filter(radar => radar.kind !== 'jammer').map(radar => Number(radar.range || 0));
+    const ranges = installed.filter(radar => radar.kind !== 'jammer').map(radar => Number(radar.range || 0) * clamp(Number(radar.power ?? 100), 0, 100) / 100);
     const range = Math.max(0, Number(ship?.radarRadius || 0), ...(ranges.length ? ranges : [0]));
-    return { range, jammer: installed.some(radar => radar.kind === 'jammer') };
+    return { range, jammer: installed.some(radar => radar.kind === 'jammer' && Number(radar.power ?? 100) > 0) };
   }
   function tokenRadarInfoV36(token) {
     if (!token) return { r: 0, active: false, jammer: false };
@@ -20898,7 +20935,59 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
     bindRtsRegionButtonsV36(root);
   }
 
-  window.RegionMapsV36 = { open: openRegionMapV36, persist: persistRegionsShipsV36, maps: () => REGION_MAPS_V36, ships: () => SHIPS_V36 };
+  window.RegionMapsV36 = {
+    open: openRegionMapV36,
+    openLegacy: openRegionMapV36,
+    closeLegacy: closeRegionMapV36,
+    persist: persistRegionsShipsV36,
+    maps: () => REGION_MAPS_V36,
+    ships: () => SHIPS_V36,
+    missiles: () => MISSILES_V36,
+    radars: () => RADARS_V36,
+    normalizeMap: normalizeRegionMapV36,
+    normalizeToken: normalizeRegionTokenV36,
+    normalizeMarker: normalizeRegionMarkerV36,
+    normalizeShip: normalizeShipV36,
+    normalizeMissile: normalizeMissileV36,
+    normalizeRadar: normalizeRadarV36,
+    currentPosition: currentTokenPositionV36,
+    settleToken: settleRegionTokenV36,
+    settleAll: settleAllRegionTokensV36,
+    liveShip: liveShipForTokenV36,
+    liveFuel: liveFuelV36,
+    shipSpeed: shipSpeedV36,
+    shipFuelRange: shipFuelRangeV36,
+    shipRangeFromFuel: shipRangeFromFuelV36,
+    radarInfo: tokenRadarInfoV36,
+    playerViewSources: playerViewSourcesV36,
+    playerRadarContacts: playerRadarContactsV36,
+    visibleToken: visibleRegionTokenV36,
+    missileSpec: getMissileSpecV36,
+    startMove: startRegionTokenMoveV36,
+    stopMove: stopRegionTokenMoveV36,
+    launchMissile: launchMissileV36,
+    updateMissiles: updateMissilesV36,
+    renderFog: renderFogV36,
+    showOnDisplay: showRegionMapOnDisplayV36,
+    activate(mapId) {
+      const map = REGION_MAPS_V36[mapId];
+      if (!map) return false;
+      RTS_REGION_UI_V36.mapId = map.id;
+      const runtime = getRegionRuntimeV36();
+      runtime.activeMapId = map.id;
+      runtime.updatedAt = nowIsoV36();
+      return true;
+    },
+    setSelectedToken(id = '') { RTS_REGION_UI_V36.selectedTokenId = String(id || ''); },
+    setMode(mode = 'play') { RTS_REGION_UI_V36.mode = mode === 'edit' ? 'edit' : 'play'; },
+    setFogPreview(value) { RTS_REGION_UI_V36.fogPreview = Boolean(value); },
+    setMissileType(value) { RTS_REGION_UI_V36.missileType = String(value || 'heat'); },
+    setTimeScale: setRegionTimeScaleV36,
+    getTimeScale: () => Number(RTS_REGION_UI_V36.timeScale ?? 1),
+    getRuntime: () => RTS_REGION_UI_V36,
+    canOpen: canOpenRegionMapV36,
+    queueDisplay: queueRegionDisplayMirrorV36
+  };
 })();
 
 /* v64 DEV automation: GitHub source publish, web deploy and clean source archive */

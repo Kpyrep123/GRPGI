@@ -39,3 +39,4 @@ dd { margin: 0; }
 .legal-hero h1 { font-size: clamp(32px, 6vw, 58px); }
 .legal-card ul { color: var(--muted); line-height: 1.7; }
 .warn-note { color: #ffd89a; }
+.legal-required { color: #ffb2b2; font-weight: 700; }

@@ -472,12 +472,44 @@ function scpBaseArgs(web) {
   return args;
 }
 
+function assertWebSourceHasNoLegacyBackend(sourcePath) {
+  const textExtensions = new Set(['.html', '.js', '.cjs', '.mjs', '.css', '.json', '.md', '.txt', '.yml', '.yaml']);
+  const legacyBackend = ['supa', 'base'].join('');
+  const forbidden = [
+    { label: 'legacy backend marker', pattern: new RegExp(legacyBackend, 'i') },
+    { label: 'legacy REST endpoint', pattern: /\/rest\/v1\//i },
+    { label: 'legacy Storage endpoint', pattern: /\/storage\/v1\//i },
+    { label: 'legacy public key', pattern: new RegExp(`(?:anon[_-]?key|${legacyBackend}[_-]?key)`, 'i') }
+  ];
+  const hits = [];
+  const walk = dir => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(full);
+        continue;
+      }
+      if (!textExtensions.has(path.extname(entry.name).toLowerCase())) continue;
+      const content = fs.readFileSync(full, 'utf8');
+      for (const rule of forbidden) {
+        if (rule.pattern.test(content)) hits.push(`${normalizeRelative(path.relative(sourcePath, full))}: ${rule.label}`);
+      }
+    }
+  };
+  walk(sourcePath);
+  if (hits.length) {
+    throw new Error(`Web-деплой остановлен: в deploy/site найдены остатки старого backend:
+${hits.slice(0, 20).join('\n')}`);
+  }
+}
+
 async function deployWeb(rootDir) {
   if (activeOperation) throw new Error(`Уже выполняется операция: ${activeOperation}`);
   activeOperation = 'web-deploy';
   try {
     const config = loadConfig(rootDir);
     const web = validateWebConfig(config, rootDir);
+    assertWebSourceHasNoLegacyBackend(web.sourcePath);
     const sshInfo = await commandAvailable('ssh', ['-V']);
     const scpInfo = await commandAvailable('scp', ['-V']);
     if (!sshInfo.available || !scpInfo.available) throw new Error('Для автодеплоя нужны ssh.exe и scp.exe в PATH');

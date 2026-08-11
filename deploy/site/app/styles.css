@@ -856,3 +856,10 @@ select.input option { background: #0a1220; color: #effcff; }
 @media (max-width: 900px) {
   .web-skill-tree-scroll { max-height: calc(100vh - 250px); }
 }
+
+/* v1.0.40 — explicit persistent-login controls */
+.remember-login-line { border: 1px solid rgba(125,249,255,0.18); border-radius: 12px; padding: 12px; background: rgba(7,13,22,0.52); }
+.remember-login-line b { color: var(--text); }
+.privacy-inline-note { margin: -4px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.privacy-inline-note a { color: var(--accent); }
+.ghost-btn.danger { border-color: rgba(255,105,105,0.38); color: #ffb2b2; }

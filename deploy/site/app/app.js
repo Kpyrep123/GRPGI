@@ -24,12 +24,18 @@
   const KEYS = {
     config: 'grpg.mobile.syncConfig.v1',
     cache: 'grpg.mobile.cache.v1',
-    session: 'grpg.mobile.session.v1'
+    session: 'grpg.mobile.session.v1',
+    auth: 'grpg.web.pocketbaseAuth.v1',
+    remember: 'grpg.web.rememberLogin.v1'
   };
+  const WEB_REMEMBER_MAX_MS = 30 * 24 * 60 * 60 * 1000;
+  const LEGACY_BACKEND_MARKER = ['supa', 'base'].join('');
 
   const App = {
     config: null,
     auth: { token: '', expiresAt: 0 },
+    rememberLogin: false,
+    rememberUntil: 0,
     cache: { snapshot: null, players: [], chat: [], combatRuntime: null, fetchedAt: null },
     session: null,
     data: {
@@ -106,25 +112,101 @@
     return Math.min(max, Math.max(min, value));
   }
 
-  function privacyConsentChecked(scope = 'setup') {
-    const id = scope === 'login' ? '#login-privacy-consent' : '#setup-privacy-consent';
-    return Boolean(document.querySelector(id)?.checked);
+  function jsonStorageRead(storage, key, fallback = null) {
+    try {
+      const raw = storage?.getItem(key);
+      return raw ? JSON.parse(raw) : fallback;
+    } catch {
+      return fallback;
+    }
   }
 
-  function requirePrivacyConsent(scope = 'setup') {
-    if (privacyConsentChecked(scope)) return true;
-    const target = document.querySelector(scope === 'login' ? '#login-privacy-consent' : '#setup-privacy-consent');
-    const message = 'Нужно подтвердить согласие с политикой обработки персональных данных.';
-    if (scope === 'login') {
-      const status = document.querySelector('#login-status');
-      if (status) status.textContent = message;
-    } else {
-      const status = document.querySelector('#setup-status');
-      if (status) status.textContent = message;
+  function jsonStorageWrite(storage, key, value) {
+    try {
+      storage?.setItem(key, JSON.stringify(value));
+      return true;
+    } catch {
+      return false;
     }
-    target?.focus();
-    notify(message, 'warn');
-    return false;
+  }
+
+  function jsonStorageRemove(storage, key) {
+    try { storage?.removeItem(key); } catch {}
+  }
+
+  function sanitizedConfig(config = App.config) {
+    const clean = normalizeConfig(config || {});
+    clean.appUserPassword = '';
+    return clean;
+  }
+
+  function purgeLegacyBrowserState() {
+    if (!RUNTIME.cloudOnly) return;
+    [window.localStorage, window.sessionStorage].forEach(storage => {
+      try {
+        const removals = [];
+        for (let index = 0; index < storage.length; index += 1) {
+          const key = storage.key(index);
+          const raw = key ? String(storage.getItem(key) || '') : '';
+          if (String(key || '').toLowerCase().includes(LEGACY_BACKEND_MARKER) || raw.toLowerCase().includes(LEGACY_BACKEND_MARKER)) {
+            removals.push(key);
+          }
+        }
+        removals.filter(Boolean).forEach(key => storage.removeItem(key));
+      } catch {}
+    });
+  }
+
+  function readRememberState() {
+    if (!RUNTIME.cloudOnly) return { enabled: false, expiresAt: 0 };
+    const saved = jsonStorageRead(window.localStorage, KEYS.remember, null);
+    const expiresAt = Number(saved?.expiresAt || 0);
+    if (!saved?.enabled || expiresAt <= Date.now()) {
+      jsonStorageRemove(window.localStorage, KEYS.remember);
+      [KEYS.config, KEYS.cache, KEYS.session, KEYS.auth].forEach(key => jsonStorageRemove(window.localStorage, key));
+      return { enabled: false, expiresAt: 0 };
+    }
+    return { enabled: true, expiresAt };
+  }
+
+  function syncRememberControls() {
+    ['#setup-remember-login', '#login-remember-login'].forEach(selector => {
+      const control = document.querySelector(selector);
+      if (control) control.checked = Boolean(App.rememberLogin);
+    });
+  }
+
+  async function setRememberLogin(enabled, { extend = false } = {}) {
+    if (!RUNTIME.cloudOnly) return;
+    App.rememberLogin = Boolean(enabled);
+    if (App.rememberLogin) {
+      const currentExpiry = Number(App.rememberUntil || 0);
+      App.rememberUntil = extend || currentExpiry <= Date.now()
+        ? Date.now() + WEB_REMEMBER_MAX_MS
+        : currentExpiry;
+      jsonStorageWrite(window.localStorage, KEYS.remember, {
+        enabled: true,
+        createdAt: new Date().toISOString(),
+        expiresAt: App.rememberUntil
+      });
+      jsonStorageWrite(window.localStorage, KEYS.config, sanitizedConfig());
+      if (App.session) jsonStorageWrite(window.localStorage, KEYS.session, App.session);
+      if (App.auth?.token) jsonStorageWrite(window.localStorage, KEYS.auth, App.auth);
+      const readMarkers = jsonStorageRead(window.sessionStorage, MOBILE_READ_MARKERS_KEY, null);
+      if (readMarkers) jsonStorageWrite(window.localStorage, MOBILE_READ_MARKERS_KEY, readMarkers);
+      [KEYS.config, KEYS.session, KEYS.auth, MOBILE_READ_MARKERS_KEY].forEach(key => jsonStorageRemove(window.sessionStorage, key));
+    } else {
+      App.rememberUntil = 0;
+      jsonStorageRemove(window.localStorage, KEYS.remember);
+      [KEYS.config, KEYS.cache, KEYS.session, KEYS.auth].forEach(key => jsonStorageRemove(window.localStorage, key));
+      jsonStorageWrite(window.sessionStorage, KEYS.config, sanitizedConfig());
+      if (App.session) jsonStorageWrite(window.sessionStorage, KEYS.session, App.session);
+      if (App.auth?.token) jsonStorageWrite(window.sessionStorage, KEYS.auth, App.auth);
+      const readMarkers = jsonStorageRead(window.localStorage, MOBILE_READ_MARKERS_KEY, null);
+      if (readMarkers) jsonStorageWrite(window.sessionStorage, MOBILE_READ_MARKERS_KEY, readMarkers);
+      jsonStorageRemove(window.localStorage, MOBILE_READ_MARKERS_KEY);
+    }
+    syncRememberControls();
   }
 
   function notify(text, tone = 'ok') {
@@ -165,12 +247,15 @@
   }
 
   function normalizeConfig(payload = {}) {
+    const requestedUrl = String(payload.url || DEFAULTS.url).trim();
+    const requestedProvider = String(payload.backend || payload.provider || '').trim().toLowerCase();
+    const legacyConfig = requestedProvider.includes(LEGACY_BACKEND_MARKER) || requestedUrl.toLowerCase().includes(LEGACY_BACKEND_MARKER);
     return {
       backend: 'pocketbase',
       provider: 'pocketbase',
-      url: String(payload.url || DEFAULTS.url).trim(),
-      appUserEmail: String(payload.appUserEmail || payload.pocketbaseEmail || payload.pbEmail || '').trim(),
-      appUserPassword: String(payload.appUserPassword || payload.pocketbasePassword || payload.pbPassword || '').trim(),
+      url: legacyConfig ? DEFAULTS.url : requestedUrl,
+      appUserEmail: legacyConfig ? '' : String(payload.appUserEmail || payload.pocketbaseEmail || payload.pbEmail || '').trim(),
+      appUserPassword: legacyConfig ? '' : String(payload.appUserPassword || payload.pocketbasePassword || payload.pbPassword || '').trim(),
       appUsersCollection: String(payload.appUsersCollection || payload.pocketbaseUsersCollection || DEFAULTS.appUsersCollection).trim() || DEFAULTS.appUsersCollection,
       campaignId: String(payload.campaignId || DEFAULTS.campaignId || 'main').trim() || 'main',
       deviceLabel: String(payload.deviceLabel || '').trim(),
@@ -189,7 +274,7 @@
   }
 
   function hasConfig(config = App.config) {
-    return Boolean(config?.url && config?.campaignId && config?.appUserEmail && config?.appUserPassword);
+    return Boolean(config?.url && config?.campaignId && (config?.appUserPassword || App.auth?.token));
   }
 
 
@@ -303,7 +388,11 @@
 
   function loadMobileReadMarkers() {
     try {
-      if (RUNTIME.cloudOnly) return WEB_MEMORY.get(MOBILE_READ_MARKERS_KEY) || {};
+      if (RUNTIME.cloudOnly) {
+        const primary = App.rememberLogin ? window.localStorage : window.sessionStorage;
+        const secondary = App.rememberLogin ? window.sessionStorage : window.localStorage;
+        return jsonStorageRead(primary, MOBILE_READ_MARKERS_KEY, jsonStorageRead(secondary, MOBILE_READ_MARKERS_KEY, {})) || {};
+      }
       const parsed = JSON.parse(localStorage.getItem(MOBILE_READ_MARKERS_KEY) || '{}');
       return parsed && typeof parsed === 'object' ? parsed : {};
     } catch {
@@ -313,7 +402,13 @@
 
   function saveMobileReadMarkers(markers = {}) {
     try {
-      if (RUNTIME.cloudOnly) { WEB_MEMORY.set(MOBILE_READ_MARKERS_KEY, deep(markers || {})); return; }
+      if (RUNTIME.cloudOnly) {
+        const target = App.rememberLogin ? window.localStorage : window.sessionStorage;
+        const other = App.rememberLogin ? window.sessionStorage : window.localStorage;
+        jsonStorageWrite(target, MOBILE_READ_MARKERS_KEY, deep(markers || {}));
+        jsonStorageRemove(other, MOBILE_READ_MARKERS_KEY);
+        return;
+      }
       localStorage.setItem(MOBILE_READ_MARKERS_KEY, JSON.stringify(markers || {}));
     } catch {}
   }
@@ -621,8 +716,14 @@
   async function storageGet(key, fallback = null) {
     try {
       if (RUNTIME.cloudOnly) {
-        if (!WEB_MEMORY.has(key)) return fallback;
-        return deep(WEB_MEMORY.get(key));
+        if (key === KEYS.cache) return fallback;
+        const primary = App.rememberLogin ? window.localStorage : window.sessionStorage;
+        const secondary = App.rememberLogin ? window.sessionStorage : window.localStorage;
+        const missing = {};
+        const first = jsonStorageRead(primary, key, missing);
+        if (first !== missing) return deep(first);
+        const second = jsonStorageRead(secondary, key, missing);
+        return second !== missing ? deep(second) : fallback;
       }
       const preferences = window.Capacitor?.Plugins?.Preferences;
       if (preferences?.get) {
@@ -638,7 +739,12 @@
 
   async function storageSet(key, value) {
     if (RUNTIME.cloudOnly) {
-      WEB_MEMORY.set(key, deep(value));
+      if (key === KEYS.cache) return;
+      const safeValue = key === KEYS.config ? sanitizedConfig(value) : deep(value);
+      const target = App.rememberLogin ? window.localStorage : window.sessionStorage;
+      const other = App.rememberLogin ? window.sessionStorage : window.localStorage;
+      jsonStorageWrite(target, key, safeValue);
+      jsonStorageRemove(other, key);
       return;
     }
     const raw = JSON.stringify(value);
@@ -650,6 +756,8 @@
   async function storageRemove(key) {
     if (RUNTIME.cloudOnly) {
       WEB_MEMORY.delete(key);
+      jsonStorageRemove(window.localStorage, key);
+      jsonStorageRemove(window.sessionStorage, key);
       return;
     }
     const preferences = window.Capacitor?.Plugins?.Preferences;
@@ -684,9 +792,57 @@
     return parts.filter(Boolean).join(' && ');
   }
 
+  function tokenExpiryMs(token) {
+    try {
+      const payload = String(token || '').split('.')[1];
+      if (!payload) return 0;
+      const normalized = payload.replace(/-/g, '+').replace(/_/g, '/');
+      const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=');
+      const parsed = JSON.parse(atob(padded));
+      return Number(parsed?.exp || 0) * 1000;
+    } catch {
+      return 0;
+    }
+  }
+
+  async function persistAuth(payload) {
+    const token = String(payload?.token || '');
+    App.auth = { token, expiresAt: tokenExpiryMs(token) };
+    if (token) await storageSet(KEYS.auth, App.auth);
+    else await storageRemove(KEYS.auth);
+    return token;
+  }
+
+  async function refreshPocketBaseAuth(config = App.config) {
+    if (!App.auth?.token) throw new Error('Сохранённая сессия отсутствует');
+    const base = pbBaseUrl(config);
+    const collection = encodeURIComponent(pbCollection(config, 'users'));
+    const response = await fetch(`${base}/api/collections/${collection}/auth-refresh`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${App.auth.token}` }
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload?.token) throw new Error(payload?.message || `PocketBase auth refresh failed: HTTP ${response.status}`);
+    return persistAuth(payload);
+  }
+
   async function pbAuthToken(config = App.config, force = false) {
     const now = Date.now();
-    if (!force && App.auth?.token && Number(App.auth.expiresAt || 0) > now + 15000) return App.auth.token;
+    const currentExpiry = Number(App.auth?.expiresAt || tokenExpiryMs(App.auth?.token));
+    if (!force && App.auth?.token && currentExpiry > now + 60000) return App.auth.token;
+
+    if (App.auth?.token) {
+      try {
+        return await refreshPocketBaseAuth(config);
+      } catch {
+        await persistAuth(null);
+      }
+    }
+
+    if (!config?.appUserEmail || !config?.appUserPassword) {
+      throw new Error('Срок сохранённого входа истёк. Введите данные подключения PocketBase повторно.');
+    }
+
     const base = pbBaseUrl(config);
     const collection = encodeURIComponent(pbCollection(config, 'users'));
     const response = await fetch(`${base}/api/collections/${collection}/auth-with-password`, {
@@ -696,8 +852,7 @@
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok || !payload?.token) throw new Error(payload?.message || `PocketBase auth failed: HTTP ${response.status}`);
-    App.auth = { token: payload.token, expiresAt: now + 1000 * 60 * 60 * 6 };
-    return payload.token;
+    return persistAuth(payload);
   }
 
   async function pbFetch(config, pathname, options = {}) {
@@ -719,7 +874,7 @@
       const text = await response.text().catch(() => '');
       const payload = text ? (() => { try { return JSON.parse(text); } catch { return { text }; } })() : null;
       if (response.status === 401 && attempt === 0) {
-        App.auth = { token: '', expiresAt: 0 };
+        await persistAuth(null);
         continue;
       }
       if (!response.ok) {
@@ -1085,9 +1240,19 @@
   }
 
   async function loadLocalState() {
+    if (RUNTIME.cloudOnly) {
+      purgeLegacyBrowserState();
+      jsonStorageRemove(window.localStorage, KEYS.cache);
+      jsonStorageRemove(window.sessionStorage, KEYS.cache);
+      const remembered = readRememberState();
+      App.rememberLogin = remembered.enabled;
+      App.rememberUntil = remembered.expiresAt;
+    }
     App.config = normalizeConfig(await storageGet(KEYS.config, {}));
     App.cache = await storageGet(KEYS.cache, App.cache);
     App.session = await storageGet(KEYS.session, null);
+    App.auth = await storageGet(KEYS.auth, { token: '', expiresAt: 0 });
+    if (App.auth?.token && !App.auth.expiresAt) App.auth.expiresAt = tokenExpiryMs(App.auth.token);
   }
 
   function screenNodes() {
@@ -2183,7 +2348,8 @@
         </div>
         <div class="profile-toolbar">
           <button class="ghost-btn mini-btn" type="button" data-action="profile-refresh">Обновить</button>
-          <button class="ghost-btn mini-btn" type="button" data-action="profile-logout">Выйти</button>
+          <button class="ghost-btn mini-btn" type="button" data-action="profile-logout">Выйти из профиля</button>
+          ${RUNTIME.cloudOnly ? '<button class="ghost-btn mini-btn danger" type="button" data-action="profile-forget-device">Забыть устройство</button>' : ''}
         </div>
         <div class="stat-grid">
           <div class="stat"><div class="data-label">HP</div><div class="data-value">${Number(stats.hpCurrent || 0)} / ${Number(stats.hpMax || 0)}</div></div>
@@ -2455,6 +2621,7 @@
     if (!player) throw new Error('Персонаж не найден');
     if (String(player.role || '') !== 'guest' && String(player.pass || '') !== String(pass || '')) throw new Error('Неверный пароль персонажа');
     App.session = { userId: playerId, role: player.role || 'player', loggedInAt: new Date().toISOString() };
+    if (RUNTIME.cloudOnly && App.rememberLogin) await setRememberLogin(true, { extend: true });
     await storageSet(KEYS.session, App.session);
     openBoot('app');
     App.ui.screen = 'home';
@@ -2467,6 +2634,7 @@
     const guest = guestProfile();
     App.data.players.set(GUEST_ID, guest);
     App.session = { userId: GUEST_ID, role: 'guest', loggedInAt: new Date().toISOString() };
+    if (RUNTIME.cloudOnly && App.rememberLogin) await setRememberLogin(true, { extend: true });
     await storageSet(KEYS.session, App.session);
     openBoot('app');
     App.ui.screen = 'home';
@@ -2482,11 +2650,31 @@
     await storageRemove(KEYS.session);
     openBoot('login');
     renderLogin();
+    syncRememberControls();
+  }
+
+  async function forgetThisDevice() {
+    stopPolling();
+    App.session = null;
+    App.auth = { token: '', expiresAt: 0 };
+    App.config = normalizeConfig({});
+    App.cache = { snapshot: null, players: [], chat: [], combatRuntime: null, fetchedAt: null };
+    App.rememberLogin = false;
+    App.rememberUntil = 0;
+    await Promise.all([KEYS.config, KEYS.cache, KEYS.session, KEYS.auth, KEYS.remember, MOBILE_READ_MARKERS_KEY].map(key => storageRemove(key)));
+    fillSetupForm();
+    syncRememberControls();
+    openBoot('setup');
+    notify('Сохранённый вход и данные подключения удалены с устройства', 'warn');
   }
 
   async function handleSetupSave(form) {
     const fd = new FormData(form);
     const config = normalizeConfig(Object.fromEntries(fd.entries()));
+    const identityChanged = pbBaseUrl(config) !== pbBaseUrl(App.config)
+      || config.appUserEmail !== App.config?.appUserEmail
+      || config.appUsersCollection !== App.config?.appUsersCollection;
+    if (identityChanged || config.appUserPassword) await persistAuth(null);
     $('#setup-status').textContent = 'Проверяю подключение и читаю кампанию из облака...';
     await apiPing(config);
     App.config = config;
@@ -2640,6 +2828,11 @@
       if (action === 'profile-logout') {
         logout().catch(error => notify(error.message, 'err'));
       }
+      if (action === 'profile-forget-device') {
+        if (window.confirm('Удалить сохранённый вход и параметры подключения с этого устройства?')) {
+          forgetThisDevice().catch(error => notify(error.message, 'err'));
+        }
+      }
     });
 
     document.body.addEventListener('submit', event => {
@@ -2647,16 +2840,14 @@
       if (!(form instanceof HTMLFormElement)) return;
       if (form.id === 'setup-form') {
         event.preventDefault();
-        if (!requirePrivacyConsent('setup')) return;
-        handleSetupSave(form).catch(error => {
+        setRememberLogin(Boolean($('#setup-remember-login')?.checked)).then(() => handleSetupSave(form)).catch(error => {
           $('#setup-status').textContent = error.message;
           notify(`Не удалось подключиться: ${error.message}`, 'err');
         });
       }
       if (form.id === 'login-form') {
         event.preventDefault();
-        if (!requirePrivacyConsent('login')) return;
-        login($('#login-player').value, $('#login-pass').value).catch(error => {
+        setRememberLogin(Boolean($('#login-remember-login')?.checked)).then(() => login($('#login-player').value, $('#login-pass').value)).catch(error => {
           $('#login-status').textContent = error.message;
           notify(error.message, 'err');
         });
@@ -2670,6 +2861,9 @@
     document.body.addEventListener('change', event => {
       if (event.target.id === 'login-campaign') { App.ui.selectedCampaignId = event.target.value || 'all'; renderLogin(); }
       if (event.target.id === 'login-player') renderLoginPreview();
+      if (event.target.id === 'setup-remember-login' || event.target.id === 'login-remember-login') {
+        setRememberLogin(Boolean(event.target.checked)).catch(error => notify(error.message, 'err'));
+      }
     });
 
     document.body.addEventListener('input', event => {
@@ -2698,8 +2892,7 @@
     }));
 
     $('#login-guest-btn')?.addEventListener('click', () => {
-      if (!requirePrivacyConsent('login')) return;
-      loginGuest().catch(error => notify(error.message, 'err'));
+      setRememberLogin(Boolean($('#login-remember-login')?.checked)).then(() => loginGuest()).catch(error => notify(error.message, 'err'));
     });
 
     $('#login-back-btn').addEventListener('click', () => {
@@ -2707,13 +2900,19 @@
       fillSetupForm();
     });
 
+    $('#web-reload-btn')?.addEventListener('click', () => window.location.reload());
+
     $('#setup-clear-btn').addEventListener('click', async () => {
+      if (RUNTIME.cloudOnly) {
+        await forgetThisDevice();
+        return;
+      }
       await storageRemove(KEYS.config);
       await storageRemove(KEYS.cache);
       App.config = normalizeConfig({});
       App.cache = { snapshot: null, players: [], chat: [], combatRuntime: null, fetchedAt: null };
       fillSetupForm();
-      notify(RUNTIME.cloudOnly ? 'Параметры текущей веб-сессии очищены' : 'Локальная конфигурация очищена', 'warn');
+      notify('Локальная конфигурация очищена', 'warn');
     });
 
     document.addEventListener('visibilitychange', () => {
@@ -2742,12 +2941,14 @@
     if (form.assetsCollection) form.assetsCollection.value = config.assetsCollection || DEFAULTS.assetsCollection;
     form.snapshotPollMs.value = config.snapshotPollMs || DEFAULTS.snapshotPollMs;
     form.livePollMs.value = config.livePollMs || DEFAULTS.livePollMs;
+    syncRememberControls();
   }
 
   async function init() {
     bindGlobalEvents();
     await loadLocalState();
     fillSetupForm();
+    syncRememberControls();
 
     const hasCached = RUNTIME.cloudOnly ? false : await bootFromCacheIfNeeded();
     if (hasConfig()) {

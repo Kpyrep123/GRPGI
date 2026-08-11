@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
   version: process.versions.electron,
@@ -19,6 +19,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveWorldData: payload => ipcRenderer.invoke('world:saveAll', payload),
   resetWorldData: () => ipcRenderer.invoke('world:reset'),
   saveWorldImage: payload => ipcRenderer.invoke('world:saveImage', payload),
+  saveWorldImageFile: payload => ipcRenderer.invoke('world:saveImageFile', payload),
+  getPathForFile: file => webUtils.getPathForFile(file),
   saveCombatSound: payload => ipcRenderer.invoke('combat:sound:save', payload),
   loadSyncConfig: () => ipcRenderer.invoke('sync:config:load'),
   saveSyncConfig: payload => ipcRenderer.invoke('sync:config:save', payload),
@@ -74,6 +76,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     const handler = (_event, payload) => callback(payload);
     ipcRenderer.on('display:player:view', handler);
     return () => ipcRenderer.removeListener('display:player:view', handler);
+  },
+  onPlayerDisplayDataChanged: callback => {
+    if (typeof callback !== 'function') return () => {};
+    const handler = (_event, payload) => callback(payload);
+    ipcRenderer.on('display:player:data-changed', handler);
+    return () => ipcRenderer.removeListener('display:player:data-changed', handler);
   },
   getDevOpsStatus: role => ipcRenderer.invoke('devops:status', { role }),
   publishDevPatch: role => ipcRenderer.invoke('devops:publishPatch', { role }),

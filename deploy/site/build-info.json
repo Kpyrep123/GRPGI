@@ -1,0 +1,7 @@
+{
+  "app": "GRPGI Web Client",
+  "version": "1.0.40",
+  "backend": "pocketbase",
+  "persistentLogin": true,
+  "generatedAt": "2026-07-19T00:00:00Z"
+}
