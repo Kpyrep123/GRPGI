@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ru" data-client="web" data-cloud-only="true" data-hide-combat="true">
+<html lang="ru" data-client="web" data-cloud-only="true" data-hide-combat="true" data-era-theme="technological">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
@@ -7,7 +7,7 @@
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://sync.grpg-sync.ru; img-src 'self' data: blob: https:; media-src 'self' data: blob: https:; font-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests" />
     <meta name="referrer" content="same-origin" />
     <title>GRPGI Web Client</title>
-    <link rel="stylesheet" href="./styles.css?v=1.0.40" />
+    <link rel="stylesheet" href="./styles.css?v=1.0.54" />
   </head>
   <body>
     <div class="web-galaxy-bg" aria-hidden="true">
@@ -15,109 +15,16 @@
       <div class="web-galaxy-layer galaxy-two"></div>
     </div>
 
-    <div id="setup-screen" class="boot-shell hidden">
-      <div class="boot-card desktop-login-card">
-        <div class="eyebrow">WEB_ACCESS_NODE</div>
-        <h1>Подключение к кампании</h1>
-        <p class="muted">Браузерная версия использует внешний вид ПК-интерфейса, но работает как player-only клиент. Режима ДМа, World Config и боевых сцен здесь нет. Игровой мир не сохраняется постоянным локальным кешем: данные загружаются из PocketBase. По выбору пользователя браузер может запомнить только параметры подключения, токен сессии и выбранный профиль.</p>
-        <form id="setup-form" class="form stack-lg">
-          <input type="hidden" name="backend" value="pocketbase" />
-          <label class="field">
-            <span>SERVER_URL</span>
-            <input class="input" name="url" placeholder="https://sync.grpg-sync.ru" autocomplete="off" />
-          </label>
-          <div class="grid-2">
-            <label class="field">
-              <span>APP_USER_EMAIL</span>
-              <input class="input" name="appUserEmail" placeholder="dm@grpg-sync.local" autocomplete="username" />
-            </label>
-            <label class="field">
-              <span>APP_USER_PASSWORD</span>
-              <input class="input" name="appUserPassword" type="password" placeholder="Пароль app_users" autocomplete="current-password" />
-            </label>
-          </div>
-          <div class="grid-2">
-            <label class="field">
-              <span>CAMPAIGN_ID</span>
-              <input class="input" name="campaignId" placeholder="main" autocomplete="off" />
-            </label>
-            <label class="field">
-              <span>DEVICE_LABEL</span>
-              <input class="input" name="deviceLabel" placeholder="web-player" autocomplete="off" />
-            </label>
-          </div>
-          <details class="details-card">
-            <summary>Расширенные параметры</summary>
-            <div class="stack-md details-content">
-              <div class="grid-2">
-                <label class="field">
-                  <span>SNAPSHOT_TABLE</span>
-                  <input class="input" name="tableName" value="campaign_snapshots" />
-                </label>
-                <label class="field">
-                  <span>PLAYER_TABLE</span>
-                  <input class="input" name="playerTableName" value="campaign_players" />
-                </label>
-              </div>
-              <div class="grid-2">
-                <label class="field">
-                  <span>CHAT_TABLE</span>
-                  <input class="input" name="chatTableName" value="campaign_messages" />
-                </label>
-                <label class="field">
-                  <span>COMBAT_TABLE</span>
-                  <input class="input" name="combatRuntimeTableName" value="campaign_combat_runtime" />
-                </label>
-              </div>
-              <div class="grid-2">
-                <label class="field">
-                  <span>PB_ASSETS</span>
-                  <input class="input" name="assetsCollection" value="campaign_assets" />
-                </label>
-              </div>
-              <div class="grid-2">
-                <label class="field">
-                  <span>PB_USERS</span>
-                  <input class="input" name="appUsersCollection" value="app_users" />
-                </label>
-                <div></div>
-              </div>
-              <div class="grid-2">
-                <label class="field">
-                  <span>SNAPSHOT_POLL_MS</span>
-                  <input class="input" type="number" name="snapshotPollMs" value="30000" />
-                </label>
-                <label class="field">
-                  <span>LIVE_POLL_MS</span>
-                  <input class="input" type="number" name="livePollMs" value="5000" />
-                </label>
-              </div>
-            </div>
-          </details>
-
-          <label class="consent-line remember-login-line">
-            <input type="checkbox" id="setup-remember-login" />
-            <span><b>Запомнить вход на этом устройстве</b> — сохранить токен PocketBase, параметры подключения без пароля и выбранный профиль на срок до 30 дней. Не включайте на общем устройстве.</span>
-          </label>
-          <p class="privacy-inline-note">При подключении обрабатываются технические и игровые данные, описанные в <a href="../privacy.html" target="_blank" rel="noopener">политике конфиденциальности</a>.</p>
-          <div class="button-row">
-            <button class="primary" type="submit">ПОДКЛЮЧИТЬСЯ</button>
-            <button class="secondary" type="button" id="setup-clear-btn">ЗАБЫТЬ УСТРОЙСТВО</button>
-          </div>
-          <div id="setup-status" class="status-line muted">После подключения откроется выбор кампании и персонажа.</div>
-        </form>
-      </div>
-    </div>
-
     <div id="login-screen" class="boot-shell hidden">
       <div class="boot-card desktop-login-card">
-        <div class="eyebrow">CAMPAIGN_LINKED</div>
+        <div class="eyebrow">CHARACTER_ACCESS</div>
         <h1>Вход в профиль</h1>
-        <p class="muted">Выбери кампанию и персонажа. Гостевой вход показывает только материалы, которые ДМ открыл гостю.</p>
+        <p class="muted">Выберите персонажа и введите его пароль. Подключение к кампании выполняется автоматически.</p>
         <form id="login-form" class="form stack-lg">
-          <label class="field">
-            <span>Кампания</span>
+          <label class="field campaign-login-field-v1049">
+            <span>Игровая кампания</span>
             <select class="input" id="login-campaign"></select>
+            <small class="campaign-login-hint-v1049" id="login-campaign-hint"></small>
           </label>
           <label class="field">
             <span>Персонаж</span>
@@ -130,16 +37,17 @@
           <div id="login-preview" class="preview-card"></div>
           <label class="consent-line remember-login-line">
             <input type="checkbox" id="login-remember-login" />
-            <span><b>Запомнить вход на этом устройстве</b> на срок до 30 дней. Пароль персонажа и пароль <code>app_users</code> в локальное хранилище не записываются.</span>
+            <span><b>Запомнить вход на этом устройстве</b> на срок до 30 дней. Пароль персонажа в локальное хранилище не записывается.</span>
           </label>
           <p class="privacy-inline-note">Подробнее: <a href="../privacy.html" target="_blank" rel="noopener">политика конфиденциальности и локального хранения</a>.</p>
           <div class="button-row">
             <button class="primary" type="submit">ВОЙТИ</button>
+            <button class="secondary" type="button" id="register-open-v1052">РЕГИСТРАЦИЯ</button>
             <button class="secondary" type="button" id="login-guest-btn">ГОСТЕВОЙ ВХОД</button>
-            <button class="secondary" type="button" id="login-back-btn">ИЗМЕНИТЬ ПОДКЛЮЧЕНИЕ</button>
           </div>
           <div id="login-status" class="status-line muted"></div>
         </form>
+        <div id="registration-panel-v1052" class="registration-panel-v1052 hidden"></div>
       </div>
     </div>
 
@@ -174,6 +82,7 @@
     </div>
 
     <div id="toast-stack" class="toast-stack"></div>
-    <script src="./app.js?v=1.0.40"></script>
+    <script src="./runtime-config.js?v=1.0.54"></script>
+    <script src="./app.js?v=1.0.57"></script>
   </body>
 </html>

@@ -14,7 +14,7 @@ try {
   updaterLoadError = error;
 }
 
-const WORLD_FILE_NAMES = ['players','systems','planets','npcs','equipment','flora','fauna','articles','news','tasks','organizations','factions','skills','campaigns','combatScenes','ui','regionMaps','ships','missiles','radars'];
+const WORLD_FILE_NAMES = ['players','systems','planets','npcs','equipment','flora','fauna','articles','news','tasks','organizations','factions','skills','campaigns','socialOrigins','geographicOrigins','combatScenes','ui','regionMaps','ships','missiles','radars'];
 const DEFAULT_SYNC_TABLE = 'campaign_snapshots';
 const DEFAULT_CHAT_TABLE = 'campaign_messages';
 const DEFAULT_PLAYER_TABLE = 'campaign_players';
@@ -167,6 +167,14 @@ function getWorldSectionItemCount(sectionName, payload) {
   if (sectionName === 'campaigns') {
     if (payload.CAMPAIGNS && typeof payload.CAMPAIGNS === 'object') return Object.keys(payload.CAMPAIGNS).length;
     return Array.isArray(payload.CAMPAIGN_LIST) ? payload.CAMPAIGN_LIST.length : 0;
+  }
+  if (sectionName === 'socialOrigins') {
+    if (payload.SOCIAL_ORIGINS && typeof payload.SOCIAL_ORIGINS === 'object') return Object.keys(payload.SOCIAL_ORIGINS).length;
+    return Array.isArray(payload.SOCIAL_ORIGIN_LIST) ? payload.SOCIAL_ORIGIN_LIST.length : 0;
+  }
+  if (sectionName === 'geographicOrigins') {
+    if (payload.GEOGRAPHIC_ORIGINS && typeof payload.GEOGRAPHIC_ORIGINS === 'object') return Object.keys(payload.GEOGRAPHIC_ORIGINS).length;
+    return Array.isArray(payload.GEOGRAPHIC_ORIGIN_LIST) ? payload.GEOGRAPHIC_ORIGIN_LIST.length : 0;
   }
   if (sectionName === 'regionMaps') {
     if (payload.REGION_MAPS && typeof payload.REGION_MAPS === 'object') return Object.keys(payload.REGION_MAPS).length;
@@ -1005,6 +1013,12 @@ function isWorldSectionUsable(name, payload) {
       (payload.CAMPAIGNS && typeof payload.CAMPAIGNS === 'object') ||
       Array.isArray(payload.CAMPAIGN_LIST)
     );
+  }
+  if (name === 'socialOrigins') {
+    return Boolean((payload.SOCIAL_ORIGINS && typeof payload.SOCIAL_ORIGINS === 'object') || Array.isArray(payload.SOCIAL_ORIGIN_LIST));
+  }
+  if (name === 'geographicOrigins') {
+    return Boolean((payload.GEOGRAPHIC_ORIGINS && typeof payload.GEOGRAPHIC_ORIGINS === 'object') || Array.isArray(payload.GEOGRAPHIC_ORIGIN_LIST));
   }
   if (name === 'regionMaps') {
     return Boolean(
@@ -2061,7 +2075,7 @@ async function downloadUpdateSafe() {
 }
 let mainWindow = null;
 let playerDisplayWindow = null;
-let playerDisplayMirrorState = { mode: '', activeSceneId: '', activeRegionMapId: '', cameraByScene: {}, regionCamera: null, regionDisplay: null, regionRuntime: null, selectedRegionTokenId: '', updatedAt: null };
+let playerDisplayMirrorState = { mode: '', eraTheme: 'technological', activeSceneId: '', activeRegionMapId: '', cameraByScene: {}, regionCamera: null, regionDisplay: null, regionRuntime: null, selectedRegionTokenId: '', updatedAt: null };
 let updaterConfigured = false;
 let updaterLatestStatus = { status: 'idle', packaged: false, available: Boolean(autoUpdater), message: '' };
 
@@ -2656,7 +2670,27 @@ ipcMain.handle('devops:publishPatch', async (event, payload) => {
 ipcMain.handle('devops:deployWeb', async (event, payload) => {
   try {
     const rootDir = validateDevOpsRequest(event, payload);
-    return await getDevOpsModule().deployWeb(rootDir);
+    const syncConfig = await loadSyncConfig();
+    if (String(syncConfig?.provider || 'pocketbase') !== 'pocketbase') {
+      throw new Error('Web-клиент требует PocketBase-конфигурацию');
+    }
+    if (!syncConfig?.url || !syncConfig?.campaignId || !syncConfig?.pocketbaseEmail || !syncConfig?.pocketbasePassword) {
+      throw new Error('Перед Web-деплоем сохраните PocketBase URL, Campaign ID, APP_USER_EMAIL и APP_USER_PASSWORD в настройках синхронизации Electron');
+    }
+    return await getDevOpsModule().deployWeb(rootDir, {
+      runtimeConfig: {
+        url: syncConfig.url,
+        campaignId: syncConfig.campaignId,
+        appUsersCollection: syncConfig.pocketbaseUsersCollection,
+        appUserEmail: syncConfig.pocketbaseEmail,
+        appUserPassword: syncConfig.pocketbasePassword,
+        tableName: syncConfig.tableName,
+        playerTableName: syncConfig.playerTableName,
+        chatTableName: syncConfig.chatTableName,
+        combatRuntimeTableName: syncConfig.combatRuntimeTableName,
+        assetsCollection: syncConfig.pocketbaseAssetsCollection
+      }
+    });
   } catch (error) {
     debugLog('DEVOPS_WEB_DEPLOY_FAILED', { message: error?.message, command: error?.command, stderr: error?.stderr });
     return serializeDevOpsError(error);
@@ -3053,6 +3087,7 @@ ipcMain.handle('display:player:view:update', async (_event, payload) => {
     const hasRegionCamera = Object.prototype.hasOwnProperty.call(next, 'regionCamera');
     playerDisplayMirrorState = {
       mode: hasMode ? String(next.mode || '').trim() : (playerDisplayMirrorState.mode || ''),
+      eraTheme: ['medieval','industrial','technological'].includes(String(next.eraTheme || '').trim()) ? String(next.eraTheme).trim() : (playerDisplayMirrorState.eraTheme || 'technological'),
       activeSceneId: String(next.activeSceneId || playerDisplayMirrorState.activeSceneId || '').trim(),
       activeRegionMapId: hasRegionMap ? String(next.activeRegionMapId || '').trim() : (playerDisplayMirrorState.activeRegionMapId || ''),
       cameraByScene: next.cameraByScene && typeof next.cameraByScene === 'object' ? next.cameraByScene : (playerDisplayMirrorState.cameraByScene || {}),

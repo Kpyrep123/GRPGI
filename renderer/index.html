@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="ru" data-era-theme="technological">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -7,6 +7,7 @@
   <title>Galactic RPG Interface</title>
   <link rel="stylesheet" href="./styles.css" />
   <link rel="stylesheet" href="./region-command-center.css" />
+  <link rel="stylesheet" href="./campaign-studio.css" />
 </head>
 <body>
   <div id="app">
@@ -58,10 +59,12 @@
             <select id="char-select" class="select"></select>
             <input id="pass-input" class="input" type="password" placeholder="Код доступа" />
             <button id="login-btn" class="primary">ВОЙТИ</button>
+            <button id="register-character-btn-v1052" class="secondary" type="button">РЕГИСТРАЦИЯ ПЕРСОНАЖА</button>
             <button id="reset-btn" class="ghost">СБРОСИТЬ СОХРАНЕНИЯ</button>
             <button id="login-sync-btn" class="secondary" type="button">НАСТРОЙКИ СИНХР.</button>
             <div id="login-error" class="error-line"></div>
           </div>
+          <div id="registration-panel-v1052" class="registration-panel-v1052" hidden></div>
         </div>
       </div>
     </div>
@@ -87,6 +90,9 @@
       </div>
       <div id="gm-dock-btn" class="dock-item" style="display:none" data-label="WORLD CONFIG">
         <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M12 2l3 7 7 3-7 3-3 7-3-7-7-3 7-3 3-7z"></path></svg>
+      </div>
+      <div id="campaign-studio-dock-btn" class="dock-item" style="display:none" data-label="CAMPAIGN STUDIO">
+        <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.7" viewBox="0 0 24 24"><circle cx="5" cy="6" r="2.2"></circle><circle cx="18.5" cy="5" r="2.2"></circle><circle cx="12" cy="18" r="2.2"></circle><path d="M7 6.3l9.3-1M6.2 7.8l4.7 8.3M17.6 7l-4.4 9"></path></svg>
       </div>
     </div>
 
@@ -185,19 +191,21 @@
       <div id="config-content"></div>
     </div>
 
-
-    <div id="mod-tool" class="fs-module">
-      <div class="fs-header">
+    <div id="mod-campaign-studio" class="fs-module campaign-studio-module-v1056">
+      <div class="fs-header campaign-studio-header-v1056">
         <div>
-          <div class="mono accent">FIELD_UTILITY_NODE</div>
-          <div class="subtle">Инструменты предметов, которые запускаются прямо из инвентаря.</div>
+          <div class="mono accent">CAMPAIGN_STUDIO</div>
+          <div class="subtle">Паутина знаний и дерево сюжета выбранной кампании.</div>
         </div>
-        <button class="secondary module-close">CLOSE_X</button>
+        <div class="row campaign-studio-head-actions-v1056">
+          <select id="campaign-studio-campaign-v1056" class="select campaign-studio-campaign-select-v1056" aria-label="Игровая кампания"></select>
+          <button id="campaign-studio-save-v1056" class="secondary" type="button">SAVE</button>
+          <button class="secondary module-close">CLOSE_X</button>
+        </div>
       </div>
-      <div id="tool-content"></div>
+      <div id="campaign-studio-content-v1056" class="campaign-studio-content-v1056"></div>
     </div>
-
-    <div id="mod-sync" class="fs-module">
+<div id="mod-sync" class="fs-module">
       <div class="fs-header">
         <div>
           <div class="mono accent">POCKETBASE_СИНХР.</div>
@@ -213,5 +221,6 @@
 
   <script src="./app.js"></script>
   <script src="./region-command-center.js"></script>
+  <script src="./campaign-studio.js"></script>
 </body>
 </html>

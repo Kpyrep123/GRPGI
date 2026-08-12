@@ -6,18 +6,18 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; upgrade-insecure-requests" />
   <meta name="referrer" content="same-origin" />
   <title>GRPGI · клиент кампании</title>
-  <link rel="stylesheet" href="./styles.css?v=1.0.40" />
+  <link rel="stylesheet" href="./styles.css?v=1.0.51" />
 </head>
 <body>
   <main class="shell">
     <section class="hero">
       <div class="eyebrow">Galactic RPG Interface</div>
       <h1>Клиент кампании</h1>
-      <p>Здесь размещаются три варианта доступа: полная ПК-версия Electron-приложения, браузерная web-версия с внешним видом ПК-клиента и Android-версия для телефонов.</p>
+      <p>Доступны два варианта: полная ПК-версия Electron-приложения для ДМа и браузерная web-версия, которая автоматически адаптируется под настольные компьютеры и телефоны.</p>
       <div class="status">Сервер синхронизации: <code>https://sync.grpg-sync.ru</code></div>
     </section>
 
-    <section class="grid three">
+    <section class="grid">
       <article class="card">
         <div class="tag">Windows / ПК</div>
         <h2>Полное приложение</h2>
@@ -29,17 +29,9 @@
       <article class="card featured">
         <div class="tag">Web / ПК и телефон</div>
         <h2>Открыть в браузере</h2>
-        <p>Player-only web-клиент с визуальным стилем ПК-приложения. Игровой мир в браузере не кешируется. По явному выбору пользователя web-клиент может запомнить токен входа, параметры подключения без пароля и выбранный профиль на срок до 30 дней.</p>
+        <p>Web-клиент для игроков и ДМа с полноценной интерактивной галактической картой на широких экранах. На телефонах этот же сайт автоматически переключается на облегчённую адаптацию без отдельного приложения. Игровой мир в браузере не кешируется постоянно; по явному выбору можно запомнить защищённую сессию и выбранный профиль на срок до 30 дней.</p>
         <a class="button" href="./app/">Открыть web-версию</a>
-        <p class="note">Нет режима ДМа, World Config и тяжёлых боевых сцен. Для управления миром используй ПК-приложение.</p>
-      </article>
-
-      <article class="card">
-        <div class="tag">Android / телефон</div>
-        <h2>Мобильная версия</h2>
-        <p>Игровой клиент без режима ДМа. Вместо галактической карты используется лёгкая навигация по системам и планетам.</p>
-        <a class="button" href="./downloads/GRPGI-Mobile-latest.apk">Скачать APK</a>
-        <p class="note">После сборки APK переименуй его в <code>GRPGI-Mobile-latest.apk</code> и положи в <code>downloads</code>.</p>
+        <p class="note">При входе профилем ДМа доступны все статьи и игровой контент независимо от ограничений видимости. Редактирование World Config и тяжёлые мастерские инструменты остаются в ПК-приложении.</p>
       </article>
     </section>
 
@@ -56,7 +48,7 @@
         <dt>Server URL</dt><dd><code>https://sync.grpg-sync.ru</code></dd>
         <dt>Campaign ID</dt><dd><code>main</code></dd>
       </dl>
-      <p class="note">Логин и пароль <code>app_users</code> не публикуются на этой странице. Их нужно выдавать игрокам отдельно.</p>
+      <p class="note">Техническое подключение PocketBase выполняется автоматически при Web-деплое. Игроку нужен только пароль своего персонажа.</p>
     </section>
       <footer class="site-footer"><a href="./privacy.html">Политика обработки персональных данных</a></footer>
   </main>

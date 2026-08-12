@@ -75,23 +75,23 @@ const SOUND_CONFIG = {
 };
 
 const SYSTEM_MARKER_STYLES = [
-  { id: 'orbital', label: 'Орбитальная метка' },
+  { id: 'orbital', label: 'Звёздная система' },
   { id: 'node', label: 'Узел' },
   { id: 'blackhole', label: 'Чёрная дыра' },
   { id: 'ship', label: 'Корабль' },
-  { id: 'diamond', label: 'Ромб' },
-  { id: 'square', label: 'Квадрат' },
-  { id: 'credits', label: 'Мешок денег' }
+  { id: 'diamond', label: 'Опасность' },
+  { id: 'square', label: 'Прочее' },
+  { id: 'credits', label: 'Торговля' }
 ];
 
 const GALAXY_MARKER_LEGEND = [
   { id: 'ship', label: 'Корабль', glyph: '▲' },
   { id: 'node', label: 'Узел', glyph: '⊕' },
   { id: 'blackhole', label: 'Чёрная дыра', glyph: '◉' },
-  { id: 'diamond', label: 'Ромб — запретная зона', glyph: '◆' },
-  { id: 'square', label: 'Квадрат — другое', glyph: '■' },
-  { id: 'credits', label: 'Мешок денег — крупный рынок', glyph: '¤' },
-  { id: 'orbital', label: 'Орбитальная метка — звёздная система', glyph: '◎' }
+  { id: 'diamond', label: 'Опасность / запретная зона', glyph: '◆' },
+  { id: 'square', label: 'Прочее', glyph: '■' },
+  { id: 'credits', label: 'Торговля / крупный рынок', glyph: '¤' },
+  { id: 'orbital', label: 'Звёздная система', glyph: '◎' }
 ];
 
 const AudioManager = {
@@ -716,480 +716,24 @@ function consumeInventoryItem(userId, itemId, qty = 1) {
   return true;
 }
 
-function itemMechanicType(item) {
-  return String(item?.mechanicType || item?.mechanic?.type || '').trim();
-}
-
-function itemRuntimeMechanic(item) {
-  const base = itemMechanicType(item);
-  if (base === 'decryptor') {
-    const mode = String(item?.decryptorMode || item?.mechanicMode || 'decryptor').trim();
-    return ['decryptor', 'codebreaker', 'doorhack'].includes(mode) ? mode : 'decryptor';
-  }
-  return ['codebreaker', 'doorhack'].includes(base) ? base : base;
-}
-
-function itemHasUsableMechanic(item) {
-  return ['decryptor', 'codebreaker', 'doorhack'].includes(itemRuntimeMechanic(item));
-}
-
+function itemMechanicType() { return ''; }
+function itemRuntimeMechanic() { return ''; }
+function itemHasUsableMechanic() { return false; }
 function entityExtraDataset(type, entity, opts = {}) {
   const attrs = [];
   if (opts.action) attrs.push(`data-action="${esc(opts.action)}"`);
-  if (type === 'item' && opts.preferUse && itemHasUsableMechanic(entity)) attrs.push('data-action="use-item"');
   return attrs.join(' ');
 }
 
-function shiftAlphaChar(char, shift) {
-  const code = char.charCodeAt(0);
-  const isUpper = code >= 65 && code <= 90;
-  const isLower = code >= 97 && code <= 122;
-  const isUpperRu = code >= 1040 && code <= 1071;
-  const isLowerRu = code >= 1072 && code <= 1103;
-  if (isUpper || isLower) {
-    const start = isUpper ? 65 : 97;
-    return String.fromCharCode(start + ((((code - start) + shift) % 26) + 26) % 26);
-  }
-  if (isUpperRu || isLowerRu) {
-    const start = isUpperRu ? 1040 : 1072;
-    return String.fromCharCode(start + ((((code - start) + shift) % 32) + 32) % 32);
-  }
-  return char;
-}
-
-function caesarTransform(text, key, direction = 1) {
-  const shift = Number(key || 0) * direction;
-  return String(text || '').split('').map(ch => shiftAlphaChar(ch, shift)).join('');
-}
-
-function atbashTransform(text) {
-  return String(text || '').split('').map(ch => {
-    const code = ch.charCodeAt(0);
-    if (code >= 65 && code <= 90) return String.fromCharCode(90 - (code - 65));
-    if (code >= 97 && code <= 122) return String.fromCharCode(122 - (code - 97));
-    if (code >= 1040 && code <= 1071) return String.fromCharCode(1071 - (code - 1040));
-    if (code >= 1072 && code <= 1103) return String.fromCharCode(1103 - (code - 1072));
-    return ch;
-  }).join('');
-}
-
-function vigenereTransform(text, key, decode = false) {
-  const cleanKey = String(key || '').replace(/[^A-Za-zА-Яа-яЁё]/g, '');
-  if (!cleanKey) return String(text || '');
-  let keyIndex = 0;
-  return String(text || '').split('').map(ch => {
-    const k = cleanKey[keyIndex % cleanKey.length];
-    const shiftBase = /[A-Za-z]/.test(k) ? ((k.toLowerCase().charCodeAt(0) - 97) % 26) : ((k.toLowerCase().charCodeAt(0) - 1072) % 32);
-    const next = shiftAlphaChar(ch, decode ? -shiftBase : shiftBase);
-    if (next !== ch) keyIndex += 1;
-    return next;
-  }).join('');
-}
-
-function xorBase64Transform(text, key) {
-  const src = String(text || '');
-  const keyStr = String(key || '');
-  if (!keyStr) return src;
-  try {
-    const decoded = atob(src);
-    const out = decoded.split('').map((ch, index) => String.fromCharCode(ch.charCodeAt(0) ^ keyStr.charCodeAt(index % keyStr.length))).join('');
-    return out;
-  } catch {
-    const out = src.split('').map((ch, index) => String.fromCharCode(ch.charCodeAt(0) ^ keyStr.charCodeAt(index % keyStr.length))).join('');
-    return btoa(out);
-  }
-}
-
-function runDecryptor(text, key, cipher, mode) {
-  const selected = String(cipher || 'caesar');
-  if (selected === 'caesar') return caesarTransform(text, key, mode === 'decode' ? -1 : 1);
-  if (selected === 'vigenere') return vigenereTransform(text, key, mode === 'decode');
-  if (selected === 'atbash') return atbashTransform(text);
-  if (selected === 'xor') return xorBase64Transform(text, key);
-  return String(text || '');
-}
-
-
-function randomFrom(list) {
-  return list[Math.floor(Math.random() * list.length)];
-}
-
-function createHackRaceChallenge(item) {
-  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  const length = clamp(Number(item?.mechanicCodeLength || 5), 3, 8);
-  let code = '';
-  for (let i = 0; i < length; i += 1) code += alphabet[Math.floor(Math.random() * alphabet.length)];
-  return {
-    kind: 'codebreaker',
-    startedAt: Date.now(),
-    timeLimitMs: clamp(Number(item?.mechanicTimeLimit || 18), 5, 120) * 1000,
-    targetCode: code,
-    attempt: '',
-    resolved: false,
-    success: false,
-    consumed: false,
-    resultText: ''
-  };
-}
-
-function createDoorHackChallenge(item) {
-  const symbols = ['◴', '◷', '◶', '◵', '◆', '◈'];
-  const slots = clamp(Number(item?.mechanicSlots || 3), 3, 5);
-  const target = Array.from({ length: slots }, () => Math.floor(Math.random() * symbols.length));
-  const current = Array.from({ length: slots }, (_, index) => (target[index] + 1 + Math.floor(Math.random() * (symbols.length - 1))) % symbols.length);
-  return {
-    kind: 'doorhack',
-    startedAt: Date.now(),
-    timeLimitMs: clamp(Number(item?.mechanicTimeLimit || 22), 5, 120) * 1000,
-    symbols,
-    target,
-    current,
-    resolved: false,
-    success: false,
-    consumed: false,
-    resultText: ''
-  };
-}
-
+// v1.0.52: active inventory mini-games (decryptor / quick hack / door hack) were retired.
+// Keep a tiny compatibility object so old saved UI state cannot crash during migration.
 const Tooling = {
   activeItemId: null,
-  tickTimer: null,
-  getDraft(itemId = this.activeItemId) {
-    if (!App.state.toolState || typeof App.state.toolState !== 'object') App.state.toolState = {};
-    const item = Data.getItem(itemId);
-    const mechanic = itemRuntimeMechanic(item);
-    if (!App.state.toolState[itemId]) {
-      App.state.toolState[itemId] = { kind: mechanic || 'decryptor', text: '', key: '', cipher: item?.decryptorDefaultCipher || 'caesar', mode: 'decode', output: '' };
-    }
-    const draft = App.state.toolState[itemId];
-    if (mechanic === 'decryptor') {
-      if (!draft.kind) draft.kind = 'decryptor';
-      if (!draft.cipher) draft.cipher = item?.decryptorDefaultCipher || 'caesar';
-      if (!('text' in draft)) draft.text = '';
-      if (!('key' in draft)) draft.key = '';
-      if (!('output' in draft)) draft.output = '';
-      if (!('mode' in draft)) draft.mode = 'decode';
-    }
-    return draft;
-  },
-  getRemainingMs(draft) {
-    const timeLimit = Number(draft?.timeLimitMs || 0);
-    const startedAt = Number(draft?.startedAt || 0);
-    if (!timeLimit || !startedAt || draft?.resolved) return timeLimit || 0;
-    return Math.max(0, timeLimit - (Date.now() - startedAt));
-  },
-  formatRemaining(ms) {
-    const whole = Math.max(0, Math.ceil(ms / 1000));
-    return `${whole}s`;
-  },
-  ensureMiniGameDraft(item) {
-    const draft = this.getDraft(item.id);
-    if (itemRuntimeMechanic(item) === 'codebreaker') {
-      if (draft.kind !== 'codebreaker' || !draft.targetCode) App.state.toolState[item.id] = createHackRaceChallenge(item);
-      return App.state.toolState[item.id];
-    }
-    if (itemRuntimeMechanic(item) === 'doorhack') {
-      if (draft.kind !== 'doorhack' || !Array.isArray(draft.target)) App.state.toolState[item.id] = createDoorHackChallenge(item);
-      return App.state.toolState[item.id];
-    }
-    return draft;
-  },
+  render() {},
   openForItem(itemId) {
-    const item = Data.getItem(itemId);
-    if (!item) return;
-    if (!itemHasUsableMechanic(item)) {
-      Wiki.showEntity('item', itemId, true);
-      return;
-    }
-    this.activeItemId = itemId;
-    const draft = this.getDraft(itemId);
-    if (itemRuntimeMechanic(item) === 'decryptor' && !draft.cipher) draft.cipher = item.decryptorDefaultCipher || 'caesar';
-    if (['codebreaker', 'doorhack'].includes(itemRuntimeMechanic(item))) this.ensureMiniGameDraft(item);
-    this.render();
-    UI.openModule('tool');
+    if (itemId) Wiki.showEntity('item', itemId, true);
   },
-  updateOutput() {
-    const item = Data.getItem(this.activeItemId);
-    const draft = this.getDraft(this.activeItemId);
-    draft.output = runDecryptor(draft.text, draft.key, draft.cipher || item?.decryptorDefaultCipher || 'caesar', draft.mode || 'decode');
-    return draft.output;
-  },
-  stopTicker() {
-    if (this.tickTimer) {
-      clearInterval(this.tickTimer);
-      this.tickTimer = null;
-    }
-  },
-  startTicker() {
-    this.stopTicker();
-    const item = Data.getItem(this.activeItemId);
-    if (!item || !['codebreaker', 'doorhack'].includes(itemRuntimeMechanic(item))) return;
-    const draft = this.getDraft(this.activeItemId);
-    if (!draft?.startedAt || draft?.resolved) return;
-    this.tickTimer = setInterval(() => {
-      const next = this.getDraft(this.activeItemId);
-      if (!next || next.resolved) {
-        this.stopTicker();
-        return;
-      }
-      const remaining = this.getRemainingMs(next);
-      const counter = document.querySelector('[data-tool-timer]');
-      if (counter) counter.textContent = this.formatRemaining(remaining);
-      if (remaining <= 0) {
-        this.resolveChallenge(false, 'Время истекло. Инструмент сгорел при попытке.');
-      }
-    }, 250);
-  },
-  async resolveChallenge(success, resultText) {
-    const item = Data.getItem(this.activeItemId);
-    const draft = this.getDraft(this.activeItemId);
-    if (!item || !draft || draft.resolved) return;
-    draft.resolved = true;
-    draft.success = Boolean(success);
-    draft.resultText = String(resultText || '');
-    this.stopTicker();
-    const consumed = consumeInventoryItem(App.currentUserId, item.id, 1);
-    draft.consumed = consumed;
-    appendGmReport({
-      playerId: App.currentUserId,
-      itemId: item.id,
-      category: draft.kind || itemRuntimeMechanic(item),
-      title: success ? 'Успешная мини-игра' : 'Провал мини-игры',
-      text: `${getPlayerDisplayName(App.currentUserId)} использовал предмет «${item.name}». ${resultText}`,
-      success,
-      details: draft.kind === 'codebreaker' ? `Код: ${draft.targetCode || 'n/a'}` : `Слоты: ${(draft.target || []).join(',')}`
-    });
-    AudioManager.play(success ? 'success' : 'fail', { volume: success ? 0.95 : 0.9 });
-    await App.saveState(success ? `Инструмент применён: ${item.name}` : `Попытка завершена: ${item.name}`);
-    this.render();
-  },
-  renderDecryptor(item, draft) {
-    this.updateOutput();
-    return `
-      <div class="tool-layout">
-        <div class="card pad18">
-          <div class="analysis-hero compact-tool-hero">
-            ${renderThumb(item, { size: 'lg', type: 'item', glyph: initials(item.name, '▣') })}
-            <div>
-              <div class="section-title">${esc(item.mechanicTitle || 'Дешифратор')}</div>
-              <h2 class="mono accent">${esc(item.name)}</h2>
-              <div class="small-note">${esc(item.mechanicHint || item.desc || 'Используй модуль для расшифровки или кодирования текстов.')}</div>
-            </div>
-          </div>
-          <form id="tool-form" class="form">
-            <div class="cols3">
-              <div class="field"><label>Режим</label><select class="select" name="mode"><option value="decode" ${draft.mode === 'decode' ? 'selected' : ''}>Декодировать</option><option value="encode" ${draft.mode === 'encode' ? 'selected' : ''}>Кодировать</option></select></div>
-              <div class="field"><label>Тип шифра</label><select class="select" name="cipher"><option value="caesar" ${draft.cipher === 'caesar' ? 'selected' : ''}>Caesar</option><option value="vigenere" ${draft.cipher === 'vigenere' ? 'selected' : ''}>Vigenere</option><option value="atbash" ${draft.cipher === 'atbash' ? 'selected' : ''}>Atbash</option><option value="xor" ${draft.cipher === 'xor' ? 'selected' : ''}>XOR/Base64</option></select></div>
-              <div class="field"><label>Ключ</label><input class="input" name="key" value="${esc(draft.key || '')}" placeholder="3 / ORION / ..." /></div>
-            </div>
-            <div class="field"><label>Входной текст</label><textarea class="area tool-textarea" name="text">${esc(draft.text || '')}</textarea></div>
-            <div class="row"><button class="primary" type="submit">ПРИМЕНИТЬ</button><button class="secondary" type="button" id="tool-copy-output">КОПИРОВАТЬ РЕЗУЛЬТАТ</button><button class="ghost" type="button" id="tool-clear">ОЧИСТИТЬ</button></div>
-          </form>
-        </div>
-        <div class="card pad18">
-          <div class="section-title">Результат</div>
-          <pre class="tool-output">${esc(draft.output || 'Здесь появится результат дешифрации')}</pre>
-          <div class="small-note" style="margin-top:12px">Механики предметов настраиваются в WORLD_CONFIG у карточки предмета.</div>
-        </div>
-      </div>
-    `;
-  },
-  renderCodebreaker(item, draft) {
-    const remaining = this.formatRemaining(this.getRemainingMs(draft));
-    return `
-      <div class="tool-layout two-col-tight">
-        <div class="card pad18">
-          <div class="analysis-hero compact-tool-hero">
-            ${renderThumb(item, { size: 'lg', type: 'item', glyph: initials(item.name, '▣') })}
-            <div>
-              <div class="section-title">${esc(item.mechanicTitle || 'Набор взломщика')}</div>
-              <h2 class="mono accent">${esc(item.name)}</h2>
-              <div class="small-note">${esc(item.mechanicHint || 'Нужно быстро перепечатать код до окончания таймера. После попытки предмет сгорает и результат отправляется ведущему.')}</div>
-            </div>
-          </div>
-          <div class="mini-badge-row">
-            <div class="chip">ТАЙМЕР: <span data-tool-timer>${esc(remaining)}</span></div>
-            <div class="chip">КОД: ${esc(draft.targetCode || '----')}</div>
-          </div>
-          <form id="tool-codebreaker-form" class="form">
-            <div class="field"><label>Введите код без ошибок</label><input class="input codebreaker-input" name="attempt" value="${esc(draft.attempt || '')}" placeholder="${esc(draft.targetCode || '----')}" ${draft.resolved ? 'disabled' : ''} /></div>
-            <div class="row"><button class="primary" type="submit" ${draft.resolved ? 'disabled' : ''}>ПОДТВЕРДИТЬ ВЗЛОМ</button><button class="secondary" type="button" id="tool-reset-run">НОВЫЙ КОД</button></div>
-          </form>
-        </div>
-        <div class="card pad18">
-          <div class="section-title">Статус попытки</div>
-          <pre class="tool-output">${esc(draft.resultText || (draft.resolved ? 'Попытка завершена.' : 'Ожидание ввода кода...'))}</pre>
-          <div class="small-note" style="margin-top:12px">Успех или провал будут сохранены в мастерском журнале сообщений.</div>
-        </div>
-      </div>
-    `;
-  },
-  renderDoorhack(item, draft) {
-    const remaining = this.formatRemaining(this.getRemainingMs(draft));
-    return `
-      <div class="tool-layout two-col-tight">
-        <div class="card pad18">
-          <div class="analysis-hero compact-tool-hero">
-            ${renderThumb(item, { size: 'lg', type: 'item', glyph: initials(item.name, '▣') })}
-            <div>
-              <div class="section-title">${esc(item.mechanicTitle || 'Взлом дверей')}</div>
-              <h2 class="mono accent">${esc(item.name)}</h2>
-              <div class="small-note">${esc(item.mechanicHint || 'Собери правильную комбинацию символов, как в быстрых дверных взломах. После попытки предмет расходуется и ведущий получает отчёт.')}</div>
-            </div>
-          </div>
-          <div class="mini-badge-row"><div class="chip">ТАЙМЕР: <span data-tool-timer>${esc(remaining)}</span></div></div>
-          <div class="doorhack-grid">
-            ${(draft.current || []).map((value, index) => `
-              <div class="doorhack-slot">
-                <div class="small-note">Цель: ${(draft.symbols || [])[draft.target[index]] || '•'}</div>
-                <button class="secondary" type="button" data-door-step="-1" data-slot="${index}" ${draft.resolved ? 'disabled' : ''}>◀</button>
-                <div class="doorhack-symbol">${(draft.symbols || [])[value] || '•'}</div>
-                <button class="secondary" type="button" data-door-step="1" data-slot="${index}" ${draft.resolved ? 'disabled' : ''}>▶</button>
-              </div>
-            `).join('')}
-          </div>
-          <div class="row"><button class="primary" type="button" id="tool-door-confirm" ${draft.resolved ? 'disabled' : ''}>ПОДАТЬ ИМПУЛЬС</button><button class="secondary" type="button" id="tool-reset-run">СБРОСИТЬ СХЕМУ</button></div>
-        </div>
-        <div class="card pad18">
-          <div class="section-title">Статус попытки</div>
-          <pre class="tool-output">${esc(draft.resultText || (draft.resolved ? 'Попытка завершена.' : 'Синхронизируй символы с целевой схемой.'))}</pre>
-        </div>
-      </div>
-    `;
-  },
-  renderBootstrap() {
-    const root = $('#login-sync-bootstrap');
-    if (!root) return;
-    const config = this.config || { enabled: false, url: '', campaignId: '', deviceLabel: '', tableName: 'campaign_snapshots', pollIntervalMs: 45000 };
-    root.innerHTML = `
-      <div class="boot-sync-card">
-        <div class="section-title">Подключение к кампании</div>
-        
-        <form id="bootstrap-sync-form" class="form">
-          <input type="hidden" name="provider" value="pocketbase" />
-          <div class="field"><label>POCKETBASE_URL</label><input class="input" name="url" value="${esc(config.url || 'https://sync.grpg-sync.ru')}" placeholder="https://sync.grpg-sync.ru" /></div>
-          <div class="cols2">
-            <div class="field"><label>APP_USER_EMAIL</label><input class="input" name="pocketbaseEmail" value="${esc(config.pocketbaseEmail || '')}" placeholder="dm@grpg-sync.local" /></div>
-            <div class="field"><label>APP_USER_PASSWORD</label><input class="input" type="password" name="pocketbasePassword" value="${esc(config.pocketbasePassword || '')}" /></div>
-          </div>
-          <div class="cols2">
-            <div class="field"><label>CAMPAIGN_ID</label><input class="input" name="campaignId" value="${esc(config.campaignId || '')}" placeholder="campaign-alpha" /></div>
-            <div class="field"><label>DEVICE_LABEL</label><input class="input" name="deviceLabel" value="${esc(config.deviceLabel || '')}" placeholder="player-laptop / gm-main-pc" /></div>
-          </div>
-          <div class="cols2">
-            <div class="field"><label>PB_ASSETS</label><input class="input" name="pocketbaseAssetsCollection" value="${esc(config.pocketbaseAssetsCollection || 'campaign_assets')}" placeholder="campaign_assets" /></div>
-            <div class="field"><label>TABLE_NAME</label><input class="input" name="tableName" value="${esc(config.tableName || 'campaign_snapshots')}" /></div>
-          </div>
-          <input type="hidden" name="enabled" value="1" />
-          <input type="hidden" name="pollIntervalMs" value="${Number(config.pollIntervalMs || 45000)}" />
-          <div class="boot-sync-actions">
-            <button type="submit" class="primary">СОХРАНИТЬ И ПОДКЛЮЧИТЬ</button>
-            <button type="button" id="bootstrap-open-advanced" class="secondary">РАСШИРЕННЫЕ НАСТРОЙКИ</button>
-          </div>
-          <div class="boot-status">После сохранения данные кампании будут проверены автоматически.</div>
-        </form>
-      </div>
-    `;
-    $('#bootstrap-sync-form')?.addEventListener('submit', async event => {
-      event.preventDefault();
-      const res = await this.saveConfigFromForm(event.currentTarget, { forceEnable: true, silentToast: true });
-      if (!res?.ok) return;
-      await this.ping();
-      await this.checkForRemoteUpdates('bootstrap-save', { applyIfNewer: true, force: true, silent: true });
-      await PlayerSync.pullUpdates('bootstrap-save', { forceFull: true, silent: true, rerender: false });
-      App.state = await Persistence.load();
-      mirrorPlayersIntoWorld(App.state);
-      App.fillLoginSelect();
-      App.updateBootView();
-      $('#login-error').textContent = '';
-      Toast.show('Синхронизация подключена. Теперь можно войти.', 'ok');
-    });
-    $('#bootstrap-open-advanced')?.addEventListener('click', () => UI.openModule('sync', { overLogin: true }));
-  },
-
-  render() {
-    const root = document.querySelector('#tool-content');
-    if (!root) return;
-    const item = Data.getItem(this.activeItemId);
-    if (!item) {
-      this.stopTicker();
-      root.innerHTML = '<div class="card pad18 small-note">Выбери предмет с активной механикой из инвентаря.</div>';
-      return;
-    }
-    const mechanic = itemRuntimeMechanic(item);
-    const draft = mechanic === 'decryptor' ? this.getDraft(this.activeItemId) : this.ensureMiniGameDraft(item);
-    if (mechanic === 'decryptor') root.innerHTML = this.renderDecryptor(item, draft);
-    else if (mechanic === 'codebreaker') root.innerHTML = this.renderCodebreaker(item, draft);
-    else if (mechanic === 'doorhack') root.innerHTML = this.renderDoorhack(item, draft);
-    else root.innerHTML = '<div class="card pad18 small-note">У этого предмета пока нет активной мини-игры.</div>';
-
-    if (mechanic === 'decryptor') {
-      root.querySelector('#tool-form')?.addEventListener('submit', async event => {
-        event.preventDefault();
-        const fd = new FormData(event.currentTarget);
-        draft.mode = String(fd.get('mode') || 'decode');
-        draft.cipher = String(fd.get('cipher') || item.decryptorDefaultCipher || 'caesar');
-        draft.key = String(fd.get('key') || '');
-        draft.text = String(fd.get('text') || '');
-        this.updateOutput();
-        this.render();
-        await Persistence.save(App.state);
-      });
-      root.querySelector('#tool-copy-output')?.addEventListener('click', async () => {
-        try { await navigator.clipboard.writeText(draft.output || ''); Toast.show('Результат скопирован', 'ok'); } catch { Toast.show('Не удалось скопировать результат', 'err'); }
-      });
-      root.querySelector('#tool-clear')?.addEventListener('click', async () => {
-        App.state.toolState[this.activeItemId] = { kind: 'decryptor', text: '', key: '', cipher: item.decryptorDefaultCipher || 'caesar', mode: 'decode', output: '' };
-        this.render();
-        await Persistence.save(App.state);
-      });
-      this.stopTicker();
-      return;
-    }
-
-    this.startTicker();
-    root.querySelector('#tool-reset-run')?.addEventListener('click', async () => {
-      App.state.toolState[this.activeItemId] = mechanic === 'codebreaker' ? createHackRaceChallenge(item) : createDoorHackChallenge(item);
-      this.render();
-      await Persistence.save(App.state);
-    });
-
-    if (mechanic === 'codebreaker') {
-      root.querySelector('#tool-codebreaker-form')?.addEventListener('submit', async event => {
-        event.preventDefault();
-        const fd = new FormData(event.currentTarget);
-        draft.attempt = String(fd.get('attempt') || '').trim().toUpperCase();
-        if (draft.resolved) return;
-        if (this.getRemainingMs(draft) <= 0) {
-          await this.resolveChallenge(false, 'Время истекло раньше подтверждения.');
-          return;
-        }
-        if (draft.attempt === String(draft.targetCode || '').toUpperCase()) {
-          await this.resolveChallenge(true, `Код ${draft.targetCode} введён без ошибок.`);
-        } else {
-          await this.resolveChallenge(false, `Вместо кода ${draft.targetCode} был введён ${draft.attempt || 'пустой ввод'}.`);
-        }
-      });
-      return;
-    }
-
-    root.querySelectorAll('[data-door-step]').forEach(button => {
-      button.addEventListener('click', () => {
-        if (draft.resolved) return;
-        const slot = Number(button.dataset.slot || 0);
-        const step = Number(button.dataset.doorStep || 1);
-        const length = (draft.symbols || []).length || 1;
-        draft.current[slot] = ((((draft.current[slot] || 0) + step) % length) + length) % length;
-        this.render();
-      });
-    });
-    root.querySelector('#tool-door-confirm')?.addEventListener('click', async () => {
-      if (draft.resolved) return;
-      const ok = Array.isArray(draft.current) && Array.isArray(draft.target) && draft.current.every((value, index) => value === draft.target[index]);
-      if (ok) await this.resolveChallenge(true, 'Схема замка синхронизирована. Дверь открыта.');
-      else await this.resolveChallenge(false, 'Схема не совпала с целевой последовательностью.');
-    });
-  }
+  stopTicker() {}
 };
 
 const ChatUI = {
@@ -1334,7 +878,6 @@ const Persistence = {
     this.clearSession();
   }
 };
-
 
 const Sync = {
   config: null,
@@ -2435,18 +1978,215 @@ function getSystemLabel(system) {
   return String(system?.markerLabel || system?.name || system?.id || '').trim();
 }
 
+function getEraGalaxyPaletteV1050() {
+  const root = document.documentElement;
+  const era = String(root?.dataset?.eraTheme || 'technological').toLowerCase();
+  const styles = getComputedStyle(root);
+  const css = (name, fallback) => String(styles.getPropertyValue(name) || '').trim() || fallback;
+  if (era === 'medieval') return {
+    era,
+    marker: css('--map-marker', '#c88a52'),
+    route: css('--map-route', '#9b673c'),
+    text: css('--map-text', '#f0d9ad'),
+    panel: 'rgba(48,29,15,0.94)',
+    orbit: 'rgba(205,150,88,0.19)'
+  };
+  if (era === 'industrial') return {
+    era,
+    marker: css('--map-marker', '#d49a3f'),
+    route: css('--map-route', '#a96f2f'),
+    text: css('--map-text', '#ead8b4'),
+    panel: 'rgba(15,16,16,0.95)',
+    orbit: 'rgba(212,154,63,0.17)'
+  };
+  return {
+    era: 'technological',
+    marker: css('--map-marker', '#60c9ff'),
+    route: css('--map-route', '#328dff'),
+    text: css('--map-text', '#e8f8ff'),
+    panel: 'rgba(4,13,25,0.92)',
+    orbit: 'rgba(96,201,255,0.16)'
+  };
+}
+
+const ERA_MARKER_ASSET_FOLDERS_V1055 = Object.freeze({
+  industrial: 'nowadays',
+  medieval: 'bronzera',
+  technological: 'scifi'
+});
+
+const ERA_MARKER_ASSET_FILES_V1055 = Object.freeze({
+  blackhole: 'blackhole.png',
+  diamond: 'danger.png',
+  square: 'misc.png',
+  credits: 'trade.png',
+  node: 'node.png',
+  orbital: 'star.png',
+  planet: 'planet.png',
+  ship: 'ship.png'
+});
+
+const ERA_MARKER_SPRITE_SCALE_V1055 = Object.freeze({
+  blackhole: 5.1,
+  diamond: 3.55,
+  square: 3.55,
+  credits: 3.75,
+  node: 3.85,
+  orbital: 4.0,
+  planet: 3.15,
+  ship: 3.65
+});
+
+const ERA_MARKER_IMAGE_CACHE_V1055 = new Map();
+const ERA_MARKER_TINT_CACHE_V1055 = new Map();
+
+function eraMarkerAssetFolderV1055(palette = getEraGalaxyPaletteV1050()) {
+  const era = String(palette?.era || document.documentElement?.dataset?.eraTheme || 'technological').toLowerCase();
+  return ERA_MARKER_ASSET_FOLDERS_V1055[era] || ERA_MARKER_ASSET_FOLDERS_V1055.technological;
+}
+
+function eraMarkerAssetUrlV1055(kind, palette = getEraGalaxyPaletteV1050()) {
+  const file = ERA_MARKER_ASSET_FILES_V1055[String(kind || '').toLowerCase()];
+  if (!file) return '';
+  return `./assets/images/${eraMarkerAssetFolderV1055(palette)}/${file}`;
+}
+
+function markerSpriteEntryV1055(kind, palette = getEraGalaxyPaletteV1050()) {
+  const url = eraMarkerAssetUrlV1055(kind, palette);
+  if (!url || typeof Image === 'undefined') return null;
+  let entry = ERA_MARKER_IMAGE_CACHE_V1055.get(url);
+  if (entry) return entry;
+  const image = new Image();
+  entry = { url, image, status: 'loading' };
+  image.decoding = 'async';
+  image.onload = () => {
+    entry.status = image.naturalWidth && image.naturalHeight ? 'ready' : 'error';
+    ERA_MARKER_TINT_CACHE_V1055.clear();
+  };
+  image.onerror = () => { entry.status = 'error'; };
+  image.src = url;
+  ERA_MARKER_IMAGE_CACHE_V1055.set(url, entry);
+  return entry;
+}
+
+function tintedMarkerSpriteV1055(entry, markerColor = '#7df9ff') {
+  if (!entry || entry.status !== 'ready' || !entry.image?.naturalWidth || !entry.image?.naturalHeight) return null;
+  const color = String(markerColor || '#7df9ff').trim() || '#7df9ff';
+  const key = `${entry.url}|${color.toLowerCase()}`;
+  const cached = ERA_MARKER_TINT_CACHE_V1055.get(key);
+  if (cached) return cached;
+
+  const side = 192;
+  const canvas = document.createElement('canvas');
+  canvas.width = side;
+  canvas.height = side;
+  const tctx = canvas.getContext('2d');
+  if (!tctx) return null;
+  const pad = 10;
+  const scale = Math.min((side - pad * 2) / entry.image.naturalWidth, (side - pad * 2) / entry.image.naturalHeight);
+  const w = entry.image.naturalWidth * scale;
+  const h = entry.image.naturalHeight * scale;
+  const x = (side - w) / 2;
+  const y = (side - h) / 2;
+  tctx.imageSmoothingEnabled = true;
+  tctx.imageSmoothingQuality = 'high';
+  tctx.drawImage(entry.image, x, y, w, h);
+
+  // Preserve the authored sprite and only bias its palette toward the marker color.
+  // source-atop limits the tint to non-transparent pixels and keeps most original luminance/detail.
+  tctx.save();
+  tctx.globalCompositeOperation = 'source-atop';
+  tctx.globalAlpha = 0.27;
+  tctx.fillStyle = color;
+  tctx.fillRect(0, 0, side, side);
+  tctx.restore();
+
+  ERA_MARKER_TINT_CACHE_V1055.set(key, canvas);
+  return canvas;
+}
+
+function drawEraMarkerSpriteV1055(ctx, kind, x, y, size, markerColor, palette, options = {}) {
+  const entry = markerSpriteEntryV1055(kind, palette);
+  const sprite = tintedMarkerSpriteV1055(entry, markerColor);
+  if (!sprite) return false;
+  const dpr = Number(options.dpr || 1);
+  const active = Boolean(options.active);
+  const scale = ERA_MARKER_SPRITE_SCALE_V1055[kind] || 3.6;
+  const visual = Math.max(12 * dpr, Number(size || 8) * scale);
+  const color = String(markerColor || palette?.marker || '#7df9ff').trim() || '#7df9ff';
+
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.globalAlpha = active ? 1 : 0.96;
+  ctx.shadowColor = color;
+  ctx.shadowBlur = (active ? 14 : 8) * dpr;
+  ctx.drawImage(sprite, -visual / 2, -visual / 2, visual, visual);
+  ctx.shadowBlur = 0;
+  if (active) {
+    ctx.globalAlpha = 0.62;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = Math.max(1, 1.25 * dpr);
+    ctx.setLineDash([4 * dpr, 4 * dpr]);
+    ctx.beginPath();
+    ctx.arc(0, 0, visual * 0.56, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  ctx.restore();
+  return true;
+}
+
+function drawEraMarkerFrameV1050(ctx, size, palette, glow = 1) {
+  ctx.save();
+  ctx.lineWidth = Math.max(1, ctx.lineWidth * 0.72);
+  if (palette.era === 'industrial') {
+    ctx.globalAlpha = 0.65 * glow;
+    const r = size * 1.72;
+    const tick = size * 0.48;
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.moveTo(-r, -r + tick); ctx.lineTo(-r, -r); ctx.lineTo(-r + tick, -r);
+    ctx.moveTo(r - tick, -r); ctx.lineTo(r, -r); ctx.lineTo(r, -r + tick);
+    ctx.moveTo(r, r - tick); ctx.lineTo(r, r); ctx.lineTo(r - tick, r);
+    ctx.moveTo(-r + tick, r); ctx.lineTo(-r, r); ctx.lineTo(-r, r - tick);
+    ctx.stroke();
+  } else if (palette.era === 'medieval') {
+    ctx.globalAlpha = 0.42 * glow;
+    ctx.rotate(Math.PI / 4);
+    ctx.strokeRect(-size * 1.55, -size * 1.55, size * 3.1, size * 3.1);
+    ctx.rotate(-Math.PI / 4);
+    ctx.beginPath();
+    ctx.arc(0, 0, size * 1.86, 0, Math.PI * 2);
+    ctx.stroke();
+  } else {
+    ctx.globalAlpha = 0.28 * glow;
+    ctx.beginPath();
+    ctx.arc(0, 0, size * 1.92, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = 0.15 * glow;
+    ctx.beginPath();
+    ctx.arc(0, 0, size * 2.35, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
 function drawSystemMarker(ctx, point, size, system, options = {}) {
   const active = !!options.active;
   const style = SYSTEM_MARKER_STYLES.some(option => option.id === system?.markerStyle) ? system.markerStyle : 'orbital';
-  const ringColor = active ? '255,245,255' : hexToRgbString(system?.color || '#7df9ff', '118,232,255');
+  const palette = options.palette || getEraGalaxyPaletteV1050();
+  const markerColor = String(system?.color || palette.marker || '#7df9ff').trim() || '#7df9ff';
+  const ringColor = hexToRgbString(markerColor, '125,249,255');
   const glow = options.glow || 1;
   const line = (options.lineWidth || 1.6) * (options.dpr || 1);
+
+  if (drawEraMarkerSpriteV1055(ctx, style, point.sx, point.sy, size, markerColor, palette, { active, dpr: options.dpr || 1 })) return;
 
   ctx.save();
   ctx.translate(point.sx, point.sy);
   ctx.lineWidth = line;
   ctx.strokeStyle = `rgba(${ringColor},0.95)`;
-  ctx.fillStyle = 'rgba(4,10,18,0.92)';
+  ctx.fillStyle = palette.panel;
 
   if (style === 'orbital') {
     ctx.beginPath();
@@ -2586,6 +2326,7 @@ function drawSystemMarker(ctx, point, size, system, options = {}) {
     ctx.fillText('₹', 0, size * 0.26);
   }
 
+  drawEraMarkerFrameV1050(ctx, size, palette, glow);
   ctx.restore();
 }
 
@@ -3633,7 +3374,7 @@ const UI = {
             <div class="equip-click-wrap">${weapon ? renderEntityButton('item', weapon, { compact: false, thumbSize: 'md', subtitle: weapon.desc || '' }) : '<div class="equip"><div class="icon">⚔</div><div>—</div></div>'}</div>
             <div class="equip-click-wrap">${armor ? renderEntityButton('item', armor, { compact: false, thumbSize: 'md', subtitle: armor.desc || '' }) : '<div class="equip"><div class="icon">⛨</div><div>—</div></div>'}</div>
             <div class="section-title" style="margin-top:18px">Инвентарь</div>
-            <div class="small-note" style="margin-bottom:8px">Нажми на активный предмет, чтобы открыть его механику. Обычные предметы откроют статью в архиве.</div>
+            <div class="small-note" style="margin-bottom:8px">Предметы открывают карточку с описанием и связанными материалами.</div>
             <div class="tags entity-button-row">${this.inventoryMarkup(user.inventory)}</div>
             <div class="section-title" style="margin-top:18px">Импланты</div>
             <div class="list-grid">${user.implants.map(implant => `<div class="data-row"><span>${esc(implant.name)}</span><span class="data-value">${esc(implant.status)}</span></div>`).join('') || '<div class="small-note">Нет имплантов</div>'}</div>
@@ -5293,12 +5034,18 @@ function renderGalaxyLegendOverlay() {
     node.style.display = 'none';
     return;
   }
-  const markerMarkup = GALAXY_MARKER_LEGEND.map(entry => `
-    <div class="legend-chip legend-chip-marker">
-      <span class="legend-marker legend-marker-${esc(entry.id)}">${esc(entry.glyph)}</span>
-      <span>${esc(entry.label)}</span>
-    </div>
-  `).join('');
+  const legendPalette = getEraGalaxyPaletteV1050();
+  const markerMarkup = GALAXY_MARKER_LEGEND.map(entry => {
+    const spriteUrl = eraMarkerAssetUrlV1055(entry.id, legendPalette);
+    return `
+      <div class="legend-chip legend-chip-marker">
+        <span class="legend-marker legend-marker-${esc(entry.id)}">
+          ${spriteUrl ? `<img class="legend-marker-sprite" src="${esc(spriteUrl)}" alt="" data-marker-sprite="1" />` : ''}
+          <span class="legend-marker-fallback">${esc(entry.glyph)}</span>
+        </span>
+        <span>${esc(entry.label)}</span>
+      </div>`;
+  }).join('');
   const colorMarkup = entries.length
     ? `<div class="legend-group-title">ЦВЕТОВЫЕ ОБОЗНАЧЕНИЯ</div>${entries.map(entry => `<div class="legend-chip"><span class="legend-swatch" style="background:${esc(entry.color || '#7df9ff')}"></span><span>${esc(entry.label)}</span></div>`).join('')}`
     : '';
@@ -5309,6 +5056,17 @@ function renderGalaxyLegendOverlay() {
     ${markerMarkup}
     ${colorMarkup}
   `;
+  node.querySelectorAll('img[data-marker-sprite]').forEach(img => {
+    const fallback = img.parentElement?.querySelector('.legend-marker-fallback');
+    const sync = () => {
+      const ok = Boolean(img.complete && img.naturalWidth && img.naturalHeight);
+      img.classList.toggle('loaded', ok);
+      if (fallback) fallback.style.display = ok ? 'none' : '';
+    };
+    img.addEventListener('load', sync, { once: true });
+    img.addEventListener('error', sync, { once: true });
+    sync();
+  });
 }
 
 function renderGalaxyFocusButtonMarkup({ systemId = '', planetId = '', label = 'Перейти к системе', subtle = '' } = {}) {
@@ -5924,7 +5682,7 @@ const GalaxyMap = {
     if (this.state.viewMode === 'galaxy') {
       for (const system of getVisibleSystems()) {
         const point = this.worldToScreen(system.pos.x, system.pos.y);
-        if (Math.hypot(point.sx - px, point.sy - py) < 26 * this.DPR) return this.enterSystem(system.id);
+        if (Math.hypot(point.sx - px, point.sy - py) < 26 * 1.4 * this.DPR) return this.enterSystem(system.id);
       }
       return;
     }
@@ -5956,6 +5714,7 @@ const GalaxyMap = {
     const currentLocation = getPlayerCurrentLocation(App.currentUser);
     const currentSystemId = currentLocation.system?.id || null;
     const currentPlanetId = currentLocation.planet?.id || null;
+    const eraPalette = getEraGalaxyPaletteV1050();
 
     if (state.viewMode === 'galaxy') {
       const routes = getVisibleSystemRoutes(App.currentUser);
@@ -5964,7 +5723,7 @@ const GalaxyMap = {
         const to = this.worldToScreen(route.to.pos.x, route.to.pos.y);
         const midX = (from.sx + to.sx) / 2;
         const midY = (from.sy + to.sy) / 2;
-        const rgb = hexToRgbString(route.color || '#7df9ff', '125,249,255');
+        const rgb = hexToRgbString(eraPalette.route, '50,141,255');
         const glow = ctx.createLinearGradient(from.sx, from.sy, to.sx, to.sy);
         glow.addColorStop(0, `rgba(${rgb},0.04)`);
         glow.addColorStop(0.5, `rgba(${rgb},0.22)`);
@@ -6002,9 +5761,9 @@ const GalaxyMap = {
       const active = system.id === state.activeSystemId;
       const isCurrentSystem = currentSystemId === system.id;
       if (state.viewMode === 'galaxy' || active) {
-        const systemColor = system.color || '#7df9ff';
-        const ringColor = active ? '255,245,255' : hexToRgbString(systemColor, '118,232,255');
-        const size = (active ? 13 : 8) * this.DPR;
+        const systemColor = String(system.color || eraPalette.marker || '#7df9ff').trim() || '#7df9ff';
+        const ringColor = active ? '245,252,255' : hexToRgbString(systemColor, '96,201,255');
+        const size = (active ? 13 : 8) * 1.4 * this.DPR;
         const halo = ctx.createRadialGradient(point.sx, point.sy, 0, point.sx, point.sy, size * 4.2);
         halo.addColorStop(0, active ? 'rgba(255,255,255,0.8)' : `rgba(${ringColor},0.42)`);
         halo.addColorStop(0.2, active ? 'rgba(255,255,255,0.28)' : `rgba(${ringColor},0.12)`);
@@ -6014,14 +5773,14 @@ const GalaxyMap = {
         ctx.arc(point.sx, point.sy, size * 4.2, 0, Math.PI * 2);
         ctx.fill();
 
-        drawSystemMarker(ctx, point, size, system, { active, dpr: this.DPR, glow: 1 });
+        drawSystemMarker(ctx, point, size, system, { active, dpr: this.DPR, glow: 1, palette: eraPalette });
 
         if (isCurrentSystem && state.viewMode === 'galaxy') {
           const pulse = 1 + 0.08 * Math.sin(now() * 0.004);
           ctx.save();
           ctx.setLineDash([7 * this.DPR, 7 * this.DPR]);
           ctx.lineWidth = 1.6 * this.DPR;
-          ctx.strokeStyle = `rgba(${hexToRgbString(system.color || '#7df9ff', '118,232,255')},0.85)`;
+          ctx.strokeStyle = `rgba(${hexToRgbString(systemColor, '125,249,255')},0.85)`;
           ctx.beginPath();
           ctx.arc(point.sx, point.sy, size * 3.5 * pulse, 0, Math.PI * 2);
           ctx.stroke();
@@ -6030,13 +5789,13 @@ const GalaxyMap = {
           ctx.font = `bold ${10 * this.DPR}px Consolas`;
           ctx.lineWidth = 4 * this.DPR;
           ctx.strokeStyle = 'rgba(3,8,16,0.9)';
-          ctx.strokeText('YOU ARE HERE', point.sx + 14 * this.DPR, point.sy + 16 * this.DPR);
-          ctx.fillStyle = 'rgba(230,248,255,0.96)';
-          ctx.fillText('YOU ARE HERE', point.sx + 14 * this.DPR, point.sy + 16 * this.DPR);
+          ctx.strokeText('YOU ARE HERE', point.sx + size + 6 * this.DPR, point.sy + 16 * this.DPR);
+          ctx.fillStyle = eraPalette.text;
+          ctx.fillText('YOU ARE HERE', point.sx + size + 6 * this.DPR, point.sy + 16 * this.DPR);
           if (currentLocation.planet) {
             ctx.font = `${9 * this.DPR}px Consolas`;
-            ctx.strokeText(currentLocation.planet.name, point.sx + 14 * this.DPR, point.sy + 29 * this.DPR);
-            ctx.fillText(currentLocation.planet.name, point.sx + 14 * this.DPR, point.sy + 29 * this.DPR);
+            ctx.strokeText(currentLocation.planet.name, point.sx + size + 6 * this.DPR, point.sy + 29 * this.DPR);
+            ctx.fillText(currentLocation.planet.name, point.sx + size + 6 * this.DPR, point.sy + 29 * this.DPR);
           }
         }
 
@@ -6048,9 +5807,9 @@ const GalaxyMap = {
           ctx.lineWidth = 4 * this.DPR;
           ctx.strokeStyle = 'rgba(4,10,18,0.86)';
           const labelText = getSystemLabel(system);
-          ctx.strokeText(labelText, point.sx + 14 * this.DPR, point.sy - 6 * this.DPR);
+          ctx.strokeText(labelText, point.sx + size + 6 * this.DPR, point.sy - 6 * this.DPR);
           ctx.fillStyle = `rgba(${ringColor},0.96)`;
-          ctx.fillText(labelText, point.sx + 14 * this.DPR, point.sy - 6 * this.DPR);
+          ctx.fillText(labelText, point.sx + size + 6 * this.DPR, point.sy - 6 * this.DPR);
           ctx.restore();
         }
       }
@@ -6061,27 +5820,31 @@ const GalaxyMap = {
           const ang = t * planet.speed * 50;
           const x = point.sx + Math.cos(ang) * dist;
           const y = point.sy + Math.sin(ang) * dist;
-          ctx.strokeStyle = 'rgba(125,249,255,0.08)';
+          ctx.strokeStyle = eraPalette.orbit;
           ctx.beginPath();
           ctx.arc(point.sx, point.sy, dist, 0, Math.PI * 2);
           ctx.stroke();
 
-          const glow = ctx.createRadialGradient(x, y, 0, x, y, planet.size * 3.2 * this.DPR);
-          glow.addColorStop(0, planet.color || '#7df9ff');
-          glow.addColorStop(1, 'transparent');
-          ctx.fillStyle = glow;
-          ctx.beginPath();
-          ctx.arc(x, y, planet.size * 3.2 * this.DPR, 0, Math.PI * 2);
-          ctx.fill();
+          const planetColor = planet.color || '#7df9ff';
+          const spriteDrawn = drawEraMarkerSpriteV1055(ctx, 'planet', x, y, planet.size * this.DPR, planetColor, eraPalette, { dpr: this.DPR, active: UI.selectedPlanetId === planet.id });
+          if (!spriteDrawn) {
+            const glow = ctx.createRadialGradient(x, y, 0, x, y, planet.size * 3.2 * this.DPR);
+            glow.addColorStop(0, planetColor);
+            glow.addColorStop(1, 'transparent');
+            ctx.fillStyle = glow;
+            ctx.beginPath();
+            ctx.arc(x, y, planet.size * 3.2 * this.DPR, 0, Math.PI * 2);
+            ctx.fill();
 
-          ctx.fillStyle = planet.color || '#7df9ff';
-          ctx.beginPath();
-          ctx.arc(x, y, planet.size * this.DPR, 0, Math.PI * 2);
-          ctx.fill();
+            ctx.fillStyle = planetColor;
+            ctx.beginPath();
+            ctx.arc(x, y, planet.size * this.DPR, 0, Math.PI * 2);
+            ctx.fill();
+          }
 
           if (UI.selectedPlanetId === planet.id) {
             ctx.setLineDash([6 * this.DPR, 6 * this.DPR]);
-            ctx.strokeStyle = 'rgba(125,249,255,0.26)';
+            ctx.strokeStyle = `rgba(${hexToRgbString(eraPalette.marker, '96,201,255')},0.28)`;
             ctx.beginPath();
             ctx.moveTo(x, y);
             ctx.lineTo(W - 20 * this.DPR, y);
@@ -6115,7 +5878,18 @@ const GalaxyMap = {
 };
 
 
-window.addEventListener('load', () => App.init());
+window.addEventListener('load', () => {
+  App.init().catch(error => {
+    console.error('APP_INIT_FAILED', error);
+    const message = `Ошибка запуска: ${error?.message || String(error)}`;
+    const errorNode = document.getElementById('login-error');
+    if (errorNode) errorNode.textContent = message;
+    const login = document.getElementById('login-screen');
+    if (login) login.classList.remove('hidden');
+    const boot = document.getElementById('boot-screen');
+    if (boot) boot.classList.add('hidden');
+  });
+});
 // === v0.3.8 extension patch: rich text, news, tasks, ambient controls ===
 let NEWS = {};
 let NEWS_LIST = [];
@@ -6736,7 +6510,15 @@ function statBarMarkupV2(label, current, max, accentLabel = '') {
   const safeMax = Math.max(0, Number(max || 0));
   const safeCurrent = clamp(Number(current || 0), 0, safeMax || Number(current || 0) || 0);
   const pct = safeMax > 0 ? clamp((safeCurrent / safeMax) * 100, 0, 100) : 0;
-  return `<div><div class="data-row"><span class="data-label">${esc(label)}</span><span class="data-value">${safeCurrent} / ${safeMax}${accentLabel ? ` ${esc(accentLabel)}` : ''}</span></div><div class="bar"><div class="fill" style="width:${pct}%"></div></div></div>`;
+  const normalizedLabel = String(label || '').toLowerCase();
+  const resourceClass = normalizedLabel.includes('здоров') || normalizedLabel === 'hp'
+    ? 'resource-health'
+    : normalizedLabel.includes('щит') || normalizedLabel.includes('shield')
+      ? 'resource-shield'
+      : normalizedLabel.includes('энерг') || normalizedLabel.includes('energy')
+        ? 'resource-energy'
+        : 'resource-generic';
+  return `<div class="stat-resource ${resourceClass}"><div class="data-row"><span class="data-label">${esc(label)}</span><span class="data-value">${safeCurrent} / ${safeMax}${accentLabel ? ` ${esc(accentLabel)}` : ''}</span></div><div class="bar"><div class="fill" style="width:${pct}%"></div></div></div>`;
 }
 function itemExtraSummaryV2(item = {}) {
   const norm = normalizeEquipmentItemV2(item);
@@ -6962,7 +6744,7 @@ UI.renderProfile = function() {
             <div><div class="small-note" style="margin-bottom:6px">Броня${armor?.armorClass ? ` · КБ ${esc(String(armor.armorClass))}` : ''}</div>${armor ? renderEntityButton('item', armor, { compact: false, thumbSize: 'md', subtitle: itemExtraSummaryV2(armor) }) : '<div class="equip"><div class="icon">⛨</div><div>—</div></div>'}</div>
           </div>
           <div class="section-title" style="margin-top:18px">Инвентарь</div>
-          <div class="small-note" style="margin-bottom:8px">Нажми на активный предмет, чтобы открыть его механику. Обычные предметы откроют статью в архиве.</div>
+          <div class="small-note" style="margin-bottom:8px">Предметы открывают карточку с описанием и связанными материалами.</div>
           <div class="tags entity-button-row">${this.inventoryMarkup(user.inventory)}</div>
           <div class="section-title" style="margin-top:18px">Импланты</div>
           <div class="result-stack">${(user.implants || []).map(implant => `<div class="card pad18 profile-implant-card"><div class="data-row"><span class="data-label">${esc(implant.name)}</span><span class="data-value">${Number(implant.energyCost || 0)} EN</span></div><div class="small-note" style="margin-top:8px">${esc(implant.desc || 'Без описания')}</div></div>`).join('') || '<div class="small-note">Нет имплантов</div>'}</div>
@@ -13824,7 +13606,7 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
     const py = clientY * this.DPR;
     for (const system of getVisibleSystems()) {
       const point = this.worldToScreen(system.pos.x, system.pos.y);
-      if (Math.hypot(point.sx - px, point.sy - py) < 36 * this.DPR) {
+      if (Math.hypot(point.sx - px, point.sy - py) < 36 * 1.4 * this.DPR) {
         Toast.show('Слишком близко к существующей системе. Выбери другую точку.', 'info');
         return false;
       }
@@ -21200,7 +20982,7 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
   async function deployWebV64() {
     const confirmed = window.confirm(
       'Задеплоить содержимое deploy/site на root@161.104.35.195:/var/www/grpg-app?\n\n' +
-      'Каталог downloads будет сохранён. При ошибке HTTP-проверки сервер автоматически вернёт предыдущую web-версию.'
+      'Каталог downloads будет сохранён. Откат выполняется только при ошибке загрузки или повреждённых файлах; HTTP-проверка после публикации носит диагностический характер.'
     );
     if (!confirmed) return;
     setDevOpsBusyV64(true, 'Загрузка web-версии на сервер…');
@@ -21211,11 +20993,17 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
         Toast.show('Web-деплой завершился ошибкой', 'err');
         return;
       }
+      const healthLines = (result.healthChecks || []).map(item => {
+        const code = Number(item.status || 0);
+        const label = item.ok ? 'OK' : 'WARN';
+        return `${label} ${item.url} ${code ? `HTTP ${code}` : (item.statusText || 'нет ответа')}`;
+      });
+      const hasWarnings = Boolean((result.healthWarnings || []).length);
       setDevOpsOutputV64(
-        `Web задеплоен успешно.\nИсточник: ${result.source}\nСервер: ${result.endpoint}\nКаталог: ${result.target}\nПроверки:\n${(result.healthUrls || []).join('\n')}`,
-        'ok'
+        `Web задеплоен успешно.\nИсточник: ${result.source}\nСервер: ${result.endpoint}\nКаталог: ${result.target}\nПроверка файлов: OK\nHTTP-диагностика (не вызывает rollback):\n${healthLines.join('\n') || 'не настроена'}`,
+        hasWarnings ? '' : 'ok'
       );
-      Toast.show('Web-версия опубликована', 'ok');
+      Toast.show(hasWarnings ? 'Web опубликован; HTTP-проверка дала предупреждение' : 'Web-версия опубликована', hasWarnings ? 'info' : 'ok');
     } finally {
       setDevOpsBusyV64(false);
     }
@@ -21271,4 +21059,1014 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
   document.addEventListener('DOMContentLoaded', () => {
     setTimeout(() => refreshDevOpsStatusV64().catch(() => {}), 0);
   });
+})();
+
+
+/* v1.0.49 campaign eras, availability and themed interface */
+(function(){
+  if (window.__campaignErasThemesV1049) return;
+  window.__campaignErasThemesV1049 = true;
+
+  const ERA_DEFS_V1049 = [
+    { id: 'medieval', name: 'Средневековье', short: 'СРЕДНЕВЕКОВЬЕ' },
+    { id: 'industrial', name: 'Индустриальная', short: 'ИНДУСТРИАЛЬНАЯ' },
+    { id: 'technological', name: 'Технологичная', short: 'ТЕХНОЛОГИЧНАЯ' }
+  ];
+  const ERA_IDS_V1049 = new Set(ERA_DEFS_V1049.map(item => item.id));
+
+  function uniqueStringsV1049(value) {
+    return Array.from(new Set((Array.isArray(value) ? value : []).map(entry => String(entry?.id || entry?.campaignId || entry || '').trim()).filter(Boolean)));
+  }
+  function normalizeEraV1049(value) {
+    const raw = String(value || '').trim().toLowerCase();
+    if (ERA_IDS_V1049.has(raw)) return raw;
+    if (/сред|mediev|feudal|ancient/.test(raw)) return 'medieval';
+    if (/индустр|industrial|steam|diesel|analog/.test(raw)) return 'industrial';
+    return 'technological';
+  }
+  function eraDefV1049(value) {
+    const id = normalizeEraV1049(value);
+    return ERA_DEFS_V1049.find(item => item.id === id) || ERA_DEFS_V1049[2];
+  }
+  function enhanceCampaignV1049(campaign = {}, raw = null) {
+    const source = raw && typeof raw === 'object' ? raw : campaign;
+    campaign.era = normalizeEraV1049(source.era || source.epoch || source.theme || campaign.era);
+    if (Object.prototype.hasOwnProperty.call(source, 'availableNow')) campaign.availableNow = source.availableNow !== false;
+    else if (Object.prototype.hasOwnProperty.call(source, 'available')) campaign.availableNow = source.available !== false;
+    else {
+      const status = String(source.status || campaign.status || '').trim().toLowerCase();
+      campaign.availableNow = !['unavailable','disabled','inactive','closed','archived','недоступна','недоступно'].includes(status);
+    }
+    return campaign;
+  }
+  function allCampaignsV1049() {
+    const campaigns = Object.values(Data?.campaigns || {}).map(item => enhanceCampaignV1049(item));
+    return sortEntitiesForList(campaigns);
+  }
+  function playableCampaignsV1049() {
+    return allCampaignsV1049().filter(campaign => String(campaign.status || '').toLowerCase() !== 'guest');
+  }
+  function availableCampaignsV1049() {
+    return playableCampaignsV1049().filter(campaign => campaign.availableNow !== false);
+  }
+  function campaignByIdV1049(id) {
+    const campaign = Data?.getCampaign?.(id) || Data?.campaigns?.[id] || null;
+    return campaign ? enhanceCampaignV1049(campaign) : null;
+  }
+  function playerCampaignIdsV1049(player = {}) {
+    const ids = uniqueStringsV1049(player.campaignIds || player.campaigns || []);
+    if (player.campaignId) ids.push(String(player.campaignId).trim());
+    return Array.from(new Set(ids.filter(Boolean).length ? ids.filter(Boolean) : ['main']));
+  }
+  function selectedCampaignIdV1049() {
+    const select = document.getElementById('login-campaign-select-v60');
+    const stored = String(select?.value || localStorage.getItem('grpg-login-campaign-v1049') || localStorage.getItem('grpg-login-campaign-v60') || '').trim();
+    if (stored && campaignByIdV1049(stored)?.availableNow !== false && String(campaignByIdV1049(stored)?.status || '').toLowerCase() !== 'guest') return stored;
+    return availableCampaignsV1049()[0]?.id || '';
+  }
+  function activeCampaignV1049(user = App?.currentUser) {
+    const selected = String(App.activeCampaignId || selectedCampaignIdV1049() || '').trim();
+    if (selected) return campaignByIdV1049(selected);
+    const first = playerCampaignIdsV1049(user || {}).map(campaignByIdV1049).find(Boolean);
+    return first || availableCampaignsV1049()[0] || null;
+  }
+  function applyEraThemeV1049(campaignOrEra = null) {
+    const campaign = typeof campaignOrEra === 'object' && campaignOrEra ? enhanceCampaignV1049(campaignOrEra) : null;
+    const era = normalizeEraV1049(campaign?.era || campaignOrEra || 'technological');
+    const def = eraDefV1049(era);
+    document.documentElement.dataset.eraTheme = era;
+    try { if (document.getElementById('galaxy-legend-overlay')) renderGalaxyLegendOverlay(); } catch {}
+    document.body?.setAttribute('data-era-theme', era);
+    if (campaign?.id) document.documentElement.dataset.campaignTheme = campaign.id;
+    else delete document.documentElement.dataset.campaignTheme;
+    const badge = document.getElementById('era-theme-badge-v1049') || (() => {
+      const node = document.createElement('div');
+      node.id = 'era-theme-badge-v1049';
+      node.className = 'era-theme-badge-v1049';
+      document.body?.appendChild(node);
+      return node;
+    })();
+    if (badge) {
+      badge.textContent = `ЭПОХА: ${def.short}`;
+      badge.title = campaign?.name ? `Кампания: ${campaign.name}` : `Тема: ${def.name}`;
+    }
+    try { window.electronAPI?.updatePlayerDisplayView?.({ eraTheme: era, updatedAt: new Date().toISOString() }); } catch {}
+    return era;
+  }
+  window.GRPGCampaignTheme = { apply: applyEraThemeV1049, eras: ERA_DEFS_V1049, campaign: () => activeCampaignV1049() };
+
+  function visibilityV1049(entity = {}) {
+    const vis = entity.visibility && typeof entity.visibility === 'object' ? entity.visibility : {};
+    return {
+      playerIds: uniqueStringsV1049(vis.playerIds || []),
+      campaignIds: uniqueStringsV1049(vis.campaignIds || vis.campaigns || []),
+      eraIds: uniqueStringsV1049(vis.eraIds || vis.epochs || vis.eras || []).map(normalizeEraV1049)
+    };
+  }
+  function mergeVisibilityFromRawV1049(target, raw) {
+    if (!target || !raw || typeof raw !== 'object') return target;
+    const rawVis = visibilityV1049(raw);
+    const current = visibilityV1049(target);
+    target.visibility = {
+      ...(target.visibility || {}),
+      playerIds: current.playerIds,
+      campaignIds: rawVis.campaignIds.length ? rawVis.campaignIds : current.campaignIds,
+      eraIds: rawVis.eraIds.length ? rawVis.eraIds : current.eraIds
+    };
+    return target;
+  }
+  function eraSelectorMarkupV1049(selectedIds = []) {
+    const selected = uniqueStringsV1049(selectedIds).map(normalizeEraV1049);
+    return `<div class="era-access-grid-v1049">${ERA_DEFS_V1049.map(era => `<label class="era-access-option-v1049"><input type="checkbox" name="visibilityEraIds" value="${era.id}" ${selected.includes(era.id) ? 'checked' : ''}/><span class="era-access-icon-v1049">${era.id === 'medieval' ? '✦' : era.id === 'industrial' ? '⚙' : '⌘'}</span><span><b>${esc(era.name)}</b><small>${era.id}</small></span></label>`).join('')}</div>`;
+  }
+  function campaignAccessMarkupV1049(selectedIds = []) {
+    const rows = playableCampaignsV1049();
+    return renderCheckboxSelector('visibilityCampaignIds', rows, uniqueStringsV1049(selectedIds), 'campaign', 'Игровых кампаний пока нет');
+  }
+
+  const __applyWorldDataV1049 = applyWorldData;
+  applyWorldData = function(payload = {}) {
+    const rawCampaigns = payload?.campaigns?.CAMPAIGNS && typeof payload.campaigns.CAMPAIGNS === 'object' ? payload.campaigns.CAMPAIGNS : {};
+    const result = __applyWorldDataV1049(payload);
+    Object.entries(Data?.campaigns || {}).forEach(([id, campaign]) => enhanceCampaignV1049(campaign, rawCampaigns[id] || campaign));
+
+    // Several older normalizers intentionally copied only playerIds. Restore the new
+    // access dimensions from the raw payload after all legacy normalizers have run.
+    const restoreMap = (dataKey, sectionName, mapKey) => {
+      const store = Data?.[dataKey];
+      const raw = payload?.[sectionName]?.[mapKey];
+      if (!store || !raw || typeof raw !== 'object') return;
+      Object.entries(raw).forEach(([id, item]) => {
+        const target = store instanceof Map ? store.get(id) : store[id];
+        if (target) mergeVisibilityFromRawV1049(target, item);
+      });
+    };
+    restoreMap('organizations', 'organizations', 'ORGANIZATIONS');
+    restoreMap('factions', 'factions', 'FACTIONS');
+    restoreMap('skills', 'skills', 'SKILLS');
+
+    const selected = selectedCampaignIdV1049();
+    if (selected) applyEraThemeV1049(campaignByIdV1049(selected));
+    else applyEraThemeV1049('technological');
+    return result;
+  };
+
+  const __createBlankEntityV1049 = createBlankEntity;
+  createBlankEntity = function(type) {
+    const entity = __createBlankEntityV1049(type);
+    if (type === 'campaigns') return enhanceCampaignV1049({ ...entity, availableNow: true, era: 'technological' });
+    if (entity?.visibility && typeof entity.visibility === 'object') entity.visibility = { ...entity.visibility, campaignIds: [], eraIds: [] };
+    return entity;
+  };
+
+  const __renderVisibilityFieldV1049 = Configurator.renderVisibilityField.bind(Configurator);
+  Configurator.renderVisibilityField = function(entity) {
+    const vis = visibilityV1049(entity);
+    return `<div class="access-scope-v1049">
+      <div class="section-title">Доступность элемента</div>
+      <div class="access-scope-tabs-v1049"><span>ПЕРСОНАЖ</span><span>КАМПАНИЯ</span><span>ЭПОХА</span></div>
+      <div class="field"><label>Конкретные персонажи</label>${renderCheckboxSelector('visibilityPlayerIds', (() => { const rows = sortEntitiesForList(Object.values(App.state?.users || PLAYER_TEMPLATES || {})).filter(player => String(player.role || '').toLowerCase() !== 'gm'); if (!rows.some(player => player.id === '__guest__')) rows.push({ id:'__guest__', role:'guest', displayName:'Гость', shortName:'Guest', avatarGlyph:'GS' }); return rows; })(), vis.playerIds, 'player', 'Нет игроков')}</div>
+      <div class="field"><label>Игровые кампании</label>${campaignAccessMarkupV1049(vis.campaignIds)}<div class="small-note">Выбранный элемент будет доступен всем персонажам, относящимся хотя бы к одной отмеченной кампании.</div></div>
+      <div class="field"><label>Эпохи</label>${eraSelectorMarkupV1049(vis.eraIds)}<div class="small-note">Эпоха даёт доступ всем персонажам кампаний этой эпохи. Условия «персонаж / кампания / эпоха» объединяются по принципу ИЛИ. ДМ видит всё.</div></div>
+    </div>`;
+  };
+
+  const __collectEntityV1049 = Configurator.collectEntity.bind(Configurator);
+  Configurator.collectEntity = function(type, formEl, formData = new FormData(formEl)) {
+    const entity = __collectEntityV1049(type, formEl, formData);
+    if (!entity) return entity;
+    if (type === 'campaigns') {
+      entity.availableNow = formData.get('availableNow') === 'on';
+      entity.era = normalizeEraV1049(formData.get('era'));
+      return enhanceCampaignV1049(entity);
+    }
+    if (formEl.querySelector('[name="visibilityPlayerIds"],[name="visibilityCampaignIds"],[name="visibilityEraIds"]')) {
+      entity.visibility = {
+        ...(entity.visibility || {}),
+        playerIds: getCheckedValues(formEl, 'visibilityPlayerIds'),
+        campaignIds: getCheckedValues(formEl, 'visibilityCampaignIds'),
+        eraIds: getCheckedValues(formEl, 'visibilityEraIds').map(normalizeEraV1049)
+      };
+    }
+    return entity;
+  };
+
+  const __insertEntityV1049 = Configurator.insertEntity.bind(Configurator);
+  Configurator.insertEntity = function(type, entity) {
+    const result = __insertEntityV1049(type, entity);
+    if (type === 'campaigns' && entity?.id && Data?.campaigns?.[entity.id]) {
+      Object.assign(Data.campaigns[entity.id], { availableNow: entity.availableNow !== false, era: normalizeEraV1049(entity.era) });
+    }
+    const dataStores = { organizations: Data?.organizations, factions: Data?.factions, skills: Data?.skills };
+    const store = dataStores[type];
+    if (store && entity?.id) {
+      const target = store instanceof Map ? store.get(entity.id) : store[entity.id];
+      if (target) mergeVisibilityFromRawV1049(target, entity);
+    }
+    return result;
+  };
+
+  const __renderCampaignEditorV1049 = Configurator.renderCampaignEditor?.bind(Configurator);
+  if (__renderCampaignEditorV1049) {
+    Configurator.renderCampaignEditor = function(entity) {
+      const campaign = enhanceCampaignV1049({ ...(entity || {}) });
+      const era = normalizeEraV1049(campaign.era);
+      return `<form id="config-editor-form" class="form" data-entity-type="campaigns">
+        ${this.renderHeader(campaign, 'Кампания определяет доступность персонажей, визуальную эпоху интерфейса и групповые права контента.')}
+        ${imageFieldMarkup(campaign, 'Изображение / эмблема кампании')}
+        <div class="cols3"><div class="field"><label>ID</label><input class="input" name="id" value="${esc(campaign.id)}" /></div><div class="field"><label>Название</label><input class="input" name="name" value="${esc(campaign.name)}" /></div><div class="field"><label>Статус</label><input class="input" name="status" value="${esc(campaign.status || 'active')}" placeholder="active / archived" /></div></div>
+        <div class="campaign-availability-v1049"><label class="toggle-row"><input type="checkbox" name="availableNow" ${campaign.availableNow !== false ? 'checked' : ''}/> <span><b>Доступна в данный момент</b><small>Если выключено, кампанию нельзя выбрать при входе, а её персонажи скрываются из списка.</small></span></label></div>
+        <div class="cols2"><div class="field"><label>Эпоха интерфейса</label><select class="select" name="era">${ERA_DEFS_V1049.map(item => `<option value="${item.id}" ${item.id === era ? 'selected' : ''}>${esc(item.name)}</option>`).join('')}</select></div><div class="field"><label>Цвет кампании</label><input class="input" name="color" value="${esc(campaign.color || '#b89458')}" /></div></div>
+        <div class="era-preview-v1049" data-era-preview="${era}"><span>${era === 'medieval' ? '✦' : era === 'industrial' ? '⚙' : '⌘'}</span><div><b>${esc(eraDefV1049(era).name)}</b><small>Стиль интерфейса автоматически переключается при выборе этой кампании.</small></div></div>
+        <div class="field"><label>Описание</label><textarea class="area" name="description">${esc(campaign.description || '')}</textarea>${typeof __htmlHint !== 'undefined' ? __htmlHint : ''}</div>
+        <div class="field"><label>Связанные статьи</label>${renderRelatedArticlesEditor(campaign.relatedArticleIds || [])}</div>
+        <button class="primary" type="submit">SAVE_CAMPAIGN</button>
+      </form>`;
+    };
+  }
+
+  // Preserve new visibility dimensions in legacy normalizers that previously reduced
+  // the object to { playerIds } only.
+  try {
+    if (typeof normalizeOrganizationV48 === 'function') {
+      const old = normalizeOrganizationV48;
+      normalizeOrganizationV48 = function(entity = {}) { return mergeVisibilityFromRawV1049(old(entity), entity); };
+    }
+  } catch {}
+  try {
+    if (typeof normalizeFactionV50 === 'function') {
+      const old = normalizeFactionV50;
+      normalizeFactionV50 = function(entity = {}) { return mergeVisibilityFromRawV1049(old(entity), entity); };
+    }
+  } catch {}
+  try {
+    if (typeof normalizeSkillV50 === 'function') {
+      const old = normalizeSkillV50;
+      normalizeSkillV50 = function(entity = {}) { return mergeVisibilityFromRawV1049(old(entity), entity); };
+    }
+  } catch {}
+
+  // Access rule: no selectors = GM-only (keeps the current safe default). Any
+  // selected player, campaign or era grants visibility.
+  isEntityVisible = function(entity, user = App.currentUser) {
+    if (!entity) return false;
+    if (!user || String(user.role || '').toLowerCase() === 'gm') return true;
+    if (!entity.visibility || typeof entity.visibility !== 'object') return true;
+    const vis = visibilityV1049(entity);
+    if (!vis.playerIds.length && !vis.campaignIds.length && !vis.eraIds.length) return false;
+    const userId = String(user.id || '');
+    if (vis.playerIds.includes(userId)) return true;
+    if (String(user.role || '').toLowerCase() === 'guest') return vis.playerIds.includes('__guest__') || vis.playerIds.includes('guest');
+    const currentCampaign = activeCampaignV1049(user);
+    const userCampaignIds = new Set(playerCampaignIdsV1049(user));
+    if (currentCampaign?.id) userCampaignIds.add(String(currentCampaign.id));
+    if (vis.campaignIds.some(id => userCampaignIds.has(String(id)))) return true;
+    const eras = new Set();
+    userCampaignIds.forEach(id => { const campaign = campaignByIdV1049(id); if (campaign) eras.add(normalizeEraV1049(campaign.era)); });
+    if (currentCampaign) eras.add(normalizeEraV1049(currentCampaign.era));
+    return vis.eraIds.some(id => eras.has(normalizeEraV1049(id)));
+  };
+
+  const __fillLoginSelectV1049 = App.fillLoginSelect.bind(App);
+  App.fillLoginSelect = function() {
+    __fillLoginSelectV1049(); // creates the v60 campaign row and guest button
+    const campaignSelect = document.getElementById('login-campaign-select-v60');
+    const charSelect = document.getElementById('char-select');
+    if (!campaignSelect || !charSelect) return;
+    const rows = playableCampaignsV1049();
+    let selected = selectedCampaignIdV1049();
+    if (!selected || !campaignByIdV1049(selected)?.availableNow) selected = availableCampaignsV1049()[0]?.id || '';
+    campaignSelect.innerHTML = rows.map(campaign => `<option value="${esc(campaign.id)}" ${campaign.id === selected ? 'selected' : ''} ${campaign.availableNow === false ? 'disabled' : ''}>${esc(campaign.name || campaign.id)} · ${esc(eraDefV1049(campaign.era).name)}${campaign.availableNow === false ? ' · НЕДОСТУПНА' : ''}</option>`).join('') || '<option value="">Нет кампаний</option>';
+    if (selected) campaignSelect.value = selected;
+    campaignSelect.disabled = !availableCampaignsV1049().length;
+    App.activeCampaignId = selected;
+    localStorage.setItem('grpg-login-campaign-v1049', selected);
+    if (selected) applyEraThemeV1049(campaignByIdV1049(selected));
+
+    const sourcePlayers = sortEntitiesForList(Object.values(this.state?.users || PLAYER_TEMPLATES || {}))
+      .filter(player => String(player.role || '').toLowerCase() !== 'guest')
+      .filter(player => String(player.role || '').toLowerCase() === 'gm' || (selected && playerCampaignIdsV1049(player).includes(selected)));
+    const prev = charSelect.value;
+    if (!selected || !sourcePlayers.length) {
+      charSelect.innerHTML = `<option value="">${selected ? 'Нет доступных персонажей в этой кампании' : 'Нет доступных кампаний'}</option>`;
+      this.renderLoginPreview();
+      return;
+    }
+    charSelect.innerHTML = sourcePlayers.map(player => `<option value="${esc(player.id)}">${esc(player.displayName || player.id)}</option>`).join('');
+    if (sourcePlayers.some(player => player.id === prev)) charSelect.value = prev;
+    this.renderLoginPreview();
+  };
+
+  document.addEventListener('change', event => {
+    if (event.target?.id !== 'login-campaign-select-v60') return;
+    const id = String(event.target.value || '').trim();
+    const campaign = campaignByIdV1049(id);
+    if (!campaign || campaign.availableNow === false) {
+      App.fillLoginSelect();
+      return;
+    }
+    App.activeCampaignId = id;
+    localStorage.setItem('grpg-login-campaign-v1049', id);
+    localStorage.setItem('grpg-login-campaign-v60', id);
+    applyEraThemeV1049(campaign);
+    App.fillLoginSelect();
+  }, true);
+
+  const __loginV1049 = App.login.bind(App);
+  App.login = async function() {
+    const campaignId = selectedCampaignIdV1049();
+    const campaign = campaignByIdV1049(campaignId);
+    const playerId = document.getElementById('char-select')?.value || '';
+    const player = this.state?.users?.[playerId];
+    if (!campaign || campaign.availableNow === false) {
+      document.getElementById('login-error').textContent = 'Выбранная кампания сейчас недоступна.';
+      return;
+    }
+    if (player && String(player.role || '').toLowerCase() !== 'gm' && !playerCampaignIdsV1049(player).includes(campaignId)) {
+      document.getElementById('login-error').textContent = 'Этот персонаж не относится к выбранной кампании.';
+      return;
+    }
+    App.activeCampaignId = campaignId;
+    localStorage.setItem('grpg-login-campaign-v1049', campaignId);
+    applyEraThemeV1049(campaign);
+    return __loginV1049();
+  };
+
+  const __finishLoginV1049 = App.finishLogin.bind(App);
+  App.finishLogin = function() {
+    const selected = selectedCampaignIdV1049();
+    const campaign = campaignByIdV1049(selected);
+    const user = this.currentUser;
+    if (user && String(user.role || '').toLowerCase() !== 'gm') {
+      if (!campaign || campaign.availableNow === false || !playerCampaignIdsV1049(user).includes(selected)) {
+        this.currentUserId = null;
+        try { Persistence.clearSession(); } catch {}
+        document.getElementById('login-screen')?.classList.add('open');
+        document.getElementById('login-error').textContent = 'Сохранённая кампания больше недоступна. Выберите другую кампанию и персонажа.';
+        this.fillLoginSelect();
+        return;
+      }
+    }
+    App.activeCampaignId = selected;
+    if (campaign) applyEraThemeV1049(campaign);
+    return __finishLoginV1049();
+  };
+
+  const __renderLoginPreviewV1049 = App.renderLoginPreview.bind(App);
+  App.renderLoginPreview = function() {
+    __renderLoginPreviewV1049();
+    const root = document.getElementById('login-preview');
+    const campaign = campaignByIdV1049(selectedCampaignIdV1049());
+    if (root && campaign) root.insertAdjacentHTML('beforeend', `<div class="login-campaign-meta-v1049"><span class="campaign-live-dot-v1049 ${campaign.availableNow !== false ? 'on' : ''}"></span><b>${esc(campaign.name || campaign.id)}</b><span>${esc(eraDefV1049(campaign.era).name)}</span></div>`);
+  };
+
+  // Initial theme before the first world load; applyWorldData will refine it.
+  applyEraThemeV1049('technological');
+})();
+
+// ===== v1.0.52 registration, origins, armor class and equipment schema =====
+(function(){
+  if (window.__grpgV1052) return;
+  window.__grpgV1052 = true;
+
+  const ABILITIES_V1052 = [
+    { key: 'strength', label: 'Сила', short: 'СИЛ' },
+    { key: 'dexterity', label: 'Ловкость', short: 'ЛОВ' },
+    { key: 'intelligence', label: 'Интеллект', short: 'ИНТ' },
+    { key: 'endurance', label: 'Выносливость', short: 'ВЫН' },
+    { key: 'will', label: 'Воля', short: 'ВОЛ' },
+    { key: 'glory', label: 'Слава', short: 'СЛА' }
+  ];
+  const ITEM_TYPES_V1052 = [
+    { value: 'gear', label: 'Снаряжение' },
+    { value: 'weapon', label: 'Оружие' },
+    { value: 'armor', label: 'Броня' },
+    { value: 'implant', label: 'Импланты' }
+  ];
+  const APPROVAL_V1052 = new Set(['approved', 'pending', 'rejected']);
+  let SOCIAL_ORIGINS_V1052 = {};
+  let GEOGRAPHIC_ORIGINS_V1052 = {};
+
+  WORLD_SECTIONS.socialOrigins = { label: 'Профессии', mapKey: 'SOCIAL_ORIGINS', listKey: 'SOCIAL_ORIGIN_LIST' };
+  WORLD_SECTIONS.geographicOrigins = { label: 'Происхождение: географическое', mapKey: 'GEOGRAPHIC_ORIGINS', listKey: 'GEOGRAPHIC_ORIGIN_LIST' };
+
+  function uniqueStringsV1052(value) {
+    return Array.from(new Set((Array.isArray(value) ? value : []).map(entry => String(entry?.id || entry?.campaignId || entry || '').trim()).filter(Boolean)));
+  }
+  function visibilityV1052(value = {}) {
+    const vis = value?.visibility && typeof value.visibility === 'object' ? value.visibility : value || {};
+    return {
+      playerIds: uniqueStringsV1052(vis.playerIds),
+      campaignIds: uniqueStringsV1052(vis.campaignIds || vis.campaigns),
+      eraIds: uniqueStringsV1052(vis.eraIds || vis.eras || vis.epochs)
+    };
+  }
+  function campaignRowsV1052() {
+    const source = worldData?.campaigns?.CAMPAIGNS || {};
+    return sortEntitiesForList(Object.values(source || {}).filter(c => String(c?.status || '').toLowerCase() !== 'guest'));
+  }
+  function availableCampaignRowsV1052() {
+    return campaignRowsV1052().filter(c => c?.availableNow !== false);
+  }
+  function campaignIdsForPlayerV1052(player = {}) {
+    const ids = uniqueStringsV1052(player.campaignIds || player.campaigns);
+    if (player.campaignId) ids.push(String(player.campaignId));
+    return Array.from(new Set(ids));
+  }
+  function isApprovedPlayerV1052(player = {}) {
+    if (String(player.role || '').toLowerCase() === 'gm') return true;
+    return String(player.approvalStatus || 'approved').toLowerCase() === 'approved';
+  }
+  function approvalLabelV1052(status) {
+    return status === 'pending' ? 'Ожидает одобрения ДМа' : status === 'rejected' ? 'Отклонена' : 'Одобрена';
+  }
+  function normalizeBonusMapV1052(value = {}) {
+    const out = {};
+    for (const item of ABILITIES_V1052) out[item.key] = Number(value?.[item.key] || 0);
+    return out;
+  }
+  function normalizeOriginV1052(entity = {}, fallback = 'origin') {
+    const id = slugifyId(entity.id || entity.name || entity.title || '', fallback);
+    return {
+      ...entity,
+      id,
+      name: String(entity.name || entity.title || 'Новое происхождение').trim(),
+      description: String(entity.description || entity.summary || '').trim(),
+      image: String(entity.image || '').trim(),
+      imageLocal: String(entity.imageLocal || '').trim(),
+      locationType: String(entity.locationType || entity.placeType || 'other').trim().toLowerCase(),
+      abilityBonuses: normalizeBonusMapV1052(entity.abilityBonuses || entity.bonuses || {}),
+      visibility: visibilityV1052(entity)
+    };
+  }
+  function normalizeOriginSectionV1052(section = {}, kind = 'social') {
+    const mapKey = kind === 'social' ? 'SOCIAL_ORIGINS' : 'GEOGRAPHIC_ORIGINS';
+    const listKey = kind === 'social' ? 'SOCIAL_ORIGIN_LIST' : 'GEOGRAPHIC_ORIGIN_LIST';
+    const sourceMap = section?.[mapKey] && typeof section[mapKey] === 'object' ? section[mapKey] : {};
+    const sourceList = Array.isArray(section?.[listKey]) ? section[listKey] : [];
+    const out = {};
+    const add = (entity, fallbackId = '') => {
+      if (!entity || typeof entity !== 'object') return;
+      const normalized = normalizeOriginV1052({ ...entity, id: entity.id || fallbackId }, `${kind}_origin`);
+      if (normalized.id) out[normalized.id] = normalized;
+    };
+    Object.entries(sourceMap).forEach(([id, entity]) => add(entity, id));
+    sourceList.forEach(entity => add(entity));
+    return out;
+  }
+  function originByIdV1052(kind, id) {
+    return (kind === 'social' ? SOCIAL_ORIGINS_V1052 : GEOGRAPHIC_ORIGINS_V1052)[String(id || '')] || null;
+  }
+  function originBonusesV1052(player = {}) {
+    const out = Object.fromEntries(ABILITIES_V1052.map(item => [item.key, 0]));
+    const origins = [originByIdV1052('social', player.socialOriginId), originByIdV1052('geographic', player.geographicOriginId)].filter(Boolean);
+    origins.forEach(origin => ABILITIES_V1052.forEach(item => { out[item.key] += Number(origin.abilityBonuses?.[item.key] || 0); }));
+    return out;
+  }
+  function effectiveAbilitiesV1052(player = {}) {
+    const base = player.abilityBase && typeof player.abilityBase === 'object' ? player.abilityBase : (player.abilities || {});
+    const bonus = originBonusesV1052(player);
+    return Object.fromEntries(ABILITIES_V1052.map(item => [item.key, Number(base?.[item.key] || 0) + Number(bonus[item.key] || 0)]));
+  }
+  function mapLegacyItemTypeV1052(value) {
+    const raw = String(value || '').trim().toLowerCase();
+    if (raw === 'weapon') return 'weapon';
+    if (raw === 'armor') return 'armor';
+    if (raw === 'implant') return 'implant';
+    return 'gear';
+  }
+  function normalizeRequirementsV1052(value = {}) {
+    return Object.fromEntries(ABILITIES_V1052.map(item => [item.key, Math.max(0, Number(value?.[item.key] || 0))]));
+  }
+
+  const __normalizeEquipmentItemV1052 = normalizeEquipmentItemV2;
+  normalizeEquipmentItemV2 = function(item = {}) {
+    const raw = { ...(item || {}) };
+    const next = __normalizeEquipmentItemV1052(raw);
+    next.type = mapLegacyItemTypeV1052(raw.type || next.type);
+    next.visibility = visibilityV1052(raw);
+    next.requirements = normalizeRequirementsV1052(raw.requirements || raw.characteristicRequirements || {});
+    next.damage = next.type === 'weapon' ? String(raw.damage || '').trim() : '';
+    next.hitBonus = next.type === 'weapon' ? Number(raw.hitBonus || raw.attackBonus || 0) : 0;
+    next.weaponSlot = next.type === 'weapon' ? String(raw.weaponSlot || 'primary') : '';
+    next.armorClass = next.type === 'armor' ? Math.max(0, Number(raw.armorClass || 0)) : 0;
+    next.energyRequired = next.type === 'implant' ? Math.max(0, Number(raw.energyRequired ?? raw.energyCost ?? 0)) : 0;
+    delete next.energyDelta;
+    delete next.mechanicType;
+    delete next.mechanic;
+    delete next.decryptorMode;
+    delete next.mechanicMode;
+    delete next.mechanicTitle;
+    delete next.decryptorDefaultCipher;
+    delete next.mechanicHint;
+    delete next.mechanicTimeLimit;
+    delete next.mechanicCodeLength;
+    delete next.mechanicSlots;
+    return next;
+  };
+
+  const __normalizePlayerProfileV1052 = normalizePlayerProfileV2;
+  normalizePlayerProfileV2 = function(user = {}) {
+    const source = { ...(user || {}) };
+    const next = __normalizePlayerProfileV1052(source);
+    next.approvalStatus = String(source.approvalStatus || next.approvalStatus || 'approved').toLowerCase();
+    if (!APPROVAL_V1052.has(next.approvalStatus)) next.approvalStatus = 'approved';
+    if (String(next.role || '').toLowerCase() === 'gm') next.approvalStatus = 'approved';
+    next.socialOriginId = String(source.socialOriginId || next.socialOriginId || '').trim();
+    next.geographicOriginId = String(source.geographicOriginId || next.geographicOriginId || '').trim();
+    next.stats = { ...(next.stats || {}), baseArmorClass: Math.max(0, Number(source.stats?.baseArmorClass ?? next.stats?.baseArmorClass ?? 10)) };
+    const baseSource = source.abilityBase && typeof source.abilityBase === 'object' ? source.abilityBase : (next.abilities || {});
+    next.abilityBase = Object.fromEntries(ABILITIES_V1052.map(item => [item.key, Number(baseSource?.[item.key] || 0)]));
+    next.abilities = effectiveAbilitiesV1052({ ...next, abilityBase: next.abilityBase });
+    next.installedImplantIds = uniqueStringsV1052(source.installedImplantIds || next.installedImplantIds).filter(id => !EQUIPMENT?.[id] || normalizeEquipmentItemV2(EQUIPMENT[id]).type === 'implant');
+    const equippedArmor = EQUIPMENT?.[next.equipmentSlots?.armor || ''];
+    const equippedArmorClass = equippedArmor && mapLegacyItemTypeV1052(equippedArmor.type) === 'armor' ? Number(equippedArmor.armorClass || 0) : 0;
+    next.stats.armorClass = equippedArmorClass > 0 ? equippedArmorClass : Number(next.stats.baseArmorClass || 10);
+    return next;
+  };
+
+  function getEffectiveArmorClassV1052(player = {}) {
+    const user = normalizePlayerProfileV2(player);
+    const armor = EQUIPMENT?.[user.equipmentSlots?.armor || ''];
+    const item = armor ? normalizeEquipmentItemV2(armor) : null;
+    return item && item.type === 'armor' && Number(item.armorClass || 0) > 0 ? Number(item.armorClass) : Number(user.stats?.baseArmorClass || 10);
+  }
+  function itemMeetsRequirementsV1052(item = {}, player = App.currentUser) {
+    if (!player) return true;
+    const req = normalizeRequirementsV1052(item.requirements || {});
+    const abilities = effectiveAbilitiesV1052(normalizePlayerProfileV2(player));
+    return ABILITIES_V1052.every(row => Number(abilities[row.key] || 0) >= Number(req[row.key] || 0));
+  }
+  function requirementsTextV1052(item = {}) {
+    const req = normalizeRequirementsV1052(item.requirements || {});
+    const rows = ABILITIES_V1052.filter(row => req[row.key] > 0).map(row => `${row.short} ${req[row.key]}`);
+    return rows.length ? rows.join(' · ') : 'нет';
+  }
+
+  const __itemExtraSummaryV1052 = itemExtraSummaryV2;
+  itemExtraSummaryV2 = function(item = {}) {
+    const norm = normalizeEquipmentItemV2(item);
+    const bits = [norm.type === 'gear' ? 'Снаряжение' : norm.type === 'weapon' ? 'Оружие' : norm.type === 'armor' ? 'Броня' : 'Имплант'];
+    if (norm.rarity) bits.push(norm.rarity);
+    if (norm.type === 'weapon' && norm.damage) bits.push(`урон ${norm.damage}`);
+    if (norm.type === 'weapon' && Number(norm.hitBonus || 0)) bits.push(`${norm.hitBonus >= 0 ? '+' : ''}${norm.hitBonus} к попаданию`);
+    if (norm.type === 'armor' && Number(norm.armorClass || 0)) bits.push(`КБ ${norm.armorClass}`);
+    if (norm.type === 'implant' && Number(norm.energyRequired || 0)) bits.push(`${norm.energyRequired} EN`);
+    if (['weapon','armor','implant'].includes(norm.type)) bits.push(`требования: ${requirementsTextV1052(norm)}`);
+    return bits.filter(Boolean).join(' · ');
+  };
+
+  function originSectionPayloadV1052(kind) {
+    const map = kind === 'social' ? SOCIAL_ORIGINS_V1052 : GEOGRAPHIC_ORIGINS_V1052;
+    const mapKey = kind === 'social' ? 'SOCIAL_ORIGINS' : 'GEOGRAPHIC_ORIGINS';
+    const listKey = kind === 'social' ? 'SOCIAL_ORIGIN_LIST' : 'GEOGRAPHIC_ORIGIN_LIST';
+    return { [mapKey]: deep(map), [listKey]: sortEntitiesForList(Object.values(map)).map(deep) };
+  }
+
+  function refreshEquipmentDerivedV1052() {
+    EQUIPMENT_LIST = sortEntitiesForList(Object.values(EQUIPMENT || {}).map(normalizeEquipmentItemV2));
+    WEAPON_OPTIONS = EQUIPMENT_LIST.filter(item => item.type === 'weapon');
+    ARMOR_OPTIONS = EQUIPMENT_LIST.filter(item => item.type === 'armor');
+    if (worldData?.equipment) {
+      worldData.equipment.EQUIPMENT = EQUIPMENT;
+      worldData.equipment.EQUIPMENT_LIST = EQUIPMENT_LIST;
+      worldData.equipment.WEAPON_OPTIONS = WEAPON_OPTIONS;
+      worldData.equipment.ARMOR_OPTIONS = ARMOR_OPTIONS;
+    }
+    Data.equipment = EQUIPMENT;
+  }
+
+  const __applyWorldDataV1052 = applyWorldData;
+  applyWorldData = function(payload = {}) {
+    __applyWorldDataV1052(payload);
+    SOCIAL_ORIGINS_V1052 = normalizeOriginSectionV1052(payload.socialOrigins || worldData?.socialOrigins || {}, 'social');
+    GEOGRAPHIC_ORIGINS_V1052 = normalizeOriginSectionV1052(payload.geographicOrigins || worldData?.geographicOrigins || {}, 'geographic');
+    worldData.socialOrigins = originSectionPayloadV1052('social');
+    worldData.geographicOrigins = originSectionPayloadV1052('geographic');
+    Data.socialOrigins = SOCIAL_ORIGINS_V1052;
+    Data.geographicOrigins = GEOGRAPHIC_ORIGINS_V1052;
+    for (const [id, item] of Object.entries(EQUIPMENT || {})) EQUIPMENT[id] = normalizeEquipmentItemV2(item);
+    refreshEquipmentDerivedV1052();
+    for (const [id, player] of Object.entries(PLAYER_TEMPLATES || {})) PLAYER_TEMPLATES[id] = normalizePlayerProfileV2(player);
+    PLAYER_LIST = sortEntitiesForList(Object.values(PLAYER_TEMPLATES || {}));
+    if (App?.state?.users) for (const [id, player] of Object.entries(App.state.users)) App.state.users[id] = normalizePlayerProfileV2(player);
+  };
+
+  const __buildWorldSnapshotV1052 = buildWorldSnapshot;
+  buildWorldSnapshot = function() {
+    const snap = __buildWorldSnapshotV1052();
+    snap.socialOrigins = originSectionPayloadV1052('social');
+    snap.geographicOrigins = originSectionPayloadV1052('geographic');
+    return snap;
+  };
+
+  const __createBlankEntityV1052 = createBlankEntity;
+  createBlankEntity = function(type) {
+    const stamp = Date.now();
+    if (type === 'socialOrigins' || type === 'geographicOrigins') return normalizeOriginV1052({ id: `${type === 'socialOrigins' ? 'profession' : 'geo'}_origin_${stamp}`, name: type === 'socialOrigins' ? 'Новая профессия' : 'Новое происхождение', description: '', image: '', locationType: type === 'geographicOrigins' ? 'other' : '', abilityBonuses: {}, visibility: { playerIds: [], campaignIds: [], eraIds: [] } }, type === 'socialOrigins' ? 'profession' : 'geo_origin');
+    if (type === 'equipment') return normalizeEquipmentItemV2({ id: `item_${stamp}`, name: 'Новый предмет', type: 'gear', rarity: 'обычный', desc: '', tags: [], visibility: { playerIds: [], campaignIds: [], eraIds: [] } });
+    if (type === 'players') return normalizePlayerProfileV2({ ...__createBlankEntityV1052(type), approvalStatus: 'approved', socialOriginId: '', geographicOriginId: '', installedImplantIds: [], stats: { hpCurrent: 12, hpMax: 12, shieldCurrent: 0, shieldMax: 0, energyCurrent: 1, energyMax: 1, baseArmorClass: 10 } });
+    return __createBlankEntityV1052(type);
+  };
+
+  function originOptionsV1052(map, selected = '') {
+    return `<option value="">Не выбрано</option>${sortEntitiesForList(Object.values(map || {})).map(origin => `<option value="${esc(origin.id)}" ${origin.id === selected ? 'selected' : ''}>${esc(origin.name || origin.id)}</option>`).join('')}`;
+  }
+  function campaignSelectorV1052(selectedIds = []) {
+    const selected = new Set(uniqueStringsV1052(selectedIds));
+    return `<div class="selector-grid compact-selector-grid">${campaignRowsV1052().map(c => `<label class="selector-card"><input type="checkbox" name="campaignIds" value="${esc(c.id)}" ${selected.has(c.id) ? 'checked' : ''}/><span>${esc(c.name || c.id)}${c.availableNow === false ? ' · НЕДОСТУПНА' : ''}</span></label>`).join('') || '<div class="small-note">Кампаний нет.</div>'}</div>`;
+  }
+  function implantSelectorV1052(selectedIds = []) {
+    const selected = new Set(uniqueStringsV1052(selectedIds));
+    const items = sortEntitiesForList(Object.values(EQUIPMENT || {}).map(normalizeEquipmentItemV2).filter(item => item.type === 'implant'));
+    return `<div class="selector-grid compact-selector-grid">${items.map(item => `<label class="selector-card"><input type="checkbox" name="installedImplantIds" value="${esc(item.id)}" ${selected.has(item.id) ? 'checked' : ''}/><span>${esc(item.name || item.id)} · ${Number(item.energyRequired || 0)} EN</span></label>`).join('') || '<div class="small-note">Импланты ещё не созданы.</div>'}</div>`;
+  }
+  function requirementInputsV1052(item = {}) {
+    const req = normalizeRequirementsV1052(item.requirements || {});
+    return `<div class="section-title">Требования характеристик</div><div class="ability-requirements-v1052">${ABILITIES_V1052.map(row => `<div class="field"><label>${esc(row.label)}</label><input class="input" type="number" min="0" name="req_${row.key}" value="${Number(req[row.key] || 0)}" /></div>`).join('')}</div>`;
+  }
+  function originBonusesInputsV1052(origin = {}) {
+    const bonuses = normalizeBonusMapV1052(origin.abilityBonuses || {});
+    return `<div class="section-title">Модификаторы характеристик</div><div class="ability-requirements-v1052">${ABILITIES_V1052.map(row => `<div class="field"><label>${esc(row.label)}</label><input class="input" type="number" step="1" name="bonus_${row.key}" value="${Number(bonuses[row.key] || 0)}" /></div>`).join('')}</div>`;
+  }
+
+  Configurator.renderOriginEditorV1052 = function(entity, kind) {
+    const origin = normalizeOriginV1052(entity, kind === 'social' ? 'profession' : 'geo_origin');
+    const isProfession = kind === 'social';
+    const geoTypes = [
+      ['city', 'Город'], ['planet', 'Планета'], ['region', 'Регион / область'],
+      ['station', 'Станция'], ['colony', 'Колония / поселение'], ['other', 'Другое место']
+    ];
+    return `<form id="config-editor-form" class="form" data-entity-type="${isProfession ? 'socialOrigins' : 'geographicOrigins'}">
+      ${this.renderHeader(origin, isProfession ? 'Профессия персонажа: занятие, ремесло, служба или социальная роль до начала приключений.' : 'Географическое происхождение: город, планета, регион, станция, колония или иное место, откуда родом персонаж.')}
+      ${imageFieldMarkup(origin, isProfession ? 'Изображение профессии' : 'Изображение места происхождения')}
+      <div class="cols2"><div class="field"><label>ID</label><input class="input" name="id" value="${esc(origin.id)}" /></div><div class="field"><label>Название</label><input class="input" name="name" value="${esc(origin.name)}" /></div></div>
+      ${!isProfession ? `<div class="field"><label>Тип места</label><select class="select" name="locationType">${geoTypes.map(([value,label]) => `<option value="${value}" ${String(origin.locationType || 'other') === value ? 'selected' : ''}>${label}</option>`).join('')}</select><div class="small-note">Тип нужен только для понятного отображения игроку. Происхождением может быть как конкретный город, так и целая планета.</div></div>` : ''}
+      ${this.renderVisibilityField(origin)}
+      <div class="field"><label>Развёрнутое описание</label><textarea class="area origin-long-description-v1054" name="description" placeholder="Подробно опишите историю, культуру, обязанности, образ жизни, репутацию и то, что игроку важно знать перед выбором.">${esc(origin.description || '')}</textarea></div>
+      ${originBonusesInputsV1052(origin)}
+      <button class="primary" type="submit">${isProfession ? 'SAVE_PROFESSION' : 'SAVE_ORIGIN'}</button>
+    </form>`;
+  };
+
+  Configurator.renderEquipmentEditor = function(rawItem) {
+    const item = normalizeEquipmentItemV2(rawItem);
+    const isWeapon = item.type === 'weapon';
+    const isArmor = item.type === 'armor';
+    const isImplant = item.type === 'implant';
+    return `<form id="config-editor-form" class="form equipment-editor-v1052" data-entity-type="equipment" data-item-type="${esc(item.type)}">
+      ${this.renderHeader(item, 'Предметы разделены на снаряжение, оружие, броню и импланты. Активные мини-игры предметов удалены.')}
+      ${imageFieldMarkup(item, 'Изображение предмета')}
+      <div class="cols3"><div class="field"><label>ID</label><input class="input" name="id" value="${esc(item.id)}" /></div><div class="field"><label>Категория</label><select class="select" name="type">${ITEM_TYPES_V1052.map(opt => `<option value="${opt.value}" ${opt.value === item.type ? 'selected' : ''}>${esc(opt.label)}</option>`).join('')}</select></div><div class="field"><label>Редкость</label><select class="select" name="rarity">${ITEM_RARITY_OPTIONS_V2.map(r => `<option value="${esc(r)}" ${r === item.rarity ? 'selected' : ''}>${esc(r)}</option>`).join('')}</select></div></div>
+      <div class="field"><label>Название</label><input class="input" name="name" value="${esc(item.name || '')}" /></div>
+      ${this.renderVisibilityField(item)}
+      <div class="field"><label>Описание</label><textarea class="area" name="desc">${esc(item.desc || '')}</textarea></div>
+      <div class="item-specific-v1052 ${isWeapon ? '' : 'hidden'}" data-for-item="weapon">
+        <div class="cols3"><div class="field"><label>Урон</label><input class="input" name="damage" value="${esc(item.damage || '')}" placeholder="например 2d6+1" /></div><div class="field"><label>Бонус к попаданию</label><input class="input" type="number" name="hitBonus" value="${Number(item.hitBonus || 0)}" /></div><div class="field"><label>Слот</label><select class="select" name="weaponSlot">${WEAPON_SLOT_OPTIONS_V2.map(opt => `<option value="${opt.value}" ${opt.value === String(item.weaponSlot || 'primary') ? 'selected' : ''}>${esc(opt.label)}</option>`).join('')}</select></div></div>
+        ${requirementInputsV1052(item)}
+      </div>
+      <div class="item-specific-v1052 ${isArmor ? '' : 'hidden'}" data-for-item="armor"><div class="field"><label>Класс брони</label><input class="input" type="number" min="0" name="armorClass" value="${Number(item.armorClass || 0)}" /></div>${requirementInputsV1052(item)}</div>
+      <div class="item-specific-v1052 ${isImplant ? '' : 'hidden'}" data-for-item="implant"><div class="field"><label>Требуемая энергия</label><input class="input" type="number" min="0" name="energyRequired" value="${Number(item.energyRequired || 0)}" /></div>${requirementInputsV1052(item)}<div class="small-note">Установка импланта задаётся отдельно для каждого персонажа в разделе «Персонажи».</div></div>
+      <div class="item-specific-v1052 ${item.type === 'gear' ? '' : 'hidden'}" data-for-item="gear"><div class="small-note">Снаряжение хранится в инвентаре и не имеет урона, КБ, энергопотребления или требований характеристик.</div></div>
+      <div class="field"><label>Теги (по одному на строку)</label><textarea class="area inv-editor" name="tags">${esc(listText(item.tags))}</textarea></div>
+      <div class="field"><label>Связанные статьи</label>${renderRelatedArticlesEditor(item.relatedArticleIds || [])}</div>
+      <button class="primary" type="submit">SAVE_ITEM</button>
+    </form>`;
+  };
+
+  const __renderPlayerEditorV1052 = Configurator.renderPlayerEditor.bind(Configurator);
+  Configurator.renderPlayerEditor = function(rawUser) {
+    const user = normalizePlayerProfileV2(rawUser);
+    let html = __renderPlayerEditorV1052(user);
+    // Characteristic inputs edit the base value. Origin bonuses are applied automatically on top.
+    for (const row of ABILITIES_V1052) {
+      const re = new RegExp(`(name=\"ability_${row.key}\"[^>]*value=\")[^\"]*(\")`);
+      html = html.replace(re, `$1${Number(user.abilityBase?.[row.key] || 0)}$2`);
+    }
+    // Retire the legacy free-text implant list; installed implants are now real equipment entities.
+    html = html.replace(/<div class="field"><label>Импланты[^<]*<\/label><textarea[^>]*name="implants"[\s\S]*?<\/textarea><\/div>/g, '');
+    const extra = `<div class="section-title">Регистрация, профессия и происхождение</div>
+      <div class="cols3"><div class="field"><label>Статус анкеты</label><select class="select" name="approvalStatus"><option value="approved" ${user.approvalStatus === 'approved' ? 'selected' : ''}>Одобрена</option><option value="pending" ${user.approvalStatus === 'pending' ? 'selected' : ''}>Ожидает одобрения</option><option value="rejected" ${user.approvalStatus === 'rejected' ? 'selected' : ''}>Отклонена</option></select></div><div class="field"><label>Профессия</label><select class="select" name="socialOriginId">${originOptionsV1052(SOCIAL_ORIGINS_V1052, user.socialOriginId)}</select></div><div class="field"><label>Происхождение</label><select class="select" name="geographicOriginId">${originOptionsV1052(GEOGRAPHIC_ORIGINS_V1052, user.geographicOriginId)}</select></div></div>
+      <div class="cols2"><div class="field"><label>Базовый класс брони</label><input class="input" type="number" min="0" name="baseArmorClass" value="${Number(user.stats?.baseArmorClass || 10)}" /><div class="small-note">Если надета броня с КБ, используется значение брони.</div></div><div class="field"><label>Эффективный КБ</label><input class="input" value="${getEffectiveArmorClassV1052(user)}" disabled /></div></div>
+      <div class="field"><label>Установленные импланты</label>${implantSelectorV1052(user.installedImplantIds)}</div>
+      ${user.role !== 'gm' ? `<div class="row approval-actions-v1052"><button type="button" class="secondary" data-approval-v1052="approved">ОДОБРИТЬ АНКЕТУ</button><button type="button" class="ghost" data-approval-v1052="rejected">ОТКЛОНИТЬ</button></div>` : ''}`;
+    if (html.includes('<div class="field"><label>Связанные статьи</label>')) html = html.replace('<div class="field"><label>Связанные статьи</label>', extra + '<div class="field"><label>Связанные статьи</label>');
+    else html = html.replace('<button class="primary" type="submit">SAVE_PLAYER</button>', extra + '<button class="primary" type="submit">SAVE_PLAYER</button>');
+    return html;
+  };
+
+  Configurator.equipmentCategoryV1052 = Configurator.equipmentCategoryV1052 || 'gear';
+  const __getItemsV1052 = Configurator.getItems.bind(Configurator);
+  Configurator.getItems = function(type) {
+    if (type === 'socialOrigins') return sortEntitiesForList(Object.values(SOCIAL_ORIGINS_V1052));
+    if (type === 'geographicOrigins') return sortEntitiesForList(Object.values(GEOGRAPHIC_ORIGINS_V1052));
+    if (type === 'equipment') return sortEntitiesForList(Object.values(EQUIPMENT || {}).map(normalizeEquipmentItemV2).filter(item => item.type === this.equipmentCategoryV1052));
+    return __getItemsV1052(type);
+  };
+  const __renderEditorV1052 = Configurator.renderEditor.bind(Configurator);
+  Configurator.renderEditor = function(entity) {
+    if (this.selectedType === 'socialOrigins') return this.renderOriginEditorV1052(entity, 'social');
+    if (this.selectedType === 'geographicOrigins') return this.renderOriginEditorV1052(entity, 'geographic');
+    return __renderEditorV1052(entity);
+  };
+  const __configRenderV1052 = Configurator.render.bind(Configurator);
+  Configurator.render = function() {
+    const result = __configRenderV1052();
+    if (this.selectedType === 'equipment') {
+      const side = document.querySelector('#config-content .config-side');
+      const title = side ? Array.from(side.querySelectorAll('.section-title')).find(node => node.textContent?.trim() === 'Элементы') : null;
+      if (title && !side.querySelector('.equipment-tabs-v1052')) {
+        title.insertAdjacentHTML('afterend', `<div class="equipment-tabs-v1052">${ITEM_TYPES_V1052.map(opt => `<button type="button" class="secondary ${opt.value === this.equipmentCategoryV1052 ? 'active' : ''}" data-equipment-category-v1052="${opt.value}">${esc(opt.label)}</button>`).join('')}</div>`);
+      }
+    }
+    return result;
+  };
+  document.addEventListener('click', event => {
+    const btn = event.target?.closest?.('[data-equipment-category-v1052]');
+    if (!btn) return;
+    Configurator.equipmentCategoryV1052 = mapLegacyItemTypeV1052(btn.dataset.equipmentCategoryV1052);
+    Configurator.selectedId = null;
+    Configurator.render();
+  });
+  const __createNewV1052 = Configurator.createNew.bind(Configurator);
+  Configurator.createNew = function() {
+    if (this.selectedType !== 'equipment') return __createNewV1052();
+    const item = normalizeEquipmentItemV2(createBlankEntity('equipment'));
+    item.type = this.equipmentCategoryV1052;
+    this.insertEntity('equipment', item);
+    this.selectedId = item.id;
+    this.render();
+  };
+  const __insertEntityV1052 = Configurator.insertEntity.bind(Configurator);
+  Configurator.insertEntity = function(type, entity) {
+    if (type === 'socialOrigins') { const item = normalizeOriginV1052(entity, 'social_origin'); SOCIAL_ORIGINS_V1052[item.id] = item; return; }
+    if (type === 'geographicOrigins') { const item = normalizeOriginV1052(entity, 'geo_origin'); GEOGRAPHIC_ORIGINS_V1052[item.id] = item; return; }
+    if (type === 'equipment') { const item = normalizeEquipmentItemV2(entity); EQUIPMENT[item.id] = item; refreshEquipmentDerivedV1052(); return; }
+    return __insertEntityV1052(type, entity);
+  };
+  const __removeEntityV1052 = Configurator.removeEntity.bind(Configurator);
+  Configurator.removeEntity = function(type, id) {
+    if (type === 'socialOrigins') { delete SOCIAL_ORIGINS_V1052[id]; return; }
+    if (type === 'geographicOrigins') { delete GEOGRAPHIC_ORIGINS_V1052[id]; return; }
+    const result = __removeEntityV1052(type, id);
+    if (type === 'equipment') refreshEquipmentDerivedV1052();
+    return result;
+  };
+  const __remapReferencesV1052 = Configurator.remapReferences.bind(Configurator);
+  Configurator.remapReferences = function(type, oldId, newId) {
+    if (type === 'socialOrigins' || type === 'geographicOrigins') {
+      const key = type === 'socialOrigins' ? 'socialOriginId' : 'geographicOriginId';
+      for (const player of Object.values(PLAYER_TEMPLATES || {})) if (player?.[key] === oldId) player[key] = newId || '';
+      for (const player of Object.values(App.state?.users || {})) if (player?.[key] === oldId) player[key] = newId || '';
+      return;
+    }
+    const result = __remapReferencesV1052(type, oldId, newId);
+    if (type === 'equipment') refreshEquipmentDerivedV1052();
+    return result;
+  };
+  const __buildPayloadV1052 = Configurator.buildPayload.bind(Configurator);
+  Configurator.buildPayload = function(type) {
+    if (type === 'socialOrigins') return originSectionPayloadV1052('social');
+    if (type === 'geographicOrigins') return originSectionPayloadV1052('geographic');
+    return __buildPayloadV1052(type);
+  };
+
+  const __collectEntityV1052 = Configurator.collectEntity.bind(Configurator);
+  Configurator.collectEntity = function(type, formEl, formData = new FormData(formEl)) {
+    const mediaField = formEl.querySelector('.media-field');
+    const image = String(formEl.querySelector('input[name="imageData"]')?.value || formData.get('imageData') || mediaField?.dataset?.savedImageValue || mediaField?.dataset?.pendingImageValue || '').trim();
+    if (type === 'socialOrigins' || type === 'geographicOrigins') {
+      return normalizeOriginV1052({
+        id: formData.get('id') || formData.get('name'), name: String(formData.get('name') || '').trim(), description: String(formData.get('description') || '').trim(), image,
+        locationType: type === 'geographicOrigins' ? String(formData.get('locationType') || 'other').trim().toLowerCase() : '',
+        abilityBonuses: Object.fromEntries(ABILITIES_V1052.map(row => [row.key, Number(formData.get(`bonus_${row.key}`) || 0)])),
+        visibility: { playerIds: getCheckedValues(formEl, 'visibilityPlayerIds'), campaignIds: getCheckedValues(formEl, 'visibilityCampaignIds'), eraIds: getCheckedValues(formEl, 'visibilityEraIds') }
+      }, type === 'socialOrigins' ? 'social_origin' : 'geo_origin');
+    }
+    if (type === 'equipment') {
+      const itemType = mapLegacyItemTypeV1052(formData.get('type'));
+      const entity = normalizeEquipmentItemV2({
+        id: slugifyId(formData.get('id') || formData.get('name') || '', 'item'),
+        type: itemType, name: String(formData.get('name') || '').trim(), desc: String(formData.get('desc') || '').trim(), rarity: String(formData.get('rarity') || 'обычный').trim(), image,
+        tags: parseListEditor(formData.get('tags') || ''), relatedArticleIds: getCheckedValues(formEl, 'relatedArticleIds'),
+        visibility: { playerIds: getCheckedValues(formEl, 'visibilityPlayerIds'), campaignIds: getCheckedValues(formEl, 'visibilityCampaignIds'), eraIds: getCheckedValues(formEl, 'visibilityEraIds') },
+        damage: itemType === 'weapon' ? String(formData.get('damage') || '').trim() : '',
+        hitBonus: itemType === 'weapon' ? Number(formData.get('hitBonus') || 0) : 0,
+        weaponSlot: itemType === 'weapon' ? String(formData.get('weaponSlot') || 'primary') : '',
+        armorClass: itemType === 'armor' ? Number(formData.get('armorClass') || 0) : 0,
+        energyRequired: itemType === 'implant' ? Number(formData.get('energyRequired') || 0) : 0,
+        requirements: Object.fromEntries(ABILITIES_V1052.map(row => [row.key, ['weapon','armor','implant'].includes(itemType) ? Number(formData.get(`req_${row.key}`) || 0) : 0]))
+      });
+      return entity;
+    }
+    const entity = __collectEntityV1052(type, formEl, formData);
+    if (type === 'players' && entity) {
+      entity.approvalStatus = String(formData.get('approvalStatus') || entity.approvalStatus || 'approved').toLowerCase();
+      entity.socialOriginId = String(formData.get('socialOriginId') || '').trim();
+      entity.geographicOriginId = String(formData.get('geographicOriginId') || '').trim();
+      entity.stats = { ...(entity.stats || {}), baseArmorClass: Math.max(0, Number(formData.get('baseArmorClass') || entity.stats?.baseArmorClass || 10)) };
+      entity.installedImplantIds = getCheckedValues(formEl, 'installedImplantIds');
+      const submittedBase = entity.abilities || {};
+      entity.abilityBase = Object.fromEntries(ABILITIES_V1052.map(row => [row.key, Number(submittedBase[row.key] || 0)]));
+      return normalizePlayerProfileV2(entity);
+    }
+    return entity;
+  };
+
+  const __renderReportsPanelV1052 = Configurator.renderReportsPanel.bind(Configurator);
+  Configurator.renderReportsPanel = function() {
+    const base = __renderReportsPanelV1052();
+    const pending = sortEntitiesForList(Object.values(App.state?.users || PLAYER_TEMPLATES || {}).map(normalizePlayerProfileV2).filter(player => String(player.role || '').toLowerCase() !== 'gm' && player.approvalStatus === 'pending'));
+    if (!pending.length) return base;
+    return `${base}<div class="card pad18 pending-applications-v1052"><div class="section-title">Заявки персонажей · ${pending.length}</div><div class="small-note">Новые анкеты не могут войти до решения ДМа.</div><div class="result-stack" style="margin-top:12px">${pending.map(player => `<button type="button" class="secondary pending-player-v1052" data-pending-player-v1052="${esc(player.id)}"><span>${esc(player.displayName || player.id)}</span><span>ОТКРЫТЬ</span></button>`).join('')}</div></div>`;
+  };
+  document.addEventListener('click', event => {
+    const pending = event.target?.closest?.('[data-pending-player-v1052]');
+    if (pending) { Configurator.selectedType = 'players'; Configurator.selectedId = pending.dataset.pendingPlayerV1052; Configurator.render(); return; }
+    const approval = event.target?.closest?.('[data-approval-v1052]');
+    if (approval) { const form = approval.closest('#config-editor-form'); const select = form?.querySelector('[name="approvalStatus"]'); if (select) { select.value = approval.dataset.approvalV1052; form.requestSubmit(); } }
+  });
+
+  // Category-specific equipment fields without losing unsaved common fields.
+  document.addEventListener('change', event => {
+    const select = event.target?.closest?.('#config-editor-form.equipment-editor-v1052 select[name="type"]');
+    if (!select) return;
+    const form = select.closest('form');
+    form.dataset.itemType = mapLegacyItemTypeV1052(select.value);
+    Configurator.equipmentCategoryV1052 = form.dataset.itemType;
+    form.querySelectorAll('[data-for-item]').forEach(node => node.classList.toggle('hidden', node.dataset.forItem !== form.dataset.itemType));
+  });
+
+  // Login: unavailable campaigns are completely absent; campaign era is no longer shown in the selector or preview.
+  const __fillLoginSelectV1052 = App.fillLoginSelect.bind(App);
+  App.fillLoginSelect = function() {
+    __fillLoginSelectV1052();
+    const campaignSelect = document.getElementById('login-campaign-select-v60');
+    const playerSelect = document.getElementById('char-select');
+    const campaigns = availableCampaignRowsV1052();
+    if (!campaignSelect || !playerSelect) return;
+    let selected = String(campaignSelect.value || App.activeCampaignId || localStorage.getItem('grpg-login-campaign-v1049') || '').trim();
+    if (!campaigns.some(c => c.id === selected)) selected = campaigns[0]?.id || '';
+    campaignSelect.innerHTML = campaigns.map(c => `<option value="${esc(c.id)}" ${c.id === selected ? 'selected' : ''}>${esc(c.name || c.id)}</option>`).join('') || '<option value="">Нет доступных кампаний</option>';
+    campaignSelect.value = selected;
+    campaignSelect.disabled = campaigns.length === 0;
+    App.activeCampaignId = selected;
+    if (selected) { localStorage.setItem('grpg-login-campaign-v1049', selected); localStorage.setItem('grpg-login-campaign-v60', selected); }
+    const players = sortEntitiesForList(Object.values(this.state?.users || PLAYER_TEMPLATES || {}))
+      .map(normalizePlayerProfileV2)
+      .filter(player => String(player.role || '').toLowerCase() !== 'guest')
+      .filter(isApprovedPlayerV1052)
+      .filter(player => String(player.role || '').toLowerCase() === 'gm' || (selected && campaignIdsForPlayerV1052(player).includes(selected)));
+    const previous = playerSelect.value;
+    playerSelect.innerHTML = players.length ? players.map(player => `<option value="${esc(player.id)}">${esc(player.displayName || player.id)}</option>`).join('') : `<option value="">${selected ? 'Нет доступных персонажей' : 'Нет доступных кампаний'}</option>`;
+    if (players.some(player => player.id === previous)) playerSelect.value = previous;
+    this.renderLoginPreview();
+  };
+
+  const __renderLoginPreviewV1052 = App.renderLoginPreview.bind(App);
+  App.renderLoginPreview = function() {
+    __renderLoginPreviewV1052();
+    const meta = document.querySelector('#login-preview .login-campaign-meta-v1049');
+    if (meta) {
+      const spans = meta.querySelectorAll('span');
+      if (spans.length > 1) spans[spans.length - 1].remove();
+    }
+  };
+
+  const __loginV1052 = App.login.bind(App);
+  App.login = async function() {
+    const playerId = document.getElementById('char-select')?.value || '';
+    const player = normalizePlayerProfileV2(this.state?.users?.[playerId] || PLAYER_TEMPLATES?.[playerId] || {});
+    if (playerId && !isApprovedPlayerV1052(player)) {
+      document.getElementById('login-error').textContent = player.approvalStatus === 'pending' ? 'Анкета персонажа ещё ожидает одобрения ДМа.' : 'Анкета персонажа отклонена ДМом.';
+      return;
+    }
+    return __loginV1052();
+  };
+
+  // Profile: Armor Class and origin-derived effective characteristics.
+  const __renderProfileV1052 = UI.renderProfile.bind(UI);
+  UI.renderProfile = function() {
+    const result = __renderProfileV1052();
+    const user = App.currentUser ? normalizePlayerProfileV2(App.currentUser) : null;
+    if (!user) return result;
+    const firstProfile = document.querySelector('#profile-content .profile-card');
+    if (firstProfile) {
+      const rows = firstProfile.querySelectorAll('.data-row');
+      const anchor = Array.from(rows).find(row => row.querySelector('.data-label')?.textContent?.trim() === 'Баланс');
+      if (!firstProfile.querySelector('[data-armor-class-v1052]')) {
+        const markup = `<div class="data-row" data-armor-class-v1052><span class="data-label">Класс брони</span><span class="data-value">${getEffectiveArmorClassV1052(user)}</span></div>`;
+        if (anchor) anchor.insertAdjacentHTML('beforebegin', markup); else firstProfile.insertAdjacentHTML('beforeend', markup);
+      }
+    }
+    const equipCards = document.querySelectorAll('#profile-content .profile-card');
+    const target = Array.from(equipCards).find(card => card.textContent?.includes('Экипировка'));
+    if (target && !target.querySelector('[data-origins-v1052]')) {
+      const social = originByIdV1052('social', user.socialOriginId);
+      const geo = originByIdV1052('geographic', user.geographicOriginId);
+      const installed = (user.installedImplantIds || []).map(id => normalizeEquipmentItemV2(EQUIPMENT[id] || {})).filter(item => item.id && item.name);
+      target.insertAdjacentHTML('beforeend', `<div data-origins-v1052><div class="section-title" style="margin-top:18px">Профессия и происхождение</div><div class="small-note">Профессия: ${esc(social?.name || 'не выбрана')} · Происхождение: ${esc(geo?.name || 'не выбрано')}</div><div class="section-title" style="margin-top:18px">Установленные импланты</div><div class="result-stack">${installed.map(item => `<div class="card pad18"><div class="data-row"><span class="data-label">${esc(item.name)}</span><span class="data-value">${Number(item.energyRequired || 0)} EN</span></div><div class="small-note">Требования: ${esc(requirementsTextV1052(item))}</div></div>`).join('') || '<div class="small-note">Нет установленных имплантов</div>'}</div></div>`);
+    }
+    return result;
+  };
+
+  function originBonusBadgesV1054(origin = {}) {
+    const bonuses = normalizeBonusMapV1052(origin.abilityBonuses || {});
+    const rows = ABILITIES_V1052.filter(row => Number(bonuses[row.key] || 0) !== 0)
+      .map(row => `<span class="origin-bonus-v1054 ${Number(bonuses[row.key]) > 0 ? 'positive' : 'negative'}">${esc(row.short)} ${Number(bonuses[row.key]) > 0 ? '+' : ''}${Number(bonuses[row.key])}</span>`);
+    return rows.length ? rows.join('') : '<span class="origin-bonus-v1054 neutral">Без модификаторов</span>';
+  }
+  function geoTypeLabelV1054(type) {
+    return ({ city: 'Город', planet: 'Планета', region: 'Регион / область', station: 'Станция', colony: 'Колония / поселение', other: 'Место происхождения' })[String(type || 'other')] || 'Место происхождения';
+  }
+  function renderOriginRegistrationCardsV1054(map, fieldName, kind) {
+    const rows = sortEntitiesForList(Object.values(map || {}));
+    if (!rows.length) return `<div class="origin-empty-v1054">ДМ ещё не добавил варианты для выбора.</div>`;
+    return `<div class="origin-choice-grid-v1054">${rows.map(origin => {
+      const image = String(origin.image || origin.imageLocal || '').trim();
+      const kicker = kind === 'profession' ? 'ПРОФЕССИЯ' : geoTypeLabelV1054(origin.locationType);
+      return `<label class="origin-choice-card-v1054">
+        <input type="radio" name="${fieldName}" value="${esc(origin.id)}" required />
+        <div class="origin-choice-media-v1054">${image ? `<img src="${esc(image)}" alt="" />` : `<div class="origin-choice-placeholder-v1054">${kind === 'profession' ? 'PROF' : 'ORIGIN'}</div>`}</div>
+        <div class="origin-choice-body-v1054"><div class="origin-choice-kicker-v1054">${esc(kicker)}</div><div class="origin-choice-title-v1054">${esc(origin.name || origin.id)}</div><div class="origin-choice-description-v1054">${esc(origin.description || 'Описание пока не заполнено ДМом.')}</div><div class="origin-bonuses-v1054">${originBonusBadgesV1054(origin)}</div><div class="origin-select-indicator-v1054">ВЫБРАТЬ</div></div>
+      </label>`;
+    }).join('')}</div>`;
+  }
+  function registrationMarkupV1052() {
+    const campaigns = availableCampaignRowsV1052();
+    return `<div class="registration-window-v1054" role="dialog" aria-modal="true" aria-labelledby="registration-title-v1054">
+      <div class="registration-card-v1052">
+        <div class="registration-sticky-head-v1054 row"><div><div class="mono accent tiny-space">CHARACTER_APPLICATION</div><div class="section-title" id="registration-title-v1054">Регистрация нового персонажа</div><div class="small-note">Заполните анкету. После отправки она попадёт ДМу на одобрение.</div></div><button type="button" class="ghost" id="registration-close-v1052">ЗАКРЫТЬ</button></div>
+        <form id="registration-form-v1052" class="form registration-form-v1054">
+          <div class="registration-section-v1054"><div class="section-title">Основные данные</div><div class="field"><label>Игровая кампания</label><select class="select" name="campaignId" required>${campaigns.map(c => `<option value="${esc(c.id)}">${esc(c.name || c.id)}</option>`).join('')}</select></div>
+          <div class="cols2"><div class="field"><label>Имя</label><input class="input" name="displayName" required maxlength="80" /></div><div class="field"><label>Фото персонажа</label><input class="input" type="file" name="photo" accept="image/png,image/jpeg,image/webp,image/gif" /></div></div>
+          <div class="field"><label>Описание персонажа</label><textarea class="area registration-description-v1054" name="description" maxlength="12000" placeholder="Внешность, характер, история, важные детали биографии…"></textarea></div></div>
+
+          <div class="registration-section-v1054"><div class="section-title">Профессия</div><div class="small-note">Профессия описывает занятие, службу или социальную роль персонажа. Прочитайте полное описание каждого варианта перед выбором.</div>${renderOriginRegistrationCardsV1054(SOCIAL_ORIGINS_V1052, 'socialOriginId', 'profession')}</div>
+
+          <div class="registration-section-v1054"><div class="section-title">Происхождение</div><div class="small-note">Местом происхождения может быть город, регион, станция, колония или целая планета.</div>${renderOriginRegistrationCardsV1054(GEOGRAPHIC_ORIGINS_V1052, 'geographicOriginId', 'geographic')}</div>
+
+          <div class="registration-section-v1054"><div class="section-title">Доступ</div><div class="cols2"><div class="field"><label>Пароль персонажа</label><input class="input" name="pass" type="password" required minlength="4" autocomplete="new-password" /></div><div class="field"><label>Повторите пароль</label><input class="input" name="pass2" type="password" required minlength="4" autocomplete="new-password" /></div></div></div>
+          <div class="registration-submit-v1054"><button class="primary" type="submit">ОТПРАВИТЬ АНКЕТУ ДМУ</button><div class="small-note" id="registration-status-v1052"></div></div>
+        </form>
+      </div>
+    </div>`;
+  }
+  async function registrationPhotoV1052(file, stem) {
+    if (!file || !file.size) return '';
+    const nativePath = window.electronAPI?.getPathForFile?.(file);
+    if (nativePath && window.electronAPI?.saveWorldImageFile) {
+      const res = await window.electronAPI.saveWorldImageFile({ filePath: nativePath, preferredStem: stem || 'registration' });
+      if (res?.ok) return String(res.url || res.cloudUrl || res.localUrl || '');
+      throw new Error(res?.message || 'Не удалось сохранить фото');
+    }
+    return await readImageFileAsRenderableDataUrlV51(file);
+  }
+  function bindRegistrationV1052() {
+    const open = document.getElementById('register-character-btn-v1052');
+    const panel = document.getElementById('registration-panel-v1052');
+    if (!open || !panel || open.dataset.boundV1052 === '1') return;
+    if (panel.parentElement !== document.body) document.body.appendChild(panel);
+    open.dataset.boundV1052 = '1';
+    open.addEventListener('click', () => { panel.innerHTML = registrationMarkupV1052(); panel.hidden = false; document.body.classList.add('registration-open-v1054'); });
+    panel.addEventListener('click', event => { if (event.target?.id === 'registration-close-v1052' || event.target?.classList?.contains('registration-window-v1054')) { panel.hidden = true; panel.innerHTML = ''; document.body.classList.remove('registration-open-v1054'); } });
+    document.addEventListener('keydown', event => { if (event.key === 'Escape' && !panel.hidden) { panel.hidden = true; panel.innerHTML = ''; document.body.classList.remove('registration-open-v1054'); } });
+    panel.addEventListener('submit', async event => {
+      if (event.target?.id !== 'registration-form-v1052') return;
+      event.preventDefault();
+      const form = event.target; const fd = new FormData(form); const status = form.querySelector('#registration-status-v1052');
+      const campaignId = String(fd.get('campaignId') || '').trim();
+      const campaign = availableCampaignRowsV1052().find(c => c.id === campaignId);
+      if (!campaign) { status.textContent = 'Кампания недоступна.'; return; }
+      const pass = String(fd.get('pass') || ''); if (pass !== String(fd.get('pass2') || '')) { status.textContent = 'Пароли не совпадают.'; return; }
+      const displayName = String(fd.get('displayName') || '').trim(); if (!displayName) return;
+      status.textContent = 'Сохранение анкеты…';
+      try {
+        let id = slugifyId(displayName, 'player');
+        if (App.state?.users?.[id] || PLAYER_TEMPLATES?.[id]) id = `${id}_${Date.now().toString(36).slice(-5)}`;
+        const image = await registrationPhotoV1052(form.elements.photo?.files?.[0], `registration_${id}`);
+        const player = normalizePlayerProfileV2({
+          id, role: 'player', pass, shortName: displayName, displayName, rank: 'Новый персонаж', avatarGlyph: initials(displayName), lore: String(fd.get('description') || '').trim(), notes: '', image,
+          approvalStatus: 'pending', applicationSubmittedAt: new Date().toISOString(), campaignIds: [campaignId], socialOriginId: String(fd.get('socialOriginId') || ''), geographicOriginId: String(fd.get('geographicOriginId') || ''),
+          credits: 0, stats: { hpCurrent: 10, hpMax: 10, shieldCurrent: 0, shieldMax: 0, energyCurrent: 1, energyMax: 1, baseArmorClass: 10 }, abilities: Object.fromEntries(ABILITIES_V1052.map(row => [row.key, 0])), abilityBase: Object.fromEntries(ABILITIES_V1052.map(row => [row.key, 0])),
+          equipmentSlots: { primaryWeapon: '', secondaryWeapon: '', armor: '' }, installedImplantIds: [], inventory: [], social: { npcIds: [], orgs: [], reputation: [] }, currentPlanetId: '', relatedArticleIds: []
+        });
+        App.state.users[id] = player; PLAYER_TEMPLATES[id] = deep(player);
+        await App.writeLocalMirrors();
+        const pushed = await PlayerSync.pushPlayerRecord(id, player, { rerender: false });
+        status.textContent = pushed?.ok || pushed?.status === 'disabled' ? 'Анкета отправлена. Дождитесь одобрения ДМа.' : `Анкета сохранена локально; синхронизация: ${pushed?.message || 'ошибка'}`;
+        form.reset();
+        App.fillLoginSelect();
+      } catch (error) { status.textContent = `Не удалось отправить анкету: ${error.message}`; }
+    });
+  }
+
+  // Campaign selector may be rebuilt many times, but registration should always reflect the current world.
+  const __finishLoadV1052 = applyWorldData;
+  applyWorldData = function(payload = {}) { const result = __finishLoadV1052(payload); bindRegistrationV1052(); return result; };
+  bindRegistrationV1052();
+
+  // Ensure legacy mini-game module can never be reopened from stale state.
+  const __openModuleV1052 = UI.openModule.bind(UI);
+  UI.openModule = function(id, ...args) { if (id === 'tool') return; return __openModuleV1052(id, ...args); };
 })();

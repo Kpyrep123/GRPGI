@@ -1,10 +1,11 @@
 
 const root = document.getElementById('player-display-root');
-let playerDisplayMirror = { activeSceneId: '', cameraByScene: {}, updatedAt: null };
+let playerDisplayMirror = { eraTheme: 'technological', activeSceneId: '', cameraByScene: {}, updatedAt: null };
 
 function normalizeMirrorPayload(payload = {}) {
   return {
     mode: String(payload?.mode || '').trim(),
+    eraTheme: ['medieval','industrial','technological'].includes(String(payload?.eraTheme || '').trim()) ? String(payload.eraTheme).trim() : 'technological',
     activeRegionMapId: String(payload?.activeRegionMapId || '').trim(),
     activeSceneId: String(payload?.activeSceneId || '').trim(),
     cameraByScene: payload?.cameraByScene && typeof payload.cameraByScene === 'object' ? payload.cameraByScene : {},
@@ -14,6 +15,12 @@ function normalizeMirrorPayload(payload = {}) {
     selectedRegionTokenId: String(payload?.selectedRegionTokenId || '').trim(),
     updatedAt: payload?.updatedAt || null
   };
+}
+
+function applyPlayerDisplayEraTheme() {
+  const era = ['medieval','industrial','technological'].includes(String(playerDisplayMirror?.eraTheme || '')) ? playerDisplayMirror.eraTheme : 'technological';
+  document.documentElement.dataset.eraTheme = era;
+  document.body?.setAttribute('data-era-theme', era);
 }
 
 function esc(v = '') {
@@ -270,11 +277,13 @@ refresh();
 window.electronAPI?.getPlayerDisplayView?.().then(res => {
   if (res?.ok && res.payload) {
     playerDisplayMirror = normalizeMirrorPayload(res.payload);
+    applyPlayerDisplayEraTheme();
     refresh();
   }
 }).catch(() => {});
 window.electronAPI?.onPlayerDisplayView?.(payload => {
   playerDisplayMirror = normalizeMirrorPayload(payload);
+  applyPlayerDisplayEraTheme();
   if (playerDisplayMirror.mode === 'region' || playerDisplayMirror.activeRegionMapId) {
     if (playerDisplayMirror.regionCamera) {
       regionDisplayV36.cameraTarget = {

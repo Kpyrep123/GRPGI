@@ -1,0 +1,50 @@
+{
+  "CAMPAIGNS": {
+    "main": {
+      "id": "main",
+      "name": "Основная кампания",
+      "status": "active",
+      "availableNow": true,
+      "era": "technological",
+      "color": "#c6a468",
+      "description": "Основная игровая кампания.",
+      "image": "",
+      "relatedArticleIds": []
+    },
+    "guest": {
+      "id": "guest",
+      "name": "Гостевой доступ",
+      "status": "guest",
+      "availableNow": true,
+      "era": "technological",
+      "color": "#9b8b70",
+      "description": "Гостевой режим просмотра материалов.",
+      "image": "",
+      "relatedArticleIds": []
+    }
+  },
+  "CAMPAIGN_LIST": [
+    {
+      "id": "main",
+      "name": "Основная кампания",
+      "status": "active",
+      "availableNow": true,
+      "era": "technological",
+      "color": "#c6a468",
+      "description": "Основная игровая кампания.",
+      "image": "",
+      "relatedArticleIds": []
+    },
+    {
+      "id": "guest",
+      "name": "Гостевой доступ",
+      "status": "guest",
+      "availableNow": true,
+      "era": "technological",
+      "color": "#9b8b70",
+      "description": "Гостевой режим просмотра материалов.",
+      "image": "",
+      "relatedArticleIds": []
+    }
+  ]
+}

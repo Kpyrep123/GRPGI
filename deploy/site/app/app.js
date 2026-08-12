@@ -5,20 +5,20 @@
     hideCombat: document.documentElement?.dataset?.hideCombat === 'true' || window.GRPG_HIDE_COMBAT === true
   };
   const WEB_MEMORY = new Map();
+  const WEB_RUNTIME_CONFIG = (window.GRPG_WEB_RUNTIME && typeof window.GRPG_WEB_RUNTIME === 'object') ? window.GRPG_WEB_RUNTIME : {};
 
   const DEFAULTS = {
     backend: 'pocketbase',
-    url: 'https://sync.grpg-sync.ru',
-    appUsersCollection: 'app_users',
-    appUserEmail: '',
-    appUserPassword: '',
-    tableName: 'campaign_snapshots',
-    playerTableName: 'campaign_players',
-    chatTableName: 'campaign_messages',
-    combatRuntimeTableName: 'campaign_combat_runtime',
-    assetsCollection: 'campaign_assets',
-    snapshotPollMs: 30000,
-    livePollMs: 5000
+    url: String(WEB_RUNTIME_CONFIG.url || 'https://sync.grpg-sync.ru').trim(),
+    campaignId: String(WEB_RUNTIME_CONFIG.campaignId || 'main').trim() || 'main',
+    appUsersCollection: String(WEB_RUNTIME_CONFIG.appUsersCollection || 'app_users').trim() || 'app_users',
+    appUserEmail: String(WEB_RUNTIME_CONFIG.appUserEmail || '').trim(),
+    appUserPassword: String(WEB_RUNTIME_CONFIG.appUserPassword || ''),
+    tableName: String(WEB_RUNTIME_CONFIG.tableName || 'campaign_snapshots').trim() || 'campaign_snapshots',
+    playerTableName: String(WEB_RUNTIME_CONFIG.playerTableName || 'campaign_players').trim() || 'campaign_players',
+    chatTableName: String(WEB_RUNTIME_CONFIG.chatTableName || 'campaign_messages').trim() || 'campaign_messages',
+    combatRuntimeTableName: String(WEB_RUNTIME_CONFIG.combatRuntimeTableName || 'campaign_combat_runtime').trim() || 'campaign_combat_runtime',
+    assetsCollection: String(WEB_RUNTIME_CONFIG.assetsCollection || 'campaign_assets').trim() || 'campaign_assets'
   };
 
   const KEYS = {
@@ -26,7 +26,8 @@
     cache: 'grpg.mobile.cache.v1',
     session: 'grpg.mobile.session.v1',
     auth: 'grpg.web.pocketbaseAuth.v1',
-    remember: 'grpg.web.rememberLogin.v1'
+    remember: 'grpg.web.rememberLogin.v1',
+    galaxyView: 'grpg.web.galaxyView.v1'
   };
   const WEB_REMEMBER_MAX_MS = 30 * 24 * 60 * 60 * 1000;
   const LEGACY_BACKEND_MARKER = ['supa', 'base'].join('');
@@ -61,7 +62,7 @@
       organizations: new Map()
     },
     ui: {
-      boot: 'setup',
+      boot: 'login',
       screen: 'home',
       archiveTab: 'articles',
       selectedArchiveId: '',
@@ -70,6 +71,10 @@
       selectedCombatSceneId: '',
       selectedCampaignId: 'all',
       focusedSystemId: '',
+      galaxySelectedSystemId: '',
+      galaxySelectedPlanetId: '',
+      galaxyDesktopActive: false,
+      galaxyCamera: null,
       archiveQuery: '',
       profileTab: 'main',
       skillZoom: 1,
@@ -81,17 +86,13 @@
       lastChatStamp: null,
       lastCombatStamp: null
     },
-    pollers: { snapshot: null, live: null },
     realtime: {
-      socket: null,
-      joined: false,
-      heartbeat: null,
       reconnectTimer: null,
-      ref: 1,
-      pending: { players: false, chat: false, combat: false, snapshot: false },
-      flushTimer: null,
       eventKeys: new Set(),
-      suppressClose: false
+      connected: false,
+      hadConnection: false,
+      lastEventAt: 0,
+      lastResyncAt: 0
     },
     busy: false
   };
@@ -136,6 +137,7 @@
 
   function sanitizedConfig(config = App.config) {
     const clean = normalizeConfig(config || {});
+    clean.appUserEmail = '';
     clean.appUserPassword = '';
     return clean;
   }
@@ -170,10 +172,8 @@
   }
 
   function syncRememberControls() {
-    ['#setup-remember-login', '#login-remember-login'].forEach(selector => {
-      const control = document.querySelector(selector);
-      if (control) control.checked = Boolean(App.rememberLogin);
-    });
+    const control = $('#login-remember-login');
+    if (control) control.checked = Boolean(App.rememberLogin);
   }
 
   async function setRememberLogin(enabled, { extend = false } = {}) {
@@ -254,8 +254,8 @@
       backend: 'pocketbase',
       provider: 'pocketbase',
       url: legacyConfig ? DEFAULTS.url : requestedUrl,
-      appUserEmail: legacyConfig ? '' : String(payload.appUserEmail || payload.pocketbaseEmail || payload.pbEmail || '').trim(),
-      appUserPassword: legacyConfig ? '' : String(payload.appUserPassword || payload.pocketbasePassword || payload.pbPassword || '').trim(),
+      appUserEmail: legacyConfig ? '' : String(payload.appUserEmail || payload.pocketbaseEmail || payload.pbEmail || DEFAULTS.appUserEmail || '').trim(),
+      appUserPassword: legacyConfig ? '' : String(payload.appUserPassword || payload.pocketbasePassword || payload.pbPassword || DEFAULTS.appUserPassword || ''),
       appUsersCollection: String(payload.appUsersCollection || payload.pocketbaseUsersCollection || DEFAULTS.appUsersCollection).trim() || DEFAULTS.appUsersCollection,
       campaignId: String(payload.campaignId || DEFAULTS.campaignId || 'main').trim() || 'main',
       deviceLabel: String(payload.deviceLabel || '').trim(),
@@ -263,9 +263,7 @@
       playerTableName: String(payload.playerTableName || DEFAULTS.playerTableName).trim() || DEFAULTS.playerTableName,
       chatTableName: String(payload.chatTableName || DEFAULTS.chatTableName).trim() || DEFAULTS.chatTableName,
       combatRuntimeTableName: String(payload.combatRuntimeTableName || DEFAULTS.combatRuntimeTableName).trim() || DEFAULTS.combatRuntimeTableName,
-      assetsCollection: String(payload.assetsCollection || payload.pocketbaseAssetsCollection || DEFAULTS.assetsCollection).trim() || DEFAULTS.assetsCollection,
-      snapshotPollMs: Math.max(10000, Number(payload.snapshotPollMs || DEFAULTS.snapshotPollMs)),
-      livePollMs: Math.max(2500, Number(payload.livePollMs || DEFAULTS.livePollMs))
+      assetsCollection: String(payload.assetsCollection || payload.pocketbaseAssetsCollection || DEFAULTS.assetsCollection).trim() || DEFAULTS.assetsCollection
     };
   }
 
@@ -274,7 +272,11 @@
   }
 
   function hasConfig(config = App.config) {
-    return Boolean(config?.url && config?.campaignId && (config?.appUserPassword || App.auth?.token));
+    return Boolean(config?.url && config?.campaignId && (App.auth?.token || (config?.appUserEmail && config?.appUserPassword)));
+  }
+
+  function hasRuntimeServiceAuth() {
+    return Boolean(DEFAULTS.appUserEmail && DEFAULTS.appUserPassword);
   }
 
 
@@ -704,6 +706,18 @@
     }
     if (App.ui.boot !== 'app') return;
     const active = App.ui.screen;
+    const desktopGalaxyActive = active === 'home'
+      && App.ui.galaxyDesktopActive
+      && window.matchMedia('(min-width: 901px)').matches
+      && WebGalaxyMap.isMounted();
+
+    // The desktop galaxy owns its canvas and camera. World/player realtime updates
+    // mutate only the data model and inspector; never rebuild the map DOM.
+    if (desktopGalaxyActive && (changed.snapshot || changed.players)) {
+      WebGalaxyMap.onDataChanged(changed);
+      return;
+    }
+
     if ((changed.chat && active === 'chat') || (changed.combat && active === 'combat') || (changed.players && active === 'profile') || (changed.snapshot && ['home', 'archive', 'market'].includes(active))) {
       renderActiveScreenSafely();
       return;
@@ -840,7 +854,7 @@
     }
 
     if (!config?.appUserEmail || !config?.appUserPassword) {
-      throw new Error('Срок сохранённого входа истёк. Введите данные подключения PocketBase повторно.');
+      throw new Error('Автоматическая PocketBase-авторизация не внедрена в Web-деплой. Выполните «ДЕПЛОЙ WEB» из DEV-профиля ДМа после сохранения PocketBase-конфигурации в Electron.');
     }
 
     const base = pbBaseUrl(config);
@@ -907,12 +921,6 @@
       search.set(key, value);
     });
     return search.toString();
-  }
-
-  async function apiPing(config) {
-    await pbAuthToken(config, true);
-    await apiPullSnapshot(config, false);
-    return true;
   }
 
   function normalizeSnapshotRow(record = {}) {
@@ -1256,19 +1264,14 @@
   }
 
   function screenNodes() {
-    return {
-      setup: $('#setup-screen'),
-      login: $('#login-screen'),
-      app: $('#app-shell')
-    };
+    return { login: $('#login-screen'), app: $('#app-shell') };
   }
 
   function openBoot(mode) {
     App.ui.boot = mode;
     const nodes = screenNodes();
-    nodes.setup.classList.toggle('hidden', mode !== 'setup');
-    nodes.login.classList.toggle('hidden', mode !== 'login');
-    nodes.app.classList.toggle('hidden', mode !== 'app');
+    nodes.login?.classList.toggle('hidden', mode !== 'login');
+    nodes.app?.classList.toggle('hidden', mode !== 'app');
   }
 
   function setTopbar(title, subtitle) {
@@ -1300,20 +1303,6 @@
     if (!silent) notify('Кампания обновлена из облака', 'ok');
   }
 
-  async function pullLiveData(kinds = { players: true, chat: true, combat: true }) {
-    if (!App.session?.userId || !hasConfig()) return;
-    const jobs = [];
-    if (kinds.players) jobs.push(apiPullPlayers(App.config)); else jobs.push(Promise.resolve(null));
-    if (kinds.chat) jobs.push(apiPullChat(App.config, App.ui.lastChatStamp)); else jobs.push(Promise.resolve(null));
-    if (kinds.combat) jobs.push(apiPullCombatRuntime(App.config)); else jobs.push(Promise.resolve(null));
-    const [rows, chatRows, combatRuntime] = await Promise.all(jobs);
-    const nextPlayers = rows || Array.from(App.data.playerRows.values());
-    const mergedChat = kinds.chat ? mergeChatRows(App.data.chatRows, chatRows) : App.data.chatRows;
-    const nextCombat = kinds.combat ? mergeCombatRuntime(App.data.combatRuntime, combatRuntime || App.data.combatRuntime) : App.data.combatRuntime;
-    compileData(App.cache.snapshot, nextPlayers, mergedChat, nextCombat);
-    await saveCache();
-    renderAffectedScreens({ players: !!kinds.players, chat: !!kinds.chat, combat: !!kinds.combat });
-  }
 
   function mergeChatRows(existing, incoming) {
     const map = new Map();
@@ -1414,7 +1403,614 @@
     return `<button class="secondary" type="button" data-action="open-system" data-system-id="${esc(systemId)}">Перейти к системе</button>`;
   }
 
+
+  function galaxyEraPaletteV1050() {
+    const root = document.documentElement;
+    const era = String(root?.dataset?.eraTheme || 'technological').toLowerCase();
+    const styles = getComputedStyle(root);
+    const css = (name, fallback) => String(styles.getPropertyValue(name) || '').trim() || fallback;
+    if (era === 'medieval') return {
+      era,
+      marker: css('--map-marker', '#c88a52'), route: css('--map-route', '#9b673c'), text: css('--map-text', '#f0d9ad'),
+      bg0: '#3a2415', bg1: '#160d08', bg2: '#080503', stars: '#f0d9ad', orbit: 'rgba(200,138,82,.20)'
+    };
+    if (era === 'industrial') return {
+      era,
+      marker: css('--map-marker', '#d49a3f'), route: css('--map-route', '#a96f2f'), text: css('--map-text', '#ead8b4'),
+      bg0: '#1c1d1c', bg1: '#0c0d0d', bg2: '#030404', stars: '#d7c6a4', orbit: 'rgba(212,154,63,.18)'
+    };
+    return {
+      era: 'technological',
+      marker: css('--map-marker', '#60c9ff'), route: css('--map-route', '#328dff'), text: css('--map-text', '#e8f8ff'),
+      bg0: '#102b49', bg1: '#071526', bg2: '#020610', stars: '#dff7ff', orbit: 'rgba(96,201,255,.16)'
+    };
+  }
+
+  const WEB_ERA_MARKER_ASSET_FOLDERS_V1055 = Object.freeze({ industrial: 'nowadays', medieval: 'bronzera', technological: 'scifi' });
+  const WEB_ERA_MARKER_ASSET_FILES_V1055 = Object.freeze({
+    blackhole: 'blackhole.png', diamond: 'danger.png', square: 'misc.png', credits: 'trade.png',
+    node: 'node.png', orbital: 'star.png', planet: 'planet.png', ship: 'ship.png'
+  });
+  const WEB_ERA_MARKER_SCALE_V1055 = Object.freeze({ blackhole: 5.1, diamond: 3.55, square: 3.55, credits: 3.75, node: 3.85, orbital: 4, planet: 3.15, ship: 3.65 });
+  const WEB_ERA_MARKER_IMAGE_CACHE_V1055 = new Map();
+  const WEB_ERA_MARKER_TINT_CACHE_V1055 = new Map();
+
+  function webEraMarkerAssetUrlV1055(kind, palette = galaxyEraPaletteV1050()) {
+    const file = WEB_ERA_MARKER_ASSET_FILES_V1055[String(kind || '').toLowerCase()];
+    if (!file) return '';
+    const era = String(palette?.era || document.documentElement?.dataset?.eraTheme || 'technological').toLowerCase();
+    const folder = WEB_ERA_MARKER_ASSET_FOLDERS_V1055[era] || WEB_ERA_MARKER_ASSET_FOLDERS_V1055.technological;
+    return `./assets/markers/${folder}/${file}`;
+  }
+
+  function webMarkerSpriteEntryV1055(kind, palette = galaxyEraPaletteV1050()) {
+    const url = webEraMarkerAssetUrlV1055(kind, palette);
+    if (!url || typeof Image === 'undefined') return null;
+    let entry = WEB_ERA_MARKER_IMAGE_CACHE_V1055.get(url);
+    if (entry) return entry;
+    const image = new Image();
+    entry = { url, image, status: 'loading' };
+    image.decoding = 'async';
+    image.onload = () => { entry.status = image.naturalWidth && image.naturalHeight ? 'ready' : 'error'; WEB_ERA_MARKER_TINT_CACHE_V1055.clear(); };
+    image.onerror = () => { entry.status = 'error'; };
+    image.src = url;
+    WEB_ERA_MARKER_IMAGE_CACHE_V1055.set(url, entry);
+    return entry;
+  }
+
+  function webTintedMarkerSpriteV1055(entry, markerColor = '#7df9ff') {
+    if (!entry || entry.status !== 'ready' || !entry.image?.naturalWidth || !entry.image?.naturalHeight) return null;
+    const color = String(markerColor || '#7df9ff').trim() || '#7df9ff';
+    const key = `${entry.url}|${color.toLowerCase()}`;
+    const cached = WEB_ERA_MARKER_TINT_CACHE_V1055.get(key);
+    if (cached) return cached;
+    const side = 192;
+    const canvas = document.createElement('canvas'); canvas.width = side; canvas.height = side;
+    const tctx = canvas.getContext('2d'); if (!tctx) return null;
+    const pad = 10;
+    const scale = Math.min((side - pad * 2) / entry.image.naturalWidth, (side - pad * 2) / entry.image.naturalHeight);
+    const w = entry.image.naturalWidth * scale, h = entry.image.naturalHeight * scale;
+    tctx.imageSmoothingEnabled = true; tctx.imageSmoothingQuality = 'high';
+    tctx.drawImage(entry.image, (side - w) / 2, (side - h) / 2, w, h);
+    tctx.save();
+    tctx.globalCompositeOperation = 'source-atop';
+    tctx.globalAlpha = .27;
+    tctx.fillStyle = color;
+    tctx.fillRect(0, 0, side, side);
+    tctx.restore();
+    WEB_ERA_MARKER_TINT_CACHE_V1055.set(key, canvas);
+    return canvas;
+  }
+
+  function drawWebEraMarkerSpriteV1055(ctx, kind, x, y, size, markerColor, palette, active = false) {
+    const entry = webMarkerSpriteEntryV1055(kind, palette);
+    const sprite = webTintedMarkerSpriteV1055(entry, markerColor);
+    if (!sprite) return false;
+    const dpr = WebGalaxyMap?.dpr || 1;
+    const visual = Math.max(12 * dpr, Number(size || 8) * (WEB_ERA_MARKER_SCALE_V1055[kind] || 3.6));
+    const color = String(markerColor || palette?.marker || '#7df9ff').trim() || '#7df9ff';
+    ctx.save();
+    ctx.globalAlpha = active ? 1 : .96;
+    ctx.shadowColor = color;
+    ctx.shadowBlur = (active ? 14 : 8) * dpr;
+    ctx.drawImage(sprite, x - visual / 2, y - visual / 2, visual, visual);
+    ctx.shadowBlur = 0;
+    if (active) {
+      ctx.globalAlpha = .62; ctx.strokeStyle = color; ctx.lineWidth = Math.max(1, 1.25 * dpr); ctx.setLineDash([4*dpr,4*dpr]);
+      ctx.beginPath(); ctx.arc(x, y, visual * .56, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+    }
+    ctx.restore();
+    return true;
+  }
+
+  function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerColor = '', markerStyle = 'orbital') {
+    const color = String(markerColor || palette.marker || '#7df9ff').trim() || '#7df9ff';
+    const style = WEB_ERA_MARKER_ASSET_FILES_V1055[markerStyle] ? markerStyle : 'orbital';
+    if (drawWebEraMarkerSpriteV1055(ctx, style, p.x, p.y, r, color, palette, active)) return;
+    ctx.save();
+    ctx.shadowBlur = (palette.era === 'technological' ? 20 : 13) * WebGalaxyMap.dpr;
+    ctx.shadowColor = color;
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineWidth = 1.4 * WebGalaxyMap.dpr;
+    ctx.globalAlpha = active ? 1 : .92;
+    if (palette.era === 'industrial') {
+      const core = r * .72;
+      ctx.fillRect(p.x - core / 2, p.y - core / 2, core, core);
+      ctx.shadowBlur = 0;
+      const box = r * 1.35;
+      const tick = r * .48;
+      ctx.globalAlpha = .78;
+      ctx.beginPath();
+      ctx.moveTo(p.x-box,p.y-box+tick);ctx.lineTo(p.x-box,p.y-box);ctx.lineTo(p.x-box+tick,p.y-box);
+      ctx.moveTo(p.x+box-tick,p.y-box);ctx.lineTo(p.x+box,p.y-box);ctx.lineTo(p.x+box,p.y-box+tick);
+      ctx.moveTo(p.x+box,p.y+box-tick);ctx.lineTo(p.x+box,p.y+box);ctx.lineTo(p.x+box-tick,p.y+box);
+      ctx.moveTo(p.x-box+tick,p.y+box);ctx.lineTo(p.x-box,p.y+box);ctx.lineTo(p.x-box,p.y+box-tick);
+      ctx.stroke();
+    } else if (palette.era === 'medieval') {
+      ctx.beginPath();
+      ctx.moveTo(p.x,p.y-r*.78);ctx.lineTo(p.x+r*.78,p.y);ctx.lineTo(p.x,p.y+r*.78);ctx.lineTo(p.x-r*.78,p.y);ctx.closePath();ctx.fill();
+      ctx.shadowBlur = 0;ctx.globalAlpha=.62;
+      ctx.beginPath();ctx.arc(p.x,p.y,r*1.52,0,Math.PI*2);ctx.stroke();
+      ctx.save();ctx.translate(p.x,p.y);ctx.rotate(Math.PI/4);ctx.strokeRect(-r*1.05,-r*1.05,r*2.1,r*2.1);ctx.restore();
+    } else {
+      ctx.beginPath();ctx.arc(p.x,p.y,r*.48,0,Math.PI*2);ctx.fill();
+      ctx.shadowBlur=0;ctx.globalAlpha=.76;
+      ctx.beginPath();ctx.ellipse(p.x,p.y,r*1.55,r*.82,0,0,Math.PI*2);ctx.stroke();
+      ctx.globalAlpha=.28;ctx.beginPath();ctx.arc(p.x,p.y,r*1.95,0,Math.PI*2);ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  const WebGalaxyMap = {
+    canvas: null,
+    ctx: null,
+    host: null,
+    raf: 0,
+    resizeObserver: null,
+    dpr: 1,
+    width: 1,
+    height: 1,
+    dragging: false,
+    moved: false,
+    lastX: 0,
+    lastY: 0,
+    hover: null,
+    camera: { x: .5, y: .5, zoom: 1, tx: .5, ty: .5, tzoom: 1 },
+    activeSystemId: '',
+    systemPoints: [],
+    planetPoints: [],
+    stars: [],
+    images: { main: null, bloom: null },
+    isMounted() {
+      return Boolean(this.canvas && this.canvas.isConnected && this.ctx);
+    },
+    persistCamera() {
+      App.ui.galaxyCamera = {
+        camera: { ...this.camera },
+        activeSystemId: String(this.activeSystemId || ''),
+        savedAt: Date.now()
+      };
+      jsonStorageWrite(window.sessionStorage, KEYS.galaxyView, App.ui.galaxyCamera);
+    },
+    restoreCamera() {
+      const saved = App.ui.galaxyCamera || jsonStorageRead(window.sessionStorage, KEYS.galaxyView, null);
+      if (saved) App.ui.galaxyCamera = saved;
+      const raw = saved?.camera || {};
+      const valid = ['x', 'y', 'zoom', 'tx', 'ty', 'tzoom'].every(key => Number.isFinite(Number(raw[key])));
+      this.camera = valid
+        ? {
+            x: Number(raw.x), y: Number(raw.y), zoom: clamp(Number(raw.zoom), .65, 12),
+            tx: Number(raw.tx), ty: Number(raw.ty), tzoom: clamp(Number(raw.tzoom), .65, 12)
+          }
+        : { x: .5, y: .5, zoom: 1, tx: .5, ty: .5, tzoom: 1 };
+      const requestedSystem = String(saved?.activeSystemId || App.ui.galaxySelectedSystemId || '');
+      this.activeSystemId = this.visibleSystems().some(system => system.id === requestedSystem) ? requestedSystem : '';
+      if (!this.activeSystemId) App.ui.galaxySelectedSystemId = '';
+    },
+    init() {
+      this.destroy();
+      this.canvas = $('#web-galaxy-canvas');
+      this.host = $('#web-galaxy-stage');
+      if (!this.canvas || !this.host) return;
+      this.ctx = this.canvas.getContext('2d', { alpha: false });
+      this.restoreCamera();
+      if (!this.images.main) { const img = new Image(); img.src = './assets/images/galaxy1.png'; this.images.main = img; }
+      if (!this.images.bloom) { const img = new Image(); img.src = './assets/images/galaxy2.png'; this.images.bloom = img; }
+      if (!this.stars.length) {
+        this.stars = Array.from({ length: 360 }, (_, index) => ({
+          x: ((index * 73) % 997) / 997,
+          y: ((index * 193 + 47) % 991) / 991,
+          r: .35 + ((index * 29) % 9) / 10,
+          a: .16 + ((index * 41) % 47) / 100
+        }));
+      }
+      this.bind();
+      this.resize();
+      this.syncBackButton();
+      this.loop();
+    },
+    destroy() {
+      if (this.canvas) this.persistCamera();
+      if (this.raf) cancelAnimationFrame(this.raf);
+      this.raf = 0;
+      if (this.resizeObserver) this.resizeObserver.disconnect();
+      this.resizeObserver = null;
+      this.canvas = null;
+      this.ctx = null;
+      this.host = null;
+      this.systemPoints = [];
+      this.planetPoints = [];
+    },
+    bind() {
+      const canvas = this.canvas;
+      const point = event => {
+        const rect = canvas.getBoundingClientRect();
+        return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+      };
+      canvas.addEventListener('pointerdown', event => {
+        const p = point(event);
+        this.dragging = true;
+        this.moved = false;
+        this.lastX = p.x;
+        this.lastY = p.y;
+        canvas.setPointerCapture?.(event.pointerId);
+      });
+      canvas.addEventListener('pointermove', event => {
+        const p = point(event);
+        if (this.dragging) {
+          const dx = p.x - this.lastX;
+          const dy = p.y - this.lastY;
+          if (Math.hypot(dx, dy) > 2) this.moved = true;
+          const zoom = Math.max(.65, Number(this.camera.tzoom || this.camera.zoom || 1));
+          this.camera.tx -= (dx * this.dpr) / (this.width * zoom);
+          this.camera.ty -= (dy * this.dpr) / (this.height * zoom);
+          this.camera.tx = clamp(this.camera.tx, -.35, 1.35);
+          this.camera.ty = clamp(this.camera.ty, -.35, 1.35);
+          this.lastX = p.x;
+          this.lastY = p.y;
+        } else {
+          this.updateHover(p.x * this.dpr, p.y * this.dpr, event.clientX, event.clientY);
+        }
+      });
+      canvas.addEventListener('pointerup', event => {
+        const p = point(event);
+        this.dragging = false;
+        if (!this.moved) this.activateAt(p.x * this.dpr, p.y * this.dpr);
+        this.persistCamera();
+      });
+      canvas.addEventListener('pointercancel', () => { this.dragging = false; this.persistCamera(); });
+      canvas.addEventListener('pointerleave', () => {
+        this.dragging = false;
+        this.hover = null;
+        this.persistCamera();
+        const tip = $('#web-galaxy-tooltip');
+        if (tip) tip.classList.add('hidden');
+      });
+      canvas.addEventListener('wheel', event => {
+        event.preventDefault();
+        const p = point(event);
+        const sx = p.x * this.dpr;
+        const sy = p.y * this.dpr;
+        const before = Math.max(.65, Number(this.camera.tzoom || 1));
+        const worldX = this.camera.tx + (sx - this.width / 2) / (before * this.width);
+        const worldY = this.camera.ty + (sy - this.height / 2) / (before * this.height);
+        const factor = event.deltaY < 0 ? 1.18 : .84;
+        const after = clamp(before * factor, .65, 12);
+        this.camera.tzoom = after;
+        this.camera.tx = worldX - (sx - this.width / 2) / (after * this.width);
+        this.camera.ty = worldY - (sy - this.height / 2) / (after * this.height);
+        this.camera.tx = clamp(this.camera.tx, -.35, 1.35);
+        this.camera.ty = clamp(this.camera.ty, -.35, 1.35);
+        if (this.activeSystemId && after < 2.2) this.exitSystem(true);
+        this.persistCamera();
+      }, { passive: false });
+      this.resizeObserver = new ResizeObserver(() => this.resize());
+      this.resizeObserver.observe(this.host);
+    },
+    resize() {
+      if (!this.canvas || !this.host) return;
+      const rect = this.host.getBoundingClientRect();
+      this.dpr = Math.min(2, window.devicePixelRatio || 1);
+      this.width = Math.max(1, Math.round(rect.width * this.dpr));
+      this.height = Math.max(1, Math.round(rect.height * this.dpr));
+      this.canvas.width = this.width;
+      this.canvas.height = this.height;
+      this.canvas.style.width = `${rect.width}px`;
+      this.canvas.style.height = `${rect.height}px`;
+    },
+    visibleSystems() {
+      return App.data.systems.filter(system => visibleForPlayer(system, App.session?.userId));
+    },
+    visiblePlanets(system) {
+      return (system?.planetIds || []).map(id => App.data.planets.get(id)).filter(Boolean).filter(planet => visibleForPlayer(planet, App.session?.userId));
+    },
+    routes() {
+      const systems = this.visibleSystems();
+      const byId = new Map(systems.map(system => [system.id, system]));
+      const seen = new Set();
+      const out = [];
+      systems.forEach(system => (system.routes || []).forEach(route => {
+        const target = byId.get(route.toId);
+        if (!target || target.id === system.id) return;
+        const key = [system.id, target.id].sort().join('::');
+        if (seen.has(key)) return;
+        seen.add(key);
+        out.push({ from: system, to: target, color: route.color || system.color || '#7df9ff', label: route.label || '' });
+      }));
+      return out;
+    },
+    worldToScreen(x, y) {
+      return {
+        x: (Number(x ?? .5) - this.camera.x) * this.camera.zoom * this.width + this.width / 2,
+        y: (Number(y ?? .5) - this.camera.y) * this.camera.zoom * this.height + this.height / 2
+      };
+    },
+    loop() {
+      if (!this.ctx || !this.canvas?.isConnected) return this.destroy();
+      this.camera.x += (this.camera.tx - this.camera.x) * .12;
+      this.camera.y += (this.camera.ty - this.camera.y) * .12;
+      this.camera.zoom += (this.camera.tzoom - this.camera.zoom) * .12;
+      this.draw();
+      this.raf = requestAnimationFrame(() => this.loop());
+    },
+    drawSceneImage(ctx, img, alpha, scale = 1) {
+      if (!img?.complete || !img.naturalWidth) return;
+      const W = this.width;
+      const H = this.height;
+      const iw = img.naturalWidth;
+      const ih = img.naturalHeight;
+      const baseFit = Math.max(W / iw, H / ih) * scale;
+      const zoom = this.camera.zoom;
+      const dw = iw * baseFit * zoom;
+      const dh = ih * baseFit * zoom;
+      const cx = W / 2 + (.5 - this.camera.x) * zoom * W;
+      const cy = H / 2 + (.5 - this.camera.y) * zoom * H;
+      ctx.save();
+      ctx.globalCompositeOperation = 'screen';
+      ctx.globalAlpha = alpha;
+      ctx.drawImage(img, cx - dw / 2, cy - dh / 2, dw, dh);
+      ctx.restore();
+    },
+    draw() {
+      const ctx = this.ctx;
+      const W = this.width;
+      const H = this.height;
+      const t = performance.now() * .001;
+      const palette = galaxyEraPaletteV1050();
+      const bg = ctx.createRadialGradient(W * .5, H * .48, 0, W * .5, H * .48, Math.max(W, H) * .75);
+      bg.addColorStop(0, palette.bg0);
+      bg.addColorStop(.35, palette.bg1);
+      bg.addColorStop(1, palette.bg2);
+      ctx.fillStyle = bg;
+      ctx.fillRect(0, 0, W, H);
+
+      // Background, stars, routes and markers now share one camera transform.
+      this.drawSceneImage(ctx, this.images.bloom, .24, 1.08);
+      this.drawSceneImage(ctx, this.images.main, .5, 1.02);
+
+      ctx.save();
+      for (const star of this.stars) {
+        const p = this.worldToScreen(star.x, star.y);
+        if (p.x < -8 || p.y < -8 || p.x > W + 8 || p.y > H + 8) continue;
+        ctx.globalAlpha = star.a;
+        ctx.fillStyle = palette.stars;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, star.r * this.dpr * clamp(.8 + this.camera.zoom * .12, .8, 1.7), 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+
+      const current = currentSystem();
+      this.systemPoints = [];
+      this.planetPoints = [];
+      if (!this.activeSystemId) {
+        for (const route of this.routes()) {
+          const a = this.worldToScreen(route.from.pos?.x, route.from.pos?.y);
+          const b = this.worldToScreen(route.to.pos?.x, route.to.pos?.y);
+          ctx.save();
+          ctx.strokeStyle = palette.route;
+          ctx.globalAlpha = .42;
+          ctx.lineWidth = 1.25 * this.dpr;
+          ctx.setLineDash([7 * this.dpr, 7 * this.dpr]);
+          ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+          ctx.restore();
+        }
+      }
+      for (const system of this.visibleSystems()) {
+        const active = system.id === this.activeSystemId;
+        if (this.activeSystemId && !active) continue;
+        const p = this.worldToScreen(system.pos?.x, system.pos?.y);
+        const r = (active ? 12 : 8) * 1.4 * this.dpr;
+        this.systemPoints.push({ id: system.id, x: p.x, y: p.y, r: Math.max(22 * this.dpr, r * 2) });
+        drawWebEraSystemMarkerV1050(ctx, p, r, palette, active, system.color || palette.marker, system.markerStyle || 'orbital');
+        ctx.save();
+        const galaxyLabelFade = this.activeSystemId ? 1 : clamp((this.camera.zoom - 2.75) / 1.4, 0, 1);
+        if ((!this.activeSystemId || active) && galaxyLabelFade > .02) {
+          ctx.globalAlpha = galaxyLabelFade;
+          ctx.font = `${11 * this.dpr}px Consolas, monospace`;
+          ctx.fillStyle = palette.text;
+          ctx.fillText(system.markerLabel || system.name || system.id, p.x + r + 7 * this.dpr, p.y - 8 * this.dpr);
+        }
+        if (current?.id === system.id && !this.activeSystemId) {
+          ctx.setLineDash([5 * this.dpr, 5 * this.dpr]);
+          ctx.strokeStyle = palette.text;
+          ctx.lineWidth = 1.4 * this.dpr;
+          ctx.beginPath(); ctx.arc(p.x, p.y, 24 * 1.4 * this.dpr * (1 + .05 * Math.sin(t * 3)), 0, Math.PI * 2); ctx.stroke();
+          ctx.setLineDash([]);
+        }
+        ctx.restore();
+        if (active && this.camera.zoom > 2) this.drawSystemPlanets(ctx, system, p, t);
+      }
+      if (!this.visibleSystems().length) {
+        ctx.fillStyle = palette.text;
+        ctx.font = `${14 * this.dpr}px Consolas, monospace`;
+        ctx.fillText('Нет доступных систем', 28 * this.dpr, 42 * this.dpr);
+      }
+    },
+    drawSystemPlanets(ctx, system, center, t) {
+      const planets = this.visiblePlanets(system);
+      const palette = galaxyEraPaletteV1050();
+      planets.forEach((planet, index) => {
+        const orbit = Math.max(48, Number(planet.dist || 18) * 3.1 + index * 24) * this.dpr;
+        const angle = t * Math.max(.03, Number(planet.speed || .0006) * 90) + index * 2.1;
+        ctx.save();
+        ctx.strokeStyle = palette.orbit;
+        ctx.lineWidth = 1 * this.dpr;
+        ctx.beginPath(); ctx.ellipse(center.x, center.y, orbit, orbit * .52, 0, 0, Math.PI * 2); ctx.stroke();
+        const x = center.x + Math.cos(angle) * orbit;
+        const y = center.y + Math.sin(angle) * orbit * .52;
+        const r = clamp(Number(planet.size || 7), 5, 13) * this.dpr * .65;
+        this.planetPoints.push({ id: planet.id, systemId: system.id, x, y, r: Math.max(16 * this.dpr, r * 2) });
+        const color = planet.color || '#f0e68c';
+        const spriteDrawn = drawWebEraMarkerSpriteV1055(ctx, 'planet', x, y, r * 1.25, color, palette, App.ui.galaxySelectedPlanetId === planet.id);
+        if (!spriteDrawn) {
+          ctx.shadowBlur = 12 * this.dpr; ctx.shadowColor = color; ctx.fillStyle = color;
+          ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+          ctx.shadowBlur = 0;
+        }
+        ctx.font = `${10 * this.dpr}px Consolas, monospace`; ctx.fillStyle = palette.text;
+        ctx.fillText(planet.name || planet.id, x + 10 * this.dpr, y - 8 * this.dpr);
+        ctx.restore();
+      });
+    },
+    activateAt(x, y) {
+      const planet = this.planetPoints.find(p => Math.hypot(p.x - x, p.y - y) <= p.r);
+      if (planet) {
+        App.ui.galaxySelectedPlanetId = planet.id;
+        renderGalaxyInspector(planet.systemId, planet.id);
+        return;
+      }
+      const systemPoint = this.systemPoints.find(p => Math.hypot(p.x - x, p.y - y) <= p.r);
+      if (systemPoint) {
+        if (this.activeSystemId === systemPoint.id) return renderGalaxyInspector(systemPoint.id, '');
+        this.enterSystem(systemPoint.id);
+        return;
+      }
+      App.ui.galaxySelectedPlanetId = '';
+    },
+    updateHover(x, y, clientX, clientY) {
+      const planetPoint = this.planetPoints.find(p => Math.hypot(p.x - x, p.y - y) <= p.r);
+      const systemPoint = !planetPoint && this.systemPoints.find(p => Math.hypot(p.x - x, p.y - y) <= p.r);
+      const tip = $('#web-galaxy-tooltip');
+      if (!tip) return;
+      if (planetPoint) {
+        const planet = App.data.planets.get(planetPoint.id);
+        tip.innerHTML = `<b>${esc(planet?.name || planetPoint.id)}</b><span>Планета · нажмите для данных</span>`;
+      } else if (systemPoint) {
+        const system = App.data.systems.find(item => item.id === systemPoint.id);
+        tip.innerHTML = `<b>${esc(system?.name || systemPoint.id)}</b><span>Система · ${(system?.planetIds || []).length} планет</span>`;
+      } else {
+        tip.classList.add('hidden');
+        this.canvas.style.cursor = this.dragging ? 'grabbing' : 'grab';
+        return;
+      }
+      tip.style.left = `${Math.min(window.innerWidth - 260, clientX + 16)}px`;
+      tip.style.top = `${Math.min(window.innerHeight - 90, clientY + 16)}px`;
+      tip.classList.remove('hidden');
+      this.canvas.style.cursor = 'pointer';
+    },
+    syncBackButton() {
+      $('#web-galaxy-back')?.classList.toggle('hidden', !this.activeSystemId);
+    },
+    onDataChanged() {
+      if (!this.isMounted()) return;
+      const visibleIds = new Set(this.visibleSystems().map(system => system.id));
+      if (this.activeSystemId && !visibleIds.has(this.activeSystemId)) {
+        this.activeSystemId = '';
+        App.ui.galaxySelectedSystemId = '';
+        App.ui.galaxySelectedPlanetId = '';
+      }
+      if (App.ui.galaxySelectedPlanetId && !App.data.planets.has(App.ui.galaxySelectedPlanetId)) App.ui.galaxySelectedPlanetId = '';
+      renderGalaxyInspector(App.ui.galaxySelectedSystemId || this.activeSystemId, App.ui.galaxySelectedPlanetId);
+      this.syncBackButton();
+      this.persistCamera();
+    },
+    enterSystem(systemId) {
+      const system = App.data.systems.find(item => item.id === systemId);
+      if (!system) return;
+      this.activeSystemId = systemId;
+      App.ui.galaxySelectedSystemId = systemId;
+      App.ui.galaxySelectedPlanetId = '';
+      this.camera.tx = Number(system.pos?.x ?? .5);
+      this.camera.ty = Number(system.pos?.y ?? .5);
+      this.camera.tzoom = 5.2;
+      renderGalaxyInspector(systemId, '');
+      this.syncBackButton();
+      this.persistCamera();
+    },
+    exitSystem(preserve = true) {
+      const system = App.data.systems.find(item => item.id === this.activeSystemId);
+      this.activeSystemId = '';
+      App.ui.galaxySelectedSystemId = '';
+      App.ui.galaxySelectedPlanetId = '';
+      this.camera.tzoom = 1;
+      if (!preserve || !system?.pos) { this.camera.tx = .5; this.camera.ty = .5; }
+      renderGalaxyInspector('', '');
+      this.syncBackButton();
+      this.persistCamera();
+    },
+    recenter() {
+      this.activeSystemId = '';
+      App.ui.galaxySelectedSystemId = '';
+      App.ui.galaxySelectedPlanetId = '';
+      this.camera.tx = .5; this.camera.ty = .5; this.camera.tzoom = 1;
+      renderGalaxyInspector('', '');
+      this.syncBackButton();
+      this.persistCamera();
+    }
+  };
+
+  function renderGalaxyInspector(systemId = '', planetId = '') {
+    const root = $('#web-galaxy-inspector');
+    if (!root) return;
+    const player = currentPlayer();
+    const current = currentSystem();
+    const system = App.data.systems.find(item => item.id === systemId) || current || WebGalaxyMap.visibleSystems()[0] || null;
+    const planet = planetId ? App.data.planets.get(planetId) : null;
+    if (planet) {
+      root.innerHTML = `
+        <div class="eyebrow">PLANET_SCAN</div>
+        <h2>${esc(planet.name || planet.id)}</h2>
+        ${renderEntityThumb(planet, 'hero')}
+        <div class="galaxy-inspector-grid">
+          <div><span>Тип</span><b>${esc(planet.physics?.type || '—')}</b></div>
+          <div><span>Климат</span><b>${esc(planet.physics?.climate || '—')}</b></div>
+          <div><span>Население</span><b>${esc(planet.socio?.pop || '—')}</b></div>
+          <div><span>Столица</span><b>${esc(planet.socio?.capital || '—')}</b></div>
+        </div>
+        <p>${esc(stripHtml(planet.pilot?.reference || planet.pilot?.info || 'Нет открытой справки.'))}</p>
+        <div class="button-row"><button class="primary" type="button" data-action="open-planet" data-planet-id="${esc(planet.id)}">ОТКРЫТЬ ДОСЬЕ</button><button class="secondary" type="button" data-action="galaxy-system" data-system-id="${esc(system?.id || '')}">К СИСТЕМЕ</button></div>`;
+      return;
+    }
+    if (system) {
+      const planets = WebGalaxyMap.visiblePlanets(system);
+      root.innerHTML = `
+        <div class="eyebrow">SYSTEM_SCAN</div>
+        <h2>${esc(system.name || system.id)}</h2>
+        <p class="muted">${esc(system.description || system.markerLabel || 'Доступная звёздная система.')}</p>
+        <div class="galaxy-inspector-grid">
+          <div><span>Планеты</span><b>${planets.length}</b></div>
+          <div><span>Маршруты</span><b>${(system.routes || []).length}</b></div>
+          <div><span>Статус</span><b>${current?.id === system.id ? 'ТЕКУЩАЯ' : 'ДОСТУПНА'}</b></div>
+          <div><span>Персонаж</span><b>${esc(player?.shortName || player?.displayName || '—')}</b></div>
+        </div>
+        <div class="galaxy-planet-list">${planets.map(item => `<button class="galaxy-planet-row" type="button" data-action="galaxy-planet" data-system-id="${esc(system.id)}" data-planet-id="${esc(item.id)}"><span class="galaxy-planet-dot" style="--planet:${esc(item.color || '#f0e68c')}"></span><b>${esc(item.name || item.id)}</b><span>${esc(item.physics?.type || '')}</span></button>`).join('') || '<div class="muted">Открытых планет нет.</div>'}</div>`;
+      return;
+    }
+    root.innerHTML = '<div class="eyebrow">GALAXY_NAV</div><h2>Галактическая карта</h2><p class="muted">Выберите систему на карте. Колесо — масштаб, перетаскивание — навигация.</p>';
+  }
+
+  function renderGalaxyHome() {
+    setTopbar('Галактическая карта', 'Интерактивная навигация по доступным системам и планетам');
+    const root = $('#screen-home');
+    root.innerHTML = `
+      <div class="web-galaxy-layout">
+        <section class="web-galaxy-stage" id="web-galaxy-stage">
+          <canvas id="web-galaxy-canvas" aria-label="Галактическая карта"></canvas>
+          <div class="web-galaxy-controls">
+            <button class="secondary hidden" id="web-galaxy-back" type="button" data-action="galaxy-back">← ГАЛАКТИКА</button>
+            <button class="secondary" type="button" data-action="galaxy-center">⌾ ЦЕНТР</button>
+          </div>
+          <div class="web-galaxy-hint">DRAG · PAN &nbsp; / &nbsp; WHEEL · ZOOM &nbsp; / &nbsp; CLICK · OPEN</div>
+        </section>
+        <aside class="web-galaxy-inspector" id="web-galaxy-inspector"></aside>
+      </div>
+      <div id="web-galaxy-tooltip" class="web-galaxy-tooltip hidden"></div>`;
+    App.ui.galaxyDesktopActive = true;
+    renderGalaxyInspector(App.ui.galaxySelectedSystemId, App.ui.galaxySelectedPlanetId);
+    requestAnimationFrame(() => WebGalaxyMap.init());
+  }
+
   function renderHome() {
+    const desktop = window.matchMedia('(min-width: 901px)').matches;
+    if (desktop) return renderGalaxyHome();
+    App.ui.galaxyDesktopActive = false;
+    WebGalaxyMap.destroy();
+    return renderMobileHome();
+  }
+
+  function renderMobileHome() {
     setTopbar('Навигатор', 'Системы, планеты и быстрый доступ к текущему миру без тяжёлой галактической карты');
     const root = $('#screen-home');
     const player = currentPlayer();
@@ -1700,7 +2296,7 @@
   }
 
   function renderChat() {
-    setTopbar('Чат', 'Активный канал сверху, список контактов ниже; realtime и fallback-poll работают параллельно');
+    setTopbar('Чат', 'Активный канал сверху, список контактов ниже; обновления приходят напрямую через PocketBase Realtime');
     const root = $('#screen-chat');
     const threads = buildThreads();
     if (!App.ui.selectedThreadKey && threads[0]) App.ui.selectedThreadKey = threads[0].key;
@@ -2420,6 +3016,7 @@
   }
 
   function renderCurrentScreen() {
+    if (App.ui.screen !== 'home') { App.ui.galaxyDesktopActive = false; WebGalaxyMap.destroy(); }
     if (RUNTIME.hideCombat && App.ui.screen === 'combat') App.ui.screen = 'home';
     if (App.ui.screen !== 'combat') document.body.classList.remove('combat-modal-open');
     $$('.screen').forEach(node => node.classList.remove('active'));
@@ -2483,43 +3080,89 @@
 
 
 
-  function scheduleRealtimeRefresh(kinds = {}) {
-    App.realtime.pending.players = App.realtime.pending.players || !!kinds.players;
-    App.realtime.pending.chat = App.realtime.pending.chat || !!kinds.chat;
-    App.realtime.pending.combat = App.realtime.pending.combat || !!kinds.combat;
-    App.realtime.pending.snapshot = App.realtime.pending.snapshot || !!kinds.snapshot;
-    if (App.realtime.flushTimer) return;
-    App.realtime.flushTimer = setTimeout(async () => {
-      App.realtime.flushTimer = null;
-      const pending = { ...App.realtime.pending };
-      App.realtime.pending = { players: false, chat: false, combat: false, snapshot: false };
-      try {
-        if (pending.snapshot) {
-          await pullEverything({ silent: true, render: true });
-          renderLogin();
-          return;
-        }
-        await pullLiveData({ players: pending.players, chat: pending.chat, combat: pending.combat });
-      } catch (error) {
-        console.warn('realtime refresh failed', error);
-      }
-    }, 180);
+  async function applyRealtimeRecord(collection, event, record) {
+    if (!record) return;
+    const campaignId = String(record.campaignId || record.campaign_id || '');
+    if (campaignId && campaignId !== String(App.config.campaignId || '')) return;
+    const isDelete = String(event || '').toLowerCase() === 'delete';
+
+    if (collection === App.config.tableName || Object.prototype.hasOwnProperty.call(record, 'worldJson') || Object.prototype.hasOwnProperty.call(record, 'world_json')) {
+      if (isDelete) return;
+      const snapshot = normalizeSnapshotRow(record);
+      if (!snapshot) return;
+      const revision = Number(snapshot.revision || 0);
+      if (revision && revision < Number(App.ui.lastSnapshotRevision || 0)) return;
+      App.cache.snapshot = snapshot;
+      compileData(snapshot, Array.from(App.data.playerRows.values()), App.data.chatRows, App.data.combatRuntime);
+      await saveCache();
+      renderAffectedScreens({ snapshot: true });
+      return;
+    }
+
+    if (collection === App.config.playerTableName || record.playerId || record.player_id) {
+      const row = normalizePlayerRow(record);
+      const playerId = String(row?.player_id || record.playerId || record.player_id || '');
+      if (!playerId) return;
+      if (isDelete || row?.deleted_at) App.data.playerRows.delete(playerId);
+      else App.data.playerRows.set(playerId, row);
+      App.data.players = buildPlayerMap(App.cache.snapshot, Array.from(App.data.playerRows.values()));
+      await saveCache();
+      renderAffectedScreens({ players: true });
+      return;
+    }
+
+    if (collection === App.config.chatTableName || record.messageId || record.message_id) {
+      const row = normalizeChatRow(record);
+      const messageId = String(row?.message_id || record.messageId || record.message_id || '');
+      if (!messageId) return;
+      if (isDelete) App.data.chatRows = App.data.chatRows.filter(item => String(item.message_id) !== messageId);
+      else App.data.chatRows = mergeChatRows(App.data.chatRows, [row]);
+      App.ui.lastChatStamp = maxUpdatedAt(App.data.chatRows) || App.ui.lastChatStamp;
+      await saveCache();
+      renderAffectedScreens({ chat: true });
+      return;
+    }
+
+    if (collection === App.config.combatRuntimeTableName || Object.prototype.hasOwnProperty.call(record, 'runtimeJson') || Object.prototype.hasOwnProperty.call(record, 'runtime_json')) {
+      const row = isDelete ? null : normalizeCombatRow(record);
+      App.data.combatRuntime = row ? deep(row) : null;
+      const activeSceneId = combatRowActiveSceneId(App.data.combatRuntime);
+      const activeRuntime = combatRowRuntime(App.data.combatRuntime);
+      if (activeSceneId && activeRuntime && Object.keys(activeRuntime).length) App.data.combatRuntimeByScene.set(activeSceneId, deep(activeRuntime));
+      App.ui.lastCombatStamp = row?.updated_at || row?.client_updated_at || App.ui.lastCombatStamp;
+      await saveCache();
+      renderAffectedScreens({ combat: true });
+    }
   }
 
-
   function handlePocketBaseRealtimePayload(frame) {
-    const event = String(frame?.event || '').trim();
+    const transportEvent = String(frame?.event || '').trim();
+    const event = String(frame?.data?.action || frame?.action || transportEvent || '').trim();
     const record = frame?.data?.record || frame?.record || frame?.data || null;
-    if (!record || String(record.campaignId || '') !== String(App.config.campaignId || '')) return;
-    const collection = String(frame?.data?.collectionName || frame?.data?.collectionId || frame?.collectionName || '');
-    const key = `${event}:${record.id || ''}:${record.updated || record.clientUpdatedAt || ''}`;
+    if (!record) return;
+    const campaignId = String(record.campaignId || record.campaign_id || '');
+    if (campaignId && campaignId !== String(App.config.campaignId || '')) return;
+    const transportCollection = ['create', 'update', 'delete', 'message'].includes(transportEvent.toLowerCase()) ? '' : transportEvent;
+    const collection = String(frame?.data?.collectionName || frame?.data?.collectionId || record.collectionName || record.collectionId || frame?.collectionName || transportCollection || '');
+    const key = `${event}:${record.id || ''}:${record.updated || record.updated_at || record.clientUpdatedAt || ''}`;
     if (App.realtime.eventKeys.has(key)) return;
     App.realtime.eventKeys.add(key);
-    if (App.realtime.eventKeys.size > 200) App.realtime.eventKeys.delete(App.realtime.eventKeys.values().next().value);
-    if (collection === App.config.chatTableName || record.messageId) scheduleRealtimeRefresh({ chat: true });
-    else if (collection === App.config.combatRuntimeTableName || Object.prototype.hasOwnProperty.call(record, 'runtimeJson')) scheduleRealtimeRefresh({ combat: true });
-    else if (collection === App.config.playerTableName || record.playerId) scheduleRealtimeRefresh({ players: true });
-    else scheduleRealtimeRefresh({ snapshot: true });
+    if (App.realtime.eventKeys.size > 300) App.realtime.eventKeys.delete(App.realtime.eventKeys.values().next().value);
+    App.realtime.lastEventAt = Date.now();
+    applyRealtimeRecord(collection, event, record).catch(error => console.warn('realtime apply failed', error));
+  }
+
+  async function resyncAfterRealtimeGap(reason = 'reconnect') {
+    if (!App.session?.userId || !hasConfig() || !navigator.onLine) return;
+    const now = Date.now();
+    if (now - Number(App.realtime.lastResyncAt || 0) < 1500) return;
+    App.realtime.lastResyncAt = now;
+    try {
+      await pullEverything({ silent: true, render: true });
+      console.info('GRPG_WEB_REALTIME_RESYNC', reason);
+    } catch (error) {
+      console.warn('realtime resync failed', reason, error);
+    }
   }
 
 
@@ -2540,6 +3183,11 @@
             `${App.config.tableName}/*`, `${App.config.playerTableName}/*`, `${App.config.chatTableName}/*`, `${App.config.combatRuntimeTableName}/*`
           ] }
         });
+        const reconnect = App.realtime.hadConnection;
+        App.realtime.connected = true;
+        App.realtime.hadConnection = true;
+        App.realtime.lastEventAt = Date.now();
+        if (reconnect) resyncAfterRealtimeGap('reconnect');
       };
       const parseFrame = text => {
         const lines = String(text || '').split(/\r?\n/);
@@ -2560,11 +3208,12 @@
         const { value, done } = await reader.read();
         if (done) break;
         buffer += decoder.decode(value, { stream: true });
-        const frames = buffer.split(/\n\n/);
+        const frames = buffer.split(/\r?\n\r?\n/);
         buffer = frames.pop() || '';
         frames.forEach(parseFrame);
       }
     } catch (error) {
+      App.realtime.connected = false;
       if (!controller.signal.aborted) {
         console.warn('pocketbase realtime failed', error);
         if (App.session?.userId) App.realtime.reconnectTimer = setTimeout(() => startRealtime(), 2500);
@@ -2584,35 +3233,20 @@
   }
 
   function stopRealtime() {
-    if (App.realtime.flushTimer) clearTimeout(App.realtime.flushTimer);
-    App.realtime.flushTimer = null;
-    if (App.realtime.heartbeat) clearInterval(App.realtime.heartbeat);
-    App.realtime.heartbeat = null;
     if (App.realtime.reconnectTimer) clearTimeout(App.realtime.reconnectTimer);
     App.realtime.reconnectTimer = null;
-    App.realtime.suppressClose = true;
+    App.realtime.connected = false;
     try { App.realtime.abortController?.abort(); } catch {}
     App.realtime.abortController = null;
-    try { App.realtime.socket?.close(); } catch {}
-    App.realtime.socket = null;
   }
 
-  function startPolling() {
-    stopPolling();
+  function startRealtimeSync() {
+    stopRealtime();
     if (!hasConfig() || !App.session?.userId) return;
     startRealtime();
-    App.pollers.snapshot = setInterval(() => {
-      pullEverything({ silent: true, render: false }).catch(() => {});
-    }, Math.max(15000, Number(App.config.snapshotPollMs || DEFAULTS.snapshotPollMs)));
-    App.pollers.live = setInterval(() => {
-      pullLiveData({ players: true, chat: true, combat: true }).catch(() => {});
-    }, Math.max(2500, Number(App.config.livePollMs || DEFAULTS.livePollMs)));
   }
 
-  function stopPolling() {
-    Object.values(App.pollers).forEach(timer => timer && clearInterval(timer));
-    App.pollers.snapshot = null;
-    App.pollers.live = null;
+  function stopRealtimeSync() {
     stopRealtime();
   }
 
@@ -2626,7 +3260,7 @@
     openBoot('app');
     App.ui.screen = 'home';
     renderCurrentScreen();
-    startPolling();
+    startRealtimeSync();
     notify(`Вход выполнен: ${player.displayName || player.id}`, 'ok');
   }
 
@@ -2639,12 +3273,12 @@
     openBoot('app');
     App.ui.screen = 'home';
     renderCurrentScreen();
-    startPolling();
+    startRealtimeSync();
     notify('Гостевой вход выполнен', 'ok');
   }
 
   async function logout() {
-    stopPolling();
+    stopRealtimeSync();
     App.ui.combatFullscreen = false;
     App.session = null;
     await storageRemove(KEYS.session);
@@ -2654,37 +3288,18 @@
   }
 
   async function forgetThisDevice() {
-    stopPolling();
+    stopRealtimeSync();
     App.session = null;
     App.auth = { token: '', expiresAt: 0 };
     App.config = normalizeConfig({});
     App.cache = { snapshot: null, players: [], chat: [], combatRuntime: null, fetchedAt: null };
     App.rememberLogin = false;
     App.rememberUntil = 0;
-    await Promise.all([KEYS.config, KEYS.cache, KEYS.session, KEYS.auth, KEYS.remember, MOBILE_READ_MARKERS_KEY].map(key => storageRemove(key)));
-    fillSetupForm();
+    await Promise.all([KEYS.config, KEYS.cache, KEYS.session, KEYS.auth, KEYS.remember, KEYS.galaxyView, MOBILE_READ_MARKERS_KEY].map(key => storageRemove(key)));
     syncRememberControls();
-    openBoot('setup');
-    notify('Сохранённый вход и данные подключения удалены с устройства', 'warn');
-  }
-
-  async function handleSetupSave(form) {
-    const fd = new FormData(form);
-    const config = normalizeConfig(Object.fromEntries(fd.entries()));
-    const identityChanged = pbBaseUrl(config) !== pbBaseUrl(App.config)
-      || config.appUserEmail !== App.config?.appUserEmail
-      || config.appUsersCollection !== App.config?.appUsersCollection;
-    if (identityChanged || config.appUserPassword) await persistAuth(null);
-    $('#setup-status').textContent = 'Проверяю подключение и читаю кампанию из облака...';
-    await apiPing(config);
-    App.config = config;
-    await storageSet(KEYS.config, config);
-    await pullEverything({ silent: true });
-    App.ui.lastLivePullAt = new Date().toISOString();
     openBoot('login');
     renderLogin();
-    $('#setup-status').textContent = 'Готово.';
-    notify('Подключение сохранено', 'ok');
+    notify('Сохранённый вход персонажа удалён. Техническое подключение восстановится автоматически.', 'warn');
   }
 
   async function commitPlayerMutation(mutator, successMessage) {
@@ -2700,12 +3315,12 @@
       saved = await apiUpsertPlayer(App.config, {
         player_id: player.id,
         version: 1,
-        updated_by: App.config.deviceLabel || 'android-player',
+        updated_by: App.config.deviceLabel || 'web-player',
         ...segments
       });
     } else {
       saved = await apiPatchPlayerWithVersion(App.config, player.id, Number(baseRow.version || 0), {
-        updated_by: App.config.deviceLabel || 'android-player',
+        updated_by: App.config.deviceLabel || 'web-player',
         ...segments
       });
       if (!saved) throw new Error('Конфликт версии строки игрока. Обнови данные и повтори действие.');
@@ -2784,6 +3399,10 @@
       if (action === 'open-planet') openPlanet(button.dataset.planetId);
       if (action === 'open-system') openSystem(button.dataset.systemId);
       if (action === 'focus-system') focusSystem(button.dataset.systemId);
+      if (action === 'galaxy-back') WebGalaxyMap.exitSystem(true);
+      if (action === 'galaxy-center') WebGalaxyMap.recenter();
+      if (action === 'galaxy-system') WebGalaxyMap.enterSystem(button.dataset.systemId);
+      if (action === 'galaxy-planet') { App.ui.galaxySelectedPlanetId = button.dataset.planetId || ''; renderGalaxyInspector(button.dataset.systemId, button.dataset.planetId); }
       if (action === 'buy-item') {
         buyItem(button.dataset.itemId, button.dataset.price).catch(error => notify(error.message, 'err'));
       }
@@ -2838,13 +3457,6 @@
     document.body.addEventListener('submit', event => {
       const form = event.target;
       if (!(form instanceof HTMLFormElement)) return;
-      if (form.id === 'setup-form') {
-        event.preventDefault();
-        setRememberLogin(Boolean($('#setup-remember-login')?.checked)).then(() => handleSetupSave(form)).catch(error => {
-          $('#setup-status').textContent = error.message;
-          notify(`Не удалось подключиться: ${error.message}`, 'err');
-        });
-      }
       if (form.id === 'login-form') {
         event.preventDefault();
         setRememberLogin(Boolean($('#login-remember-login')?.checked)).then(() => login($('#login-player').value, $('#login-pass').value)).catch(error => {
@@ -2861,7 +3473,7 @@
     document.body.addEventListener('change', event => {
       if (event.target.id === 'login-campaign') { App.ui.selectedCampaignId = event.target.value || 'all'; renderLogin(); }
       if (event.target.id === 'login-player') renderLoginPreview();
-      if (event.target.id === 'setup-remember-login' || event.target.id === 'login-remember-login') {
+      if (event.target.id === 'login-remember-login') {
         setRememberLogin(Boolean(event.target.checked)).catch(error => notify(error.message, 'err'));
       }
     });
@@ -2882,8 +3494,12 @@
       if (threadKey) App.ui.chatDrafts[threadKey] = textarea.value;
     });
 
+    let lastDesktopLayout = window.matchMedia('(min-width: 901px)').matches;
     window.addEventListener('resize', () => {
       if (App.ui.screen === 'combat') requestAnimationFrame(initCombatViewports);
+      const desktopLayout = window.matchMedia('(min-width: 901px)').matches;
+      if (App.ui.screen === 'home' && desktopLayout !== lastDesktopLayout) renderCurrentScreen();
+      lastDesktopLayout = desktopLayout;
     });
 
     $$('.nav-btn').forEach(btn => btn.addEventListener('click', () => {
@@ -2895,90 +3511,409 @@
       setRememberLogin(Boolean($('#login-remember-login')?.checked)).then(() => loginGuest()).catch(error => notify(error.message, 'err'));
     });
 
-    $('#login-back-btn').addEventListener('click', () => {
-      openBoot('setup');
-      fillSetupForm();
-    });
-
     $('#web-reload-btn')?.addEventListener('click', () => window.location.reload());
 
-    $('#setup-clear-btn').addEventListener('click', async () => {
-      if (RUNTIME.cloudOnly) {
-        await forgetThisDevice();
-        return;
-      }
-      await storageRemove(KEYS.config);
-      await storageRemove(KEYS.cache);
-      App.config = normalizeConfig({});
-      App.cache = { snapshot: null, players: [], chat: [], combatRuntime: null, fetchedAt: null };
-      fillSetupForm();
-      notify('Локальная конфигурация очищена', 'warn');
-    });
-
     document.addEventListener('visibilitychange', () => {
-      if (document.hidden) stopPolling();
-      else if (App.session?.userId) startPolling();
+      if (!document.hidden && App.session?.userId) {
+        if (!App.realtime.connected) startRealtime();
+        resyncAfterRealtimeGap('visibility-resume');
+      }
     });
 
-    window.addEventListener('online', () => { if (App.session?.userId) startPolling(); });
+    window.addEventListener('online', () => {
+      if (!App.session?.userId) return;
+      startRealtime();
+      resyncAfterRealtimeGap('online');
+    });
     window.addEventListener('offline', () => notify(RUNTIME.cloudOnly ? 'Сеть пропала, веб-клиент ждёт облако' : 'Сеть пропала, остаёмся на локальном кеше', 'warn'));
   }
 
-  function fillSetupForm() {
-    const form = $('#setup-form');
-    if (!form) return;
-    const config = normalizeConfig(App.config || {});
-    form.url.value = config.url || DEFAULTS.url;
-    if (form.appUserEmail) form.appUserEmail.value = config.appUserEmail || '';
-    if (form.appUserPassword) form.appUserPassword.value = config.appUserPassword || '';
-    if (form.appUsersCollection) form.appUsersCollection.value = config.appUsersCollection || DEFAULTS.appUsersCollection;
-    form.campaignId.value = config.campaignId || '';
-    form.deviceLabel.value = config.deviceLabel || '';
-    form.tableName.value = config.tableName || DEFAULTS.tableName;
-    form.playerTableName.value = config.playerTableName || DEFAULTS.playerTableName;
-    form.chatTableName.value = config.chatTableName || DEFAULTS.chatTableName;
-    form.combatRuntimeTableName.value = config.combatRuntimeTableName || DEFAULTS.combatRuntimeTableName;
-    if (form.assetsCollection) form.assetsCollection.value = config.assetsCollection || DEFAULTS.assetsCollection;
-    form.snapshotPollMs.value = config.snapshotPollMs || DEFAULTS.snapshotPollMs;
-    form.livePollMs.value = config.livePollMs || DEFAULTS.livePollMs;
-    syncRememberControls();
+
+  // v1.0.49 campaign availability, era themes and era-aware visibility
+  const ERA_DEFS_V1049 = [
+    { id: 'medieval', name: 'Средневековье', short: 'СРЕДНЕВЕКОВЬЕ' },
+    { id: 'industrial', name: 'Индустриальная', short: 'ИНДУСТРИАЛЬНАЯ' },
+    { id: 'technological', name: 'Технологичная', short: 'ТЕХНОЛОГИЧНАЯ' }
+  ];
+  const ERA_IDS_V1049 = new Set(ERA_DEFS_V1049.map(item => item.id));
+  function normalizeEraV1049(value) {
+    const raw = String(value || '').trim().toLowerCase();
+    if (ERA_IDS_V1049.has(raw)) return raw;
+    if (/сред|mediev|feudal|ancient/.test(raw)) return 'medieval';
+    if (/индустр|industrial|steam|diesel|analog/.test(raw)) return 'industrial';
+    return 'technological';
   }
+  function eraDefV1049(value) { const id=normalizeEraV1049(value); return ERA_DEFS_V1049.find(item=>item.id===id)||ERA_DEFS_V1049[2]; }
+  function enhanceCampaignV1049(campaign = {}) {
+    campaign.era = normalizeEraV1049(campaign.era || campaign.epoch || campaign.theme);
+    if (!Object.prototype.hasOwnProperty.call(campaign, 'availableNow')) {
+      const status = String(campaign.status || '').trim().toLowerCase();
+      campaign.availableNow = !['unavailable','disabled','inactive','closed','archived','недоступна','недоступно'].includes(status);
+    } else campaign.availableNow = campaign.availableNow !== false;
+    return campaign;
+  }
+  function campaignsV1049() { return Array.from(App.data.campaigns.values()).map(enhanceCampaignV1049).filter(c=>String(c.status||'').toLowerCase()!=='guest').sort((a,b)=>slugText(a.name||a.id).localeCompare(slugText(b.name||b.id),'ru')); }
+  function availableCampaignsV1049() { return campaignsV1049().filter(c=>c.availableNow!==false); }
+  function campaignV1049(id) { const c=App.data.campaigns.get(String(id||'')); return c?enhanceCampaignV1049(c):null; }
+  function selectedCampaignV1049() {
+    const domId=String($('#login-campaign')?.value||'').trim();
+    const uiId=String(App.ui.selectedCampaignId||'').trim();
+    const sessionId=String(App.session?.campaignId||'').trim();
+    let id=domId || (uiId && uiId !== 'all' ? uiId : '') || sessionId;
+    if (id && campaignV1049(id)?.availableNow!==false) return id;
+    return availableCampaignsV1049()[0]?.id||'';
+  }
+  function applyEraThemeV1049(campaignOrEra = null) {
+    const campaign = typeof campaignOrEra==='object'&&campaignOrEra ? enhanceCampaignV1049(campaignOrEra) : null;
+    const era=normalizeEraV1049(campaign?.era||campaignOrEra||'technological');
+    document.documentElement.dataset.eraTheme=era;
+    document.body?.setAttribute('data-era-theme',era);
+    const meta=document.querySelector('meta[name="theme-color"]');
+    if(meta) meta.content=era==='medieval'?'#2a1a0e':era==='industrial'?'#0b0c0c':'#080806';
+    const hint=$('#login-campaign-hint');
+    if(hint && campaign) hint.textContent=`Эпоха: ${eraDefV1049(era).name}${campaign.availableNow===false?' · Кампания сейчас недоступна':''}`;
+    return era;
+  }
+  function visibilityScopeV1049(entity={}) {
+    const vis=entity.visibility&&typeof entity.visibility==='object'?entity.visibility:{};
+    const uniq=v=>Array.from(new Set((Array.isArray(v)?v:[]).map(x=>String(x?.id||x?.campaignId||x||'').trim()).filter(Boolean)));
+    return { playerIds:uniq(vis.playerIds), campaignIds:uniq(vis.campaignIds||vis.campaigns), eraIds:uniq(vis.eraIds||vis.eras||vis.epochs).map(normalizeEraV1049) };
+  }
+  function sessionCampaignAllowedV1049() {
+    if (!App.session?.userId) return false;
+    if (String(App.session.role || '').toLowerCase() === 'guest') return true;
+    const player=App.data.players.get(App.session.userId);
+    const campaignId=selectedCampaignV1049();
+    const campaign=campaignV1049(campaignId);
+    return Boolean(player && campaign && campaign.availableNow !== false && campaignIdsForPlayer(player).includes(campaignId));
+  }
+
+  const __compileDataEraV1049=compileData;
+  compileData=function(snapshot,playerRows,chatRows,combatRuntime){
+    const result=__compileDataEraV1049(snapshot,playerRows,chatRows,combatRuntime);
+    App.data.campaigns.forEach(c=>enhanceCampaignV1049(c));
+    const selected=selectedCampaignV1049();
+    if(selected) { App.ui.selectedCampaignId=selected; applyEraThemeV1049(campaignV1049(selected)); }
+    return result;
+  };
+
+  selectedLoginCampaignId=function(){ return selectedCampaignV1049(); };
+  const __applyEraThemeV1052=applyEraThemeV1049;
+  applyEraThemeV1049=function(campaignOrEra=null){const era=__applyEraThemeV1052(campaignOrEra);const hint=$('#login-campaign-hint');if(hint)hint.textContent='';return era;};
+
+  campaignOptionsMarkup=function(){
+    const selected=selectedCampaignV1049();
+    const rows=campaignsV1049();
+    return rows.map(row=>`<option value="${esc(row.id)}" ${row.id===selected?'selected':''} ${row.availableNow===false?'disabled':''}>${esc(row.name||row.id)} · ${esc(eraDefV1049(row.era).name)}${row.availableNow===false?' · НЕДОСТУПНА':''}</option>`).join('')||'<option value="">Нет доступных кампаний</option>';
+  };
+
+  renderLogin=function(){
+    const campaignSelect=$('#login-campaign');
+    const playerSelect=$('#login-player');
+    if(!playerSelect) return;
+    const rows=campaignsV1049();
+    let selected=selectedCampaignV1049();
+    if(!selected||campaignV1049(selected)?.availableNow===false) selected=availableCampaignsV1049()[0]?.id||'';
+    App.ui.selectedCampaignId=selected;
+    if(campaignSelect){ campaignSelect.innerHTML=campaignOptionsMarkup(); if(selected) campaignSelect.value=selected; campaignSelect.disabled=!availableCampaignsV1049().length; }
+    const campaign=campaignV1049(selected); if(campaign) applyEraThemeV1049(campaign); else applyEraThemeV1049('technological');
+    const players=Array.from(App.data.players.values()).filter(player=>String(player.role||'')!=='guest').filter(player=>selected&&campaignIdsForPlayer(player).includes(selected)).sort((a,b)=>slugText(a.displayName||a.id).localeCompare(slugText(b.displayName||b.id),'ru'));
+    if(!selected||!players.length){ playerSelect.innerHTML=`<option value="">${selected?'Нет доступных персонажей':'Нет доступных кампаний'}</option>`; $('#login-preview').innerHTML='<div class="muted">Выберите доступную кампанию. Персонажи недоступных кампаний не показываются.</div>'; return; }
+    const saved=App.session?.campaignId===selected&&App.session?.userId&&players.some(p=>p.id===App.session.userId)?App.session.userId:players[0].id;
+    playerSelect.innerHTML=players.map(player=>`<option value="${esc(player.id)}">${esc(player.displayName||player.shortName||player.id)}</option>`).join('');
+    playerSelect.value=saved; renderLoginPreview();
+  };
+
+  const __visibleForPlayerEraV1049=visibleForPlayer;
+  visibleForPlayer=function(entity,playerId){
+    if(!entity) return false;
+    if(!entity.visibility||typeof entity.visibility!=='object') return true;
+    const vis=visibilityScopeV1049(entity);
+    if(!vis.playerIds.length&&!vis.campaignIds.length&&!vis.eraIds.length) return false;
+    const pid=String(playerId||'');
+    if(vis.playerIds.includes(pid)) return true;
+    if(isGuestSession()) return vis.playerIds.includes(GUEST_ID)||vis.playerIds.includes('guest');
+    const player=App.data.players.get(pid)||null;
+    const active=selectedCampaignV1049();
+    const campaignIds=new Set(player?campaignIdsForPlayer(player):[]); if(active) campaignIds.add(active);
+    if(vis.campaignIds.some(id=>campaignIds.has(String(id)))) return true;
+    const eras=new Set(); campaignIds.forEach(id=>{const c=campaignV1049(id);if(c)eras.add(normalizeEraV1049(c.era));});
+    return vis.eraIds.some(id=>eras.has(normalizeEraV1049(id)));
+  };
+
+  const __loginEraV1049=login;
+  login=async function(playerId,pass){
+    const campaignId=selectedCampaignV1049(); const campaign=campaignV1049(campaignId); const player=App.data.players.get(playerId);
+    if(!campaign||campaign.availableNow===false) throw new Error('Эта кампания сейчас недоступна');
+    if(!player||!campaignIdsForPlayer(player).includes(campaignId)) throw new Error('Персонаж не относится к выбранной кампании');
+    App.ui.selectedCampaignId=campaignId; applyEraThemeV1049(campaign);
+    await __loginEraV1049(playerId,pass);
+    App.session={...(App.session||{}),campaignId,era:normalizeEraV1049(campaign.era)};
+    await storageSet(KEYS.session,App.session);
+    setTopbar($('#screen-title')?.textContent||'WEB CLIENT',$('#screen-subtitle')?.textContent||'');
+  };
+
+  const __loginGuestEraV1049=loginGuest;
+  loginGuest=async function(){
+    const selected=selectedCampaignV1049(); const campaign=campaignV1049(selected); if(campaign)applyEraThemeV1049(campaign);
+    await __loginGuestEraV1049();
+    App.session={...(App.session||{}),campaignId:selected||'',era:campaign?normalizeEraV1049(campaign.era):'technological'};
+    await storageSet(KEYS.session,App.session);
+  };
+
+  const __loadLocalStateEraV1049=loadLocalState;
+  loadLocalState=async function(){ await __loadLocalStateEraV1049(); if(App.session?.campaignId)App.ui.selectedCampaignId=String(App.session.campaignId); };
+
+  const __setTopbarEraV1049=setTopbar;
+  setTopbar=function(title,subtitle){
+    __setTopbarEraV1049(title,subtitle);
+    const c=campaignV1049(selectedCampaignV1049());
+    const label=$('#campaign-label');
+    if(label&&c) label.textContent=`${c.name||c.id} · ${eraDefV1049(c.era).short}`;
+  };
+
+
+
+  // v1.0.52 registration, origins, approval state and DM full visibility
+  const ABILITIES_V1052 = [
+    { key:'strength', label:'Сила', short:'СИЛ' },
+    { key:'dexterity', label:'Ловкость', short:'ЛОВ' },
+    { key:'intelligence', label:'Интеллект', short:'ИНТ' },
+    { key:'endurance', label:'Выносливость', short:'ВЫН' },
+    { key:'will', label:'Воля', short:'ВОЛ' },
+    { key:'glory', label:'Слава', short:'СЛА' }
+  ];
+  function approvedPlayerV1052(player={}) {
+    return String(player.role||'').toLowerCase()==='gm' || String(player.approvalStatus||'approved').toLowerCase()==='approved';
+  }
+  function socialOriginsV1052() { return App.data.socialOrigins instanceof Map ? App.data.socialOrigins : new Map(); }
+  function geographicOriginsV1052() { return App.data.geographicOrigins instanceof Map ? App.data.geographicOrigins : new Map(); }
+  function originBonusMapV1052(origin={}) { return Object.fromEntries(ABILITIES_V1052.map(row=>[row.key,Number(origin?.abilityBonuses?.[row.key]||0)])); }
+  function playerOriginBonusesV1052(player={}) {
+    const out=Object.fromEntries(ABILITIES_V1052.map(row=>[row.key,0]));
+    [socialOriginsV1052().get(String(player.socialOriginId||'')),geographicOriginsV1052().get(String(player.geographicOriginId||''))].filter(Boolean).forEach(origin=>ABILITIES_V1052.forEach(row=>{out[row.key]+=Number(origin?.abilityBonuses?.[row.key]||0);}));
+    return out;
+  }
+  function effectiveAbilitiesV1052(player={}) {
+    const base=player.abilityBase&&typeof player.abilityBase==='object'?player.abilityBase:(player.abilities||{});
+    const bonus=playerOriginBonusesV1052(player);
+    return Object.fromEntries(ABILITIES_V1052.map(row=>[row.key,Number(base?.[row.key]||0)+Number(bonus[row.key]||0)]));
+  }
+  function normalizedItemTypeV1052(item={}) {
+    const type=String(item.type||'').toLowerCase();
+    return ['weapon','armor','implant'].includes(type)?type:'gear';
+  }
+  function effectiveArmorClassV1052(player={}) {
+    const armorId=String(player?.equipmentSlots?.armor||'');
+    const armor=App.data.items.get(armorId);
+    if(armor&&normalizedItemTypeV1052(armor)==='armor'&&Number(armor.armorClass||0)>0)return Number(armor.armorClass);
+    return Number(player?.stats?.baseArmorClass||10);
+  }
+  function visibleOriginsV1052(map) { return Array.from(map.values()).sort((a,b)=>slugText(a.name||a.id).localeCompare(slugText(b.name||b.id),'ru')); }
+
+  const __compileDataV1052=compileData;
+  compileData=function(snapshot,playerRows,chatRows,combatRuntime){
+    const result=__compileDataV1052(snapshot,playerRows,chatRows,combatRuntime);
+    const world=snapshot?.world_json||{};
+    App.data.socialOrigins=new Map(Object.entries(world.socialOrigins?.SOCIAL_ORIGINS||{}).map(([id,value])=>[id,deep(value)]));
+    App.data.geographicOrigins=new Map(Object.entries(world.geographicOrigins?.GEOGRAPHIC_ORIGINS||{}).map(([id,value])=>[id,deep(value)]));
+    App.data.players.forEach(player=>{
+      if(!player.approvalStatus)player.approvalStatus=String(player.role||'').toLowerCase()==='gm'?'approved':'approved';
+      if(!player.stats)player.stats={};
+      if(player.stats.baseArmorClass==null)player.stats.baseArmorClass=10;
+      if(!player.abilityBase)player.abilityBase=deep(player.abilities||{});
+      player.abilities=effectiveAbilitiesV1052(player);
+      player.stats.armorClass=effectiveArmorClassV1052(player);
+      if(!Array.isArray(player.installedImplantIds))player.installedImplantIds=[];
+    });
+    return result;
+  };
+
+  campaignOptionsMarkup=function(){
+    const selected=selectedCampaignV1049();
+    const rows=availableCampaignsV1049();
+    return rows.map(row=>`<option value="${esc(row.id)}" ${row.id===selected?'selected':''}>${esc(row.name||row.id)}</option>`).join('')||'<option value="">Нет доступных кампаний</option>';
+  };
+
+  renderLogin=function(){
+    const campaignSelect=$('#login-campaign');
+    const playerSelect=$('#login-player');
+    if(!playerSelect)return;
+    const campaigns=availableCampaignsV1049();
+    let selected=selectedCampaignV1049();
+    if(!campaigns.some(c=>c.id===selected))selected=campaigns[0]?.id||'';
+    App.ui.selectedCampaignId=selected;
+    if(campaignSelect){campaignSelect.innerHTML=campaignOptionsMarkup();if(selected)campaignSelect.value=selected;campaignSelect.disabled=!campaigns.length;}
+    const hint=$('#login-campaign-hint');if(hint)hint.textContent='';
+    const campaign=campaignV1049(selected);if(campaign)applyEraThemeV1049(campaign);else applyEraThemeV1049('technological');
+    const players=Array.from(App.data.players.values())
+      .filter(player=>String(player.role||'').toLowerCase()!=='guest')
+      .filter(approvedPlayerV1052)
+      .filter(player=>String(player.role||'').toLowerCase()==='gm'||(selected&&campaignIdsForPlayer(player).includes(selected)))
+      .sort((a,b)=>slugText(a.displayName||a.id).localeCompare(slugText(b.displayName||b.id),'ru'));
+    if(!selected||!players.length){playerSelect.innerHTML=`<option value="">${selected?'Нет доступных персонажей':'Нет доступных кампаний'}</option>`;$('#login-preview').innerHTML='<div class="muted">Для входа доступны только персонажи активных кампаний, одобренные ДМом.</div>';return;}
+    const saved=App.session?.campaignId===selected&&App.session?.userId&&players.some(p=>p.id===App.session.userId)?App.session.userId:players[0].id;
+    playerSelect.innerHTML=players.map(player=>`<option value="${esc(player.id)}">${esc(player.displayName||player.shortName||player.id)}</option>`).join('');
+    playerSelect.value=saved;renderLoginPreview();
+  };
+
+  const __visibleForPlayerV1052=visibleForPlayer;
+  visibleForPlayer=function(entity,playerId){
+    const player=App.data.players.get(String(playerId||''));
+    if(String(App.session?.role||'').toLowerCase()==='gm'||String(player?.role||'').toLowerCase()==='gm')return true;
+    return __visibleForPlayerV1052(entity,playerId);
+  };
+
+  sessionCampaignAllowedV1049=function(){
+    if(!App.session?.userId)return false;
+    if(String(App.session.role||'').toLowerCase()==='guest')return true;
+    const player=App.data.players.get(App.session.userId);
+    const campaignId=selectedCampaignV1049();const campaign=campaignV1049(campaignId);
+    if(!player||!campaign||campaign.availableNow===false||!approvedPlayerV1052(player))return false;
+    if(String(player.role||'').toLowerCase()==='gm')return true;
+    return campaignIdsForPlayer(player).includes(campaignId);
+  };
+
+  login=async function(playerId,pass){
+    const player=App.data.players.get(playerId);if(!player)throw new Error('Персонаж не найден');
+    const campaignId=selectedCampaignV1049();const campaign=campaignV1049(campaignId);
+    if(!campaign||campaign.availableNow===false)throw new Error('Эта кампания сейчас недоступна');
+    if(!approvedPlayerV1052(player))throw new Error(String(player.approvalStatus||'')==='pending'?'Анкета ещё ожидает одобрения ДМа':'Анкета персонажа отклонена');
+    if(String(player.role||'').toLowerCase()!=='gm'&&!campaignIdsForPlayer(player).includes(campaignId))throw new Error('Персонаж не относится к выбранной кампании');
+    if(String(player.role||'')!=='guest'&&String(player.pass||'')!==String(pass||''))throw new Error('Неверный пароль персонажа');
+    App.ui.selectedCampaignId=campaignId;applyEraThemeV1049(campaign);
+    App.session={userId:playerId,role:player.role||'player',loggedInAt:new Date().toISOString(),campaignId,era:normalizeEraV1049(campaign.era)};
+    if(RUNTIME.cloudOnly&&App.rememberLogin)await setRememberLogin(true,{extend:true});
+    await storageSet(KEYS.session,App.session);openBoot('app');App.ui.screen='home';renderCurrentScreen();startRealtimeSync();notify(`Вход выполнен: ${player.displayName||player.id}`,'ok');
+  };
+
+  const __renderProfileV1052=renderProfile;
+  renderProfile=function(){
+    const result=__renderProfileV1052();
+    const player=currentPlayer();const root=$('#screen-profile');if(!player||!root)return result;
+    const statGrid=root.querySelector('.stat-grid');
+    if(statGrid&&!statGrid.querySelector('[data-ac-v1052]'))statGrid.insertAdjacentHTML('beforeend',`<div class="stat" data-ac-v1052><div class="data-label">КБ</div><div class="data-value">${effectiveArmorClassV1052(player)}</div></div>`);
+    const card=root.querySelector('.profile-card');
+    if(card&&!card.querySelector('[data-origin-v1052]')){
+      const social=socialOriginsV1052().get(String(player.socialOriginId||''));const geo=geographicOriginsV1052().get(String(player.geographicOriginId||''));
+      card.insertAdjacentHTML('beforeend',`<div class="divider"></div><div class="info-grid" data-origin-v1052><div class="info-card"><div class="k">Профессия</div><div class="v">${esc(social?.name||'Не выбрана')}</div></div><div class="info-card"><div class="k">Происхождение</div><div class="v">${esc(geo?.name||'Не выбрано')}</div></div></div>`);
+    }
+    if(!root.querySelector('[data-implants-v1052]')){
+      const installed=(player.installedImplantIds||[]).map(id=>App.data.items.get(String(id))).filter(Boolean).filter(item=>normalizedItemTypeV1052(item)==='implant');
+      root.insertAdjacentHTML('beforeend',`<section class="panel" data-implants-v1052><div class="section-head"><div><div class="eyebrow">IMPLANTS</div><div class="section-title">Установленные импланты</div></div></div>${installed.length?`<div class="info-grid">${installed.map(item=>{const req=item.requirements||{};const reqText=ABILITIES_V1052.filter(row=>Number(req[row.key]||0)>0).map(row=>`${row.short} ${Number(req[row.key])}`).join(' · ')||'нет';return `<div class="info-card"><div class="k">${esc(item.name||item.id)}</div><div class="v">${Number(item.energyRequired||0)} EN</div><div class="muted">Требования: ${esc(reqText)}</div></div>`;}).join('')}</div>`:'<div class="muted">Нет установленных имплантов.</div>'}</section>`);
+    }
+    if(String(App.session?.role||'').toLowerCase()==='gm'&&!root.querySelector('[data-pending-applications-v1052]')){
+      const pending=Array.from(App.data.players.values()).filter(p=>String(p.role||'').toLowerCase()!=='gm'&&String(p.approvalStatus||'approved').toLowerCase()==='pending').sort((a,b)=>slugText(a.displayName||a.id).localeCompare(slugText(b.displayName||b.id),'ru'));
+      root.insertAdjacentHTML('beforeend',`<section class="panel" data-pending-applications-v1052><div class="section-head"><div><div class="eyebrow">CHARACTER_APPLICATIONS</div><div class="section-title">Заявки персонажей</div></div><span class="chip">${pending.length}</span></div>${pending.length?`<div class="stack">${pending.map(p=>`<div class="info-card application-card-v1052"><div><div class="v">${esc(p.displayName||p.id)}</div><div class="muted">${esc((campaignIdsForPlayer(p).map(id=>App.data.campaigns.get(id)?.name||id).filter(Boolean).join(', '))||'Кампания не указана')}</div></div><div class="row"><button class="primary small" type="button" data-web-approval-v1052="approved" data-player-id="${esc(p.id)}">ОДОБРИТЬ</button><button class="ghost-btn small" type="button" data-web-approval-v1052="rejected" data-player-id="${esc(p.id)}">ОТКЛОНИТЬ</button></div></div>`).join('')}</div>`:'<div class="muted">Новых заявок нет.</div>'}</section>`);
+    }
+    return result;
+  };
+
+  async function setPlayerApprovalV1052(playerId,status){
+    if(String(App.session?.role||'').toLowerCase()!=='gm')throw new Error('Требуется профиль ДМа');
+    const id=String(playerId||'');const current=App.data.players.get(id);if(!current)throw new Error('Анкета не найдена');
+    const baseRow=await apiPullPlayer(App.config,id);
+    const merged=buildPlayerMap(App.cache.snapshot,baseRow?[baseRow]:[]).get(id)||deep(current);
+    merged.approvalStatus=status;merged.approvalReviewedAt=new Date().toISOString();merged.approvalReviewedBy=App.session.userId||'gm';
+    const segments=decomposePlayer(merged);let saved;
+    if(baseRow){saved=await apiPatchPlayerWithVersion(App.config,id,Number(baseRow.version||0),{updated_by:App.config.deviceLabel||'web-gm',...segments});if(!saved)throw new Error('Конфликт версии анкеты. Обнови данные и повтори действие.');}
+    else saved=await apiUpsertPlayer(App.config,{player_id:id,version:1,updated_by:App.config.deviceLabel||'web-gm',...segments});
+    App.data.playerRows.set(id,saved);App.data.players=buildPlayerMap(App.cache.snapshot,Array.from(App.data.playerRows.values()));
+    await saveCache();renderCurrentScreen();renderLogin();notify(status==='approved'?'Персонаж одобрен':'Анкета отклонена','ok');
+  }
+  document.addEventListener('click',async event=>{const btn=event.target?.closest?.('[data-web-approval-v1052]');if(!btn)return;btn.disabled=true;try{await setPlayerApprovalV1052(btn.dataset.playerId,btn.dataset.webApprovalV1052);}catch(error){notify(error.message,'err');btn.disabled=false;}});
+
+  function originBonusBadgesWebV1054(origin={}){
+    const bonuses=originBonusMapV1052(origin);const rows=ABILITIES_V1052.filter(row=>Number(bonuses[row.key]||0)!==0).map(row=>`<span class="origin-bonus-v1054 ${Number(bonuses[row.key])>0?'positive':'negative'}">${esc(row.short)} ${Number(bonuses[row.key])>0?'+':''}${Number(bonuses[row.key])}</span>`);
+    return rows.length?rows.join(''):'<span class="origin-bonus-v1054 neutral">Без модификаторов</span>';
+  }
+  function geoTypeLabelWebV1054(type){return({city:'Город',planet:'Планета',region:'Регион / область',station:'Станция',colony:'Колония / поселение',other:'Место происхождения'})[String(type||'other')]||'Место происхождения';}
+  function registrationOriginCardsWebV1054(map,fieldName,kind){
+    const rows=visibleOriginsV1052(map);if(!rows.length)return'<div class="origin-empty-v1054">ДМ ещё не добавил варианты для выбора.</div>';
+    return `<div class="origin-choice-grid-v1054">${rows.map(origin=>{const image=String(origin.image||origin.imageLocal||'').trim();const kicker=kind==='profession'?'ПРОФЕССИЯ':geoTypeLabelWebV1054(origin.locationType);return `<label class="origin-choice-card-v1054"><input type="radio" name="${fieldName}" value="${esc(origin.id)}" required /><div class="origin-choice-media-v1054">${image?`<img src="${esc(image)}" alt="" />`:`<div class="origin-choice-placeholder-v1054">${kind==='profession'?'PROF':'ORIGIN'}</div>`}</div><div class="origin-choice-body-v1054"><div class="origin-choice-kicker-v1054">${esc(kicker)}</div><div class="origin-choice-title-v1054">${esc(origin.name||origin.id)}</div><div class="origin-choice-description-v1054">${esc(origin.description||'Описание пока не заполнено ДМом.')}</div><div class="origin-bonuses-v1054">${originBonusBadgesWebV1054(origin)}</div><div class="origin-select-indicator-v1054">ВЫБРАТЬ</div></div></label>`;}).join('')}</div>`;
+  }
+  function registrationMarkupV1052(){
+    const campaigns=availableCampaignsV1049();
+    return `<div class="registration-window-v1054" role="dialog" aria-modal="true" aria-labelledby="register-title-v1054"><div class="registration-card-v1052"><div class="registration-sticky-head-v1054 section-head"><div><div class="eyebrow">CHARACTER_APPLICATION</div><div class="section-title" id="register-title-v1054">Регистрация нового персонажа</div><div class="muted">Заполните анкету. После отправки она попадёт ДМу на одобрение.</div></div><button class="ghost-btn" type="button" id="register-close-v1052">Закрыть</button></div>
+      <form id="register-form-v1052" class="form stack-lg registration-form-v1054"><section class="registration-section-v1054"><div class="section-title">Основные данные</div><label class="field"><span>Игровая кампания</span><select class="input" name="campaignId" required>${campaigns.map(c=>`<option value="${esc(c.id)}">${esc(c.name||c.id)}</option>`).join('')}</select></label><div class="form-grid-v1052"><label class="field"><span>Имя</span><input class="input" name="displayName" maxlength="80" required /></label><label class="field"><span>Фото персонажа</span><input class="input" name="photo" type="file" accept="image/png,image/jpeg,image/webp,image/gif" /></label></div><label class="field"><span>Описание персонажа</span><textarea class="input area registration-description-v1054" name="description" maxlength="12000" placeholder="Внешность, характер, история, важные детали биографии…"></textarea></label></section>
+      <section class="registration-section-v1054"><div class="section-title">Профессия</div><p class="muted">Профессия — занятие, служба или социальная роль персонажа. Прочитайте полное описание вариантов перед выбором.</p>${registrationOriginCardsWebV1054(socialOriginsV1052(),'socialOriginId','profession')}</section>
+      <section class="registration-section-v1054"><div class="section-title">Происхождение</div><p class="muted">Происхождением может быть город, регион, станция, колония или целая планета.</p>${registrationOriginCardsWebV1054(geographicOriginsV1052(),'geographicOriginId','geographic')}</section>
+      <section class="registration-section-v1054"><div class="section-title">Доступ</div><div class="form-grid-v1052"><label class="field"><span>Пароль персонажа</span><input class="input" name="pass" type="password" minlength="4" required autocomplete="new-password" /></label><label class="field"><span>Повторите пароль</span><input class="input" name="pass2" type="password" minlength="4" required autocomplete="new-password" /></label></div></section>
+      <div class="registration-submit-v1054"><button class="primary" type="submit">ОТПРАВИТЬ АНКЕТУ ДМУ</button><div class="status-line muted" id="register-status-v1052"></div></div></form></div></div>`;
+  }
+  async function resizeRegistrationPhotoV1052(file){
+    if(!file||!file.size)return '';
+    if(file.size>20*1024*1024)throw new Error('Фото для анкеты должно быть меньше 20 МБ');
+    const dataUrl=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result||''));reader.onerror=()=>reject(new Error('Не удалось прочитать фото'));reader.readAsDataURL(file);});
+    const image=await new Promise((resolve,reject)=>{const img=new Image();img.onload=()=>resolve(img);img.onerror=()=>reject(new Error('Не удалось декодировать фото'));img.src=dataUrl;});
+    const max=640;const scale=Math.min(1,max/Math.max(image.width||1,image.height||1));const canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(image.width*scale));canvas.height=Math.max(1,Math.round(image.height*scale));canvas.getContext('2d').drawImage(image,0,0,canvas.width,canvas.height);return canvas.toDataURL('image/webp',0.82);
+  }
+  function openRegistrationV1052(){const panel=$('#registration-panel-v1052');if(!panel)return;if(panel.parentElement!==document.body)document.body.appendChild(panel);panel.innerHTML=registrationMarkupV1052();panel.classList.remove('hidden');document.body.classList.add('registration-open-v1054');}
+  function closeRegistrationV1052(){const panel=$('#registration-panel-v1052');if(panel){panel.classList.add('hidden');panel.innerHTML='';document.body.classList.remove('registration-open-v1054');}}
+  document.addEventListener('click',event=>{if(event.target?.id==='register-open-v1052')openRegistrationV1052();if(event.target?.id==='register-close-v1052'||event.target?.classList?.contains('registration-window-v1054'))closeRegistrationV1052();});
+  document.addEventListener('keydown',event=>{if(event.key==='Escape'&&!$('#registration-panel-v1052')?.classList.contains('hidden'))closeRegistrationV1052();});
+  document.addEventListener('submit',async event=>{
+    if(event.target?.id!=='register-form-v1052')return;event.preventDefault();
+    const form=event.target;const fd=new FormData(form);const status=form.querySelector('#register-status-v1052');const campaignId=String(fd.get('campaignId')||'');const campaign=campaignV1049(campaignId);
+    if(!campaign||campaign.availableNow===false){status.textContent='Кампания недоступна.';return;}
+    const pass=String(fd.get('pass')||'');if(pass!==String(fd.get('pass2')||'')){status.textContent='Пароли не совпадают.';return;}
+    const name=String(fd.get('displayName')||'').trim();if(!name)return;status.textContent='Отправка анкеты…';
+    try{
+      let id=slugText(name).replace(/[^a-zа-яё0-9]+/gi,'_').replace(/^_+|_+$/g,'').toLowerCase()||`player_${Date.now()}`;if(App.data.players.has(id))id=`${id}_${Date.now().toString(36).slice(-5)}`;
+      const image=await resizeRegistrationPhotoV1052(form.elements.photo?.files?.[0]);
+      const baseAbilities=Object.fromEntries(ABILITIES_V1052.map(row=>[row.key,0]));
+      const player={id,role:'player',pass,displayName:name,shortName:name,rank:'Новый персонаж',avatarGlyph:name.slice(0,2).toUpperCase(),lore:String(fd.get('description')||'').trim(),notes:'',image,approvalStatus:'pending',applicationSubmittedAt:new Date().toISOString(),campaignIds:[campaignId],socialOriginId:String(fd.get('socialOriginId')||''),geographicOriginId:String(fd.get('geographicOriginId')||''),credits:0,stats:{hpCurrent:10,hpMax:10,shieldCurrent:0,shieldMax:0,energyCurrent:1,energyMax:1,baseArmorClass:10},abilities:baseAbilities,abilityBase:baseAbilities,equipmentSlots:{primaryWeapon:'',secondaryWeapon:'',armor:''},installedImplantIds:[],inventory:[],social:{npcIds:[],orgs:[],reputation:[]},currentPlanetId:'',relatedArticleIds:[]};
+      const segments=decomposePlayer(player);const saved=await apiUpsertPlayer(App.config,{player_id:id,version:1,updated_by:App.config.deviceLabel||'web-registration',...segments});App.data.playerRows.set(id,saved);App.data.players=buildPlayerMap(App.cache.snapshot,Array.from(App.data.playerRows.values()));await saveCache();status.textContent='Анкета отправлена ДМу. После одобрения персонаж появится во входе.';form.reset();renderLogin();
+    }catch(error){status.textContent=`Не удалось отправить анкету: ${error.message}`;}
+  });
+
+  applyEraThemeV1049('technological');
 
   async function init() {
     bindGlobalEvents();
     await loadLocalState();
-    fillSetupForm();
     syncRememberControls();
 
     const hasCached = RUNTIME.cloudOnly ? false : await bootFromCacheIfNeeded();
+    if (!App.config) App.config = normalizeConfig({ url: DEFAULTS.url, campaignId: 'main', deviceLabel: 'web-player' });
     if (hasConfig()) {
       try {
         await pullEverything({ silent: true });
       } catch (error) {
         if (!hasCached) {
-          openBoot('setup');
-          $('#setup-status').textContent = `Не удалось подключиться: ${error.message}`;
-          notify(`Не удалось подключиться: ${error.message}`, 'err');
+          openBoot('login');
+          renderLogin();
+          const status = $('#login-status');
+          if (status) status.textContent = `Не удалось получить список персонажей: ${error.message}`;
           return;
         }
         notify(`Загружен локальный кеш. Облако сейчас недоступно: ${error.message}`, 'warn');
       }
       renderLogin();
-      if (App.session?.userId && App.data.players.has(App.session.userId)) {
+      if (App.session?.userId && App.data.players.has(App.session.userId) && sessionCampaignAllowedV1049()) {
+        applyEraThemeV1049(campaignV1049(selectedCampaignV1049()));
         openBoot('app');
         renderCurrentScreen();
-        startPolling();
+        startRealtimeSync();
       } else {
+        if (App.session?.userId && String(App.session.role || '').toLowerCase() !== 'guest') { App.session = null; await storageRemove(KEYS.session); }
         openBoot('login');
       }
       return;
     }
-    openBoot('setup');
+    openBoot('login');
+    renderLogin();
+    const status = $('#login-status');
+    if (status) status.textContent = hasRuntimeServiceAuth()
+      ? 'Выберите персонажа и введите его пароль.'
+      : 'Web-деплой не содержит автоматической PocketBase-авторизации. Выполните деплой из DEV-профиля ДМа.';
   }
 
   init().catch(error => {
-    openBoot('setup');
-    $('#setup-status').textContent = error.message;
+    openBoot('login');
+    renderLogin();
+    const status = $('#login-status');
+    if (status) status.textContent = error.message;
     notify(`Ошибка запуска: ${error.message}`, 'err');
   });
 })();

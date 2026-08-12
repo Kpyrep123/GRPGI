@@ -1,85 +1,62 @@
 {
-  "name": "GRPGI Web PocketBase persistent login patch",
-  "version": "1.0.40",
-  "applyMode": "overlay",
-  "generatedAt": "2026-07-19T00:00:00Z",
-  "summary": [
-    "PocketBase-only web configuration and legacy browser-state cleanup",
-    "Opt-in persistent login for up to 30 days without storing passwords",
-    "PocketBase auth token refresh and device-forget control",
-    "Web deploy guard against legacy backend artifacts",
-    "Privacy notice and Caddy security/cache example updates"
+  "patch": "1.0.57",
+  "baseVersion": "1.0.56",
+  "title": "Campaign Studio persistent view + graph ports + galaxy map LOD",
+  "installMode": "overlay",
+  "npmRequired": false,
+  "features": [
+    "Campaign Studio camera/selection persists across realtime world updates",
+    "Campaign Studio camera is local UI state and no longer sync-saves",
+    "drag-to-connect graph ports on knowledge, plot and condition nodes",
+    "inline relation labels in Campaign Studio inspector",
+    "galaxy system markers 40 percent larger in Electron and Web",
+    "Web galaxy labels fade by zoom like desktop"
   ],
   "files": [
     {
-      "path": "LEGAL_AND_PERSISTENT_LOGIN.md",
-      "size": 3605,
-      "sha256": "61a4d54e89dd17e4141ab7eee26cb8699e5143a91c9e1cc75450e8ef87ddb9c7"
+      "path": "PATCH_NOTES_v1.0.57.md",
+      "size": 1494,
+      "sha256": "da5d4478baf7b4c3ab6d92a05ad7cc32191f28bdf232f236d6b08bab2aa5c989"
     },
     {
-      "path": "PATCH_NOTES_v1.0.40.md",
-      "size": 1379,
-      "sha256": "31c371676ddb0594561cfacbc41b40ce3d27f9bd9f208927d51b8646c8210ef5"
+      "path": "deploy/site/app/app.js",
+      "size": 208303,
+      "sha256": "d6acd81b88442f7bf4c1ef36a5bbc5b7bfba8d4d4ced41eb4e25dd25c62cac6a"
+    },
+    {
+      "path": "deploy/site/app/index.html",
+      "size": 5111,
+      "sha256": "ccae26660ede138faa464d74dca95e0e4ae13fb487337e39d9bd5d5fd99a939e"
+    },
+    {
+      "path": "deploy/site/build-info.json",
+      "size": 1760,
+      "sha256": "4c7ddcea9489339275ec4dc39dc6073cff4ea4a1579e10b8582308aa669f01b2"
     },
     {
       "path": "package-lock.json",
       "size": 128484,
-      "sha256": "3c20115f680bf8392c2fbbf203c9b2ffad495cf3a06962aa63d9f26964a4e367"
+      "sha256": "1c5eedfc7ef33c8c55a8d08452c638cf90506428280e831b0880dc017f752554"
     },
     {
       "path": "package.json",
       "size": 2188,
-      "sha256": "72d5bb78420701c91a2dfc9894c75bcbb721804523d6a689d41e3dc4239ed2ca"
+      "sha256": "a8e2a432b2df5bc2e9f4727d6f6ef34311195046c7b753e17f1ca69810c825e7"
     },
     {
-      "path": "deploy/caddy/Caddyfile.app.example",
-      "size": 1085,
-      "sha256": "c29abf4fe9f58f4ac46e580973e14607f067145172bd44ddbd979d6b00fcb24c"
+      "path": "renderer/app.js",
+      "size": 1211563,
+      "sha256": "2e92986d9225530c83f6e6966618ad13dddcc4e13b60dde98e03e47d9c6936b2"
     },
     {
-      "path": "deploy/site/build-info.json",
-      "size": 150,
-      "sha256": "51e5367ce7714bcaa5c997f49138cfd92178b333c5aff1314c738fc5f38a3248"
+      "path": "renderer/campaign-studio.css",
+      "size": 12444,
+      "sha256": "cf2e9f6f2c98c698ee5e6da9559ac63f7e816912eb2f07476bbcffeeb8c71ecf"
     },
     {
-      "path": "deploy/site/index.html",
-      "size": 4763,
-      "sha256": "d5df86de0000d3020d56854a1739fc1662c36e14ad7fe075253b48a2ac9a4b14"
-    },
-    {
-      "path": "deploy/site/privacy-consent.js",
-      "size": 205,
-      "sha256": "979549189ed5d4aa562159195ef8bbabdd50ec3c18231de705db8164d7f40e53"
-    },
-    {
-      "path": "deploy/site/privacy.html",
-      "size": 12766,
-      "sha256": "65f9637eda5a0754b741034e68d0767552558350605c5a10223d744bbb4fd282"
-    },
-    {
-      "path": "deploy/site/styles.css",
-      "size": 2705,
-      "sha256": "f069bc6f3b950cb86186d66d09addd5f51da5767d87fbc443463fc3c2dfb9854"
-    },
-    {
-      "path": "deploy/site/app/app.js",
-      "size": 145357,
-      "sha256": "a31f425dbdc9d55d0c2c476cad376722cc1949a4de2c6d8c6da7584c86d42b96"
-    },
-    {
-      "path": "deploy/site/app/index.html",
-      "size": 10282,
-      "sha256": "77a87d35809741893c1dcfe3c54c609b178910630f1b538009106fb02796f23c"
-    },
-    {
-      "path": "deploy/site/app/styles.css",
-      "size": 37975,
-      "sha256": "3c7b6bbab7b6f8e7e774fed3ba460cb0d7bc84b94461e875f2f374a6ccd4e441"
-    },
-    {
-      "path": "tools/devops-automation.cjs",
-      "size": 30316,
-      "sha256": "ae7bf17b2ea04dd55464978de164b2b556efcd2d5515400a733e6c8cf6de27c8"
+      "path": "renderer/campaign-studio.js",
+      "size": 70858,
+      "sha256": "801e8ffec4ced28eed73a236bcf8c1809ccab2cd865079e40feb7aee9a9ac3dd"
     }
   ]
 }

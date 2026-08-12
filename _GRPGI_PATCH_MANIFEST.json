@@ -1,67 +1,64 @@
 {
-  "name": "GRPGI memory and complete second-screen fix",
-  "version": "1.0.43",
-  "baseVersion": "1.0.42",
-  "createdAt": "2026-07-30T17:55:00+03:00",
-  "requiresNpmInstall": false,
-  "containsBuilds": false,
-  "changes": [
-    "Stream image uploads from disk instead of Base64/Buffer/Blob copies",
-    "Localize legacy Base64 image payloads during world/state loading",
-    "Avoid duplicate image normalization and full snapshot copies",
-    "Mirror complete Region Command Center tactical state to player display",
-    "Replace constant full-world polling with IPC invalidation and 10-second fallback"
-  ],
+  "schema": 1,
+  "patch": "1.0.55",
+  "baseVersion": "1.0.54",
+  "title": "Era marker PNG assets",
+  "externalAssets": {
+    "industrial": "renderer/assets/images/nowadays/",
+    "medieval": "renderer/assets/images/bronzera/",
+    "technological": "renderer/assets/images/scifi/",
+    "files": [
+      "blackhole.png",
+      "danger.png",
+      "misc.png",
+      "trade.png",
+      "node.png",
+      "star.png",
+      "planet.png",
+      "ship.png"
+    ]
+  },
+  "notes": "Marker PNG files are not bundled in this patch; the app uses the user-provided files already present in renderer/assets/images.",
   "files": [
     {
-      "path": "MEMORY_AND_SECOND_DISPLAY_v1.0.43.md",
-      "size": 1489,
-      "sha256": "55a30ff218ade5efaf8e917724b958169158bfd9a437559fddceb7a0a9d572cc"
+      "path": "PATCH_NOTES_v1.0.55.md",
+      "size": 1817,
+      "sha256": "3fbc3a56595ebc78cd80563b6bf5e2d7f8459f9e16092bd3cc7a542b455893d5"
     },
     {
-      "path": "PATCH_NOTES_v1.0.43.md",
-      "size": 4124,
-      "sha256": "7acb5965435a869a9daf3c51c8125af8bde7d63607861fa636f39103b614ee7e"
+      "path": "deploy/site/app/app.js",
+      "size": 208143,
+      "sha256": "45f61d763140ae300cf50e6e5989dc7c1751689b2b3d092298c395469424894f"
     },
     {
-      "path": "main.js",
-      "size": 134145,
-      "sha256": "e22670c77ee26f941886025df486cc0c25c4573eeb109135f3406d12e5f26be8"
+      "path": "deploy/site/build-info.json",
+      "size": 1319,
+      "sha256": "beb3b7f3fa363414cd86853cadd212dd071572d890c04faf77da9dc2804bfcdc"
     },
     {
       "path": "package-lock.json",
       "size": 128484,
-      "sha256": "afb1353e5edb34bdd0c2113eb0e488f184903e2d17f1e91c89370ef577c4ba77"
+      "sha256": "ac809667bbcf3f40c991e8ffd6299cf38b51d178d6abbec2c9cec8738176e295"
     },
     {
       "path": "package.json",
       "size": 2188,
-      "sha256": "a314b5a16dd436d04158d7bb9e26bcf556fcf0cdf45f65dd3d29b9a284f74bef"
-    },
-    {
-      "path": "preload.js",
-      "size": 5331,
-      "sha256": "966f0bb4aee08c2597374ba20fa4652079b9f34ccfc288257b417406f76f2459"
+      "sha256": "cb4f2f49b2e21a0caf762d61c3275037df80155e56dd366f5eccc9e6a2d59e43"
     },
     {
       "path": "renderer/app.js",
-      "size": 1150556,
-      "sha256": "c49924a818effe61d614db59ee77c930c4786381a5ab31b9c1c3d71c4f6432c6"
-    },
-    {
-      "path": "renderer/player-display.js",
-      "size": 43456,
-      "sha256": "7fae6a9790cc929d22848afdf97bf518f2f49138ad530cfdfd75f98c8e17686a"
-    },
-    {
-      "path": "renderer/region-command-center.js",
-      "size": 107722,
-      "sha256": "a9ca891f75f8e9f188f8300ef2ea166b82e4068fc31a7195ddf2128c0e896793"
+      "size": 1211509,
+      "sha256": "a9e8a6212692460d41976722ca481d6baa144e8c86d050eb0110dc0524997695"
     },
     {
       "path": "renderer/styles.css",
-      "size": 110280,
-      "sha256": "62546f01acbc2f68c8a7c1be2acd1356144dd7973addd4e8e4cbdef3a7bb40d7"
+      "size": 143996,
+      "sha256": "fe4b5c771b75d6aa65889df06fbef39728610b61f3453e11f51946b9f9eb85c9"
+    },
+    {
+      "path": "tools/devops-automation.cjs",
+      "size": 36001,
+      "sha256": "00cfbe81d42e5f5dbd808d4c48704ad33ce73c023616aadec8ef59954dccc43f"
     }
   ]
 }

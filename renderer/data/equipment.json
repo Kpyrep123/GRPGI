@@ -12,7 +12,15 @@
       ],
       "weaponSlot": "primary",
       "damage": "2d8",
-      "energyDelta": 0
+      "hitBonus": 0,
+      "requirements": {
+        "strength": 0,
+        "dexterity": 0,
+        "intelligence": 0,
+        "endurance": 0,
+        "will": 0,
+        "glory": 0
+      }
     },
     "n7_defender": {
       "id": "n7_defender",
@@ -25,7 +33,14 @@
         "mil-spec"
       ],
       "armorClass": 17,
-      "energyDelta": 0
+      "requirements": {
+        "strength": 0,
+        "dexterity": 0,
+        "intelligence": 0,
+        "endurance": 0,
+        "will": 0,
+        "glory": 0
+      }
     },
     "malorian_3516": {
       "id": "malorian_3516",
@@ -39,7 +54,15 @@
       ],
       "weaponSlot": "secondary",
       "damage": "2d6+2",
-      "energyDelta": 0
+      "hitBonus": 0,
+      "requirements": {
+        "strength": 0,
+        "dexterity": 0,
+        "intelligence": 0,
+        "endurance": 0,
+        "will": 0,
+        "glory": 0
+      }
     },
     "arasaka_vest": {
       "id": "arasaka_vest",
@@ -51,76 +74,77 @@
         "лёгкая броня"
       ],
       "armorClass": 13,
-      "energyDelta": 0
+      "requirements": {
+        "strength": 0,
+        "dexterity": 0,
+        "intelligence": 0,
+        "endurance": 0,
+        "will": 0,
+        "glory": 0
+      }
     },
     "med_pack": {
       "id": "med_pack",
-      "type": "consumable",
+      "type": "gear",
       "name": "Мед-пак",
       "desc": "Быстрое медицинское восстановление",
       "rarity": "обычный",
       "tags": [
         "лечение"
-      ],
-      "energyDelta": 0
+      ]
     },
     "omni_gel": {
       "id": "omni_gel",
-      "type": "tech",
+      "type": "gear",
       "name": "Омни-гель",
       "desc": "Ремонт и вскрытие модулей",
       "rarity": "обычный",
       "tags": [
         "ремонт",
         "тех"
-      ],
-      "energyDelta": 0
+      ]
     },
     "credit_chip": {
       "id": "credit_chip",
-      "type": "misc",
+      "type": "gear",
       "name": "Кредитный чип",
       "desc": "Защищённый носитель средств",
       "rarity": "обычный",
       "tags": [
         "финансы"
-      ],
-      "energyDelta": 0
+      ]
     },
     "virus_chip": {
       "id": "virus_chip",
-      "type": "tech",
+      "type": "gear",
       "name": "Вирусный чип",
       "desc": "Одноразовая инъекция вредоносного пакета",
       "rarity": "редкий",
       "tags": [
         "взлом",
         "одноразовое"
-      ],
-      "energyDelta": 0
+      ]
     },
     "casino_chips": {
       "id": "casino_chips",
-      "type": "misc",
+      "type": "gear",
       "name": "Фишки казино",
       "desc": "Локальная расчётная единица развлекательного квартала",
       "rarity": "обычный",
       "tags": [
         "торговля"
-      ],
-      "energyDelta": 0
+      ]
     },
     "docking_clearance": {
       "id": "docking_clearance",
-      "type": "document",
+      "type": "gear",
       "name": "Авторизация на швартовку",
       "desc": "Допуск в частный орбитальный сектор",
       "rarity": "редкий",
       "tags": [
         "документ",
         "доступ"
-      ],
-      "energyDelta": 0
+      ]
     },
     "sunshard_filter": {
       "id": "sunshard_filter",
@@ -132,7 +156,15 @@
         "имплант",
         "защита"
       ],
-      "energyDelta": 0
+      "energyRequired": 0,
+      "requirements": {
+        "strength": 0,
+        "dexterity": 0,
+        "intelligence": 0,
+        "endurance": 0,
+        "will": 0,
+        "glory": 0
+      }
     },
     "dust_cloak": {
       "id": "dust_cloak",
@@ -145,35 +177,40 @@
         "маскировка"
       ],
       "armorClass": 13,
-      "energyDelta": 0
+      "requirements": {
+        "strength": 0,
+        "dexterity": 0,
+        "intelligence": 0,
+        "endurance": 0,
+        "will": 0,
+        "glory": 0
+      }
     },
     "lumen_spore": {
       "id": "lumen_spore",
-      "type": "misc",
+      "type": "gear",
       "name": "Люмен-спора",
       "desc": "Биолюминесцентный образец флоры",
       "rarity": "необычный",
       "tags": [
         "образец",
         "био"
-      ],
-      "energyDelta": 0
+      ]
     },
     "void_scale": {
       "id": "void_scale",
-      "type": "misc",
+      "type": "gear",
       "name": "Пластина пустотного ската",
       "desc": "Редкий биоматериал с высокой ценностью",
       "rarity": "редкий",
       "tags": [
         "трофей",
         "био"
-      ],
-      "energyDelta": 0
+      ]
     },
     "field_decryptor": {
       "id": "field_decryptor",
-      "type": "hacking",
+      "type": "gear",
       "name": "Полевой дешифратор",
       "desc": "Компактный крипто-модуль для работы с сообщениями и защищёнными архивами.",
       "rarity": "редкий",
@@ -181,16 +218,7 @@
         "утилита",
         "шифрование",
         "архив"
-      ],
-      "mechanicType": "decryptor",
-      "mechanicTitle": "Крипто-модуль дешифратора",
-      "decryptorDefaultCipher": "caesar",
-      "mechanicHint": "Подходит для кодов Цезаря, Виженера, Атбаша и XOR/Base64. Полезен для работы с заметками, радиограммами и обрывками журналов.",
-      "decryptorMode": "decryptor",
-      "mechanicTimeLimit": 20,
-      "mechanicCodeLength": 5,
-      "mechanicSlots": 3,
-      "energyDelta": 0
+      ]
     }
   },
   "EQUIPMENT_LIST": [
@@ -204,7 +232,14 @@
         "лёгкая броня"
       ],
       "armorClass": 13,
-      "energyDelta": 0
+      "requirements": {
+        "strength": 0,
+        "dexterity": 0,
+        "intelligence": 0,
+        "endurance": 0,
+        "will": 0,
+        "glory": 0
+      }
     },
     {
       "id": "m97_viper",
@@ -218,7 +253,15 @@
       ],
       "weaponSlot": "primary",
       "damage": "2d8",
-      "energyDelta": 0
+      "hitBonus": 0,
+      "requirements": {
+        "strength": 0,
+        "dexterity": 0,
+        "intelligence": 0,
+        "endurance": 0,
+        "will": 0,
+        "glory": 0
+      }
     },
     {
       "id": "malorian_3516",
@@ -232,7 +275,15 @@
       ],
       "weaponSlot": "secondary",
       "damage": "2d6+2",
-      "energyDelta": 0
+      "hitBonus": 0,
+      "requirements": {
+        "strength": 0,
+        "dexterity": 0,
+        "intelligence": 0,
+        "endurance": 0,
+        "will": 0,
+        "glory": 0
+      }
     },
     {
       "id": "n7_defender",
@@ -245,93 +296,93 @@
         "mil-spec"
       ],
       "armorClass": 17,
-      "energyDelta": 0
+      "requirements": {
+        "strength": 0,
+        "dexterity": 0,
+        "intelligence": 0,
+        "endurance": 0,
+        "will": 0,
+        "glory": 0
+      }
     },
     {
       "id": "docking_clearance",
-      "type": "document",
+      "type": "gear",
       "name": "Авторизация на швартовку",
       "desc": "Допуск в частный орбитальный сектор",
       "rarity": "редкий",
       "tags": [
         "документ",
         "доступ"
-      ],
-      "energyDelta": 0
+      ]
     },
     {
       "id": "virus_chip",
-      "type": "tech",
+      "type": "gear",
       "name": "Вирусный чип",
       "desc": "Одноразовая инъекция вредоносного пакета",
       "rarity": "редкий",
       "tags": [
         "взлом",
         "одноразовое"
-      ],
-      "energyDelta": 0
+      ]
     },
     {
       "id": "credit_chip",
-      "type": "misc",
+      "type": "gear",
       "name": "Кредитный чип",
       "desc": "Защищённый носитель средств",
       "rarity": "обычный",
       "tags": [
         "финансы"
-      ],
-      "energyDelta": 0
+      ]
     },
     {
       "id": "lumen_spore",
-      "type": "misc",
+      "type": "gear",
       "name": "Люмен-спора",
       "desc": "Биолюминесцентный образец флоры",
       "rarity": "необычный",
       "tags": [
         "образец",
         "био"
-      ],
-      "energyDelta": 0
+      ]
     },
     {
       "id": "med_pack",
-      "type": "consumable",
+      "type": "gear",
       "name": "Мед-пак",
       "desc": "Быстрое медицинское восстановление",
       "rarity": "обычный",
       "tags": [
         "лечение"
-      ],
-      "energyDelta": 0
+      ]
     },
     {
       "id": "omni_gel",
-      "type": "tech",
+      "type": "gear",
       "name": "Омни-гель",
       "desc": "Ремонт и вскрытие модулей",
       "rarity": "обычный",
       "tags": [
         "ремонт",
         "тех"
-      ],
-      "energyDelta": 0
+      ]
     },
     {
       "id": "void_scale",
-      "type": "misc",
+      "type": "gear",
       "name": "Пластина пустотного ската",
       "desc": "Редкий биоматериал с высокой ценностью",
       "rarity": "редкий",
       "tags": [
         "трофей",
         "био"
-      ],
-      "energyDelta": 0
+      ]
     },
     {
       "id": "field_decryptor",
-      "type": "hacking",
+      "type": "gear",
       "name": "Полевой дешифратор",
       "desc": "Компактный крипто-модуль для работы с сообщениями и защищёнными архивами.",
       "rarity": "редкий",
@@ -339,16 +390,7 @@
         "утилита",
         "шифрование",
         "архив"
-      ],
-      "mechanicType": "decryptor",
-      "mechanicTitle": "Крипто-модуль дешифратора",
-      "decryptorDefaultCipher": "caesar",
-      "mechanicHint": "Подходит для кодов Цезаря, Виженера, Атбаша и XOR/Base64. Полезен для работы с заметками, радиограммами и обрывками журналов.",
-      "decryptorMode": "decryptor",
-      "mechanicTimeLimit": 20,
-      "mechanicCodeLength": 5,
-      "mechanicSlots": 3,
-      "energyDelta": 0
+      ]
     },
     {
       "id": "dust_cloak",
@@ -361,7 +403,14 @@
         "маскировка"
       ],
       "armorClass": 13,
-      "energyDelta": 0
+      "requirements": {
+        "strength": 0,
+        "dexterity": 0,
+        "intelligence": 0,
+        "endurance": 0,
+        "will": 0,
+        "glory": 0
+      }
     },
     {
       "id": "sunshard_filter",
@@ -373,18 +422,25 @@
         "имплант",
         "защита"
       ],
-      "energyDelta": 0
+      "energyRequired": 0,
+      "requirements": {
+        "strength": 0,
+        "dexterity": 0,
+        "intelligence": 0,
+        "endurance": 0,
+        "will": 0,
+        "glory": 0
+      }
     },
     {
       "id": "casino_chips",
-      "type": "misc",
+      "type": "gear",
       "name": "Фишки казино",
       "desc": "Локальная расчётная единица развлекательного квартала",
       "rarity": "обычный",
       "tags": [
         "торговля"
-      ],
-      "energyDelta": 0
+      ]
     }
   ],
   "WEAPON_OPTIONS": [
@@ -400,7 +456,15 @@
       ],
       "weaponSlot": "primary",
       "damage": "2d8",
-      "energyDelta": 0
+      "hitBonus": 0,
+      "requirements": {
+        "strength": 0,
+        "dexterity": 0,
+        "intelligence": 0,
+        "endurance": 0,
+        "will": 0,
+        "glory": 0
+      }
     },
     {
       "id": "malorian_3516",
@@ -414,7 +478,15 @@
       ],
       "weaponSlot": "secondary",
       "damage": "2d6+2",
-      "energyDelta": 0
+      "hitBonus": 0,
+      "requirements": {
+        "strength": 0,
+        "dexterity": 0,
+        "intelligence": 0,
+        "endurance": 0,
+        "will": 0,
+        "glory": 0
+      }
     }
   ],
   "ARMOR_OPTIONS": [
@@ -428,7 +500,14 @@
         "лёгкая броня"
       ],
       "armorClass": 13,
-      "energyDelta": 0
+      "requirements": {
+        "strength": 0,
+        "dexterity": 0,
+        "intelligence": 0,
+        "endurance": 0,
+        "will": 0,
+        "glory": 0
+      }
     },
     {
       "id": "n7_defender",
@@ -441,7 +520,14 @@
         "mil-spec"
       ],
       "armorClass": 17,
-      "energyDelta": 0
+      "requirements": {
+        "strength": 0,
+        "dexterity": 0,
+        "intelligence": 0,
+        "endurance": 0,
+        "will": 0,
+        "glory": 0
+      }
     },
     {
       "id": "dust_cloak",
@@ -454,7 +540,14 @@
         "маскировка"
       ],
       "armorClass": 13,
-      "energyDelta": 0
+      "requirements": {
+        "strength": 0,
+        "dexterity": 0,
+        "intelligence": 0,
+        "endurance": 0,
+        "will": 0,
+        "glory": 0
+      }
     }
   ]
 }

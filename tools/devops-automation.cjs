@@ -26,7 +26,8 @@ const DEFAULT_CONFIG = Object.freeze({
     healthUrls: [
       'https://app.grpg-sync.ru/',
       'https://app.grpg-sync.ru/app/'
-    ]
+    ],
+    healthAddress: '127.0.0.1'
   },
   archive: {
     maxFileSizeMb: 20,
@@ -439,6 +440,44 @@ function shellQuote(value) {
   return `'${String(value).replace(/'/g, `'"'"'`)}'`;
 }
 
+async function probePublicHealth(urls = []) {
+  const results = [];
+  for (const rawUrl of urls || []) {
+    const url = String(rawUrl || '').trim();
+    if (!url) continue;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 12000);
+    try {
+      const response = await fetch(url, {
+        method: 'GET',
+        redirect: 'manual',
+        signal: controller.signal,
+        headers: {
+          'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 GRPGI-DeployCheck/1.0',
+          'accept': 'text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8',
+          'cache-control': 'no-cache'
+        }
+      });
+      results.push({
+        url,
+        ok: response.status >= 200 && response.status < 400,
+        status: response.status,
+        statusText: response.statusText || ''
+      });
+    } catch (error) {
+      results.push({
+        url,
+        ok: false,
+        status: 0,
+        statusText: error?.name === 'AbortError' ? 'timeout' : (error?.message || String(error))
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  return results;
+}
+
 function expandHome(value) {
   const text = String(value || '').trim();
   if (!text) return '';
@@ -503,13 +542,68 @@ ${hits.slice(0, 20).join('\n')}`);
   }
 }
 
-async function deployWeb(rootDir) {
+function runtimeConfigScript(runtimeConfig = {}) {
+  const safe = {
+    url: String(runtimeConfig.url || '').trim(),
+    campaignId: String(runtimeConfig.campaignId || 'main').trim() || 'main',
+    appUsersCollection: String(runtimeConfig.appUsersCollection || 'app_users').trim() || 'app_users',
+    appUserEmail: String(runtimeConfig.appUserEmail || '').trim(),
+    appUserPassword: String(runtimeConfig.appUserPassword || ''),
+    tableName: String(runtimeConfig.tableName || 'campaign_snapshots').trim() || 'campaign_snapshots',
+    playerTableName: String(runtimeConfig.playerTableName || 'campaign_players').trim() || 'campaign_players',
+    chatTableName: String(runtimeConfig.chatTableName || 'campaign_messages').trim() || 'campaign_messages',
+    combatRuntimeTableName: String(runtimeConfig.combatRuntimeTableName || 'campaign_combat_runtime').trim() || 'campaign_combat_runtime',
+    assetsCollection: String(runtimeConfig.assetsCollection || 'campaign_assets').trim() || 'campaign_assets'
+  };
+  if (!safe.url || !safe.appUserEmail || !safe.appUserPassword) throw new Error('Не хватает runtime PocketBase-данных для Web-деплоя');
+  return `// Generated only in the temporary deployment directory. Do not commit.\nwindow.GRPG_WEB_RUNTIME = ${JSON.stringify(safe)};\n`;
+}
+
+const WEB_MARKER_ASSET_DIRS_V1055 = Object.freeze(['nowadays', 'bronzera', 'scifi']);
+const WEB_MARKER_ASSET_FILES_V1055 = Object.freeze(['blackhole.png', 'danger.png', 'misc.png', 'trade.png', 'node.png', 'star.png', 'planet.png', 'ship.png']);
+
+async function copyWebMarkerAssetsV1055(rootDir, stagingSite) {
+  if (!rootDir) return { copied: 0, missing: [] };
+  let copied = 0;
+  const missing = [];
+  for (const folder of WEB_MARKER_ASSET_DIRS_V1055) {
+    const sourceDir = path.join(rootDir, 'renderer', 'assets', 'images', folder);
+    const targetDir = path.join(stagingSite, 'app', 'assets', 'markers', folder);
+    for (const file of WEB_MARKER_ASSET_FILES_V1055) {
+      const source = path.join(sourceDir, file);
+      if (!fs.existsSync(source)) {
+        missing.push(normalizeRelative(path.relative(rootDir, source)));
+        continue;
+      }
+      await fs.promises.mkdir(targetDir, { recursive: true });
+      await fs.promises.copyFile(source, path.join(targetDir, file));
+      copied += 1;
+    }
+  }
+  return { copied, missing };
+}
+
+async function prepareWebDeploySource(sourcePath, runtimeConfig = {}, rootDir = '') {
+  const stagingRoot = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'grpgi-web-deploy-'));
+  const stagingSite = path.join(stagingRoot, 'site');
+  await fs.promises.cp(sourcePath, stagingSite, { recursive: true, force: true });
+  const appDir = path.join(stagingSite, 'app');
+  await fs.promises.mkdir(appDir, { recursive: true });
+  await fs.promises.writeFile(path.join(appDir, 'runtime-config.js'), runtimeConfigScript(runtimeConfig), 'utf8');
+  const markerAssets = await copyWebMarkerAssetsV1055(rootDir, stagingSite);
+  return { stagingRoot, stagingSite, markerAssets };
+}
+
+async function deployWeb(rootDir, options = {}) {
   if (activeOperation) throw new Error(`Уже выполняется операция: ${activeOperation}`);
   activeOperation = 'web-deploy';
+  let prepared = null;
   try {
     const config = loadConfig(rootDir);
     const web = validateWebConfig(config, rootDir);
     assertWebSourceHasNoLegacyBackend(web.sourcePath);
+    prepared = await prepareWebDeploySource(web.sourcePath, options.runtimeConfig || {}, rootDir);
+    const deploySourcePath = prepared.stagingSite;
     const sshInfo = await commandAvailable('ssh', ['-V']);
     const scpInfo = await commandAvailable('scp', ['-V']);
     if (!sshInfo.available || !scpInfo.available) throw new Error('Для автодеплоя нужны ssh.exe и scp.exe в PATH');
@@ -534,28 +628,38 @@ async function deployWeb(rootDir) {
       env: { SSH_ASKPASS: '', DISPLAY: '' }
     });
 
-    await run('scp', [...scpBaseArgs(web), '-r', web.sourcePath, `${endpoint}:${incomingRoot}/`], {
+    await run('scp', [...scpBaseArgs(web), '-r', deploySourcePath, `${endpoint}:${incomingRoot}/`], {
       cwd: rootDir,
       timeoutMs: 300000,
       env: { SSH_ASKPASS: '', DISPLAY: '' }
     });
 
-    const incomingSite = `${incomingRoot}/${path.basename(web.sourcePath).replace(/[^a-zA-Z0-9._-]/g, '')}`;
-    const healthChecks = (web.healthUrls || []).map(url => `curl -fsS --max-time 20 ${shellQuote(url)} >/dev/null`).join(' && ');
+    const incomingSite = `${incomingRoot}/${path.basename(deploySourcePath).replace(/[^a-zA-Z0-9._-]/g, '')}`;
+    // Rollback is based on the deployed files themselves, not an HTTP request.
+    // The public endpoint can legitimately reject curl/localhost probes with 403 because of WAF/Caddy rules.
     const remoteScript = [
       'set -eu',
       `target=${shellQuote(target)}`,
       `incoming=${shellQuote(incomingSite)}`,
       `incoming_root=${shellQuote(incomingRoot)}`,
       `backup=${shellQuote(backup)}`,
-      '[ -f "$incoming/index.html" ]',
-      '[ -f "$incoming/app/index.html" ]',
+      '[ -s "$incoming/index.html" ]',
+      '[ -s "$incoming/app/index.html" ]',
+      '[ -s "$incoming/app/app.js" ]',
+      '[ -s "$incoming/app/runtime-config.js" ]',
       'rm -rf "$backup"',
       'if [ -d "$target/downloads" ]; then mkdir -p "$incoming/downloads"; cp -a "$target/downloads/." "$incoming/downloads/"; fi',
+      // scp is executed as root and the server may use umask 077. In that case
+      // incoming dirs/files become 700/600 and Caddy cannot traverse/read them.
+      // Normalize static-site permissions before the atomic rename.
+      'find "$incoming" -type d -exec chmod 755 {} +',
+      'find "$incoming" -type f -exec chmod 644 {} +',
       'if [ -d "$target" ]; then mv "$target" "$backup"; fi',
-      'mv "$incoming" "$target"',
+      'if ! mv "$incoming" "$target"; then if [ -d "$backup" ]; then mv "$backup" "$target"; fi; exit 42; fi',
+      'find "$target" -type d -exec chmod 755 {} +',
+      'find "$target" -type f -exec chmod 644 {} +',
       'rmdir "$incoming_root" 2>/dev/null || true',
-      `if ! (${healthChecks || 'true'}); then rm -rf "$target"; if [ -d "$backup" ]; then mv "$backup" "$target"; fi; exit 42; fi`,
+      'if [ ! -s "$target/index.html" ] || [ ! -s "$target/app/index.html" ] || [ ! -s "$target/app/app.js" ] || [ ! -s "$target/app/runtime-config.js" ]; then rm -rf "$target"; if [ -d "$backup" ]; then mv "$backup" "$target"; fi; exit 43; fi',
       'rm -rf "$backup"',
       'printf GRPGI_DEPLOY_OK'
     ].join('; ');
@@ -565,14 +669,24 @@ async function deployWeb(rootDir) {
       env: { SSH_ASKPASS: '', DISPLAY: '' }
     });
     if (!String(deployed.stdout).includes('GRPGI_DEPLOY_OK')) throw new Error('Сервер не подтвердил успешный деплой');
+    const healthChecks = await probePublicHealth(web.healthUrls || []);
+    const healthWarnings = healthChecks.filter(item => !item.ok);
     return {
       ok: true,
       source: normalizeRelative(path.relative(rootDir, web.sourcePath)),
       endpoint,
       target,
-      healthUrls: web.healthUrls || []
+      healthUrls: web.healthUrls || [],
+      healthChecks,
+      healthWarnings,
+      runtimeAuthInjected: true,
+      markerAssetsCopied: Number(prepared?.markerAssets?.copied || 0),
+      markerAssetsMissing: prepared?.markerAssets?.missing || []
     };
   } finally {
+    if (prepared?.stagingRoot) {
+      try { await fs.promises.rm(prepared.stagingRoot, { recursive: true, force: true }); } catch {}
+    }
     activeOperation = '';
   }
 }
