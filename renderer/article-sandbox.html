@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval'; style-src 'unsafe-inline'; img-src 'self' data: blob: https: file:; media-src 'self' data: blob: https: file:; font-src 'self' data:; connect-src 'none'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'" />
+  <meta name="referrer" content="no-referrer" />
+  <title>Интерактивная статья</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      background: transparent;
+    }
+    html, body {
+      width: 100%;
+      min-width: 0;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background: transparent;
+      color: #dce9f4;
+      font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    #grpgi-article-root {
+      display: flow-root;
+      width: 100%;
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
+  </style>
+</head>
+<body>
+  <main id="grpgi-article-root"></main>
+  <script>
+    (() => {
+      'use strict';
+
+      const PROTOCOL = 'grpgi-rich-v1083';
+      const root = document.getElementById('grpgi-article-root');
+      let token = '';
+      let initialized = false;
+      let lastHeight = 0;
+
+      const post = (suffix, detail = {}) => {
+        parent.postMessage({ type: `${PROTOCOL}:${suffix}`, token, ...detail }, '*');
+      };
+
+      const articleIdFromHref = value => {
+        const raw = String(value || '').trim();
+        const direct = raw.match(/^(?:article:|local-article:)(.+)$/i);
+        const uri = raw.match(/^(?:article|local-article):\/\/(.+)$/i);
+        const id = String(direct?.[1] || uri?.[1] || '').replace(/^\/+/, '').trim();
+        if (!id) return '';
+        try { return decodeURIComponent(id); } catch { return id; }
+      };
+
+      const currentHeight = () => Math.max(
+        160,
+        Math.ceil(root.scrollHeight || 0),
+        Math.ceil(document.body.scrollHeight || 0),
+        Math.ceil(document.documentElement.scrollHeight || 0)
+      );
+
+      const reportHeight = () => {
+        if (!initialized) return;
+        const height = currentHeight();
+        if (height === lastHeight) return;
+        lastHeight = height;
+        post('resize', { height });
+      };
+
+      const reportError = error => {
+        const message = String(error?.message || error || 'Unknown interactive article error');
+        post('error', { message: message.slice(0, 1000) });
+      };
+
+      const render = html => {
+        const template = document.createElement('template');
+        template.innerHTML = String(html || '');
+        const scripts = [];
+        template.content.querySelectorAll('script').forEach(script => {
+          const type = String(script.getAttribute('type') || '').trim().toLowerCase();
+          const executable = !type || type === 'text/javascript' || type === 'application/javascript';
+          if (executable && !script.hasAttribute('src')) scripts.push(script.textContent || '');
+          script.remove();
+        });
+        template.content.querySelectorAll('base, meta, link, iframe, object, embed, form').forEach(node => node.remove());
+        template.content.querySelectorAll('[href]').forEach(node => {
+          if (/^javascript:/i.test(String(node.getAttribute('href') || '').trim())) node.removeAttribute('href');
+        });
+
+        root.replaceChildren(template.content);
+        initialized = true;
+        reportHeight();
+
+        if (scripts.length) {
+          try {
+            const run = new Function(`"use strict";\n${scripts.join('\n;\n')}\n//# sourceURL=grpgi-interactive-article.js`);
+            run.call(window);
+          } catch (error) {
+            reportError(error);
+          }
+        }
+        requestAnimationFrame(reportHeight);
+      };
+
+      document.addEventListener('click', event => {
+        const link = event.target?.closest?.('a[href], a[data-article-id], [data-article-link]');
+        if (!link) return;
+        const articleId = String(link.dataset?.articleId || link.dataset?.articleLink || articleIdFromHref(link.getAttribute('href') || '')).trim();
+        if (!articleId) return;
+        event.preventDefault();
+        post('article-link', { articleId });
+      });
+
+      window.addEventListener('message', event => {
+        const message = event?.data;
+        if (event.source !== parent || message?.type !== `${PROTOCOL}:init` || initialized) return;
+        token = String(message.token || '');
+        if (!token) return;
+        render(message.html || '');
+      });
+      window.addEventListener('error', event => reportError(event.error || event.message));
+      window.addEventListener('unhandledrejection', event => reportError(event.reason));
+      window.addEventListener('load', reportHeight, { once: true });
+      document.addEventListener('load', reportHeight, true);
+
+      if (typeof ResizeObserver === 'function') new ResizeObserver(reportHeight).observe(root);
+      if (typeof MutationObserver === 'function') new MutationObserver(reportHeight).observe(root, { childList: true, subtree: true, characterData: true, attributes: true });
+      setInterval(reportHeight, 1000);
+      post('ready');
+    })();
+  </script>
+</body>
+</html>

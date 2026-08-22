@@ -1,14 +1,14 @@
 {
   "app": "GRPGI Web Client",
-  "version": "1.0.80",
+  "version": "1.0.84",
   "backend": "pocketbase",
   "persistentLogin": true,
-  "generatedAt": "2026-08-20T21:42:14Z",
+  "generatedAt": "2026-08-22T16:41:05Z",
   "realtime": "event-driven",
   "galaxyCameraPersistent": true,
   "runtimePocketBaseAuth": "dev-deploy-injected",
   "deployHealth": "atomic-file-validation+nonfatal-public-probe",
-  "buildVersion": "1.0.80.0",
+  "buildVersion": "1.0.84.0",
   "deployPermissions": "directories=0755;files=0644",
   "campaignAvailability": true,
   "campaignEras": [
@@ -116,5 +116,12 @@
   "archiveCollections": "unread+favorites+recent",
   "archiveSorting": "title-asc+title-desc+unread-first",
   "archiveCategoryPane": "nonshrinking-rows+independent-scroll",
-  "archiveMobileCategoryScroll": true
+  "archiveMobileCategoryScroll": true,
+  "richTextCssIsolation": "unique-per-render-selector-scope",
+  "richTextExternalStyles": "blocked",
+  "articleLinks": "global-web-handler+direct-access-grant",
+  "articleSearchOnly": "hidden-catalog+title-search",
+  "interactiveArticles": "sandboxed-iframe+inline-script-timers+native-keyframes",
+  "interactiveArticleIsolation": "opaque-origin+no-auth-storage-api-access",
+  "interactiveArticleDynamicImages": "empty-img-preserved-for-script-assignment"
 }

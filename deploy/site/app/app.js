@@ -80,6 +80,7 @@
       archiveCategoryV1079: 'all',
       archiveStatusV1079: 'all',
       archiveSortV1079: 'title',
+      directArticleIdV1082: '',
       profileTab: 'main',
       profileItemModal: null,
       skillZoom: 1,
@@ -587,12 +588,16 @@
     return list.sort((a, b) => slugText(archiveItemLabel(a)).localeCompare(slugText(archiveItemLabel(b)), 'ru'));
   }
 
-  function normalizeRichHtml(html = '') {
+  function normalizeRichHtml(html = '', options = {}) {
     const template = document.createElement('template');
     template.innerHTML = String(html || '');
+    const preserveEmptyInteractiveImages = options.interactive === true && Boolean(template.content.querySelector('script'));
     template.content.querySelectorAll('img').forEach(img => {
       const src = resolveMediaUrl(img.getAttribute('src') || '', img.getAttribute('data-storage-path') || img.dataset.storagePath || '');
       if (!src) {
+        // Interactive articles may intentionally keep an empty image element
+        // and assign its source later from their isolated script.
+        if (preserveEmptyInteractiveImages) return;
         const stub = document.createElement('div');
         stub.className = 'media-missing';
         stub.textContent = 'Изображение недоступно на мобильном устройстве';
@@ -605,11 +610,28 @@
     });
     template.content.querySelectorAll('a[href]').forEach(link => {
       const href = String(link.getAttribute('href') || '').trim();
-      if (!href || href.startsWith('article:')) return;
+      if (!href || linkedArticleIdV1082(href)) return;
       if (/^(https?:|mailto:|tel:|#)/i.test(href)) return;
       link.setAttribute('href', resolveMediaUrl(href));
     });
-    return template.innerHTML;
+    const normalized = template.innerHTML;
+    if (window.GRPGRichTextScope?.isolateHtml) return window.GRPGRichTextScope.isolateHtml(normalized, '', options);
+    template.content.querySelectorAll('style, script, link[rel~="stylesheet"], link[as="style"]').forEach(node => node.remove());
+    return `<div class="grpgi-rich-scope-v1081">${template.innerHTML}</div>`;
+  }
+
+  function linkedArticleIdV1082(value = '') {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    const direct = raw.match(/^(?:article:|local-article:)(.+)$/i);
+    const uri = raw.match(/^(?:article|local-article):\/\/(.+)$/i);
+    const id = String(direct?.[1] || uri?.[1] || '').replace(/^\/+/, '').trim();
+    if (!id) return '';
+    try { return decodeURIComponent(id); } catch { return id; }
+  }
+
+  function articleSearchOnlyV1082(article = {}) {
+    return article.searchOnly === true || String(article.searchOnly || '').toLowerCase() === 'true';
   }
 
   function maxUpdatedAt(rows = []) {
@@ -2291,15 +2313,21 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
 
   function filterArchiveItemsV1079(collections = archiveCollections()) {
     const globalScope = App.ui.archiveScopeV1079 === 'all';
-    const base = globalScope
+    const tokens = normalizeArchiveSearchV1079(App.ui.archiveQuery || '').split(' ').filter(Boolean);
+    const unfilteredBase = globalScope
       ? ['articles', 'planets', 'systems', 'equipment'].flatMap(section => collections[section] || [])
       : [...(collections[App.ui.archiveTab] || [])];
+    const base = unfilteredBase.filter(item => {
+      if (item._type !== 'article' || !articleSearchOnlyV1082(item)) return true;
+      if (!tokens.length) return false;
+      const title = normalizeArchiveSearchV1079(archiveItemLabel(item));
+      return tokens.every(token => title.includes(token));
+    });
     const categories = Array.from(new Set(base.map(item => archiveCategoryV1079(item, globalScope)))).sort((a, b) => a.localeCompare(b, 'ru'));
     if (App.ui.archiveCategoryV1079 !== 'all' && !categories.includes(App.ui.archiveCategoryV1079)) App.ui.archiveCategoryV1079 = 'all';
     const favorites = archiveFavoritesV1079();
     const recent = archiveRecentV1079();
     const recentIndex = new Map(recent.map((key, index) => [key, index]));
-    const tokens = normalizeArchiveSearchV1079(App.ui.archiveQuery || '').split(' ').filter(Boolean);
     const rows = base.filter(item => {
       const key = archiveEntryKeyV1079(item);
       if (App.ui.archiveCategoryV1079 !== 'all' && archiveCategoryV1079(item, globalScope) !== App.ui.archiveCategoryV1079) return false;
@@ -2335,7 +2363,7 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
           <h3>${esc(entity.name || entity.title || entity.id)}</h3>
           <div class="small-note">${esc(entity.summary || '')}</div>
           <div class="divider"></div>
-          <div class="article-body" data-article-body>${normalizeRichHtml(entity.body || '<p class="muted">Текст статьи пуст.</p>')}</div>
+          <div class="article-body" data-article-body>${normalizeRichHtml(entity.body || '<p class="muted">Текст статьи пуст.</p>', { interactive: true })}</div>
           <div class="article-toolbar">
             ${entity.relatedPlanetIds?.[0] ? `<button class="secondary" type="button" data-action="open-planet" data-planet-id="${esc(entity.relatedPlanetIds[0])}">Открыть планету</button>` : ''}
             ${relatedSystem ? entityActionsSystemButton(relatedSystem.id) : ''}
@@ -2432,9 +2460,16 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
     const root = $('#screen-archive');
     const collections = archiveCollections();
     const result = filterArchiveItemsV1079(collections);
-    const entity = result.rows.find(item => item.id === App.ui.selectedArchiveId && item._type === App.ui.selectedArchiveType) || null;
+    const listedEntity = result.rows.find(item => item.id === App.ui.selectedArchiveId && item._type === App.ui.selectedArchiveType) || null;
+    const directArticle = App.ui.directArticleIdV1082 === App.ui.selectedArchiveId
+      ? App.data.articles.get(App.ui.directArticleIdV1082)
+      : null;
+    const entity = listedEntity || (directArticle ? { ...directArticle, _type: 'article' } : null);
     const forceGroupsOpen = Boolean(normalizeArchiveSearchV1079(App.ui.archiveQuery)) || App.ui.archiveCategoryV1079 !== 'all' || App.ui.archiveStatusV1079 !== 'all';
-    const tabButton = (tab, label) => `<button class="chip-btn ${App.ui.archiveTab === tab && App.ui.archiveScopeV1079 !== 'all' ? 'active' : ''}" data-action="archive-tab" data-tab="${tab}">${label} · ${(collections[tab] || []).length}</button>`;
+    const tabButton = (tab, label) => {
+      const count = (collections[tab] || []).filter(item => item._type !== 'article' || !articleSearchOnlyV1082(item)).length;
+      return `<button class="chip-btn ${App.ui.archiveTab === tab && App.ui.archiveScopeV1079 !== 'all' ? 'active' : ''}" data-action="archive-tab" data-tab="${tab}">${label} · ${count}</button>`;
+    };
     root.innerHTML = `
       <div class="segmented archive-top-nav-v1060">
         ${tabButton('articles', 'Статьи')}
@@ -2463,15 +2498,6 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
         </div>
       </div>
     `;
-    root.querySelectorAll('[data-article-body] a').forEach(link => {
-      link.addEventListener('click', event => {
-        const href = link.getAttribute('href') || '';
-        if (href.startsWith('article:')) {
-          event.preventDefault();
-          openArticleById(href.slice('article:'.length));
-        }
-      });
-    });
   }
 
   function renderMarket() {
@@ -3309,9 +3335,16 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
     if (App.ui.screen === 'profile') renderProfile();
   }
 
-  function openArticleById(articleId) {
-    if (!App.data.articles.has(articleId)) {
+  function openArticleById(articleId, options = {}) {
+    const id = String(articleId || '').trim();
+    const article = App.data.articles.get(id);
+    if (!article) {
       notify('Статья не найдена в локальном архиве', 'warn');
+      return;
+    }
+    const directAccess = options.directAccess === true;
+    if (!directAccess && !visibleForPlayer(article, App.session?.userId || '')) {
+      notify('Статья недоступна текущему персонажу', 'warn');
       return;
     }
     App.ui.archiveTab = 'articles';
@@ -3319,11 +3352,13 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
     App.ui.archiveCategoryV1079 = 'all';
     App.ui.archiveStatusV1079 = 'all';
     App.ui.archiveQuery = '';
-    App.ui.selectedArchiveId = articleId;
+    App.ui.selectedArchiveId = id;
     App.ui.selectedArchiveType = 'article';
-    rememberArchiveRecentV1079('article', articleId);
-    markArchiveArticleRead(articleId);
+    App.ui.directArticleIdV1082 = directAccess ? id : '';
+    rememberArchiveRecentV1079('article', id);
+    markArchiveArticleRead(id);
     App.ui.screen = 'archive';
+    if (typeof closeWebChatMasterV1068 === 'function') closeWebChatMasterV1068();
     renderCurrentScreen();
   }
 
@@ -3672,11 +3707,25 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
     if (RUNTIME.hideCombat) {
       document.querySelectorAll('[data-screen="combat"], #screen-combat').forEach(node => node.remove());
     }
+    document.addEventListener('grpgi:article-link-v1083', event => {
+      const articleId = String(event.detail?.articleId || '').trim();
+      if (articleId) openArticleById(articleId, { directAccess: true });
+    });
     document.body.addEventListener('click', event => {
+      const articleLink = event.target?.closest?.('a[href], a[data-article-id], a[data-article-link]');
+      const linkedArticleId = articleLink
+        ? String(articleLink.dataset.articleId || articleLink.dataset.articleLink || linkedArticleIdV1082(articleLink.getAttribute('href') || '')).trim()
+        : '';
+      if (linkedArticleId) {
+        event.preventDefault();
+        openArticleById(linkedArticleId, { directAccess: true });
+        return;
+      }
       const button = event.target.closest('[data-action]');
       if (!button) return;
       const action = button.dataset.action;
       if (action === 'archive-tab') {
+        App.ui.directArticleIdV1082 = '';
         App.ui.archiveTab = button.dataset.tab;
         App.ui.archiveScopeV1079 = 'section';
         App.ui.archiveCategoryV1079 = 'all';
@@ -3687,6 +3736,7 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
         renderArchive();
       }
       if (action === 'select-archive') {
+        App.ui.directArticleIdV1082 = '';
         App.ui.selectedArchiveType = button.dataset.type;
         App.ui.selectedArchiveId = button.dataset.id;
         rememberArchiveRecentV1079(button.dataset.type, button.dataset.id);
@@ -3699,6 +3749,7 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
         renderArchive();
       }
       if (action === 'archive-clear-v1079') {
+        App.ui.directArticleIdV1082 = '';
         App.ui.archiveQuery = '';
         renderArchive();
         requestAnimationFrame(() => $('#archive-search-input')?.focus());
@@ -3792,18 +3843,20 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
         setRememberLogin(Boolean(event.target.checked)).catch(error => notify(error.message, 'err'));
       }
       if (event.target.id === 'archive-scope-v1079') {
+        App.ui.directArticleIdV1082 = '';
         App.ui.archiveScopeV1079 = event.target.value === 'all' ? 'all' : 'section';
         App.ui.archiveCategoryV1079 = 'all';
         renderArchive();
       }
-      if (event.target.id === 'archive-category-v1079') { App.ui.archiveCategoryV1079 = event.target.value || 'all'; renderArchive(); }
-      if (event.target.id === 'archive-status-v1079') { App.ui.archiveStatusV1079 = event.target.value || 'all'; renderArchive(); }
-      if (event.target.id === 'archive-sort-v1079') { App.ui.archiveSortV1079 = event.target.value || 'title'; renderArchive(); }
+      if (event.target.id === 'archive-category-v1079') { App.ui.directArticleIdV1082 = ''; App.ui.archiveCategoryV1079 = event.target.value || 'all'; renderArchive(); }
+      if (event.target.id === 'archive-status-v1079') { App.ui.directArticleIdV1082 = ''; App.ui.archiveStatusV1079 = event.target.value || 'all'; renderArchive(); }
+      if (event.target.id === 'archive-sort-v1079') { App.ui.directArticleIdV1082 = ''; App.ui.archiveSortV1079 = event.target.value || 'title'; renderArchive(); }
     });
 
     document.body.addEventListener('input', event => {
       const archiveSearch = event.target.closest('#archive-search-input');
       if (archiveSearch) {
+        App.ui.directArticleIdV1082 = '';
         App.ui.archiveQuery = archiveSearch.value || '';
         renderArchive();
         const next = $('#archive-search-input');
@@ -3823,6 +3876,7 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
       event.preventDefault();
       App.ui.selectedArchiveType = entry.dataset.type;
       App.ui.selectedArchiveId = entry.dataset.id;
+      App.ui.directArticleIdV1082 = '';
       rememberArchiveRecentV1079(entry.dataset.type, entry.dataset.id);
       if (entry.dataset.type === 'article') markArchiveArticleRead(entry.dataset.id);
       renderArchive();

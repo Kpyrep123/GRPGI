@@ -683,6 +683,7 @@ async function deployWeb(rootDir, options = {}) {
       '[ -s "$incoming/index.html" ]',
       '[ -s "$incoming/app/index.html" ]',
       '[ -s "$incoming/app/app.js" ]',
+      '[ -s "$incoming/app/article-sandbox.html" ]',
       '[ -s "$incoming/app/runtime-config.js" ]',
       'rm -rf "$backup"',
       'if [ -d "$target/downloads" ]; then mkdir -p "$incoming/downloads"; cp -a "$target/downloads/." "$incoming/downloads/"; fi',
@@ -696,7 +697,7 @@ async function deployWeb(rootDir, options = {}) {
       'find "$target" -type d -exec chmod 755 {} +',
       'find "$target" -type f -exec chmod 644 {} +',
       'rmdir "$incoming_root" 2>/dev/null || true',
-      'if [ ! -s "$target/index.html" ] || [ ! -s "$target/app/index.html" ] || [ ! -s "$target/app/app.js" ] || [ ! -s "$target/app/runtime-config.js" ]; then rm -rf "$target"; if [ -d "$backup" ]; then mv "$backup" "$target"; fi; exit 43; fi',
+      'if [ ! -s "$target/index.html" ] || [ ! -s "$target/app/index.html" ] || [ ! -s "$target/app/app.js" ] || [ ! -s "$target/app/article-sandbox.html" ] || [ ! -s "$target/app/runtime-config.js" ]; then rm -rf "$target"; if [ -d "$backup" ]; then mv "$backup" "$target"; fi; exit 43; fi',
       'rm -rf "$backup"',
       'printf GRPGI_DEPLOY_OK'
     ].join('; ');

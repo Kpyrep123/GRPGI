@@ -362,6 +362,7 @@ function createBlankEntity(type) {
       category: 'Архив',
       summary: '',
       body: '',
+      searchOnly: false,
       image: '',
       relatedPlanetIds: [], relatedNpcIds: [], relatedItemIds: [], relatedFloraIds: [], relatedFaunaIds: [], relatedArticleIds: [],
       visibility: { playerIds: [] }
@@ -4717,6 +4718,7 @@ const Configurator = {
           <div class="field"><label>Категория</label><input class="input" name="category" value="${esc(article.category || '')}" placeholder="Архив" /></div>
         </div>
         ${this.renderVisibilityField(article)}
+        <label class="consent-line article-search-only-v1082"><input type="checkbox" name="searchOnly" ${article.searchOnly === true || String(article.searchOnly || '').toLowerCase() === 'true' ? 'checked' : ''}/><span><b>Доступна только по поиску</b><small>Статья скрыта из общего каталога. Игрок с обычным доступом найдёт её только по словам из названия; прямая ссылка из статьи или сообщения откроет материал независимо от назначенных доступов.</small></span></label>
         <div class="field"><label>Краткое описание</label><textarea class="area" name="summary">${esc(article.summary || '')}</textarea></div>
         <div class="field"><label>Полный текст статьи</label><textarea class="area article-body-editor" name="body">${esc(article.body || '')}</textarea></div>
         <div class="section-title">Связанные материалы</div>
@@ -5057,6 +5059,7 @@ const Configurator = {
         category: String(formData.get('category') || '').trim(),
         summary: String(formData.get('summary') || '').trim(),
         body: String(formData.get('body') || '').trim(),
+        searchOnly: formData.get('searchOnly') === 'on',
         image,
         relatedArticleIds: getCheckedValues(formEl, 'relatedArticleIds'),
         relatedPlanetIds: getCheckedValues(formEl, 'relatedPlanetIds'),
@@ -6207,10 +6210,14 @@ WORLD_SECTIONS.tasks = { label: 'Задания', mapKey: 'TASKS', listKey: 'TAS
 Data.news = NEWS;
 Data.tasks = TASKS;
 
-const __renderRichText = (value, fallback = '') => {
+const __renderRichText = (value, fallback = '', options = {}) => {
   const html = String(value ?? '').trim();
   if (!html) return fallback;
-  return `<div class="rich-text">${html}</div>`;
+  if (window.GRPGRichTextScope?.isolateHtml) return window.GRPGRichTextScope.isolateHtml(html, 'rich-text', options);
+  const template = document.createElement('template');
+  template.innerHTML = html;
+  template.content.querySelectorAll('style, script, link[rel~="stylesheet"], link[as="style"]').forEach(node => node.remove());
+  return `<div class="rich-text grpgi-rich-scope-v1081">${template.innerHTML}</div>`;
 };
 const __htmlHint = '<div class="small-note">Допускается стандартная HTML-разметка: &lt;b&gt;, &lt;i&gt;, &lt;u&gt;, &lt;br&gt;, &lt;p&gt;, &lt;ul&gt;, &lt;li&gt;, &lt;a&gt; и т.д. Для локальных ссылок на статьи используй формат &lt;a href="article:article_id"&gt;Текст ссылки&lt;/a&gt;.</div>';
 
@@ -6227,20 +6234,27 @@ function __resolveLocalArticleLink(value = '') {
 function __bindLocalArticleLinks(root = document) {
   if (!root || root.__localArticleLinksBound) return;
   root.__localArticleLinksBound = true;
+  const openArticle = articleId => {
+    const normalizedId = String(articleId || '').trim();
+    if (!normalizedId) return;
+    const article = Data?.getArticle?.(normalizedId);
+    if (!article) {
+      Toast.show(`Статья не найдена: ${normalizedId}`, 'err');
+      return;
+    }
+    Wiki.directArticleIdV1082 = normalizedId;
+    Wiki.showEntity('article', normalizedId, true);
+  };
   root.addEventListener('click', event => {
     const link = event.target?.closest?.('a[href], a[data-article-id], [data-article-link]');
     if (!link) return;
     const articleId = String(link.dataset?.articleId || link.dataset?.articleLink || __resolveLocalArticleLink(link.getAttribute('href') || '')).trim();
     if (!articleId) return;
-    const article = Data?.getArticle?.(articleId);
     event.preventDefault();
     event.stopPropagation();
-    if (!article) {
-      Toast.show(`Статья не найдена: ${articleId}`, 'err');
-      return;
-    }
-    Wiki.showEntity('article', articleId, true);
+    openArticle(articleId);
   });
+  root.addEventListener('grpgi:article-link-v1083', event => openArticle(event.detail?.articleId));
 }
 
 const __applyWorldData = applyWorldData;
@@ -6424,7 +6438,8 @@ Wiki.showEntity = function(type, id, autoOpen = false) {
   }
   this.currentView = { type, id };
   const entity = entityByType(type, id);
-  if (!entity || !isEntityVisible(entity)) {
+  const directArticleAccess = type === 'article' && String(this.directArticleIdV1082 || '') === String(id || '');
+  if (!entity || (!directArticleAccess && !isEntityVisible(entity))) {
     $('#wiki-detail').innerHTML = '<div class="subtle">Эта запись недоступна текущему пользователю.</div>';
     if (autoOpen && UI.activeModuleId !== 'wiki') UI.openModule('wiki', { preserveWikiState: true });
     return;
@@ -6506,7 +6521,7 @@ Wiki.showEntity = function(type, id, autoOpen = false) {
           ${__renderRichText(entity.summary, '<p>Нет аннотации</p>')}
         </div>
       </div>
-      <div class="card pad18 wiki-article-body">${__renderRichText(entity.body, '<div class="small-note">Текст статьи пока не заполнен.</div>')}</div>
+      <div class="card pad18 wiki-article-body">${__renderRichText(entity.body, '<div class="small-note">Текст статьи пока не заполнен.</div>', { interactive: true })}</div>
       ${renderArticleGalaxyFocusMarkup(entity)}
       ${relatedSections}
     `;
@@ -24552,6 +24567,10 @@ window.GRPGInstallGlobalStockExchangeV1074?.();
     const base=baseCategoryV1079(hit);
     return globalScope?`${SECTION_LABELS_V1079[sectionForHitV1079(hit)]} · ${base}`:base;
   }
+  function articleSearchOnlyV1082(hit){
+    const value=hit?.entity?.searchOnly;
+    return hit?.type==='article'&&(value===true||String(value||'').toLowerCase()==='true');
+  }
   function allHitsV1079(){
     const sections=Wiki.archiveScopeV1079==='all'?SECTION_ORDER_V1079:[Wiki.activeSection||'articles'];
     const found=new Map();
@@ -24559,11 +24578,16 @@ window.GRPGInstallGlobalStockExchangeV1074?.();
     return Array.from(found.values());
   }
   function filterHitsV1079(){
-    const base=allHitsV1079(),globalScope=Wiki.archiveScopeV1079==='all';
+    const tokens=normalizedTextV1079(Wiki.archiveQueryV1079).split(' ').filter(Boolean);
+    const base=allHitsV1079().filter(hit=>{
+      if(!articleSearchOnlyV1082(hit))return true;
+      if(!tokens.length)return false;
+      const title=normalizedTextV1079(titleForEntity(hit.type,hit.entity));
+      return tokens.every(token=>title.includes(token));
+    }),globalScope=Wiki.archiveScopeV1079==='all';
     const categories=Array.from(new Set(base.map(hit=>categoryV1079(hit,globalScope)))).sort((a,b)=>a.localeCompare(b,'ru'));
     if(Wiki.archiveCategoryV1079!=='all'&&!categories.includes(Wiki.archiveCategoryV1079))Wiki.archiveCategoryV1079='all';
     const favorites=favoritesV1079(),recent=recentV1079(),recentIndex=new Map(recent.map((key,index)=>[key,index]));
-    const tokens=normalizedTextV1079(Wiki.archiveQueryV1079).split(' ').filter(Boolean);
     let rows=base.filter(hit=>{
       if(Wiki.archiveCategoryV1079!=='all'&&categoryV1079(hit,globalScope)!==Wiki.archiveCategoryV1079)return false;
       const key=archiveHitKeyV1079(hit);
@@ -24588,7 +24612,8 @@ window.GRPGInstallGlobalStockExchangeV1074?.();
     const labels={planets:'ПЛАНЕТЫ',equipment:'СНАРЯЖЕНИЕ',articles:'СТАТЬИ',systems:'СИСТЕМЫ'};
     document.querySelectorAll('[data-wiki-section-v1060]').forEach(button=>{
       const section=button.dataset.wikiSectionV1060;
-      button.textContent=`${labels[section]||section} · ${(Wiki.entityPool(section)||[]).length}`;
+      const count=(Wiki.entityPool(section)||[]).filter(hit=>!articleSearchOnlyV1082(hit)).length;
+      button.textContent=`${labels[section]||section} · ${count}`;
       button.classList.toggle('active',Wiki.archiveScopeV1079!=='all'&&section===Wiki.activeSection);
     });
   }
@@ -24617,7 +24642,7 @@ window.GRPGInstallGlobalStockExchangeV1074?.();
       }).join('')}</div></details>`;
     }).join('')||'<div class="subtle">Ничего не найдено в пределах текущего доступа и выбранных фильтров.</div>';
     target.querySelectorAll('.wiki-hit-v1079').forEach(node=>{
-      const open=()=>Wiki.showEntity(node.dataset.entity,node.dataset.id);
+      const open=()=>{Wiki.directArticleIdV1082='';Wiki.showEntity(node.dataset.entity,node.dataset.id);};
       node.addEventListener('click',event=>{if(!event.target.closest('[data-wiki-favorite-v1079]'))open();});
       node.addEventListener('keydown',event=>{if((event.key==='Enter'||event.key===' ')&&!event.target.closest('[data-wiki-favorite-v1079]')){event.preventDefault();open();}});
     });
@@ -24633,6 +24658,7 @@ window.GRPGInstallGlobalStockExchangeV1074?.();
 
   const originalSetSectionV1079=Wiki.setSection.bind(Wiki);
   Wiki.setSection=function(section,options={}){
+    this.directArticleIdV1082='';
     this.archiveCategoryV1079='all';
     this.archiveQueryV1079='';
     return originalSetSectionV1079(section,options);

@@ -1,0 +1,18 @@
+{
+  "patch": "GRPGI_WEB_INTERACTIVE_ARTICLE_DYNAMIC_IMAGE_1.0.84_PATCH",
+  "fromVersion": "1.0.83",
+  "toVersion": "1.0.84",
+  "overlayRoot": true,
+  "webDeployRequired": true,
+  "serverSetupRequired": false,
+  "installerRebuildRequired": false,
+  "caddyReloadRequired": false,
+  "files": [
+    "deploy/site/app/app.js",
+    "deploy/site/app/index.html",
+    "deploy/site/build-info.json",
+    "package.json",
+    "package-lock.json",
+    "PATCH_NOTES_v1.0.84.md"
+  ]
+}

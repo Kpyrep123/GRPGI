@@ -136,6 +136,7 @@ button:disabled { opacity: 0.45; }
 }
 .article-body p:first-child { margin-top: 0; }
 .article-body img { max-width: 100%; border-radius: 16px; display:block; }
+.grpgi-rich-scope-v1081 { display: block; min-width: 0; max-width: 100%; }
 .media-missing { padding: 12px 14px; border: 1px dashed var(--line); border-radius: 16px; color: var(--muted); text-align: center; background: rgba(255,255,255,0.02); }
 .article-toolbar, .entity-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
 .market-disabled { border-left: 3px solid var(--warn); padding-left: 12px; }
@@ -1885,3 +1886,7 @@ html[data-era-theme="industrial"] .market-pane-v1071,html[data-era-theme="indust
 html[data-era-theme="industrial"] .stock-quote-tile-v1074,html[data-era-theme="industrial"] .portfolio-head-v1074,html[data-era-theme="industrial"] .stock-holding-v1074,html[data-era-theme="industrial"] .stock-selection-v1074{border-radius:2px}html[data-era-theme="medieval"] .portfolio-shell-v1074,html[data-era-theme="medieval"] .stock-selection-v1074{color:#2b1c11}html[data-era-theme="medieval"] .stock-quote-tile-v1074,html[data-era-theme="medieval"] .stock-holding-v1074,html[data-era-theme="medieval"] .portfolio-head-v1074,html[data-era-theme="medieval"] .stock-selection-v1074{background:rgba(238,217,174,.82);color:#2b1c11;border-color:#8a6031}
 @media(max-width:1050px){.stock-layout-v1074{grid-template-columns:1fr}.portfolio-metrics-v1074{grid-template-columns:repeat(2,minmax(120px,1fr))}.portfolio-result-v1074{grid-column:span 2}}
 @media(max-width:600px){.stock-quotes-grid-v1074{grid-template-columns:repeat(2,minmax(0,1fr))}.stock-quote-tile-v1074{grid-template-columns:38px minmax(0,1fr);padding:9px;gap:3px 7px}.stock-quote-tile-v1074>span{min-width:36px;min-height:36px;font-size:9px}.portfolio-head-v1074{align-items:start}.portfolio-head-v1074>strong{font-size:18px}.portfolio-metrics-v1074{grid-template-columns:1fr}.portfolio-result-v1074{grid-column:auto}.stock-holding-v1074{grid-template-columns:48px minmax(0,1fr);gap:8px}.stock-holding-v1074>span:last-child{grid-column:2;text-align:left}.stock-selection-v1074{grid-template-columns:1fr;padding:11px}.stock-selection-head-v1074{grid-template-columns:64px minmax(0,1fr)}.stock-selection-head-v1074>.entity-thumb,.stock-selection-head-v1074>.entity-item-media-v1060{width:64px!important;height:64px!important;max-width:64px!important}.stock-selection-quote-v1074{grid-column:1/-1;text-align:left;min-width:0}.stock-selection-v1074>.primary{grid-column:1;grid-row:auto;width:100%}.portfolio-ledger-row-v1074{grid-template-columns:66px 48px 1fr}.portfolio-ledger-row-v1074>span:nth-child(3){display:none}}
+
+/* v1.0.83 isolated interactive articles */
+.grpgi-rich-interactive-v1083{display:block;width:100%;min-width:0;overflow:hidden}
+.grpgi-rich-interactive-frame-v1083{display:block;width:100%;min-width:0;min-height:160px;height:320px;border:0;background:transparent;color-scheme:dark;overflow:hidden}

@@ -1,0 +1,24 @@
+{
+  "patch": "GRPGI_ARTICLE_LINK_ACCESS_SEARCH_ONLY_1.0.82_PATCH",
+  "fromVersion": "1.0.81",
+  "toVersion": "1.0.82",
+  "overlayRoot": true,
+  "webDeployRequired": true,
+  "serverSetupRequired": false,
+  "installerRebuildRequired": true,
+  "cumulativeIncludes": ["1.0.76", "1.0.77", "1.0.78", "1.0.79", "1.0.80", "1.0.81"],
+  "files": [
+    "renderer/rich-text-scope.js",
+    "renderer/app.js",
+    "renderer/styles.css",
+    "renderer/index.html",
+    "deploy/site/app/rich-text-scope.js",
+    "deploy/site/app/app.js",
+    "deploy/site/app/styles.css",
+    "deploy/site/app/index.html",
+    "deploy/site/build-info.json",
+    "package.json",
+    "package-lock.json",
+    "PATCH_NOTES_v1.0.82.md"
+  ]
+}

@@ -6,12 +6,23 @@ app.grpg-sync.ru {
     root * /var/www/grpg-app
     file_server
 
-    header {
+    @mainAppHeaders not path /app/article-sandbox.html
+    header @mainAppHeaders {
         X-Content-Type-Options "nosniff"
         X-Frame-Options "DENY"
         Referrer-Policy "same-origin"
         Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
-        Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://sync.grpg-sync.ru; img-src 'self' data: blob: https:; media-src 'self' data: blob: https:; font-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests"
+        Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://sync.grpg-sync.ru; img-src 'self' data: blob: https:; media-src 'self' data: blob: https:; font-src 'self' data:; frame-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests"
+    }
+
+    # Interactive article code runs only in this same-site, opaque-origin sandbox.
+    @articleSandbox path /app/article-sandbox.html
+    header @articleSandbox {
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "SAMEORIGIN"
+        Referrer-Policy "no-referrer"
+        Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+        Content-Security-Policy "default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval'; style-src 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'none'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'"
     }
 
     # HTML and build metadata must always be revalidated so a deploy appears immediately.

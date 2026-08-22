@@ -1,6 +1,6 @@
 {
   "name": "galactic-rpg-interface",
-  "version": "1.0.81",
+  "version": "1.0.85",
   "description": "Electron/Web tabletop interface with transactional planetary markets and a separate stock exchange tab",
   "author": "qwq",
   "main": "main.js",
@@ -44,7 +44,7 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true
     },
-    "buildVersion": "1.0.81.0",
+    "buildVersion": "1.0.85.0",
     "publish": [
       {
         "provider": "github",
@@ -73,5 +73,5 @@
     "node": ">=22 <25",
     "npm": ">=10"
   },
-  "buildVersion": "1.0.80.0"
+  "buildVersion": "1.0.84.0"
 }
