@@ -3,7 +3,7 @@
     "remote": "origin",
     "expectedRepository": "Kpyrep123/GRPGI",
     "targetBranch": "main",
-    "createTag": false,
+    "createTag": true,
     "protectedDeletionPrefixes": [
       "mobile/",
       "renderer/assets/",
