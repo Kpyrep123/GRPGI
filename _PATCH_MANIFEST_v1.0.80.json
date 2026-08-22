@@ -1,0 +1,22 @@
+{
+  "patch": "GRPGI_ARCHIVE_CATEGORY_SCROLL_1.0.80_PATCH",
+  "fromVersion": "1.0.79",
+  "toVersion": "1.0.80",
+  "overlayRoot": true,
+  "webDeployRequired": true,
+  "serverSetupRequired": false,
+  "installerRebuildRequired": true,
+  "cumulativeIncludes": ["1.0.76", "1.0.77", "1.0.78", "1.0.79"],
+  "files": [
+    "renderer/app.js",
+    "renderer/styles.css",
+    "renderer/index.html",
+    "deploy/site/app/app.js",
+    "deploy/site/app/styles.css",
+    "deploy/site/app/index.html",
+    "deploy/site/build-info.json",
+    "package.json",
+    "package-lock.json",
+    "PATCH_NOTES_v1.0.80.md"
+  ]
+}

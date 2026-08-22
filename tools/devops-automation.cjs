@@ -583,6 +583,41 @@ async function copyWebMarkerAssetsV1055(rootDir, stagingSite) {
   return { copied, missing };
 }
 
+const WEB_UI_EXTRA_ASSET_FILES_V1060 = Object.freeze(['button.png', 'article_top.png', 'UI/windows/panel-card.png']);
+
+async function copyWebUiExtraAssetsV1060(rootDir, stagingSite) {
+  if (!rootDir) return { copied: 0, missing: [] };
+  let copied = 0;
+  const missing = [];
+  for (const folder of ['nowadays', 'bronzera']) {
+    const sourceDir = path.join(rootDir, 'renderer', 'assets', 'images', folder);
+    const targetDir = path.join(stagingSite, 'app', 'assets', 'images', folder);
+    for (const file of WEB_UI_EXTRA_ASSET_FILES_V1060) {
+      const source = path.join(sourceDir, file);
+      const target = path.join(targetDir, file);
+      if (!fs.existsSync(source)) {
+        missing.push(normalizeRelative(path.relative(rootDir, source)));
+        continue;
+      }
+      await fs.promises.mkdir(path.dirname(target), { recursive: true });
+      await fs.promises.copyFile(source, target);
+      copied += 1;
+    }
+  }
+  return { copied, missing };
+}
+
+
+async function copyPublicLandingBackgroundV1068(rootDir, stagingSite) {
+  if (!rootDir) return { copied: 0, missing: [] };
+  const source = path.join(rootDir, 'renderer', 'assets', 'images', 'background.png');
+  const target = path.join(stagingSite, 'assets', 'images', 'background.png');
+  if (!fs.existsSync(source)) return { copied: 0, missing: [normalizeRelative(path.relative(rootDir, source))] };
+  await fs.promises.mkdir(path.dirname(target), { recursive: true });
+  await fs.promises.copyFile(source, target);
+  return { copied: 1, missing: [] };
+}
+
 async function prepareWebDeploySource(sourcePath, runtimeConfig = {}, rootDir = '') {
   const stagingRoot = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'grpgi-web-deploy-'));
   const stagingSite = path.join(stagingRoot, 'site');
@@ -591,7 +626,9 @@ async function prepareWebDeploySource(sourcePath, runtimeConfig = {}, rootDir = 
   await fs.promises.mkdir(appDir, { recursive: true });
   await fs.promises.writeFile(path.join(appDir, 'runtime-config.js'), runtimeConfigScript(runtimeConfig), 'utf8');
   const markerAssets = await copyWebMarkerAssetsV1055(rootDir, stagingSite);
-  return { stagingRoot, stagingSite, markerAssets };
+  const uiExtraAssets = await copyWebUiExtraAssetsV1060(rootDir, stagingSite);
+  const landingBackground = await copyPublicLandingBackgroundV1068(rootDir, stagingSite);
+  return { stagingRoot, stagingSite, markerAssets, uiExtraAssets, landingBackground };
 }
 
 async function deployWeb(rootDir, options = {}) {
@@ -681,7 +718,11 @@ async function deployWeb(rootDir, options = {}) {
       healthWarnings,
       runtimeAuthInjected: true,
       markerAssetsCopied: Number(prepared?.markerAssets?.copied || 0),
-      markerAssetsMissing: prepared?.markerAssets?.missing || []
+      markerAssetsMissing: prepared?.markerAssets?.missing || [],
+      landingBackgroundCopied: Number(prepared?.landingBackground?.copied || 0),
+      landingBackgroundMissing: prepared?.landingBackground?.missing || [],
+      uiExtraAssetsCopied: Number(prepared?.uiExtraAssets?.copied || 0),
+      uiExtraAssetsMissing: prepared?.uiExtraAssets?.missing || []
     };
   } finally {
     if (prepared?.stagingRoot) {

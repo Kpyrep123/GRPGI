@@ -37,6 +37,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   pushPlayer: payload => ipcRenderer.invoke('players:push', payload),
   patchPlayer: payload => ipcRenderer.invoke('players:patch', payload),
   deletePlayer: payload => ipcRenderer.invoke('players:delete', payload),
+  transactMarket: payload => ipcRenderer.invoke('market:transaction', payload),
   pullChat: payload => ipcRenderer.invoke('chat:pull', payload),
   upsertChat: payload => ipcRenderer.invoke('chat:upsert', payload),
   pushChatBatch: payload => ipcRenderer.invoke('chat:pushBatch', payload),

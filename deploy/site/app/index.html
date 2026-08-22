@@ -7,7 +7,7 @@
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://sync.grpg-sync.ru; img-src 'self' data: blob: https:; media-src 'self' data: blob: https:; font-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests" />
     <meta name="referrer" content="same-origin" />
     <title>GRPGI Web Client</title>
-    <link rel="stylesheet" href="./styles.css?v=1.0.54" />
+    <link rel="stylesheet" href="./styles.css?v=1.0.80" />
   </head>
   <body>
     <div class="web-galaxy-bg" aria-hidden="true">
@@ -36,10 +36,14 @@
           </label>
           <div id="login-preview" class="preview-card"></div>
           <label class="consent-line remember-login-line">
-            <input type="checkbox" id="login-remember-login" />
+            <input type="checkbox" id="login-remember-login" checked />
             <span><b>Запомнить вход на этом устройстве</b> на срок до 30 дней. Пароль персонажа в локальное хранилище не записывается.</span>
           </label>
-          <p class="privacy-inline-note">Подробнее: <a href="../privacy.html" target="_blank" rel="noopener">политика конфиденциальности и локального хранения</a>.</p>
+          <label class="consent-line privacy-consent-login-v1068">
+            <input type="checkbox" id="login-privacy-consent-v1068" required />
+            <span>Я принимаю <a href="../privacy.html" target="_blank" rel="noopener">Правила использования</a> и подтверждаю, что ознакомлен(а) с Политикой конфиденциальности.</span>
+          </label>
+          <p class="privacy-inline-note">Единый документ также описывает модерацию, доступ к игровым чатам и хранение скрытых сообщений.</p>
           <div class="button-row">
             <button class="primary" type="submit">ВОЙТИ</button>
             <button class="secondary" type="button" id="register-open-v1052">РЕГИСТРАЦИЯ</button>
@@ -82,7 +86,8 @@
     </div>
 
     <div id="toast-stack" class="toast-stack"></div>
-    <script src="./runtime-config.js?v=1.0.54"></script>
-    <script src="./app.js?v=1.0.57"></script>
+    <script src="./runtime-config.js?v=1.0.71"></script>
+    <script src="./market-engine.js?v=1.0.80"></script>
+    <script src="./app.js?v=1.0.80"></script>
   </body>
 </html>

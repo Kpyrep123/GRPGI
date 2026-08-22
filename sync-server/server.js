@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { URL } = require('url');
+const MarketEngine = require('./market-engine');
 
 const PORT = Number(process.env.PORT || process.env.SYNC_PORT || 8787);
 const HOST = process.env.HOST || '0.0.0.0';
@@ -14,6 +15,17 @@ const PUBLIC_BASE_URL = String(process.env.PUBLIC_BASE_URL || '').replace(/\/+$/
 const MAX_BODY_BYTES = Number(process.env.MAX_BODY_BYTES || 250 * 1024 * 1024);
 
 const sseClients = new Map();
+const marketLocks = new Map();
+
+function withMarketLock(campaignId, task) {
+  const key = safeName(campaignId);
+  const previous = marketLocks.get(key) || Promise.resolve();
+  const current = previous.catch(() => null).then(task);
+  marketLocks.set(key, current);
+  return current.finally(() => {
+    if (marketLocks.get(key) === current) marketLocks.delete(key);
+  });
+}
 
 function nowIso() {
   return new Date().toISOString();
@@ -398,6 +410,90 @@ async function handleCombat(req, res, url, campaignId) {
   return sendJson(res, 200, { ok: true, status: existing ? 'updated' : 'inserted', row: normalized });
 }
 
+async function handleMarket(req, res, url, campaignId) {
+  if (req.method !== 'POST') return sendError(res, 405, 'Method not allowed');
+  const payload = await readJsonBody(req);
+  return withMarketLock(campaignId, async () => {
+    const snapshotFile = campaignFile(campaignId, 'snapshot.json');
+    const playersFile = campaignFile(campaignId, 'players.json');
+    const snapshot = await readJson(snapshotFile, null);
+    const rows = await readJson(playersFile, {});
+    if (!snapshot) return sendError(res, 409, 'Сначала опубликуйте world snapshot кампании');
+    const playerId = safeName(payload.playerId || payload.player_id || '', '');
+    const playerRow = rows[playerId] || null;
+    if (!playerId || !playerRow || playerRow.deleted_at) return sendError(res, 404, 'Профиль игрока не найден');
+    const now = new Date();
+    let result;
+    try {
+      result = MarketEngine.executeTransaction({
+        campaignId,
+        world: snapshot.world_json || {},
+        state: snapshot.state_json || {},
+        player: normalizePlayerRow(playerRow).player,
+        action: String(payload.action || 'preview'),
+        planetId: String(payload.planetId || payload.planet_id || ''),
+        itemId: String(payload.itemId || payload.item_id || ''),
+        unitIndex: Number(payload.unitIndex ?? payload.unit_index ?? -1),
+        targetPosition: payload.targetPosition || payload.target_position || null,
+        now
+      });
+    } catch (error) {
+      return sendError(res, 409, error?.message || String(error));
+    }
+    if (result.action === 'preview') {
+      return sendJson(res, 200, { ok: true, status: 'preview', rotation: result.rotation, player: result.player, snapshotRevision: Number(snapshot.revision || 0) });
+    }
+
+    const updatedAt = nowIso();
+    const actor = String(payload.updatedBy || payload.updated_by || `market:${playerId}`).trim() || `market:${playerId}`;
+    const playerSegments = splitPlayerState(result.player, {}, false);
+    const nextPlayerRow = {
+      ...playerRow,
+      version: Number(playerRow.version || 0) + 1,
+      updated_at: updatedAt,
+      updated_by: actor,
+      client_updated_at: payload.clientUpdatedAt || payload.client_updated_at || updatedAt,
+      deleted_at: null,
+      ...playerSegments
+    };
+    rows[playerId] = nextPlayerRow;
+    await writeJsonAtomic(playersFile, rows);
+
+    let nextSnapshot = snapshot;
+    if (result.snapshotChanged) {
+      nextSnapshot = {
+        ...snapshot,
+        revision: Number(snapshot.revision || 0) + 1,
+        updated_at: updatedAt,
+        updated_by: actor,
+        client_updated_at: payload.clientUpdatedAt || payload.client_updated_at || updatedAt,
+        state_json: result.state
+      };
+      await writeJsonAtomic(snapshotFile, nextSnapshot);
+      const remote = normalizeSnapshotRow(nextSnapshot);
+      delete remote.world;
+      delete remote.state;
+      broadcast(campaignId, { channel: 'snapshot', eventType: 'UPDATE', remote });
+    }
+
+    const normalizedPlayer = normalizePlayerRow(nextPlayerRow);
+    broadcast(campaignId, { channel: 'players', eventType: 'UPDATE', row: normalizedPlayer });
+    return sendJson(res, 200, {
+      ok: true,
+      status: result.action === 'buy' ? 'bought' : 'sold',
+      action: result.action,
+      price: result.price,
+      offer: result.offer,
+      placement: result.placement,
+      rotation: result.rotation,
+      player: normalizedPlayer.player,
+      playerRow: normalizedPlayer,
+      snapshotChanged: result.snapshotChanged,
+      snapshotRevision: Number(nextSnapshot.revision || 0)
+    });
+  });
+}
+
 async function handleAsset(req, res, url, campaignId) {
   if (req.method !== 'POST' && req.method !== 'PUT') return sendError(res, 405, 'Method not allowed');
   const rawPath = String(url.searchParams.get('path') || `${Date.now()}_asset.bin`).replace(/\\/g, '/');
@@ -466,6 +562,7 @@ async function router(req, res) {
   if (resource === 'players') return handlePlayers(req, res, url, campaignId, parts[3] || '');
   if (resource === 'chat') return handleChat(req, res, url, campaignId, parts[3] === 'batch');
   if (resource === 'combat') return handleCombat(req, res, url, campaignId);
+  if (resource === 'market') return handleMarket(req, res, url, campaignId);
   if (resource === 'assets') return handleAsset(req, res, url, campaignId);
   return sendError(res, 404, 'Not found');
 }

@@ -129,11 +129,24 @@
         <div class="mono accent">NEURAL_ARCHIVE</div>
         <button class="secondary module-close">CLOSE_X</button>
       </div>
+      <div id="wiki-section-nav-v1060" class="wiki-section-nav-v1060" aria-label="Разделы архива">
+        <button class="secondary wiki-section-tab-v1060" type="button" data-wiki-section-v1060="planets">ПЛАНЕТЫ</button>
+        <button class="secondary wiki-section-tab-v1060" type="button" data-wiki-section-v1060="equipment">СНАРЯЖЕНИЕ</button>
+        <button class="secondary wiki-section-tab-v1060 active" type="button" data-wiki-section-v1060="articles">СТАТЬИ</button>
+        <button class="secondary wiki-section-tab-v1060" type="button" data-wiki-section-v1060="systems">СИСТЕМЫ</button>
+      </div>
       <div class="wiki-layout">
         <div class="wiki-side card">
-          <div class="form">
+          <div class="form wiki-tools-v1079">
             <input id="wiki-input" class="input" placeholder="Система, планета, NPC, флора, фауна, предмет..." />
-            <button id="wiki-search-btn" class="primary">SEARCH_ARCHIVE</button>
+            <button id="wiki-search-btn" class="primary" type="button">НАЙТИ</button>
+            <div class="wiki-filter-grid-v1079">
+              <label class="field"><span>Область поиска</span><select id="wiki-scope-v1079" class="select"><option value="section">Текущий раздел</option><option value="all">Весь архив</option></select></label>
+              <label class="field"><span>Категория</span><select id="wiki-category-v1079" class="select"><option value="all">Все категории</option></select></label>
+              <label class="field"><span>Подборка</span><select id="wiki-status-v1079" class="select"><option value="all">Все материалы</option><option value="unread">Новые</option><option value="favorites">Избранное</option><option value="recent">Недавние</option></select></label>
+              <label class="field"><span>Сортировка</span><select id="wiki-sort-v1079" class="select"><option value="title">Название: А—Я</option><option value="title_desc">Название: Я—А</option><option value="unread">Сначала новые</option></select></label>
+            </div>
+            <div id="wiki-results-meta-v1079" class="wiki-results-meta-v1079"></div>
           </div>
           <div id="wiki-results" class="result-stack"></div>
         </div>
@@ -219,7 +232,8 @@
     <div id="toast" class="toast info"></div>
   </div>
 
-  <script src="./app.js"></script>
+  <script src="./market-engine.js?v=1.0.80"></script>
+  <script src="./app.js?v=1.0.80"></script>
   <script src="./region-command-center.js"></script>
   <script src="./campaign-studio.js"></script>
 </body>

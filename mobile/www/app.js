@@ -1617,7 +1617,6 @@
     root.innerHTML = `
       <div class="hero-card" style="padding:16px;">
         <div class="section-head"><div><div class="eyebrow">LOCAL TERMINAL</div><div class="section-title">${esc(planet.name)}</div></div><div class="pill">Баланс: ${formatCredits(player.credits || 0)}</div></div>
-        <div class="small-note">Покупка в мобильном клиенте пишет только в строку текущего игрока в таблице <code>${esc(App.config.playerTableName)}</code>. Общий мир и снапшот кампании не перезаписываются.</div>
       </div>
       <div class="planet-grid" style="margin-top:16px;">
         ${market.map(entry => {
@@ -1996,7 +1995,7 @@
   }
 
   function renderProfile() {
-    setTopbar('Профиль', 'Личные данные игрока, экипировка, импланты и состояние синхронизации');
+    setTopbar('Профиль', '');
     const root = $('#screen-profile');
     const player = currentPlayer();
     const planet = currentPlanet();

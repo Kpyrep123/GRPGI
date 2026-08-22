@@ -733,6 +733,49 @@ body.media-preview-open{overflow:hidden}
 .wiki-hit-unread-v42{box-shadow:inset 3px 0 0 rgba(125,249,255,.72)}
 .wiki-unread-pill-v42{display:inline-flex;margin-left:8px;padding:2px 7px;border-radius:999px;background:rgba(125,249,255,.12);border:1px solid rgba(125,249,255,.22);color:#bdf8ff;font:10px var(--mono);letter-spacing:.08em;vertical-align:middle}
 
+/* v1.0.79 scalable archive catalog */
+.wiki-side{align-self:start;height:calc(100vh - 150px);max-height:none;min-height:0;display:flex;flex-direction:column;overflow:hidden}
+.wiki-tools-v1079{flex:0 0 auto;padding-bottom:12px;border-bottom:1px solid var(--stroke)}
+.wiki-filter-grid-v1079{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.wiki-filter-grid-v1079 .field{gap:5px;min-width:0}
+.wiki-filter-grid-v1079 .field span{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em}
+.wiki-filter-grid-v1079 .select{min-width:0;width:100%;padding:9px 10px;font-size:11px}
+.wiki-results-meta-v1079{display:flex;justify-content:space-between;gap:10px;color:var(--muted);font:10px var(--mono)}
+#wiki-results.wiki-results-v1079{min-height:0;overflow-x:hidden;overflow-y:auto;margin-top:10px;padding-right:6px;overscroll-behavior:contain;scrollbar-gutter:stable;scrollbar-width:thin;scrollbar-color:rgba(125,249,255,.32) rgba(255,255,255,.035);grid-auto-rows:max-content;align-content:start}
+#wiki-results.wiki-results-v1079::-webkit-scrollbar{width:8px}
+#wiki-results.wiki-results-v1079::-webkit-scrollbar-track{background:rgba(255,255,255,.035);border-radius:8px}
+#wiki-results.wiki-results-v1079::-webkit-scrollbar-thumb{background:rgba(125,249,255,.32);border-radius:8px}
+.wiki-group-v1079{min-height:42px;flex:0 0 auto;border:1px solid rgba(125,249,255,.1);border-radius:14px;background:rgba(255,255,255,.018);overflow:hidden}
+.wiki-group-v1079 + .wiki-group-v1079{margin-top:8px}
+.wiki-group-v1079 > summary{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:42px;padding:10px 12px;cursor:pointer;color:var(--accent);font:11px var(--mono);line-height:1.35;letter-spacing:.06em;list-style:none;background:rgba(125,249,255,.035)}
+.wiki-group-v1079 > summary > span:first-child{min-width:0;overflow-wrap:anywhere}
+.wiki-group-v1079 > summary::-webkit-details-marker{display:none}
+.wiki-group-v1079 > summary::after{content:'+';font-size:15px;color:var(--muted)}
+.wiki-group-v1079[open] > summary::after{content:'−'}
+.wiki-group-count-v1079{margin-left:auto;color:var(--muted);font-size:10px}
+.wiki-group-list-v1079{display:grid;gap:6px;padding:7px}
+.wiki-hit-v1079{position:relative;display:grid !important;grid-template-columns:50px minmax(0,1fr) 30px;gap:10px;align-items:center;padding:8px !important;border-radius:11px !important;min-width:0}
+.wiki-hit-v1079.active{border-color:var(--stroke2);background:rgba(125,249,255,.09)}
+.wiki-hit-v1079 .entity-thumb{width:50px;height:50px;min-width:50px;aspect-ratio:1;border:1px solid var(--stroke);border-radius:9px;overflow:hidden}
+.wiki-hit-copy-v1079{min-width:0}
+.wiki-hit-title-v1079{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px}
+.wiki-hit-summary-v1079{margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:10px}
+.wiki-favorite-v1079{display:grid;place-items:center;width:28px;height:28px;padding:0;border:1px solid transparent;border-radius:999px;background:transparent;color:var(--muted);font-size:17px;cursor:pointer}
+.wiki-favorite-v1079.active{color:#ffd166;border-color:rgba(255,209,102,.28);background:rgba(255,209,102,.08)}
+.wiki-favorite-v1079:hover{border-color:var(--stroke2)}
+html[data-era-theme="medieval"] #mod-wiki .wiki-group-v1079 > summary,
+html[data-era-theme="medieval"] #mod-wiki .wiki-favorite-v1079{color:#8b201d}
+html[data-era-theme="medieval"] #mod-wiki .wiki-favorite-v1079.active{color:#7a4a00}
+@media(max-width:1320px){
+  .wiki-side{height:auto;max-height:none;min-height:0;overflow:visible}
+  #wiki-results.wiki-results-v1079{min-height:320px;max-height:65vh;overflow-y:auto}
+  .wiki-filter-grid-v1079{grid-template-columns:repeat(4,minmax(0,1fr))}
+}
+@media(max-width:760px){
+  .wiki-filter-grid-v1079{grid-template-columns:1fr 1fr}
+  #wiki-results.wiki-results-v1079{min-height:280px;max-height:70vh}
+}
+
 /* v43: restore full-window scrolling after v42 animation rollback */
 .fs-module.open,
 .fs-module.window-enter-v37,
@@ -2163,3 +2206,537 @@ body.registration-open-v1054{overflow:hidden}
 [data-era-theme="medieval"] .origin-choice-card-v1054,[data-era-theme="medieval"] .registration-section-v1054{border-radius:9px}
 @media(max-width:860px){.registration-window-v1054{padding:8px}.registration-card-v1052{width:100%;height:96vh}.origin-choice-grid-v1054{grid-template-columns:1fr}.origin-choice-card-v1054{grid-template-columns:110px minmax(0,1fr)}.registration-form-v1054{padding:14px}.registration-submit-v1054{bottom:-14px;margin:0 -14px -14px;padding:14px}}
 @media(max-width:560px){.origin-choice-card-v1054{grid-template-columns:1fr}.origin-choice-media-v1054{height:150px;min-height:150px;border-right:0;border-bottom:1px solid rgba(255,255,255,.05)}.registration-sticky-head-v1054{padding:15px}.registration-sticky-head-v1054 .section-title{font-size:18px}}
+
+/* v1.0.58 asset-backed era skins */
+html[data-era-theme="industrial"]{
+  --era-ui-window-main:url("assets/images/nowadays/UI/windows/window-main.png");
+  --era-ui-window-modal:url("assets/images/nowadays/UI/windows/window-modal.png");
+  --era-ui-panel:url("assets/images/nowadays/UI/windows/panel-card.png");
+  --era-ui-tooltip:url("assets/images/nowadays/UI/windows/tooltip.png");
+  --era-ui-button-primary:url("assets/images/nowadays/UI/buttons/button-primary-default.png");
+  --era-ui-button-primary-hover:url("assets/images/nowadays/UI/buttons/button-primary-hover.png");
+  --era-ui-button-primary-pressed:url("assets/images/nowadays/UI/buttons/button-primary-pressed.png");
+  --era-ui-button-primary-disabled:url("assets/images/nowadays/UI/buttons/button-primary-disabled.png");
+  --era-ui-button-secondary:url("assets/images/nowadays/UI/buttons/button-secondary.png");
+  --era-ui-toggle-selected:url("assets/images/nowadays/UI/buttons/toggle-selected.png");
+  --era-ui-label:url("assets/images/nowadays/UI/labels/label-passive.png");
+  --era-ui-toast-info:url("assets/images/nowadays/UI/notifications/notification-info.png");
+  --era-ui-toast-success:url("assets/images/nowadays/UI/notifications/notification-success.png");
+  --era-ui-toast-error:url("assets/images/nowadays/UI/notifications/notification-error.png");
+  --era-ui-toast-warning:url("assets/images/nowadays/UI/notifications/notification-warning.png");
+}
+html[data-era-theme="medieval"]{
+  --era-ui-window-main:url("assets/images/bronzera/UI/windows/window-main.png");
+  --era-ui-window-modal:url("assets/images/bronzera/UI/windows/window-modal.png");
+  --era-ui-panel:url("assets/images/bronzera/UI/windows/panel-card.png");
+  --era-ui-tooltip:url("assets/images/bronzera/UI/windows/tooltip.png");
+  --era-ui-button-primary:url("assets/images/bronzera/UI/buttons/button-primary-default.png");
+  --era-ui-button-primary-hover:url("assets/images/bronzera/UI/buttons/button-primary-hover.png");
+  --era-ui-button-primary-pressed:url("assets/images/bronzera/UI/buttons/button-primary-pressed.png");
+  --era-ui-button-primary-disabled:url("assets/images/bronzera/UI/buttons/button-primary-disabled.png");
+  --era-ui-button-secondary:url("assets/images/bronzera/UI/buttons/button-secondary.png");
+  --era-ui-toggle-selected:url("assets/images/bronzera/UI/buttons/toggle-selected.png");
+  --era-ui-label:url("assets/images/bronzera/UI/labels/label-passive.png");
+  --era-ui-toast-info:url("assets/images/bronzera/UI/notifications/notification-info.png");
+  --era-ui-toast-success:url("assets/images/bronzera/UI/notifications/notification-success.png");
+  --era-ui-toast-error:url("assets/images/bronzera/UI/notifications/notification-error.png");
+  --era-ui-toast-warning:url("assets/images/bronzera/UI/notifications/notification-warning.png");
+}
+html[data-era-theme="industrial"] .login-box,
+html[data-era-theme="industrial"] .card,
+html[data-era-theme="industrial"] .boot-sync-card,
+html[data-era-theme="industrial"] .entity-card-btn,
+html[data-era-theme="industrial"] .selector-option,
+html[data-era-theme="industrial"] .chat-bubble,
+html[data-era-theme="industrial"] .report-card,
+html[data-era-theme="medieval"] .login-box,
+html[data-era-theme="medieval"] .card,
+html[data-era-theme="medieval"] .boot-sync-card,
+html[data-era-theme="medieval"] .entity-card-btn,
+html[data-era-theme="medieval"] .selector-option,
+html[data-era-theme="medieval"] .chat-bubble,
+html[data-era-theme="medieval"] .report-card{
+  background-image:var(--era-ui-panel);
+  background-size:100% 100%;
+  background-repeat:no-repeat;
+  backdrop-filter:blur(10px);
+}
+html[data-era-theme="industrial"] .modal,
+html[data-era-theme="medieval"] .modal{backdrop-filter:blur(18px)}
+html[data-era-theme="industrial"] .login-box,
+html[data-era-theme="medieval"] .login-box{background-image:var(--era-ui-window-modal);background-size:100% 100%;background-repeat:no-repeat}
+html[data-era-theme="industrial"] .fs-header,
+html[data-era-theme="industrial"] .title-bar,
+html[data-era-theme="industrial"] #dock,
+html[data-era-theme="industrial"] #back-to-galaxy,
+html[data-era-theme="industrial"] #return-to-center,
+html[data-era-theme="industrial"] #add-system-map-btn,
+html[data-era-theme="medieval"] .fs-header,
+html[data-era-theme="medieval"] .title-bar,
+html[data-era-theme="medieval"] #dock,
+html[data-era-theme="medieval"] #back-to-galaxy,
+html[data-era-theme="medieval"] #return-to-center,
+html[data-era-theme="medieval"] #add-system-map-btn{background-image:var(--era-ui-window-main);background-size:100% 100%;background-repeat:no-repeat}
+html[data-era-theme="industrial"] .primary,
+html[data-era-theme="medieval"] .primary{background-image:var(--era-ui-button-primary);background-size:100% 100%;background-repeat:no-repeat;border-color:transparent;min-height:44px;padding-inline:22px}
+html[data-era-theme="industrial"] .primary:hover,
+html[data-era-theme="medieval"] .primary:hover{background-image:var(--era-ui-button-primary-hover)}
+html[data-era-theme="industrial"] .primary:active,
+html[data-era-theme="medieval"] .primary:active{background-image:var(--era-ui-button-primary-pressed)}
+html[data-era-theme="industrial"] .primary:disabled,
+html[data-era-theme="medieval"] .primary:disabled{background-image:var(--era-ui-button-primary-disabled)}
+html[data-era-theme="industrial"] .secondary,
+html[data-era-theme="industrial"] .ghost,
+html[data-era-theme="industrial"] .tiny-btn,
+html[data-era-theme="industrial"] .chip,
+html[data-era-theme="industrial"] .dock-item,
+html[data-era-theme="medieval"] .secondary,
+html[data-era-theme="medieval"] .ghost,
+html[data-era-theme="medieval"] .tiny-btn,
+html[data-era-theme="medieval"] .chip,
+html[data-era-theme="medieval"] .dock-item{background-image:var(--era-ui-button-secondary);background-size:100% 100%;background-repeat:no-repeat;border-color:transparent}
+html[data-era-theme="industrial"] .tag,
+html[data-era-theme="industrial"] .link-pill,
+html[data-era-theme="medieval"] .tag,
+html[data-era-theme="medieval"] .link-pill{background-image:var(--era-ui-label);background-size:100% 100%;background-repeat:no-repeat;border-color:transparent;padding-inline:14px}
+html[data-era-theme="industrial"] .dock-item::after,
+html[data-era-theme="medieval"] .dock-item::after{background-image:var(--era-ui-tooltip);background-size:100% 100%;background-repeat:no-repeat;border-color:transparent;background-color:transparent;padding:10px 14px}
+html[data-era-theme="industrial"] .toast.info,
+html[data-era-theme="medieval"] .toast.info{background-image:var(--era-ui-toast-info);background-size:100% 100%;background-repeat:no-repeat;border-color:transparent;background-color:transparent}
+html[data-era-theme="industrial"] .toast.ok,
+html[data-era-theme="medieval"] .toast.ok{background-image:var(--era-ui-toast-success);background-size:100% 100%;background-repeat:no-repeat;border-color:transparent;background-color:transparent}
+html[data-era-theme="industrial"] .toast.err,
+html[data-era-theme="medieval"] .toast.err{background-image:var(--era-ui-toast-error);background-size:100% 100%;background-repeat:no-repeat;border-color:transparent;background-color:transparent}
+
+/* =====================================================================
+   v1.0.59 — mixed asset mode: texture assets only where geometry matches
+   ===================================================================== */
+html[data-era-theme="industrial"]{
+  --era-ui-button-icon:url("assets/images/nowadays/UI/buttons/button-icon.png");
+}
+html[data-era-theme="medieval"]{
+  --era-ui-button-icon:url("assets/images/bronzera/UI/buttons/button-icon.png");
+}
+
+/* Large / fluid surfaces return to CSS materials so authored PNGs are not distorted. */
+html[data-era-theme="industrial"] .card,
+html[data-era-theme="industrial"] .login-box,
+html[data-era-theme="industrial"] .boot-sync-card,
+html[data-era-theme="industrial"] .entity-card-btn,
+html[data-era-theme="industrial"] .selector-option,
+html[data-era-theme="industrial"] .chat-bubble,
+html[data-era-theme="industrial"] .report-card,
+html[data-era-theme="industrial"] .fs-header,
+html[data-era-theme="industrial"] .title-bar,
+html[data-era-theme="industrial"] #dock,
+html[data-era-theme="industrial"] #back-to-galaxy,
+html[data-era-theme="industrial"] #return-to-center,
+html[data-era-theme="industrial"] #add-system-map-btn{
+  background-image:none;
+  background:linear-gradient(135deg,rgba(36,38,38,.96),rgba(13,14,14,.98));
+  border-color:#433d34;
+}
+html[data-era-theme="industrial"] .login-box,
+html[data-era-theme="industrial"] .boot-sync-card,
+html[data-era-theme="industrial"] .entity-card-btn,
+html[data-era-theme="industrial"] .selector-option,
+html[data-era-theme="industrial"] .chat-bubble,
+html[data-era-theme="industrial"] .report-card{
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.035),inset 0 -2px 8px rgba(0,0,0,.32),0 16px 42px rgba(0,0,0,.38);
+}
+
+html[data-era-theme="medieval"] .card,
+html[data-era-theme="medieval"] .login-box,
+html[data-era-theme="medieval"] .boot-sync-card,
+html[data-era-theme="medieval"] .entity-card-btn,
+html[data-era-theme="medieval"] .selector-option,
+html[data-era-theme="medieval"] .chat-bubble,
+html[data-era-theme="medieval"] .report-card{
+  background-image:none;
+  background:linear-gradient(180deg,rgba(232,211,168,.98),rgba(204,174,119,.98));
+  border-color:#6b3f1f;
+  color:#2c1c10;
+}
+html[data-era-theme="medieval"] .fs-header,
+html[data-era-theme="medieval"] .title-bar,
+html[data-era-theme="medieval"] #dock,
+html[data-era-theme="medieval"] #back-to-galaxy,
+html[data-era-theme="medieval"] #return-to-center,
+html[data-era-theme="medieval"] #add-system-map-btn{
+  background-image:none;
+  background:linear-gradient(180deg,#402916,#24170e);
+  border-color:#8b6130;
+  color:#e7c987;
+}
+
+/* Buttons and compact decorative controls keep authored assets. */
+html[data-era-theme="industrial"] .primary,
+html[data-era-theme="medieval"] .primary{
+  background-image:var(--era-ui-button-primary);
+  background-size:100% 100%;
+  background-repeat:no-repeat;
+  background-color:transparent;
+}
+html[data-era-theme="industrial"] .secondary,
+html[data-era-theme="industrial"] .ghost,
+html[data-era-theme="industrial"] .tiny-btn,
+html[data-era-theme="medieval"] .secondary,
+html[data-era-theme="medieval"] .ghost,
+html[data-era-theme="medieval"] .tiny-btn{
+  background-image:var(--era-ui-button-secondary);
+  background-size:100% 100%;
+  background-repeat:no-repeat;
+  background-color:transparent;
+}
+html[data-era-theme="industrial"] .dock-item,
+html[data-era-theme="medieval"] .dock-item{
+  background-image:var(--era-ui-button-icon);
+  background-size:100% 100%;
+  background-repeat:no-repeat;
+  background-color:transparent;
+  border-color:transparent;
+}
+html[data-era-theme="industrial"] .chip,
+html[data-era-theme="industrial"] .tag,
+html[data-era-theme="industrial"] .link-pill,
+html[data-era-theme="medieval"] .chip,
+html[data-era-theme="medieval"] .tag,
+html[data-era-theme="medieval"] .link-pill{
+  background-image:var(--era-ui-label);
+  background-size:100% 100%;
+  background-repeat:no-repeat;
+  background-color:transparent;
+  border-color:transparent;
+}
+
+/* Article/wiki/text panels explicitly stay procedural and can grow freely. */
+html[data-era-theme="industrial"] .wiki-data-grid > *,
+html[data-era-theme="industrial"] .rich-text,
+html[data-era-theme="industrial"] .article-body,
+html[data-era-theme="industrial"] .analysis-section,
+html[data-era-theme="industrial"] .annotation-box{
+  background-image:none;
+}
+html[data-era-theme="medieval"] .wiki-data-grid > *,
+html[data-era-theme="medieval"] .rich-text,
+html[data-era-theme="medieval"] .article-body,
+html[data-era-theme="medieval"] .analysis-section,
+html[data-era-theme="medieval"] .annotation-box{
+  background-image:none;
+}
+
+/* v1.0.60 archive sections, mixed era assets and targeted wide headers */
+html[data-era-theme="industrial"]{
+  --era-wide-button-v1060:url("assets/images/nowadays/button.png");
+  --era-article-top-v1060:url("assets/images/nowadays/article_top.png");
+}
+html[data-era-theme="medieval"]{
+  --era-wide-button-v1060:url("assets/images/bronzera/button.png");
+  --era-article-top-v1060:url("assets/images/bronzera/article_top.png");
+}
+.wiki-section-nav-v1060{
+  position:relative;
+  z-index:4050;
+  max-width:1450px;
+  margin:0 auto 16px;
+  display:flex;
+  gap:10px;
+  flex-wrap:wrap;
+  padding:0 2px;
+}
+.wiki-section-tab-v1060{min-width:150px;justify-content:center}
+.wiki-section-tab-v1060.active{border-color:var(--stroke2);box-shadow:0 0 0 1px var(--stroke2) inset}
+html[data-era-theme="industrial"] .wiki-section-tab-v1060.active,
+html[data-era-theme="medieval"] .wiki-section-tab-v1060.active{
+  background-image:var(--era-ui-toggle-selected);
+  background-size:100% 100%;
+  background-repeat:no-repeat;
+}
+html[data-era-theme="medieval"] #mod-wiki,
+html[data-era-theme="medieval"] #mod-wiki .wiki-body,
+html[data-era-theme="medieval"] #mod-wiki .wiki-side,
+html[data-era-theme="medieval"] #mod-wiki .wiki-hit,
+html[data-era-theme="medieval"] #mod-wiki .wiki-hit b,
+html[data-era-theme="medieval"] #mod-wiki .wiki-hit .subtle,
+html[data-era-theme="medieval"] #mod-wiki .article-body,
+html[data-era-theme="medieval"] #mod-wiki .data-value,
+html[data-era-theme="medieval"] #mod-wiki .data-label,
+html[data-era-theme="medieval"] #mod-wiki .small-note,
+html[data-era-theme="medieval"] #mod-wiki h2,
+html[data-era-theme="medieval"] #mod-wiki h3{
+  color:#8b201d !important;
+}
+html[data-era-theme="industrial"] [data-updater-action="install"],
+html[data-era-theme="industrial"] [data-devops-action="publish"]{
+  color:#fff !important;
+  text-shadow:0 1px 2px rgba(0,0,0,.85);
+}
+html[data-era-theme="industrial"] [data-rcc-launcher],
+html[data-era-theme="industrial"] .config-main form .primary[type="submit"],
+html[data-era-theme="medieval"] [data-rcc-launcher],
+html[data-era-theme="medieval"] .config-main form .primary[type="submit"]{
+  background-image:var(--era-wide-button-v1060) !important;
+  background-size:100% 100% !important;
+  background-repeat:no-repeat !important;
+  background-position:center !important;
+  min-width:220px;
+  min-height:48px;
+}
+html[data-era-theme="industrial"] #mod-wiki .wiki-hero,
+html[data-era-theme="industrial"] .profile-card > .section-title,
+html[data-era-theme="medieval"] #mod-wiki .wiki-hero,
+html[data-era-theme="medieval"] .profile-card > .section-title{
+  position:relative;
+  padding-top:42px;
+}
+html[data-era-theme="industrial"] #mod-wiki .wiki-hero::before,
+html[data-era-theme="industrial"] .profile-card > .section-title::before,
+html[data-era-theme="medieval"] #mod-wiki .wiki-hero::before,
+html[data-era-theme="medieval"] .profile-card > .section-title::before{
+  content:"";
+  position:absolute;
+  left:0;
+  right:0;
+  top:0;
+  height:34px;
+  pointer-events:none;
+  background-image:var(--era-article-top-v1060);
+  background-size:100% 100%;
+  background-repeat:no-repeat;
+  background-position:center top;
+}
+html[data-era-theme="industrial"] #mod-wiki .wiki-hero::before,
+html[data-era-theme="medieval"] #mod-wiki .wiki-hero::before{height:38px}
+@media(max-width:760px){.wiki-section-tab-v1060{min-width:calc(50% - 6px)}}
+html[data-era-theme="medieval"] #mod-wiki .section-title,
+html[data-era-theme="medieval"] #mod-wiki .accent,
+html[data-era-theme="medieval"] #mod-wiki .input{
+  color:#8b201d !important;
+}
+html[data-era-theme="medieval"] #mod-wiki .input::placeholder{color:rgba(139,32,29,.62) !important}
+html[data-era-theme="medieval"] #mod-wiki .wiki-section-tab-v1060,
+html[data-era-theme="medieval"] #mod-wiki .secondary,
+html[data-era-theme="medieval"] #mod-wiki .tag,
+html[data-era-theme="medieval"] #mod-wiki .link-pill{color:#8b201d !important}
+
+/* v1.0.61 archive text + origin WC links */
+html[data-era-theme="medieval"] #mod-wiki .article-body,
+html[data-era-theme="medieval"] #mod-wiki .article-body *,
+html[data-era-theme="medieval"] #mod-wiki .rich-text,
+html[data-era-theme="medieval"] #mod-wiki .rich-text *{
+  color:#6d1717 !important;
+}
+html[data-era-theme="medieval"] #mod-wiki .rich-text a,
+html[data-era-theme="medieval"] #mod-wiki .article-body a{
+  color:#8f2420 !important;
+  text-decoration-color:rgba(143,36,32,.55);
+}
+.origin-world-links-v1061{align-items:start}
+.origin-world-links-v1061 .selector-grid-scroll{max-height:330px}
+.origin-access-note-v1061{margin-top:10px;color:var(--muted)}
+html[data-era-theme="medieval"] #mod-wiki p,
+html[data-era-theme="medieval"] #mod-wiki li,
+html[data-era-theme="medieval"] #mod-wiki blockquote{color:#6d1717 !important}
+
+/* v1.0.62 campaign-wide chat */
+.campaign-chat-head-v1062{margin-bottom:10px}
+.campaign-chat-head-v1062 .entity-thumb{width:46px;height:46px}
+.campaign-npc-message-v1062{border-color:rgba(255,190,125,.24)}
+.message-contact[data-message-kind="campaign"],.message-contact[data-gm-message-kind="campaign"]{border-color:rgba(125,249,255,.24)}
+.message-contact[data-message-kind="campaign"].active,.message-contact[data-gm-message-kind="campaign"].active{box-shadow:inset 0 0 0 1px rgba(125,249,255,.14),0 8px 24px rgba(0,0,0,.18)}
+html[data-era-theme="medieval"] .message-contact[data-message-kind="campaign"],html[data-era-theme="medieval"] .message-contact[data-gm-message-kind="campaign"]{border-color:rgba(109,23,23,.34)}
+html[data-era-theme="industrial"] .message-contact[data-message-kind="campaign"],html[data-era-theme="industrial"] .message-contact[data-gm-message-kind="campaign"]{border-color:rgba(194,139,56,.34)}
+
+/* v1.0.64 scalable NPC sender picker */
+.npc-scroll-select-v1064{
+  min-height:210px;
+  max-height:min(320px,42vh);
+  overflow-y:auto;
+  scrollbar-gutter:stable;
+  padding-right:8px;
+}
+.npc-scroll-select-v1064 option{padding:8px 10px;white-space:nowrap}
+@media(max-height:720px){.npc-scroll-select-v1064{min-height:160px;max-height:32vh}}
+
+/* v1.0.66 character creation economy */
+.creation-budget-v1066{position:sticky;top:0;z-index:4;padding:12px 14px;border:1px solid color-mix(in srgb,var(--accent,#6c97c7) 28%,transparent);border-radius:12px;background:color-mix(in srgb,var(--panel,#0a1019) 92%,transparent);font:700 12px var(--mono);letter-spacing:.05em;color:var(--accent,#7df9ff);box-shadow:0 8px 20px rgba(0,0,0,.16)}
+.creation-budget-v1066.over-budget{color:var(--danger,#ff7c92);border-color:color-mix(in srgb,var(--danger,#ff7c92) 55%,transparent)}
+.creation-cost-badge-v1066{display:inline-flex;align-items:center;justify-content:center;justify-self:start;margin:7px 0;padding:4px 9px;border-radius:999px;border:1px solid color-mix(in srgb,var(--accent,#6c97c7) 32%,transparent);background:color-mix(in srgb,var(--accent,#6c97c7) 8%,transparent);font:700 10px var(--mono);color:var(--accent,#7df9ff)}
+.starting-equipment-grid-v1066{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px;margin-top:12px}
+.starting-equipment-card-v1066{position:relative;display:grid;grid-template-columns:58px minmax(0,1fr) auto;align-items:center;gap:12px;min-height:82px;padding:11px 12px;border:1px solid color-mix(in srgb,var(--accent,#6c97c7) 16%,transparent);border-radius:14px;background:color-mix(in srgb,var(--panel,#0a1019) 91%,transparent);cursor:pointer;transition:var(--tr)}
+.starting-equipment-card-v1066:hover{transform:translateY(-1px);border-color:color-mix(in srgb,var(--accent,#6c97c7) 34%,transparent)}
+.starting-equipment-card-v1066:has(input:checked){border-color:color-mix(in srgb,var(--accent,#6c97c7) 72%,white 4%);background:color-mix(in srgb,var(--accent,#6c97c7) 7%,var(--panel,#0a1019));box-shadow:0 10px 28px rgba(0,0,0,.2)}
+.starting-equipment-card-v1066>input{position:absolute;right:10px;top:10px;accent-color:var(--accent,#7df9ff)}
+.starting-equipment-copy-v1066{display:grid;gap:3px;min-width:0}.starting-equipment-copy-v1066 b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.starting-equipment-copy-v1066 small{color:var(--muted);line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.starting-equipment-card-v1066 .creation-cost-badge-v1066{margin:0 18px 0 0;white-space:nowrap}
+.starting-equipment-card-v1066>input[hidden]{display:none}
+.starting-equipment-selected-v1072{display:none;position:absolute;right:10px;bottom:7px;color:var(--accent);font:700 9px/1 var(--mono);letter-spacing:.08em}
+.starting-equipment-card-v1066:has(input:checked) .starting-equipment-selected-v1072{display:block}
+.registration-equipment-modal-v1072{position:fixed;inset:0;z-index:10020;display:grid;place-items:center;padding:24px;background:rgba(2,5,9,.84);backdrop-filter:blur(14px)}
+.registration-equipment-modal-card-v1072{position:relative;width:min(780px,calc(100vw - 32px));max-height:calc(100vh - 32px);overflow:auto;padding:22px;border:1px solid color-mix(in srgb,var(--accent,#6c97c7) 34%,transparent);border-radius:20px;background:color-mix(in srgb,var(--panel,#0a1019) 96%,black 4%);box-shadow:0 28px 90px rgba(0,0,0,.62)}
+.registration-equipment-modal-close-v1072{position:absolute;right:16px;top:16px;z-index:2}
+.registration-equipment-modal-layout-v1072{display:grid;grid-template-columns:180px minmax(0,1fr);gap:22px;align-items:start;padding-top:8px}
+.registration-equipment-modal-media-v1072 .entity-thumb.hero{width:180px;height:180px;max-width:180px;aspect-ratio:1/1;border-radius:16px}
+.registration-equipment-modal-media-v1072 .entity-thumb.hero img{object-fit:contain}
+.registration-equipment-modal-copy-v1072{min-width:0;padding-right:76px}.registration-equipment-modal-copy-v1072 h2{margin:5px 0 10px}.registration-equipment-modal-copy-v1072 p{color:var(--text);line-height:1.55;white-space:pre-wrap}.registration-equipment-facts-v1072{display:flex;flex-wrap:wrap;gap:7px;margin:10px 0 14px}
+.registration-equipment-modal-actions-v1072{display:flex;justify-content:flex-end;margin-top:18px;padding-top:16px;border-top:1px solid color-mix(in srgb,var(--accent,#6c97c7) 18%,transparent)}
+.registration-equipment-modal-actions-v1072 .primary{min-width:220px}
+.personality-registration-grid-v1066 .area,.personality-field-v1066{min-height:120px}
+.personality-profile-grid-v1066{display:grid;gap:12px}.personality-profile-grid-v1066>div{padding:12px;border-radius:12px;background:rgba(255,255,255,.025);border:1px solid rgba(255,255,255,.06)}.personality-profile-grid-v1066 p{margin:6px 0 0;line-height:1.55;white-space:pre-wrap}
+[data-era-theme="industrial"] .starting-equipment-card-v1066,[data-era-theme="industrial"] .creation-budget-v1066{border-radius:4px}
+[data-era-theme="medieval"] .starting-equipment-card-v1066,[data-era-theme="medieval"] .creation-budget-v1066{border-radius:8px}
+@media(max-width:760px){.starting-equipment-grid-v1066{grid-template-columns:1fr}.personality-registration-grid-v1066{grid-template-columns:1fr}.registration-equipment-modal-v1072{padding:10px}.registration-equipment-modal-card-v1072{width:100%;max-height:calc(100vh - 20px);padding:16px}.registration-equipment-modal-layout-v1072{grid-template-columns:96px minmax(0,1fr);gap:12px}.registration-equipment-modal-media-v1072 .entity-thumb.hero{width:96px;height:96px}.registration-equipment-modal-copy-v1072{padding-right:0}.registration-equipment-modal-close-v1072{position:static;float:right;margin-bottom:8px}.registration-equipment-modal-actions-v1072 .primary{width:100%;min-width:0}}
+
+/* v1.0.67 inventory grid and equipment slots */
+.inventory-profile-card-v1067{min-width:0;overflow:visible}
+.inventory-capacity-bar-v1067{display:flex;gap:12px;flex-wrap:wrap;justify-content:space-between;padding:9px 11px;margin:8px 0 12px;border:1px solid rgba(125,249,255,.12);background:rgba(255,255,255,.025);font:12px var(--mono)}
+.inventory-limit-exceeded-v1067{color:var(--danger);font-weight:700}
+.inventory-equipment-slots-v1067{display:grid;grid-template-columns:repeat(auto-fit,minmax(128px,1fr));gap:10px}
+.inventory-equip-slot-v1067{min-height:112px;padding:8px;border:1px dashed rgba(125,249,255,.24);border-radius:14px;background:rgba(255,255,255,.025);display:grid;align-content:start;gap:7px;transition:var(--tr)}
+.inventory-equip-slot-v1067.filled{border-style:solid;background:rgba(125,249,255,.035)}
+.inventory-equip-slot-v1067.drag-over-v1067{border-color:var(--accent);box-shadow:0 0 0 2px rgba(125,249,255,.1) inset}
+.inventory-slot-label-v1067{font:10px var(--mono);text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.inventory-slot-empty-v1067{display:grid;place-items:center;min-height:64px;text-align:center;color:var(--muted);font-size:11px}
+.inventory-slot-item-v1067{display:grid;grid-template-columns:48px minmax(0,1fr);align-items:center;gap:8px;cursor:grab;min-width:0}
+.inventory-slot-item-v1067>span{font-size:12px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.inventory-grid-v1067{position:relative;display:grid;grid-template-columns:repeat(var(--inv-cols),minmax(0,1fr));grid-auto-flow:row;width:min(100%,calc(var(--inv-cols) * 86px));max-width:100%;gap:3px;padding:4px;border:1px solid rgba(125,249,255,.15);background:rgba(0,0,0,.2);isolation:isolate}
+.inventory-grid-cell-v1067{aspect-ratio:1/1;border:1px solid rgba(125,249,255,.09);background:rgba(255,255,255,.018);z-index:0;pointer-events:none}
+.inventory-tile-v1067{z-index:2;min-width:0;min-height:0;padding:6px;border:1px solid rgba(125,249,255,.28);border-radius:9px;background:linear-gradient(180deg,rgba(18,28,42,.96),rgba(8,13,21,.98));box-shadow:0 5px 14px rgba(0,0,0,.3);display:grid;grid-template-columns:minmax(32px,46px) minmax(0,1fr);grid-template-rows:1fr auto;gap:3px 6px;align-items:center;overflow:hidden;cursor:grab;user-select:none}
+.inventory-tile-v1067 .entity-thumb{grid-row:1 / span 2;width:100%;height:auto;aspect-ratio:1/1;border-radius:7px}
+.inventory-tile-v1067>span{font-size:11px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.inventory-tile-v1067>small{font:9px var(--mono);color:var(--muted)}
+.inventory-dragging-v1067{opacity:.38;cursor:grabbing}
+.inventory-overflow-v1067{display:flex;gap:7px;flex-wrap:wrap;margin-top:8px;padding:9px 10px;border:1px solid rgba(255,124,146,.28);background:rgba(255,124,146,.06);font-size:11px;color:var(--danger)}
+.inventory-overflow-v1067 span{padding:2px 6px;border:1px solid currentColor;border-radius:999px}
+.inventory-character-settings-v1067 .small-note{margin-top:5px}
+.implant-slot-editor-v1067 .dynamic-row{grid-template-columns:minmax(84px,.45fr) minmax(220px,1fr) minmax(70px,.35fr)}
+.inventory-size-hint-v1067{margin-top:-4px;margin-bottom:12px}
+html[data-era-theme="industrial"] .inventory-grid-v1067,html[data-era-theme="industrial"] .inventory-equip-slot-v1067{border-radius:2px;border-color:rgba(194,139,56,.28)}
+html[data-era-theme="industrial"] .inventory-tile-v1067{border-radius:2px;border-color:#574934;background:linear-gradient(180deg,#262521,#121210)}
+html[data-era-theme="medieval"] .inventory-grid-v1067{border-color:#8b6130;background:rgba(73,42,20,.1)}
+html[data-era-theme="medieval"] .inventory-grid-cell-v1067{border-color:rgba(107,63,31,.18);background:rgba(246,226,184,.08)}
+html[data-era-theme="medieval"] .inventory-equip-slot-v1067{border-color:#8b6130;background:rgba(246,226,184,.18)}
+html[data-era-theme="medieval"] .inventory-tile-v1067{border-color:#7b4a26;background:linear-gradient(180deg,#e4c791,#bf9459);color:#421b15}
+@media(max-width:760px){.inventory-equipment-slots-v1067{grid-template-columns:repeat(2,minmax(0,1fr))}.implant-slot-editor-v1067 .dynamic-row{grid-template-columns:1fr}.inventory-grid-v1067{width:100%}.inventory-tile-v1067{grid-template-columns:minmax(28px,38px) minmax(0,1fr);padding:4px}.inventory-tile-v1067>span{font-size:10px}}
+/* v1.0.67 large inventories stay scrollable instead of shrinking cells indefinitely */
+.inventory-profile-card-v1067{overflow-x:auto}
+.inventory-grid-v1067{grid-template-columns:repeat(var(--inv-cols),78px);width:max-content;max-width:none}
+@media(max-width:760px){.inventory-grid-v1067{grid-template-columns:repeat(var(--inv-cols),64px);width:max-content}.inventory-profile-card-v1067{overflow-x:auto}}
+.legacy-implant-editor-hidden-v1067{display:none!important}
+
+/* v1.0.68 World Config inventory editor */
+.wc-inventory-legacy-hidden-v1068{display:none!important}
+.wc-inventory-editor-v1068{margin:20px 0;padding:18px;border:1px solid var(--stroke2);border-radius:18px;background:rgba(255,255,255,.025)}
+.wc-inventory-layout-v1068{display:grid;grid-template-columns:minmax(250px,320px) minmax(0,1fr);gap:18px;margin-top:14px;align-items:start}
+.wc-inventory-pool-v1068{position:sticky;top:72px;display:grid;gap:10px;max-height:calc(100vh - 150px);padding:12px;border:1px solid rgba(255,255,255,.08);border-radius:14px;background:rgba(3,8,14,.55);overflow:hidden}
+.wc-inventory-pool-list-v1068{display:grid;gap:8px;overflow-y:auto;padding-right:4px;min-height:180px}
+.wc-inventory-pool-item-v1068{display:grid;grid-template-columns:44px minmax(0,1fr);gap:10px;align-items:center;padding:8px;border:1px solid rgba(125,249,255,.12);border-radius:12px;background:rgba(125,249,255,.035);cursor:grab;user-select:none}
+.wc-inventory-pool-item-v1068:active{cursor:grabbing}
+.wc-inventory-pool-item-v1068>span{min-width:0;display:grid;gap:3px}.wc-inventory-pool-item-v1068 b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.wc-inventory-pool-item-v1068 small{color:var(--muted);font-size:10px}
+.wc-inventory-pool-remove-v1068{padding:10px;border:1px dashed rgba(255,124,146,.42);border-radius:10px;color:var(--danger);font-size:11px;text-align:center}
+.wc-inventory-stage-v1068{min-width:0;display:grid;gap:12px}
+.wc-inventory-equipment-slots-v1068{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
+.wc-inventory-slot-v1068{min-height:104px;padding:10px;border:1px dashed rgba(125,249,255,.2);border-radius:14px;background:rgba(255,255,255,.025)}
+.wc-inventory-slot-v1068.filled{border-style:solid;background:rgba(125,249,255,.045)}
+.wc-inventory-slot-item-v1068{display:flex;align-items:center;gap:8px;margin-top:8px;padding:7px;border-radius:10px;background:rgba(0,0,0,.2);cursor:grab;user-select:none}
+.wc-inventory-grid-v1068{min-width:320px}
+html[data-era-theme="industrial"] .wc-inventory-editor-v1068,html[data-era-theme="industrial"] .wc-inventory-pool-v1068{border-radius:2px;border-color:#4d463c;background:rgba(12,13,13,.88)}
+html[data-era-theme="medieval"] .wc-inventory-editor-v1068,html[data-era-theme="medieval"] .wc-inventory-pool-v1068{border-radius:2px;border-color:#8a6031;background:rgba(232,211,168,.72);color:#2b1c11}
+html[data-era-theme="medieval"] .wc-inventory-pool-item-v1068{border-color:#9a713e;background:rgba(246,226,184,.52);color:#2b1c11}
+html[data-era-theme="medieval"] .wc-inventory-pool-item-v1068 small{color:rgba(59,37,20,.68)}
+@media(max-width:1050px){.wc-inventory-layout-v1068{grid-template-columns:1fr}.wc-inventory-pool-v1068{position:relative;top:auto;max-height:360px}.wc-inventory-grid-v1068{min-width:260px}}
+
+/* v1.0.69: large WC item pool is independently scrollable. */
+.wc-inventory-pool-v1068{
+  grid-template-rows:auto minmax(0,1fr) auto;
+  height:min(68vh,720px);
+  min-height:340px;
+  max-height:min(68vh,720px);
+  overflow:hidden;
+}
+.wc-inventory-pool-list-v1068{
+  min-height:0;
+  max-height:none;
+  overflow-y:auto;
+  overflow-x:hidden;
+  overscroll-behavior:contain;
+  scrollbar-gutter:stable;
+  touch-action:pan-y;
+  padding-right:7px;
+}
+.wc-inventory-pool-list-v1068::-webkit-scrollbar{width:10px}
+.wc-inventory-pool-list-v1068::-webkit-scrollbar-thumb{background:rgba(125,249,255,.22);border-radius:999px;border:2px solid transparent;background-clip:padding-box}
+.wc-inventory-pool-list-v1068::-webkit-scrollbar-track{background:rgba(0,0,0,.12)}
+html[data-era-theme="industrial"] .wc-inventory-pool-list-v1068::-webkit-scrollbar-thumb{background:rgba(224,216,194,.28);background-clip:padding-box}
+html[data-era-theme="medieval"] .wc-inventory-pool-list-v1068::-webkit-scrollbar-thumb{background:rgba(102,47,26,.38);background-clip:padding-box}
+@media(max-width:1050px){
+  .wc-inventory-pool-v1068{height:min(52vh,440px);min-height:300px;max-height:min(52vh,440px)}
+}
+
+/* v1.0.71 planetary market */
+.market-config-v1071{border:1px solid var(--line);border-radius:14px;overflow:hidden;background:rgba(4,10,16,.58)}
+.market-config-head-v1071{display:grid;grid-template-columns:minmax(0,1fr) minmax(220px,340px);gap:16px;align-items:center;padding:14px;border-bottom:1px solid var(--line)}
+.market-config-columns-v1071,.market-config-row-v1071{display:grid;grid-template-columns:minmax(260px,1fr) 130px 130px 130px;gap:10px;align-items:center}
+.market-config-columns-v1071{padding:8px 14px;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--line)}
+.market-config-list-v1071{max-height:520px;overflow:auto;padding:6px}
+.market-config-row-v1071{padding:8px;border:1px solid transparent;border-radius:10px;opacity:.58;transition:.15s ease}
+.market-config-row-v1071:hover,.market-config-row-v1071.selected{opacity:1;background:rgba(125,249,255,.055);border-color:rgba(125,249,255,.18)}
+.market-config-item-v1071{display:grid;grid-template-columns:auto auto minmax(0,1fr);gap:9px;align-items:center;min-width:0}
+.market-config-item-v1071>span:last-child{display:flex;flex-direction:column;min-width:0}
+.market-config-item-v1071 b,.market-config-item-v1071 small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.market-config-item-v1071 small{color:var(--muted)}
+.market-config-number-v1071{display:grid;grid-template-columns:1fr auto;gap:5px;align-items:center}
+.market-terminal-v1071{display:grid;gap:12px;grid-column:1/-1}
+.market-tabs-v1073{display:flex;gap:8px;align-items:center;padding:5px;border:1px solid var(--line);border-radius:14px;background:rgba(4,10,16,.62)}
+.market-tabs-v1073>button{flex:1 1 0;min-height:42px}
+.market-tabs-v1073>button.active{border-color:var(--accent);color:var(--accent);background:rgba(125,249,255,.12);box-shadow:inset 0 0 0 1px rgba(125,249,255,.08)}
+.market-access-banner-v1071{padding:11px 14px;border:1px solid var(--line);border-radius:12px;background:rgba(7,15,22,.72)}
+.market-access-banner-v1071.ok{border-color:rgba(98,218,151,.4)}
+.market-access-banner-v1071.err{border-color:rgba(255,107,107,.45);color:#ffc2c2}
+.market-dual-grid-v1071{display:grid;grid-template-columns:minmax(0,1.18fr) minmax(340px,.82fr);gap:14px;min-height:430px}
+.market-pane-v1071{border:1px solid var(--line);border-radius:16px;background:rgba(4,10,16,.76);padding:12px;min-width:0;overflow:auto}
+.market-pane-head-v1071{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:12px}
+.market-pane-head-v1071>div{display:flex;flex-direction:column;gap:3px}
+.market-shop-grid-v1071{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));grid-auto-rows:82px;grid-auto-flow:dense;gap:8px;align-content:start}
+.market-shop-tile-v1071,.market-inventory-tile-v1071{appearance:none;border:1px solid rgba(125,249,255,.22);border-radius:11px;background:linear-gradient(150deg,rgba(22,39,52,.96),rgba(5,11,17,.98));color:var(--text);padding:7px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-width:0;overflow:hidden;cursor:pointer;box-shadow:inset 0 1px rgba(255,255,255,.035);transition:.14s ease}
+.market-shop-tile-v1071:hover,.market-inventory-tile-v1071:hover,.market-shop-tile-v1071.selected,.market-inventory-tile-v1071.selected{border-color:var(--accent);box-shadow:0 0 0 2px rgba(125,249,255,.12),inset 0 1px rgba(255,255,255,.08);transform:translateY(-1px)}
+.market-shop-tile-v1071 .entity-thumb,.market-inventory-tile-v1071 .entity-thumb{max-width:48px;max-height:48px;flex:0 0 auto}
+.market-tile-name-v1071,.market-inventory-tile-v1071>span{font-size:12px;font-weight:700;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.market-tile-meta-v1071,.market-inventory-tile-v1071>small{font-size:9px;color:var(--muted);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.market-tile-price-v1071{font-size:11px;color:var(--accent)}
+.market-inventory-grid-v1071{display:grid;grid-template-columns:repeat(var(--inv-cols),minmax(58px,1fr));grid-template-rows:repeat(var(--inv-rows),72px);position:relative;gap:4px;min-height:180px;border:1px solid rgba(125,249,255,.16);border-radius:12px;padding:6px;background:rgba(0,0,0,.2)}
+.market-inventory-cell-v1071{border:1px solid rgba(125,249,255,.1);border-radius:7px;background:rgba(125,249,255,.025)}
+.market-inventory-tile-v1071{z-index:2;margin:1px}
+.market-inventory-tile-v1071.not-sellable{filter:saturate(.45);opacity:.68}
+.market-selection-card-v1071,.market-selection-empty-v1071{min-height:76px;border:1px solid var(--line);border-radius:13px;background:rgba(4,10,16,.8);padding:12px 14px}
+.market-selection-card-v1071{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:14px;align-items:start}
+.market-selection-details-v1071{display:flex;flex-direction:column;gap:9px;min-width:0}
+.market-selection-heading-v1071{display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px 14px;align-items:baseline}
+.market-selection-heading-v1071>b{font-size:16px}
+.market-selection-heading-v1071>strong{color:var(--accent);font-size:13px}
+.market-selection-facts-v1071{display:flex;flex-wrap:wrap;gap:6px}
+.market-selection-facts-v1071 .pill{font-size:11px}
+.market-selection-description-v1071{margin:0;white-space:pre-wrap;line-height:1.45;color:var(--text)}
+.market-selection-requirements-v1071,.market-selection-tags-v1071{font-size:12px;color:var(--muted);line-height:1.4}
+.market-selection-card-v1071>.primary{align-self:center}
+.market-selection-card-v1071 small{color:var(--muted)}
+.market-selection-empty-v1071{display:grid;place-items:center;color:var(--muted)}
+.market-rotation-note-v1071{text-align:center}
+.market-dragging-v1071{opacity:.35!important}
+.market-terminal-v1071.locked .market-dual-grid-v1071{opacity:.55;pointer-events:none}
+.market-terminal-v1071.locked .stock-layout-v1074{opacity:1;pointer-events:auto}.market-terminal-v1071.locked .stock-layout-v1074 [data-market-stock-drop-v1074],.market-terminal-v1071.locked .stock-layout-v1074 [data-market-portfolio-drop-v1074]{cursor:default}
+@media(max-width:980px){.market-dual-grid-v1071{grid-template-columns:1fr}.market-config-head-v1071{grid-template-columns:1fr}.market-config-columns-v1071,.market-config-row-v1071{grid-template-columns:minmax(200px,1fr) 110px 110px 110px}}
+@media(max-width:600px){.market-selection-card-v1071{grid-template-columns:auto 1fr}.market-selection-card-v1071>button{grid-column:1/-1;width:100%}.market-selection-heading-v1071{display:grid}}
+
+/* v1.0.74 global securities portfolio */
+.stock-layout-v1074{grid-template-columns:minmax(360px,.82fr) minmax(520px,1.18fr)}
+.stock-quotes-grid-v1074{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:9px;align-content:start}
+.stock-quote-tile-v1074{appearance:none;display:grid;grid-template-columns:auto 1fr;gap:4px 10px;align-items:center;min-height:92px;padding:12px;border:1px solid rgba(125,249,255,.2);border-radius:11px;background:linear-gradient(145deg,rgba(18,36,49,.96),rgba(4,10,16,.98));color:var(--text);text-align:left;cursor:pointer}.stock-quote-tile-v1074:hover,.stock-quote-tile-v1074.selected{border-color:var(--accent);box-shadow:0 0 0 2px rgba(125,249,255,.1)}.stock-quote-tile-v1074>span{grid-row:1/3;display:grid;place-items:center;min-width:48px;min-height:48px;border:1px solid currentColor;border-radius:50%;font:800 12px var(--mono);letter-spacing:.08em}.stock-quote-tile-v1074>b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.stock-quote-tile-v1074>strong{font:800 17px var(--mono)}.stock-quote-tile-v1074>small{grid-column:1/-1;font:700 11px var(--mono)}
+.up{color:#61f6a6!important}.down{color:#ff6d8a!important}.flat{color:var(--muted)!important}
+.portfolio-shell-v1074{display:grid;gap:12px;min-width:0}.portfolio-head-v1074{display:flex;justify-content:space-between;align-items:end;gap:12px;padding:15px;border:1px solid rgba(125,249,255,.26);border-radius:12px;background:linear-gradient(120deg,rgba(11,36,48,.9),rgba(4,10,16,.96))}.portfolio-head-v1074>div{display:grid;gap:4px}.portfolio-head-v1074>b{font-size:20px}.portfolio-head-v1074>strong{font:800 24px var(--mono);color:var(--accent)}
+.portfolio-metrics-v1074{display:grid;grid-template-columns:repeat(3,minmax(120px,1fr));gap:7px}.portfolio-metrics-v1074>div{display:grid;gap:4px;padding:10px;border:1px solid var(--line);border-radius:9px;background:rgba(0,0,0,.18)}.portfolio-metrics-v1074 span{font-size:10px;color:var(--muted)}.portfolio-metrics-v1074 b{font:700 13px var(--mono);color:var(--text)}.portfolio-result-v1074{grid-column:span 3;background:rgba(125,249,255,.05)!important}.portfolio-result-v1074 b{font-size:17px}
+.portfolio-legacy-note-v1074{padding:9px 11px;border-left:3px solid var(--warn);background:rgba(255,190,92,.08);font-size:11px;color:var(--muted)}.portfolio-holdings-v1074{display:grid;gap:6px;max-height:330px;overflow:auto;padding-right:3px}.stock-holding-v1074{appearance:none;display:grid;grid-template-columns:58px minmax(0,1fr) auto;gap:11px;align-items:center;width:100%;padding:10px;border:1px solid var(--line);border-radius:9px;background:rgba(4,12,18,.84);color:var(--text);text-align:left;cursor:pointer}.stock-holding-v1074:hover,.stock-holding-v1074.selected{border-color:var(--accent);background:rgba(125,249,255,.07)}.stock-holding-v1074>span{display:grid;gap:3px;min-width:0}.stock-holding-v1074>span:last-child{text-align:right}.stock-holding-v1074 small{font-size:10px;color:var(--muted)}.stock-holding-symbol-v1074{display:grid!important;place-items:center;height:36px;border:1px solid var(--accent);border-radius:5px;color:var(--accent);font:800 11px var(--mono)}
+.portfolio-ledger-v1074{display:grid;gap:4px;padding-top:8px;border-top:1px solid var(--line)}.portfolio-ledger-head-v1074,.portfolio-ledger-row-v1074{display:grid;grid-template-columns:90px 70px 1fr auto;gap:10px;align-items:center;padding:7px 8px}.portfolio-ledger-head-v1074{display:flex;justify-content:space-between;color:var(--muted)}.portfolio-ledger-row-v1074{font-size:11px;background:rgba(0,0,0,.12);border-radius:6px}.portfolio-ledger-row-v1074>span:first-child{font:700 9px var(--mono)}.portfolio-ledger-row-v1074>strong{font-family:var(--mono)}
+.stock-selection-v1074{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:14px;padding:16px;border:1px solid var(--line);border-radius:14px;background:rgba(4,10,16,.86)}.stock-selection-head-v1074{grid-column:1/-1;display:grid;grid-template-columns:92px minmax(0,1fr) auto;gap:14px;align-items:start}.stock-selection-head-v1074>.entity-thumb{width:92px;height:92px}.stock-selection-head-v1074 h2,.stock-selection-head-v1074 p{margin:3px 0}.stock-selection-head-v1074 p{color:var(--muted);line-height:1.45}.stock-symbol-v1074{font:800 12px var(--mono);letter-spacing:.12em;color:var(--accent)}.stock-selection-quote-v1074{display:grid;gap:4px;min-width:220px;padding:12px;border:1px solid currentColor;border-radius:9px;text-align:right}.stock-selection-quote-v1074>b{font:800 25px var(--mono);color:var(--text)}.stock-selection-quote-v1074 span,.stock-selection-quote-v1074 small{font-size:10px;color:var(--muted)}.stock-selection-v1074>.primary{grid-column:2;grid-row:2/5;align-self:stretch;min-width:170px}.stock-chart-v1074{min-width:0}.stock-chart-v1074 svg{display:block;width:100%;height:112px;border:1px solid var(--line);border-radius:8px;background:linear-gradient(180deg,rgba(125,249,255,.04),transparent)}.stock-chart-v1074 polyline{fill:none;stroke:currentColor;stroke-width:3;vector-effect:non-scaling-stroke}.stock-chart-v1074>div{display:flex;justify-content:space-between;gap:10px;font-size:10px;color:var(--muted);padding-top:4px}.stock-position-facts-v1074{display:flex;flex-wrap:wrap;gap:6px}.stock-position-facts-v1074 span{padding:6px 8px;border:1px solid var(--line);border-radius:6px;font-size:10px}.stock-related-v1074{display:grid;gap:7px}.stock-related-v1074>div{display:flex;flex-wrap:wrap;gap:6px}.stock-related-v1074 a,.stock-related-v1074 button{padding:6px 9px;font-size:10px;text-decoration:none}
+html[data-era-theme="industrial"] .stock-quote-tile-v1074,html[data-era-theme="industrial"] .portfolio-head-v1074,html[data-era-theme="industrial"] .stock-holding-v1074,html[data-era-theme="industrial"] .stock-selection-v1074{border-radius:2px}html[data-era-theme="medieval"] .portfolio-shell-v1074,html[data-era-theme="medieval"] .stock-selection-v1074{color:#2b1c11}html[data-era-theme="medieval"] .stock-quote-tile-v1074,html[data-era-theme="medieval"] .stock-holding-v1074,html[data-era-theme="medieval"] .portfolio-head-v1074,html[data-era-theme="medieval"] .stock-selection-v1074{background:rgba(238,217,174,.82);color:#2b1c11;border-color:#8a6031}
+@media(max-width:1180px){.stock-layout-v1074{grid-template-columns:1fr}.portfolio-metrics-v1074{grid-template-columns:repeat(2,minmax(120px,1fr))}.portfolio-result-v1074{grid-column:span 2}}@media(max-width:700px){.portfolio-metrics-v1074{grid-template-columns:1fr}.portfolio-result-v1074{grid-column:auto}.stock-selection-v1074{grid-template-columns:1fr}.stock-selection-head-v1074{grid-template-columns:72px minmax(0,1fr)}.stock-selection-quote-v1074{grid-column:1/-1;text-align:left;min-width:0}.stock-selection-v1074>.primary{grid-column:1;grid-row:auto}.portfolio-ledger-row-v1074{grid-template-columns:72px 52px 1fr}.portfolio-ledger-row-v1074>span:nth-child(3){display:none}}

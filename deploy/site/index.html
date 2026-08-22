@@ -6,51 +6,36 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; upgrade-insecure-requests" />
   <meta name="referrer" content="same-origin" />
   <title>GRPGI · клиент кампании</title>
-  <link rel="stylesheet" href="./styles.css?v=1.0.51" />
+  <link rel="stylesheet" href="./styles.css?v=1.0.71.2" />
 </head>
 <body>
   <main class="shell">
     <section class="hero">
       <div class="eyebrow">Galactic RPG Interface</div>
       <h1>Клиент кампании</h1>
-      <p>Доступны два варианта: полная ПК-версия Electron-приложения для ДМа и браузерная web-версия, которая автоматически адаптируется под настольные компьютеры и телефоны.</p>
-      <div class="status">Сервер синхронизации: <code>https://sync.grpg-sync.ru</code></div>
     </section>
 
     <section class="grid">
       <article class="card">
         <div class="tag">Windows / ПК</div>
         <h2>Полное приложение</h2>
-        <p>Полная Electron-версия: режим ДМа, World Config, глобальная карта, второй экран, редакторы, боевые сцены, архив, чат, профиль и PocketBase-синхронизация.</p>
         <a class="button" href="./downloads/GRPGI-Setup-latest.exe">Скачать ПК-версию</a>
-        <p class="note">После сборки переименуй установщик в <code>GRPGI-Setup-latest.exe</code> и положи в <code>downloads</code>.</p>
       </article>
 
       <article class="card featured">
         <div class="tag">Web / ПК и телефон</div>
         <h2>Открыть в браузере</h2>
-        <p>Web-клиент для игроков и ДМа с полноценной интерактивной галактической картой на широких экранах. На телефонах этот же сайт автоматически переключается на облегчённую адаптацию без отдельного приложения. Игровой мир в браузере не кешируется постоянно; по явному выбору можно запомнить защищённую сессию и выбранный профиль на срок до 30 дней.</p>
         <a class="button" href="./app/">Открыть web-версию</a>
-        <p class="note">При входе профилем ДМа доступны все статьи и игровой контент независимо от ограничений видимости. Редактирование World Config и тяжёлые мастерские инструменты остаются в ПК-приложении.</p>
       </article>
     </section>
 
     <section class="card wide consent-panel">
-      <h2>Конфиденциальность</h2>
-      <p>Для открытия сайта и загрузки приложений отдельное согласие не требуется. Web-клиент сохраняет вход только после включения опции «Запомнить вход на этом устройстве».</p>
-      <p class="note"><a href="./privacy.html">Политика конфиденциальности</a> описывает серверную обработку, техническое локальное хранение и способы удалить сохранённый вход.</p>
+      <h2>Правила и конфиденциальность</h2>
+      <p>Для открытия страницы загрузки отдельное согласие не требуется. Перед входом в web-клиент необходимо принять правила использования и ознакомиться с условиями обработки данных.</p>
+      <p class="note"><a href="./privacy.html">Правила использования и политика конфиденциальности</a> описывают модерацию, работу игровых чатов, хранение сообщений и технических данных.</p>
     </section>
 
-    <section class="card wide">
-      <h2>Параметры подключения</h2>
-      <dl>
-        <dt>Backend</dt><dd>PocketBase</dd>
-        <dt>Server URL</dt><dd><code>https://sync.grpg-sync.ru</code></dd>
-        <dt>Campaign ID</dt><dd><code>main</code></dd>
-      </dl>
-      <p class="note">Техническое подключение PocketBase выполняется автоматически при Web-деплое. Игроку нужен только пароль своего персонажа.</p>
-    </section>
-      <footer class="site-footer"><a href="./privacy.html">Политика обработки персональных данных</a></footer>
+      <footer class="site-footer"><a href="./privacy.html">Правила использования и политика конфиденциальности</a></footer>
   </main>
 </body>
 </html>

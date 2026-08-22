@@ -76,7 +76,12 @@
       galaxyDesktopActive: false,
       galaxyCamera: null,
       archiveQuery: '',
+      archiveScopeV1079: 'section',
+      archiveCategoryV1079: 'all',
+      archiveStatusV1079: 'all',
+      archiveSortV1079: 'title',
       profileTab: 'main',
+      profileItemModal: null,
       skillZoom: 1,
       combatFullscreen: false,
       combatViewByScene: {},
@@ -173,7 +178,10 @@
 
   function syncRememberControls() {
     const control = $('#login-remember-login');
-    if (control) control.checked = Boolean(App.rememberLogin);
+    if (!control) return;
+    let hasExplicitRememberState = false;
+    try { hasExplicitRememberState = Boolean(window.localStorage.getItem(KEYS.remember)); } catch {}
+    control.checked = hasExplicitRememberState ? Boolean(App.rememberLogin) : true;
   }
 
   async function setRememberLogin(enabled, { extend = false } = {}) {
@@ -223,12 +231,29 @@
     return `${Number(value || 0).toLocaleString('ru-RU')} cr`;
   }
 
+  const GRPG_LORE_YEAR_V1075 = 3616;
+  const GRPG_LORE_ERA_V1075 = 'В.Э.';
   function formatDate(value) {
     if (!value) return '—';
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return String(value);
-    return date.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+    const source = String(value).trim();
+    const dateOnly = source.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    let day, month, hour = 0, minute = 0;
+    if (dateOnly) {
+      month = Number(dateOnly[2]);
+      day = Number(dateOnly[3]);
+    } else {
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return source;
+      day = date.getDate();
+      month = date.getMonth() + 1;
+      hour = date.getHours();
+      minute = date.getMinutes();
+    }
+    const pad = number => String(number).padStart(2, '0');
+    const dateText = `${pad(day)}.${pad(month)}.${GRPG_LORE_YEAR_V1075} ${GRPG_LORE_ERA_V1075}`;
+    return dateOnly ? dateText : `${dateText}, ${pad(hour)}:${pad(minute)}`;
   }
+  window.GRPGCosmeticDateV1075 = Object.freeze({ year: GRPG_LORE_YEAR_V1075, era: GRPG_LORE_ERA_V1075, format: formatDate });
 
   function initials(name) {
     return String(name || '?').split(/\s+/).filter(Boolean).slice(0, 2).map(word => word[0]?.toUpperCase() || '').join('') || '?';
@@ -344,7 +369,8 @@
   function renderEntityThumb(entity, mode = 'tile') {
     const image = mediaFromEntity(entity);
     const title = entity?.name || entity?.title || entity?.displayName || entity?.id || '—';
-    const cls = mode === 'hero' ? 'entity-hero-image' : 'entity-thumb';
+    const isItem = Boolean(entity?.id && App.data.items?.has?.(entity.id));
+    const cls = `${mode === 'hero' ? 'entity-hero-image' : 'entity-thumb'}${isItem ? ' entity-item-media-v1060' : ''}`;
     if (image) return `<div class="${cls}"><img src="${esc(image)}" alt="${esc(title)}" /></div>`;
     const glyph = initials(title);
     return `<div class="${cls} placeholder-thumb"><span>${esc(glyph)}</span></div>`;
@@ -430,38 +456,127 @@
     saveMobileReadMarkers(markers);
   }
 
+  const ARCHIVE_FAVORITES_KEY_V1079 = 'grpg.web.archiveFavorites.v1079';
+  const ARCHIVE_RECENT_KEY_V1079 = 'grpg.web.archiveRecent.v1079';
+  const ARCHIVE_SECTION_LABELS_V1079 = { articles: 'Статьи', planets: 'Планеты', systems: 'Системы', equipment: 'Снаряжение' };
 
-  function archiveCategoryLabel(item) {
-    return String(item?.category || item?.type || item?.section || 'Без категории').trim() || 'Без категории';
+  function archiveUserKeyWebV1079() {
+    return String(App.session?.userId || 'guest');
   }
 
-  function groupedArchiveMarkup(items = [], entity = null) {
+  function readArchiveLocalMapV1079(key) {
+    try {
+      const value = JSON.parse(window.localStorage.getItem(key) || '{}');
+      return value && typeof value === 'object' ? value : {};
+    } catch {
+      return {};
+    }
+  }
+
+  function writeArchiveLocalMapV1079(key, value) {
+    try { window.localStorage.setItem(key, JSON.stringify(value || {})); } catch {}
+  }
+
+  function archiveEntryKeyV1079(itemOrType, id = '') {
+    if (itemOrType && typeof itemOrType === 'object') return `${String(itemOrType._type || '')}:${String(itemOrType.id || '')}`;
+    return `${String(itemOrType || '')}:${String(id || '')}`;
+  }
+
+  function archiveFavoritesV1079() {
+    const map = readArchiveLocalMapV1079(ARCHIVE_FAVORITES_KEY_V1079);
+    return new Set((map[archiveUserKeyWebV1079()] || []).map(String));
+  }
+
+  function toggleArchiveFavoriteV1079(type, id) {
+    const map = readArchiveLocalMapV1079(ARCHIVE_FAVORITES_KEY_V1079);
+    const user = archiveUserKeyWebV1079();
+    const set = new Set((map[user] || []).map(String));
+    const key = archiveEntryKeyV1079(type, id);
+    if (set.has(key)) set.delete(key); else set.add(key);
+    map[user] = Array.from(set);
+    writeArchiveLocalMapV1079(ARCHIVE_FAVORITES_KEY_V1079, map);
+  }
+
+  function archiveRecentV1079() {
+    const map = readArchiveLocalMapV1079(ARCHIVE_RECENT_KEY_V1079);
+    return Array.isArray(map[archiveUserKeyWebV1079()]) ? map[archiveUserKeyWebV1079()].map(String) : [];
+  }
+
+  function rememberArchiveRecentV1079(type, id) {
+    const map = readArchiveLocalMapV1079(ARCHIVE_RECENT_KEY_V1079);
+    const user = archiveUserKeyWebV1079();
+    const key = archiveEntryKeyV1079(type, id);
+    map[user] = [key, ...(Array.isArray(map[user]) ? map[user] : []).filter(value => String(value) !== key)].slice(0, 30);
+    writeArchiveLocalMapV1079(ARCHIVE_RECENT_KEY_V1079, map);
+  }
+
+  function archiveSectionForTypeV1079(type) {
+    return ({ article: 'articles', planet: 'planets', system: 'systems', item: 'equipment' })[String(type || '')] || 'articles';
+  }
+
+  function archiveBaseCategoryV1079(item = {}) {
+    if (item._type === 'article') return String(item.category || item.section || 'Без категории').trim() || 'Без категории';
+    if (item._type === 'item') {
+      const labels = { weapon: 'Оружие', armor: 'Броня', implant: 'Импланты', stock: 'Акции', equipment: 'Снаряжение', gear: 'Снаряжение' };
+      return labels[String(item.type || '').toLowerCase()] || String(item.category || item.type || 'Прочее').trim() || 'Прочее';
+    }
+    if (item._type === 'planet') return String(item.location?.system || item.location?.obj || item.code || 'Другие планеты').trim() || 'Другие планеты';
+    return 'Звёздные системы';
+  }
+
+  function archiveCategoryV1079(item = {}, globalScope = false) {
+    const base = archiveBaseCategoryV1079(item);
+    return globalScope ? `${ARCHIVE_SECTION_LABELS_V1079[archiveSectionForTypeV1079(item._type)]} · ${base}` : base;
+  }
+
+  function normalizeArchiveSearchV1079(value) {
+    return String(value ?? '').replace(/<[^>]*>/g, ' ').replace(/&[a-z#0-9]+;/gi, ' ').replace(/ё/g, 'е').replace(/\s+/g, ' ').trim().toLowerCase();
+  }
+
+  function archiveSearchValuesV1079(value, output = [], depth = 0, key = '') {
+    if (value == null || depth > 4) return output;
+    if (typeof value === 'string' || typeof value === 'number') {
+      const text = String(value);
+      if (!/^data:/i.test(text) && !/(image|avatar|media|thumb|background|asset)/i.test(key)) output.push(text);
+      return output;
+    }
+    if (Array.isArray(value)) {
+      value.slice(0, 100).forEach(entry => archiveSearchValuesV1079(entry, output, depth + 1, key));
+      return output;
+    }
+    if (typeof value === 'object') Object.entries(value).forEach(([childKey, entry]) => archiveSearchValuesV1079(entry, output, depth + 1, childKey));
+    return output;
+  }
+
+
+  function groupedArchiveMarkup(items = [], entity = null, options = {}) {
     if (!items.length) return '<div class="placeholder">Ничего не найдено.</div>';
+    const globalScope = Boolean(options.globalScope);
+    const forceOpen = Boolean(options.forceOpen);
+    const favorites = archiveFavoritesV1079();
     const groups = new Map();
     items.forEach(item => {
-      const key = item?._type === 'article' ? archiveCategoryLabel(item) : '';
+      const key = archiveCategoryV1079(item, globalScope);
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key).push(item);
     });
-    const ordered = Array.from(groups.entries()).sort((a, b) => {
-      if (!a[0] && b[0]) return -1;
-      if (a[0] && !b[0]) return 1;
-      return a[0].localeCompare(b[0], 'ru');
-    });
-    return ordered.map(([category, group]) => `
-      ${category ? `<div class="archive-category-title">${esc(category)}</div>` : ''}
-      ${group.map(item => {
+    const ordered = Array.from(groups.entries()).sort((a, b) => a[0].localeCompare(b[0], 'ru'));
+    return ordered.map(([category, group], groupIndex) => {
+      const containsSelected = group.some(item => item.id === entity?.id && item._type === entity?._type);
+      return `<details class="archive-group-v1079" ${forceOpen || containsSelected || groupIndex === 0 ? 'open' : ''}>
+        <summary><span>${esc(category)}</span><span class="archive-group-count-v1079">${group.length}</span></summary>
+        <div class="archive-group-list-v1079">${group.map(item => {
         const unread = item._type === 'article' && !isArchiveArticleRead(item.id);
+        const favorite = favorites.has(archiveEntryKeyV1079(item));
         return `
-          <article class="archive-tile ${item.id === entity?.id ? 'active' : ''} ${unread ? 'unread' : ''}" style="cursor:pointer" data-action="select-archive" data-type="${esc(item._type)}" data-id="${esc(item.id)}">
-            ${renderEntityThumb(item)}
-            <button class="archive-tile-btn" type="button" data-action="select-archive" data-type="${esc(item._type)}" data-id="${esc(item.id)}">
-              <span>${unread ? '<b class="new-badge">NEW</b> ' : ''}${esc(archiveItemLabel(item))}</span>
-            </button>
+          <article class="archive-entry-v1079 ${item.id === entity?.id && item._type === entity?._type ? 'active' : ''} ${unread ? 'unread' : ''}" data-action="select-archive" data-type="${esc(item._type)}" data-id="${esc(item.id)}" tabindex="0" role="button">
+            ${renderEntityAvatar(item, archiveItemLabel(item), 'sm')}
+            <div class="archive-entry-copy-v1079"><div class="archive-entry-title-v1079">${unread ? '<b class="new-badge">NEW</b> ' : ''}${esc(archiveItemLabel(item))}</div><div class="small-note archive-entry-summary-v1079">${esc(item.summary || item.subtitle || archiveBaseCategoryV1079(item))}</div></div>
+            <button class="archive-favorite-v1079 ${favorite ? 'active' : ''}" type="button" data-action="archive-favorite-v1079" data-type="${esc(item._type)}" data-id="${esc(item.id)}" aria-label="${favorite ? 'Убрать из избранного' : 'Добавить в избранное'}">${favorite ? '★' : '☆'}</button>
           </article>
         `;
-      }).join('')}
-    `).join('');
+      }).join('')}</div></details>`;
+    }).join('');
   }
 
   function sortArchiveItemsForMobile(items = [], tab = '') {
@@ -1503,7 +1618,39 @@
     return true;
   }
 
-  function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerColor = '', markerStyle = 'orbital') {
+function computeWebGalaxyMarkerScaleMapV1058(points = [], dpr = 1) {
+  const items = Array.isArray(points) ? points.filter(point => point && Number.isFinite(point.x) && Number.isFinite(point.y)) : [];
+  const scaleMap = new Map();
+  if (!items.length) return scaleMap;
+  const baseRadius = 46 * Math.max(1, Number(dpr || 1));
+  for (const point of items) {
+    let density = 0;
+    let severe = 0;
+    for (const other of items) {
+      if (!other || other === point) continue;
+      const dist = Math.hypot(point.x - other.x, point.y - other.y);
+      if (dist <= baseRadius * 1.55) density += 1;
+      if (dist <= baseRadius * 0.95) severe += 1;
+    }
+    const scale = clamp(1 - Math.max(0, density - 1) * .07 - severe * .045, .58, 1);
+    scaleMap.set(String(point.id || ''), scale);
+  }
+  return scaleMap;
+}
+
+function webGalaxyBackgroundSourcesV1058(layerKey) {
+  if (layerKey === 'bloom') return [
+    './assets/images/galaxy_bigstars.png',
+    './assets/images/galaxy2.png'
+  ];
+  return [
+    './assets/images/galaxy_mainstars.png',
+    './assets/images/galaxy1.png'
+  ];
+}
+
+function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerColor = '', markerStyle = 'orbital') {
+
     const color = String(markerColor || palette.marker || '#7df9ff').trim() || '#7df9ff';
     const style = WEB_ERA_MARKER_ASSET_FILES_V1055[markerStyle] ? markerStyle : 'orbital';
     if (drawWebEraMarkerSpriteV1055(ctx, style, p.x, p.y, r, color, palette, active)) return;
@@ -1562,6 +1709,27 @@
     planetPoints: [],
     stars: [],
     images: { main: null, bloom: null },
+    loadEraImages(force = false) {
+      const loadLayer = (key, sources) => {
+        const existing = this.images[key];
+        if (!force && existing?.__sourcesKey === sources.join('|')) return;
+        let index = 0;
+        const tryLoad = () => {
+          if (index >= sources.length) {
+            this.images[key] = null;
+            return;
+          }
+          const src = sources[index++];
+          const img = new Image();
+          img.onload = () => { img.__sourcesKey = sources.join('|'); this.images[key] = img; };
+          img.onerror = tryLoad;
+          img.src = src;
+        };
+        tryLoad();
+      };
+      loadLayer('main', webGalaxyBackgroundSourcesV1058('main'));
+      loadLayer('bloom', webGalaxyBackgroundSourcesV1058('bloom'));
+    },
     isMounted() {
       return Boolean(this.canvas && this.canvas.isConnected && this.ctx);
     },
@@ -1595,8 +1763,7 @@
       if (!this.canvas || !this.host) return;
       this.ctx = this.canvas.getContext('2d', { alpha: false });
       this.restoreCamera();
-      if (!this.images.main) { const img = new Image(); img.src = './assets/images/galaxy1.png'; this.images.main = img; }
-      if (!this.images.bloom) { const img = new Image(); img.src = './assets/images/galaxy2.png'; this.images.bloom = img; }
+      this.loadEraImages(true);
       if (!this.stars.length) {
         this.stars = Array.from({ length: 360 }, (_, index) => ({
           x: ((index * 73) % 997) / 997,
@@ -1747,8 +1914,10 @@
       const cx = W / 2 + (.5 - this.camera.x) * zoom * W;
       const cy = H / 2 + (.5 - this.camera.y) * zoom * H;
       ctx.save();
+      const medievalBackdrop = String(document.documentElement?.dataset?.eraTheme || '') === 'medieval';
       ctx.globalCompositeOperation = 'screen';
-      ctx.globalAlpha = alpha;
+      ctx.globalAlpha = medievalBackdrop ? alpha * .78 : alpha;
+      ctx.filter = medievalBackdrop ? 'sepia(.88) saturate(.48) brightness(.78) contrast(.92)' : 'none';
       ctx.drawImage(img, cx - dw / 2, cy - dh / 2, dw, dh);
       ctx.restore();
     },
@@ -1768,6 +1937,20 @@
       // Background, stars, routes and markers now share one camera transform.
       this.drawSceneImage(ctx, this.images.bloom, .24, 1.08);
       this.drawSceneImage(ctx, this.images.main, .5, 1.02);
+
+      if (palette.era === 'medieval') {
+        ctx.save();
+        const parchment = ctx.createRadialGradient(W * .48, H * .42, 0, W * .5, H * .5, Math.max(W, H) * .78);
+        parchment.addColorStop(0, 'rgba(238,218,176,.28)');
+        parchment.addColorStop(.58, 'rgba(194,151,91,.22)');
+        parchment.addColorStop(1, 'rgba(92,54,28,.28)');
+        ctx.fillStyle = parchment;
+        ctx.fillRect(0, 0, W, H);
+        ctx.globalCompositeOperation = 'multiply';
+        ctx.fillStyle = 'rgba(137,88,45,.20)';
+        ctx.fillRect(0, 0, W, H);
+        ctx.restore();
+      }
 
       ctx.save();
       for (const star of this.stars) {
@@ -1797,11 +1980,14 @@
           ctx.restore();
         }
       }
-      for (const system of this.visibleSystems()) {
+      const visibleSystems = this.visibleSystems().map(system => ({ system, p: this.worldToScreen(system.pos?.x, system.pos?.y) }));
+      const markerScaleMap = !this.activeSystemId
+        ? computeWebGalaxyMarkerScaleMapV1058(visibleSystems.map(({ system, p }) => ({ id: system.id, x: p.x, y: p.y })), this.dpr)
+        : new Map();
+      for (const { system, p } of visibleSystems) {
         const active = system.id === this.activeSystemId;
         if (this.activeSystemId && !active) continue;
-        const p = this.worldToScreen(system.pos?.x, system.pos?.y);
-        const r = (active ? 12 : 8) * 1.4 * this.dpr;
+        const r = ((active ? 12 : 8) * 1.4 * this.dpr) * (markerScaleMap.get(system.id) || 1);
         this.systemPoints.push({ id: system.id, x: p.x, y: p.y, r: Math.max(22 * this.dpr, r * 2) });
         drawWebEraSystemMarkerV1050(ctx, p, r, palette, active, system.color || palette.marker, system.markerStyle || 'orbital');
         ctx.save();
@@ -2084,15 +2270,14 @@
   function archiveCollections() {
     const playerId = App.session?.userId || '';
     return {
-      articles: App.data.articleList.filter(item => visibleForPlayer(item, playerId)).map(item => ({ ...item, _type: 'article' })),
       planets: Array.from(App.data.planets.values()).filter(item => visibleForPlayer(item, playerId)).map(item => ({ ...item, _type: 'planet' })),
-      tasks: App.data.tasksList.filter(item => visibleForPlayer(item, playerId)).map(item => ({ ...item, _type: 'task' })),
-      news: App.data.newsList.filter(item => visibleForPlayer(item, playerId)).map(item => ({ ...item, _type: 'news' }))
+      equipment: Array.from(App.data.items.values()).filter(item => visibleForPlayer(item, playerId)).map(item => ({ ...item, _type: 'item' })),
+      articles: App.data.articleList.filter(item => visibleForPlayer(item, playerId)).map(item => ({ ...item, _type: 'article' })),
+      systems: App.data.systems.filter(item => visibleForPlayer(item, playerId)).map(item => ({ ...item, _type: 'system' }))
     };
   }
 
   function currentArchiveEntity() {
-    if (App.ui.archiveTab === 'systems') App.ui.archiveTab = 'articles';
     const collections = archiveCollections();
     const items = sortArchiveItemsForMobile(collections[App.ui.archiveTab] || [], App.ui.archiveTab);
     let entity = items.find(item => item.id === App.ui.selectedArchiveId) || null;
@@ -2102,6 +2287,40 @@
       App.ui.selectedArchiveType = entity._type;
     }
     return entity;
+  }
+
+  function filterArchiveItemsV1079(collections = archiveCollections()) {
+    const globalScope = App.ui.archiveScopeV1079 === 'all';
+    const base = globalScope
+      ? ['articles', 'planets', 'systems', 'equipment'].flatMap(section => collections[section] || [])
+      : [...(collections[App.ui.archiveTab] || [])];
+    const categories = Array.from(new Set(base.map(item => archiveCategoryV1079(item, globalScope)))).sort((a, b) => a.localeCompare(b, 'ru'));
+    if (App.ui.archiveCategoryV1079 !== 'all' && !categories.includes(App.ui.archiveCategoryV1079)) App.ui.archiveCategoryV1079 = 'all';
+    const favorites = archiveFavoritesV1079();
+    const recent = archiveRecentV1079();
+    const recentIndex = new Map(recent.map((key, index) => [key, index]));
+    const tokens = normalizeArchiveSearchV1079(App.ui.archiveQuery || '').split(' ').filter(Boolean);
+    const rows = base.filter(item => {
+      const key = archiveEntryKeyV1079(item);
+      if (App.ui.archiveCategoryV1079 !== 'all' && archiveCategoryV1079(item, globalScope) !== App.ui.archiveCategoryV1079) return false;
+      if (App.ui.archiveStatusV1079 === 'unread' && (item._type !== 'article' || isArchiveArticleRead(item.id))) return false;
+      if (App.ui.archiveStatusV1079 === 'favorites' && !favorites.has(key)) return false;
+      if (App.ui.archiveStatusV1079 === 'recent' && !recentIndex.has(key)) return false;
+      if (!tokens.length) return true;
+      const haystack = normalizeArchiveSearchV1079(archiveSearchValuesV1079(item).join(' '));
+      return tokens.every(token => haystack.includes(token));
+    });
+    rows.sort((a, b) => {
+      if (App.ui.archiveStatusV1079 === 'recent') return (recentIndex.get(archiveEntryKeyV1079(a)) ?? 999) - (recentIndex.get(archiveEntryKeyV1079(b)) ?? 999);
+      if (App.ui.archiveSortV1079 === 'unread') {
+        const unreadA = a._type === 'article' && !isArchiveArticleRead(a.id);
+        const unreadB = b._type === 'article' && !isArchiveArticleRead(b.id);
+        if (unreadA !== unreadB) return Number(unreadB) - Number(unreadA);
+      }
+      const titleOrder = archiveItemLabel(a).localeCompare(archiveItemLabel(b), 'ru');
+      return App.ui.archiveSortV1079 === 'title_desc' ? -titleOrder : titleOrder;
+    });
+    return { base, rows, categories, globalScope };
   }
 
   function renderEntityBody(entity) {
@@ -2171,6 +2390,27 @@
         </article>
       `;
     }
+    if (type === 'item') {
+      const req = entity.requirements && typeof entity.requirements === 'object' ? entity.requirements : {};
+      const requirementText = Object.entries(req).filter(([, value]) => value !== '' && value != null).map(([key, value]) => `${key.toUpperCase()}: ${value}`).join(' · ');
+      return `
+        <article class="article-card archive-item-detail-v1060">
+          ${renderEntityThumb(entity, 'hero')}
+          <div class="eyebrow">Снаряжение</div>
+          <h3>${esc(entity.name || entity.id)}</h3>
+          <div class="small-note">${esc(entity.rarity || entity.type || entity.category || '')}</div>
+          <div class="pill-row" style="margin-top:12px;">
+            ${entity.damage ? `<div class="pill">Урон: ${esc(entity.damage)}</div>` : ''}
+            ${entity.hitBonus != null && entity.hitBonus !== '' ? `<div class="pill">Попадание: ${Number(entity.hitBonus) >= 0 ? '+' : ''}${esc(entity.hitBonus)}</div>` : ''}
+            ${entity.armorClass != null && entity.armorClass !== '' ? `<div class="pill">КБ: ${esc(entity.armorClass)}</div>` : ''}
+            ${entity.requiredEnergy != null && entity.requiredEnergy !== '' ? `<div class="pill">Энергия: ${esc(entity.requiredEnergy)}</div>` : ''}
+          </div>
+          <div class="divider"></div>
+          <div class="article-body"><p>${esc(entity.desc || entity.description || entity.summary || 'Описание предмета не задано.')}</p></div>
+          ${requirementText ? `<div class="small-note" style="margin-top:12px;"><b>Требования:</b> ${esc(requirementText)}</div>` : ''}
+        </article>
+      `;
+    }
     if (type === 'news' || type === 'task') {
       return `
         <article class="article-card">
@@ -2187,43 +2427,42 @@
   }
 
   function renderArchive() {
-    if (App.ui.archiveTab === 'systems') App.ui.archiveTab = 'articles';
-    setTopbar('Архив', 'Список статей расположен рядом с материалом и разделён по категориям');
+    if (!['planets', 'equipment', 'articles', 'systems'].includes(App.ui.archiveTab)) App.ui.archiveTab = 'articles';
+    setTopbar('Архив', 'Планеты, снаряжение, статьи и системы');
     const root = $('#screen-archive');
     const collections = archiveCollections();
-    const rawList = sortArchiveItemsForMobile(collections[App.ui.archiveTab] || [], App.ui.archiveTab);
-    const query = slugText(App.ui.archiveQuery || '');
-    const activeList = query
-      ? rawList.filter(item => slugText([archiveItemLabel(item), item.category, item.summary, item.subtitle, item.location?.system, item.markerLabel].filter(Boolean).join(' ')).includes(query))
-      : rawList;
-    let entity = activeList.find(item => item.id === App.ui.selectedArchiveId) || null;
-    if (!entity && activeList[0]) {
-      entity = activeList[0];
-      App.ui.selectedArchiveId = entity.id;
-      App.ui.selectedArchiveType = entity._type;
-    }
-    const isSelectedUnreadArticle = entity?._type === 'article' && !isArchiveArticleRead(entity.id);
+    const result = filterArchiveItemsV1079(collections);
+    const entity = result.rows.find(item => item.id === App.ui.selectedArchiveId && item._type === App.ui.selectedArchiveType) || null;
+    const forceGroupsOpen = Boolean(normalizeArchiveSearchV1079(App.ui.archiveQuery)) || App.ui.archiveCategoryV1079 !== 'all' || App.ui.archiveStatusV1079 !== 'all';
+    const tabButton = (tab, label) => `<button class="chip-btn ${App.ui.archiveTab === tab && App.ui.archiveScopeV1079 !== 'all' ? 'active' : ''}" data-action="archive-tab" data-tab="${tab}">${label} · ${(collections[tab] || []).length}</button>`;
     root.innerHTML = `
-      <div class="segmented">
-        <button class="chip-btn ${App.ui.archiveTab === 'articles' ? 'active' : ''}" data-action="archive-tab" data-tab="articles">Статьи</button>
-        <button class="chip-btn ${App.ui.archiveTab === 'planets' ? 'active' : ''}" data-action="archive-tab" data-tab="planets">Планеты</button>
-        <button class="chip-btn ${App.ui.archiveTab === 'tasks' ? 'active' : ''}" data-action="archive-tab" data-tab="tasks">Задания</button>
-        <button class="chip-btn ${App.ui.archiveTab === 'news' ? 'active' : ''}" data-action="archive-tab" data-tab="news">Новости</button>
+      <div class="segmented archive-top-nav-v1060">
+        ${tabButton('articles', 'Статьи')}
+        ${tabButton('planets', 'Планеты')}
+        ${tabButton('systems', 'Системы')}
+        ${tabButton('equipment', 'Снаряжение')}
       </div>
-      <div class="archive-search-row" style="margin-top:14px;">
-        <input class="input" id="archive-search-input" placeholder="Поиск по текущему разделу" value="${esc(App.ui.archiveQuery || '')}" />
+      <div class="archive-search-row archive-tools-v1079" style="margin-top:14px;">
+        <div class="archive-search-line-v1079"><input class="input" id="archive-search-input" placeholder="Название, категория или текст материала" value="${esc(App.ui.archiveQuery || '')}" /><button class="secondary archive-clear-v1079" type="button" data-action="archive-clear-v1079" ${App.ui.archiveQuery ? '' : 'disabled'}>Очистить</button></div>
+        <div class="archive-filter-grid-v1079">
+          <label class="field"><span>Область поиска</span><select class="input" id="archive-scope-v1079"><option value="section" ${App.ui.archiveScopeV1079 === 'section' ? 'selected' : ''}>Текущий раздел</option><option value="all" ${App.ui.archiveScopeV1079 === 'all' ? 'selected' : ''}>Весь архив</option></select></label>
+          <label class="field"><span>Категория</span><select class="input" id="archive-category-v1079"><option value="all">Все категории</option>${result.categories.map(category => `<option value="${esc(category)}" ${App.ui.archiveCategoryV1079 === category ? 'selected' : ''}>${esc(category)}</option>`).join('')}</select></label>
+          <label class="field"><span>Подборка</span><select class="input" id="archive-status-v1079"><option value="all" ${App.ui.archiveStatusV1079 === 'all' ? 'selected' : ''}>Все материалы</option><option value="unread" ${App.ui.archiveStatusV1079 === 'unread' ? 'selected' : ''}>Новые</option><option value="favorites" ${App.ui.archiveStatusV1079 === 'favorites' ? 'selected' : ''}>Избранное</option><option value="recent" ${App.ui.archiveStatusV1079 === 'recent' ? 'selected' : ''}>Недавние</option></select></label>
+          <label class="field"><span>Сортировка</span><select class="input" id="archive-sort-v1079"><option value="title" ${App.ui.archiveSortV1079 === 'title' ? 'selected' : ''}>Название: А—Я</option><option value="title_desc" ${App.ui.archiveSortV1079 === 'title_desc' ? 'selected' : ''}>Название: Я—А</option><option value="unread" ${App.ui.archiveSortV1079 === 'unread' ? 'selected' : ''}>Сначала новые</option></select></label>
+        </div>
+        <div class="archive-results-meta-v1079"><span>Найдено: <b>${result.rows.length}</b></span><span>Доступно: ${result.base.length}</span></div>
       </div>
       <div class="archive-split">
         <aside class="archive-sidebar">
-          <div class="archive-list-title"><div class="eyebrow">Список</div><div class="small-note">Категории берутся из поля статьи «Категория».</div></div>
-          <div class="archive-catalog archive-catalog-side">${groupedArchiveMarkup(activeList, entity)}</div>
+          <div class="archive-list-title"><div class="eyebrow">Каталог</div><div class="small-note">Разверните нужную тематическую группу и выберите материал.</div></div>
+          <div class="archive-catalog archive-catalog-side">${groupedArchiveMarkup(result.rows, entity, { globalScope: result.globalScope, forceOpen: forceGroupsOpen })}</div>
         </aside>
         <div class="archive-detail-top archive-detail-pane">
-          ${renderEntityBody(entity)}
+          <button class="secondary archive-back-v1079" type="button" data-action="archive-back-v1079">К каталогу</button>
+          ${entity ? renderEntityBody(entity) : '<div class="placeholder">Выберите материал в каталоге. Поиск проверяет название, категорию, краткое описание и полный текст.</div>'}
         </div>
       </div>
     `;
-    if (isSelectedUnreadArticle) markArchiveArticleRead(entity.id);
     root.querySelectorAll('[data-article-body] a').forEach(link => {
       link.addEventListener('click', event => {
         const href = link.getAttribute('href') || '';
@@ -2248,7 +2487,6 @@
     root.innerHTML = `
       <div class="hero-card" style="padding:16px;">
         <div class="section-head"><div><div class="eyebrow">LOCAL TERMINAL</div><div class="section-title">${esc(planet.name)}</div></div><div class="pill">Баланс: ${formatCredits(player.credits || 0)}</div></div>
-        <div class="small-note">Покупка в мобильном клиенте пишет только в строку текущего игрока в таблице <code>${esc(App.config.playerTableName)}</code>. Общий мир и снапшот кампании не перезаписываются.</div>
       </div>
       <div class="planet-grid" style="margin-top:16px;">
         ${market.map(entry => {
@@ -2903,18 +3141,78 @@
     </article>`).join('')}</div>`;
   }
 
+  function profileItemDetailMarkupV1060(item, meta = {}) {
+    if (!item) return '<div class="placeholder">Предмет не найден.</div>';
+    const req = item.requirements && typeof item.requirements === 'object' ? item.requirements : {};
+    const reqText = Object.entries(req).filter(([, value]) => value !== '' && value != null).map(([key, value]) => `${key.toUpperCase()}: ${value}`).join(' · ');
+    return `
+      <div class="profile-item-modal-card-v1060">
+        <button class="profile-item-modal-close-v1060" type="button" data-action="profile-item-close" aria-label="Закрыть">×</button>
+        ${renderEntityThumb(item, 'hero')}
+        <div class="eyebrow">${esc(meta.label || item.type || item.category || 'Снаряжение')}</div>
+        <h2>${esc(item.name || item.id)}</h2>
+        <div class="small-note">${esc(item.rarity || '')}</div>
+        <div class="pill-row profile-item-modal-pills-v1060">
+          ${meta.qty ? `<div class="pill">Количество: ${Number(meta.qty)}</div>` : ''}
+          ${meta.registrationEquipment ? `<div class="pill">Стоимость выбора: ${Number(meta.creationCost || 0)} очк.</div>` : ''}
+          ${item.damage ? `<div class="pill">Урон: ${esc(item.damage)}</div>` : ''}
+          ${item.hitBonus != null && item.hitBonus !== '' ? `<div class="pill">Попадание: ${Number(item.hitBonus) >= 0 ? '+' : ''}${esc(item.hitBonus)}</div>` : ''}
+          ${item.armorClass != null && item.armorClass !== '' ? `<div class="pill">КБ: ${esc(item.armorClass)}</div>` : ''}
+          ${item.requiredEnergy != null && item.requiredEnergy !== '' ? `<div class="pill">Энергия: ${esc(item.requiredEnergy)}</div>` : ''}
+          <div class="pill">Масса: ${Number(item.mass ?? item.weight ?? 1)}</div>
+          <div class="pill">Размер: ${Math.max(1, Number(item.inventoryWidth ?? item.sizeWidth ?? 1))}×${Math.max(1, Number(item.inventoryHeight ?? item.sizeHeight ?? 1))}</div>
+        </div>
+        <div class="divider"></div>
+        <div class="article-body"><p>${esc(item.desc || item.description || item.summary || 'Описание предмета не задано.')}</p></div>
+        ${reqText ? `<div class="small-note"><b>Требования:</b> ${esc(reqText)}</div>` : ''}
+        ${meta.registrationEquipment ? `<div class="registration-equipment-modal-actions-v1072"><button class="primary" type="button" data-registration-equipment-select-v1072 data-item-id="${esc(item.id)}">${meta.selected ? 'УБРАТЬ ИЗ ВЫБРАННОГО' : 'ВЫБРАТЬ'}</button></div>` : ''}
+      </div>`;
+  }
+
+  function closeProfileItemModalV1060() {
+    App.ui.profileItemModal = null;
+    document.getElementById('profile-item-modal-v1060')?.remove();
+    document.body.classList.remove('profile-item-modal-open-v1060');
+  }
+
+  function openProfileItemModalV1060(itemId, meta = {}) {
+    const item = App.data.items.get(String(itemId || ''));
+    if (!item) return notify('Предмет не найден', 'warn');
+    closeProfileItemModalV1060();
+    App.ui.profileItemModal = { itemId: item.id, ...meta };
+    const modal = document.createElement('div');
+    modal.id = 'profile-item-modal-v1060';
+    modal.className = 'profile-item-modal-v1060';
+    modal.dataset.action = 'profile-item-close';
+    modal.innerHTML = `<div class="profile-item-modal-shell-v1060" data-profile-item-modal-shell>${profileItemDetailMarkupV1060(item, meta)}</div>`;
+    document.body.appendChild(modal);
+    document.body.classList.add('profile-item-modal-open-v1060');
+  }
+
+  function renderProfileCompactItemCardV1060(item, meta = {}) {
+    return `
+      <article class="entity-card profile-item-card-v1060" data-action="profile-item" data-item-id="${esc(item.id)}" data-item-label="${esc(meta.label || '')}" data-item-qty="${Number(meta.qty || 0)}" tabindex="0" role="button">
+        ${renderEntityThumb(item)}
+        <div class="profile-item-card-copy-v1060">
+          <div class="eyebrow">${esc(meta.label || item.type || item.category || 'Предмет')}</div>
+          <h3>${esc(item.name || item.id)}</h3>
+          ${meta.qty ? `<div class="pill">×${Number(meta.qty)}</div>` : ''}
+        </div>
+      </article>`;
+  }
+
   function renderProfile() {
     const root = $('#screen-profile');
     const player = currentPlayer();
     const planet = currentPlanet();
     const row = App.data.playerRows.get(player?.id || '');
     if (!player) {
-      setTopbar('Профиль', 'Личные данные игрока, экипировка, импланты и состояние синхронизации');
+      setTopbar('Профиль', '');
       root.innerHTML = '<div class="placeholder">Профиль не выбран.</div>';
       return;
     }
     const profileTab = App.ui.profileTab === 'skills' ? 'skills' : 'main';
-    const tabsRow = `<div class="segmented profile-tabs-web">
+    const tabsRow = `<div class="segmented profile-tabs-web era-article-top-v1060">
       <button class="chip-btn ${profileTab === 'main' ? 'active' : ''}" type="button" data-action="profile-tab" data-tab="main">Профиль</button>
       <button class="chip-btn ${profileTab === 'skills' ? 'active' : ''}" type="button" data-action="profile-tab" data-tab="skills">Навыки · ${Number(player.skillPoints || 0)} очк.</button>
     </div>`;
@@ -2926,7 +3224,7 @@
       return;
     }
     hideWebSkillTipEl();
-    setTopbar('Профиль', 'Личные данные игрока, экипировка, импланты и состояние синхронизации');
+    setTopbar('Профиль', '');
     const stats = player.stats || {};
     const inventory = Array.isArray(player.inventory) ? player.inventory : [];
     const equipmentSlots = player.equipmentSlots || {};
@@ -2961,52 +3259,33 @@
           <div class="info-card"><div class="k">Локация</div><div class="v">${esc(currentSystem()?.name || 'Система не задана')}</div></div>
         </div>
         ${(player.lore || player.notes) ? `<div class="divider"></div><div class="article-body"><p>${esc(player.lore || '')}</p><p>${esc(player.notes || '')}</p></div>` : ''}
+        <div class="divider"></div><div class="section-head era-article-top-v1060"><div class="section-title">Личность</div></div><div class="personality-profile-grid-v1066"><div class="info-card"><div class="k">Черта характера</div><div class="v">${esc(player.personalityTrait || 'Не указана')}</div></div><div class="info-card"><div class="k">Идеал</div><div class="v">${esc(player.ideal || 'Не указан')}</div></div><div class="info-card"><div class="k">Слабость</div><div class="v">${esc(player.weakness || 'Не указана')}</div></div></div>
       </div>
-      <div class="section-head" style="margin-top:18px"><div class="section-title">Текущее снаряжение</div></div>
-      <div class="inventory-list">
-        ${equippedCards.map(({ slot, item }) => `
-          <article class="entity-card">
-            ${renderEntityThumb(item)}
-            <div class="eyebrow">${esc(equipmentLabel(slot))}</div>
-            <h3>${esc(item.name)}</h3>
-            <div class="small-note">${esc(item.desc || item.rarity || '')}</div>
-            <div class="pill-row" style="margin-top:12px;">
-              ${item.damage ? `<div class="pill">Урон: ${esc(item.damage)}</div>` : ''}
-              ${item.weaponSlot ? `<div class="pill">Слот: ${esc(item.weaponSlot)}</div>` : ''}
-              ${item.rarity ? `<div class="pill">${esc(item.rarity)}</div>` : ''}
-            </div>
-          </article>
-        `).join('') || '<div class="placeholder">Снаряжение не задано.</div>'}
+      <div class="section-head era-article-top-v1060" style="margin-top:18px"><div class="section-title">Текущее снаряжение</div></div>
+      <div class="inventory-list profile-item-grid-v1060">
+        ${equippedCards.map(({ slot, item }) => renderProfileCompactItemCardV1060(item, { label: equipmentLabel(slot) })).join('') || '<div class="placeholder">Снаряжение не задано.</div>'}
       </div>
-      <div class="section-head" style="margin-top:18px"><div class="section-title">Инвентарь</div></div>
-      <div class="inventory-list">
+      <div class="section-head era-article-top-v1060" style="margin-top:18px"><div class="section-title">Инвентарь</div></div>
+      <div class="inventory-list profile-item-grid-v1060">
         ${inventory.map(entry => {
-          const item = App.data.items.get(entry.itemId) || { name: entry.itemId, desc: '' };
-          return `
-            <article class="entity-card">
-              ${renderEntityThumb(item)}
-              <div class="eyebrow">${esc(item.type || 'предмет')}</div>
-              <h3>${esc(item.name)}</h3>
-              <div class="small-note">${esc(item.desc || '')}</div>
-              <div class="pill-row" style="margin-top:12px;"><div class="pill">Количество: ${Number(entry.qty || 0)}</div></div>
-            </article>
-          `;
+          const item = App.data.items.get(entry.itemId) || { id: entry.itemId, name: entry.itemId, desc: '' };
+          return renderProfileCompactItemCardV1060(item, { label: normalizedItemTypeV1052(item)==='stock'?'Акции':(item.type||item.category||'Предмет'), qty: Number(entry.qty || 0) });
         }).join('') || '<div class="placeholder">Инвентарь пуст.</div>'}
       </div>
       ${(Array.isArray(player.implants) && player.implants.length) ? `
-        <div class="section-head" style="margin-top:18px"><div class="section-title">Импланты</div></div>
+        <div class="section-head era-article-top-v1060" style="margin-top:18px"><div class="section-title">Импланты</div></div>
         <div class="card-list">
           ${player.implants.map(implant => `<article class="entity-card"><div class="eyebrow">Имплант</div><h3>${esc(implant.name || 'Имплант')}</h3><div class="small-note">${esc(implant.desc || '')}</div></article>`).join('')}
         </div>
       ` : ''}
       ${(player.abilities && Object.keys(player.abilities).length) ? `
-        <div class="section-head" style="margin-top:18px"><div class="section-title">Характеристики</div></div>
+        <div class="section-head era-article-top-v1060" style="margin-top:18px"><div class="section-title">Характеристики</div></div>
         <div class="stat-grid">
           ${Object.entries(player.abilities).map(([key, value]) => `<div class="stat"><div class="data-label">${esc(ABILITY_LABELS[key] || key)}</div><div class="data-value">${esc(value)}</div></div>`).join('')}
         </div>
       ` : ''}
       ${(player.specializations && Object.keys(player.specializations).length) ? `
-        <div class="section-head" style="margin-top:18px"><div class="section-title">Специализации</div></div>
+        <div class="section-head era-article-top-v1060" style="margin-top:18px"><div class="section-title">Специализации</div></div>
         <div class="stat-grid spec-grid-mobile">
           ${Object.entries(player.specializations).filter(([, value]) => Number(value || 0) > 0).map(([key, value]) => `<div class="stat"><div class="data-label">${esc(App.data.skills.get(key)?.name || key)}</div><div class="data-value">${Number(value || 0)}</div></div>`).join('')}
         </div>
@@ -3036,8 +3315,14 @@
       return;
     }
     App.ui.archiveTab = 'articles';
+    App.ui.archiveScopeV1079 = 'section';
+    App.ui.archiveCategoryV1079 = 'all';
+    App.ui.archiveStatusV1079 = 'all';
+    App.ui.archiveQuery = '';
     App.ui.selectedArchiveId = articleId;
     App.ui.selectedArchiveType = 'article';
+    rememberArchiveRecentV1079('article', articleId);
+    markArchiveArticleRead(articleId);
     App.ui.screen = 'archive';
     renderCurrentScreen();
   }
@@ -3051,8 +3336,13 @@
   function openPlanet(planetId) {
     if (!App.data.planets.has(planetId)) return notify('Планета не найдена', 'warn');
     App.ui.archiveTab = 'planets';
+    App.ui.archiveScopeV1079 = 'section';
+    App.ui.archiveCategoryV1079 = 'all';
+    App.ui.archiveStatusV1079 = 'all';
+    App.ui.archiveQuery = '';
     App.ui.selectedArchiveId = planetId;
     App.ui.selectedArchiveType = 'planet';
+    rememberArchiveRecentV1079('planet', planetId);
     App.ui.screen = 'archive';
     renderCurrentScreen();
   }
@@ -3336,11 +3626,13 @@
     await commitPlayerMutation(player => {
       const cost = Number(price || 0);
       if (Number(player.credits || 0) < cost) throw new Error('Недостаточно кредитов');
+      const capacity = canAddInventoryItemWebV1067(player, itemId, 1);
+      if (!capacity.ok) throw new Error(capacity.reason);
       player.credits = Number(player.credits || 0) - cost;
       if (!Array.isArray(player.inventory)) player.inventory = [];
       const existing = player.inventory.find(entry => entry.itemId === itemId);
       if (existing) existing.qty = Number(existing.qty || 0) + 1;
-      else player.inventory.push({ itemId, qty: 1 });
+      else player.inventory.push({ itemId, qty: 1, positions: [] });
     }, 'Покупка сохранена в облаке');
   }
 
@@ -3385,16 +3677,33 @@
       if (!button) return;
       const action = button.dataset.action;
       if (action === 'archive-tab') {
-        App.ui.archiveTab = button.dataset.tab === 'systems' ? 'articles' : button.dataset.tab;
+        App.ui.archiveTab = button.dataset.tab;
+        App.ui.archiveScopeV1079 = 'section';
+        App.ui.archiveCategoryV1079 = 'all';
+        App.ui.archiveStatusV1079 = 'all';
+        App.ui.archiveQuery = '';
         App.ui.selectedArchiveId = '';
+        App.ui.selectedArchiveType = '';
         renderArchive();
       }
       if (action === 'select-archive') {
         App.ui.selectedArchiveType = button.dataset.type;
         App.ui.selectedArchiveId = button.dataset.id;
+        rememberArchiveRecentV1079(button.dataset.type, button.dataset.id);
         if (button.dataset.type === 'article') markArchiveArticleRead(button.dataset.id);
         renderArchive();
+        if (window.matchMedia('(max-width: 860px)').matches) requestAnimationFrame(() => document.querySelector('.archive-detail-pane')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
       }
+      if (action === 'archive-favorite-v1079') {
+        toggleArchiveFavoriteV1079(button.dataset.type, button.dataset.id);
+        renderArchive();
+      }
+      if (action === 'archive-clear-v1079') {
+        App.ui.archiveQuery = '';
+        renderArchive();
+        requestAnimationFrame(() => $('#archive-search-input')?.focus());
+      }
+      if (action === 'archive-back-v1079') document.querySelector('.archive-sidebar')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       if (action === 'open-article') openArticleById(button.dataset.articleId);
       if (action === 'open-planet') openPlanet(button.dataset.planetId);
       if (action === 'open-system') openSystem(button.dataset.systemId);
@@ -3403,12 +3712,18 @@
       if (action === 'galaxy-center') WebGalaxyMap.recenter();
       if (action === 'galaxy-system') WebGalaxyMap.enterSystem(button.dataset.systemId);
       if (action === 'galaxy-planet') { App.ui.galaxySelectedPlanetId = button.dataset.planetId || ''; renderGalaxyInspector(button.dataset.systemId, button.dataset.planetId); }
+      if (action === 'profile-item') {
+        openProfileItemModalV1060(button.dataset.itemId, { label: button.dataset.itemLabel || '', qty: Number(button.dataset.itemQty || 0) });
+      }
+      if (action === 'profile-item-close') {
+        if (event.target === button || event.target.closest('.profile-item-modal-close-v1060')) closeProfileItemModalV1060();
+      }
       if (action === 'buy-item') {
         buyItem(button.dataset.itemId, button.dataset.price).catch(error => notify(error.message, 'err'));
       }
       if (action === 'select-thread') {
         App.ui.selectedThreadKey = button.dataset.threadKey;
-        renderChat();
+        openWebChatMasterV1068(button.dataset.threadKey);
       }
       if (action === 'select-combat-scene') {
         App.ui.selectedCombatSceneId = button.dataset.sceneId;
@@ -3476,6 +3791,14 @@
       if (event.target.id === 'login-remember-login') {
         setRememberLogin(Boolean(event.target.checked)).catch(error => notify(error.message, 'err'));
       }
+      if (event.target.id === 'archive-scope-v1079') {
+        App.ui.archiveScopeV1079 = event.target.value === 'all' ? 'all' : 'section';
+        App.ui.archiveCategoryV1079 = 'all';
+        renderArchive();
+      }
+      if (event.target.id === 'archive-category-v1079') { App.ui.archiveCategoryV1079 = event.target.value || 'all'; renderArchive(); }
+      if (event.target.id === 'archive-status-v1079') { App.ui.archiveStatusV1079 = event.target.value || 'all'; renderArchive(); }
+      if (event.target.id === 'archive-sort-v1079') { App.ui.archiveSortV1079 = event.target.value || 'title'; renderArchive(); }
     });
 
     document.body.addEventListener('input', event => {
@@ -3494,6 +3817,17 @@
       if (threadKey) App.ui.chatDrafts[threadKey] = textarea.value;
     });
 
+    document.body.addEventListener('keydown', event => {
+      const entry = event.target?.closest?.('.archive-entry-v1079[data-action="select-archive"]');
+      if (!entry || event.target?.closest?.('.archive-favorite-v1079') || !['Enter', ' '].includes(event.key)) return;
+      event.preventDefault();
+      App.ui.selectedArchiveType = entry.dataset.type;
+      App.ui.selectedArchiveId = entry.dataset.id;
+      rememberArchiveRecentV1079(entry.dataset.type, entry.dataset.id);
+      if (entry.dataset.type === 'article') markArchiveArticleRead(entry.dataset.id);
+      renderArchive();
+    });
+
     let lastDesktopLayout = window.matchMedia('(min-width: 901px)').matches;
     window.addEventListener('resize', () => {
       if (App.ui.screen === 'combat') requestAnimationFrame(initCombatViewports);
@@ -3508,6 +3842,8 @@
     }));
 
     $('#login-guest-btn')?.addEventListener('click', () => {
+      const consent = $('#login-privacy-consent-v1068');
+      if (consent && !consent.checked) { consent.reportValidity?.(); return; }
       setRememberLogin(Boolean($('#login-remember-login')?.checked)).then(() => loginGuest()).catch(error => notify(error.message, 'err'));
     });
 
@@ -3701,6 +4037,8 @@
   }
   function normalizedItemTypeV1052(item={}) {
     const type=String(item.type||'').toLowerCase();
+    const tags=Array.isArray(item.tags)?item.tags.map(tag=>String(tag||'').trim().toLowerCase()):[];
+    if(['stock','stocks','share','shares'].includes(type)||String(item.id||'').toLowerCase().startsWith('stock_')||/^акции(?:\s|$)/i.test(String(item.name||'').trim())||tags.some(tag=>['акции','stock','stocks','share','shares'].includes(tag)))return'stock';
     return ['weapon','armor','implant'].includes(type)?type:'gear';
   }
   function effectiveArmorClassV1052(player={}) {
@@ -3762,6 +4100,27 @@
     const player=App.data.players.get(String(playerId||''));
     if(String(App.session?.role||'').toLowerCase()==='gm'||String(player?.role||'').toLowerCase()==='gm')return true;
     return __visibleForPlayerV1052(entity,playerId);
+  };
+
+  function geographicOriginAccessWebV1061(player={}) {
+    const origin=geographicOriginsV1052().get(String(player.geographicOriginId||''))||{};
+    const planetIds=Array.from(new Set([...(origin.linkedPlanetIds||[]),...(origin.grantedPlanetIds||[])].map(String).filter(Boolean)));
+    const systemIds=new Set([...(origin.grantedSystemIds||[])].map(String).filter(Boolean));
+    App.data.systems.forEach(system=>{
+      if((system.planetIds||[]).some(id=>planetIds.includes(String(id))))systemIds.add(String(system.id||''));
+    });
+    return {planetIds:new Set(planetIds),systemIds};
+  }
+  const __visibleForPlayerV1061=visibleForPlayer;
+  visibleForPlayer=function(entity,playerId){
+    const player=App.data.players.get(String(playerId||''));
+    if(player&&String(player.role||'').toLowerCase()!=='gm'&&String(player.role||'').toLowerCase()!=='guest'){
+      const access=geographicOriginAccessWebV1061(player);
+      const entityId=String(entity?.id||'');
+      if(entityId&&App.data.planets.has(entityId)&&access.planetIds.has(entityId))return true;
+      if(entityId&&App.data.systems.some(system=>String(system.id||'')===entityId)&&access.systemIds.has(entityId))return true;
+    }
+    return __visibleForPlayerV1061(entity,playerId);
   };
 
   sessionCampaignAllowedV1049=function(){
@@ -3830,14 +4189,41 @@
   function geoTypeLabelWebV1054(type){return({city:'Город',planet:'Планета',region:'Регион / область',station:'Станция',colony:'Колония / поселение',other:'Место происхождения'})[String(type||'other')]||'Место происхождения';}
   function registrationOriginCardsWebV1054(map,fieldName,kind){
     const rows=visibleOriginsV1052(map);if(!rows.length)return'<div class="origin-empty-v1054">ДМ ещё не добавил варианты для выбора.</div>';
-    return `<div class="origin-choice-grid-v1054">${rows.map(origin=>{const image=String(origin.image||origin.imageLocal||'').trim();const kicker=kind==='profession'?'ПРОФЕССИЯ':geoTypeLabelWebV1054(origin.locationType);return `<label class="origin-choice-card-v1054"><input type="radio" name="${fieldName}" value="${esc(origin.id)}" required /><div class="origin-choice-media-v1054">${image?`<img src="${esc(image)}" alt="" />`:`<div class="origin-choice-placeholder-v1054">${kind==='profession'?'PROF':'ORIGIN'}</div>`}</div><div class="origin-choice-body-v1054"><div class="origin-choice-kicker-v1054">${esc(kicker)}</div><div class="origin-choice-title-v1054">${esc(origin.name||origin.id)}</div><div class="origin-choice-description-v1054">${esc(origin.description||'Описание пока не заполнено ДМом.')}</div><div class="origin-bonuses-v1054">${originBonusBadgesWebV1054(origin)}</div><div class="origin-select-indicator-v1054">ВЫБРАТЬ</div></div></label>`;}).join('')}</div>`;
+    return `<div class="origin-choice-grid-v1054">${rows.map(origin=>{const image=String(origin.image||origin.imageLocal||'').trim();const kicker=kind==='profession'?'ПРОФЕССИЯ':geoTypeLabelWebV1054(origin.locationType);const accessPlanets=kind==='geographic'?[...(origin.linkedPlanetIds||[]),...(origin.grantedPlanetIds||[])].map(id=>App.data.planets.get(String(id))?.name||String(id)).filter(Boolean):[];return `<label class="origin-choice-card-v1054"><input type="radio" name="${fieldName}" value="${esc(origin.id)}" required /><div class="origin-choice-media-v1054">${image?`<img src="${esc(image)}" alt="" />`:`<div class="origin-choice-placeholder-v1054">${kind==='profession'?'PROF':'ORIGIN'}</div>`}</div><div class="origin-choice-body-v1054"><div class="origin-choice-kicker-v1054">${esc(kicker)}</div><div class="origin-choice-title-v1054">${esc(origin.name||origin.id)}</div><div class="origin-choice-description-v1054">${esc(origin.description||'Описание пока не заполнено ДМом.')}</div>${accessPlanets.length?`<div class="muted origin-access-note-v1061">Доступ: ${esc(Array.from(new Set(accessPlanets)).join(' · '))}</div>`:''}<div class="origin-bonuses-v1054">${originBonusBadgesWebV1054(origin)}</div><div class="origin-select-indicator-v1054">ВЫБРАТЬ</div></div></label>`;}).join('')}</div>`;
   }
+  const CHARACTER_CREATION_BUDGET_V1066=10;
+  function creationEraWebV1066(value){const raw=String(value||'').trim().toLowerCase();if(/сред|mediev|feudal|ancient/.test(raw))return'medieval';if(/индустр|industrial|steam|diesel|analog/.test(raw))return'industrial';return'technological';}
+  function creationCostWebV1066(entity={}){return clamp(Math.max(0,Number(entity.creationCost??entity.characterCreationCost??0)),0,CHARACTER_CREATION_BUDGET_V1066);}
+  function creationVisibilityWebV1066(entity={}){const vis=entity?.visibility&&typeof entity.visibility==='object'?entity.visibility:{};const uniq=v=>Array.from(new Set((Array.isArray(v)?v:[]).map(x=>String(x?.id||x?.campaignId||x||'').trim()).filter(Boolean)));return{playerIds:uniq(vis.playerIds),campaignIds:uniq(vis.campaignIds||vis.campaigns),eraIds:uniq(vis.eraIds||vis.eras||vis.epochs)};}
+  function creationOptionAvailableWebV1066(entity={},campaign=null){
+    if(!entity||!campaign||entity.availableNow===false||entity.available===false)return false;
+    const vis=creationVisibilityWebV1066(entity);const campaignId=String(campaign.id||'');const era=creationEraWebV1066(campaign.era||campaign.epoch||campaign.theme);
+    const campaignMatch=vis.campaignIds.includes(campaignId);const eraMatch=vis.eraIds.map(creationEraWebV1066).includes(era);
+    if(vis.campaignIds.length||vis.eraIds.length)return campaignMatch||eraMatch;
+    if(vis.playerIds.length)return false;
+    return true;
+  }
+  function creationOriginRowsWebV1066(map,campaign){return Array.from(map.values()).filter(origin=>creationOptionAvailableWebV1066(origin,campaign)).sort((a,b)=>slugText(a.name||a.id).localeCompare(slugText(b.name||b.id),'ru'));}
+  function registrationOriginCardsWebV1066(map,fieldName,kind,campaign){
+    const rows=creationOriginRowsWebV1066(map,campaign);if(!rows.length)return'<div class="origin-empty-v1054">Для выбранной кампании нет доступных вариантов.</div>';
+    return `<div class="origin-choice-grid-v1054">${rows.map(origin=>{const image=String(origin.image||origin.imageLocal||'').trim();const kicker=kind==='profession'?'ПРОФЕССИЯ':geoTypeLabelWebV1054(origin.locationType);const accessPlanets=kind==='geographic'?[...(origin.linkedPlanetIds||[]),...(origin.grantedPlanetIds||[])].map(id=>App.data.planets.get(String(id))?.name||String(id)).filter(Boolean):[];return `<label class="origin-choice-card-v1054 creation-choice-card-v1066"><input type="radio" name="${fieldName}" value="${esc(origin.id)}" required /><div class="origin-choice-media-v1054">${image?`<img src="${esc(image)}" alt="" />`:`<div class="origin-choice-placeholder-v1054">${kind==='profession'?'PROF':'ORIGIN'}</div>`}</div><div class="origin-choice-body-v1054"><div class="origin-choice-kicker-v1054">${esc(kicker)}</div><div class="origin-choice-title-v1054">${esc(origin.name||origin.id)}</div><div class="creation-cost-badge-v1066">${creationCostWebV1066(origin)} ОЧК.</div><div class="origin-choice-description-v1054">${esc(origin.description||'Описание пока не заполнено ДМом.')}</div>${accessPlanets.length?`<div class="muted origin-access-note-v1061">Доступ: ${esc(Array.from(new Set(accessPlanets)).join(' · '))}</div>`:''}<div class="origin-bonuses-v1054">${originBonusBadgesWebV1054(origin)}</div><div class="origin-select-indicator-v1054">ВЫБРАТЬ</div></div></label>`;}).join('')}</div>`;
+  }
+  function startingEquipmentRowsWebV1066(campaign){return Array.from(App.data.items.values()).filter(item=>(item.availableAsStarting===true||String(item.availableAsStarting||'').toLowerCase()==='true')&&creationOptionAvailableWebV1066(item,campaign)).sort((a,b)=>slugText(a.name||a.id).localeCompare(slugText(b.name||b.id),'ru'));}
+  function startingEquipmentTypeWebV1066(item={}){const type=normalizedItemTypeV1052(item);return type==='weapon'?'Оружие':type==='armor'?'Броня':type==='implant'?'Имплант':type==='stock'?'Акции':'Снаряжение';}
+  function startingEquipmentCardsWebV1066(campaign){const rows=startingEquipmentRowsWebV1066(campaign);if(!rows.length)return'<div class="origin-empty-v1054">Для этой кампании нет предметов, отмеченных как стартовые.</div>';return `<div class="starting-equipment-grid-v1066">${rows.map(item=>`<div class="starting-equipment-card-v1066" data-registration-equipment-card-v1072 data-item-id="${esc(item.id)}" role="button" tabindex="0" aria-pressed="false"><input type="checkbox" name="startingEquipmentIds" value="${esc(item.id)}" hidden />${renderEntityThumb(item)}<span class="starting-equipment-copy-v1066"><b>${esc(item.name||item.id)}</b><small>${esc(startingEquipmentTypeWebV1066(item))}${item.rarity?` · ${esc(item.rarity)}`:''}</small><small>${esc(item.desc||'')}</small></span><span class="creation-cost-badge-v1066">${creationCostWebV1066(item)} ОЧК.</span><span class="starting-equipment-selected-v1072">ВЫБРАНО</span></div>`).join('')}</div>`;}
+  function openStartingEquipmentModalWebV1072(itemId){const form=document.getElementById('register-form-v1052');const item=App.data.items.get(String(itemId||''));const input=form?.querySelector(`[name="startingEquipmentIds"][value="${CSS.escape(String(itemId||''))}"]`);if(!item||!input)return;openProfileItemModalV1060(item.id,{label:'Стартовое снаряжение',registrationEquipment:true,selected:Boolean(input.checked),creationCost:creationCostWebV1066(item)});}
+  function creationSelectionWebV1066(form){const campaignId=String(form?.elements?.campaignId?.value||'');const campaign=campaignV1049(campaignId);const socialId=String(form?.querySelector('[name="socialOriginId"]:checked')?.value||'');const geoId=String(form?.querySelector('[name="geographicOriginId"]:checked')?.value||'');const profession=socialOriginsV1052().get(socialId)||null;const geographic=geographicOriginsV1052().get(geoId)||null;const equipmentIds=Array.from(new Set(Array.from(form?.querySelectorAll('[name="startingEquipmentIds"]:checked')||[]).map(n=>String(n.value)).filter(Boolean)));const equipment=equipmentIds.map(id=>App.data.items.get(id)).filter(Boolean);const total=creationCostWebV1066(profession)+creationCostWebV1066(geographic)+equipment.reduce((sum,item)=>sum+creationCostWebV1066(item),0);return{campaign,profession,geographic,equipment,equipmentIds,total};}
+  function updateCreationBudgetWebV1066(form){if(!form)return;const selection=creationSelectionWebV1066(form);const node=form.querySelector('[data-creation-budget-v1066]');const submit=form.querySelector('[type="submit"]');const remaining=CHARACTER_CREATION_BUDGET_V1066-selection.total;form.querySelectorAll('[data-registration-equipment-card-v1072]').forEach(card=>{const input=card.querySelector('[name="startingEquipmentIds"]');card.setAttribute('aria-pressed',String(Boolean(input?.checked)));});if(node){node.textContent=`Потрачено: ${selection.total} / ${CHARACTER_CREATION_BUDGET_V1066} · ${remaining>=0?`Осталось: ${remaining}`:`ПЕРЕРАСХОД: ${Math.abs(remaining)}`}`;node.classList.toggle('over-budget',remaining<0);}if(submit)submit.disabled=remaining<0;}
+  function refreshRegistrationChoicesWebV1066(form){if(!form)return;const campaign=campaignV1049(String(form.elements?.campaignId?.value||''))||availableCampaignsV1049()[0]||null;const prevSocial=form.querySelector('[name="socialOriginId"]:checked')?.value||'';const prevGeo=form.querySelector('[name="geographicOriginId"]:checked')?.value||'';const prevItems=new Set(Array.from(form.querySelectorAll('[name="startingEquipmentIds"]:checked')).map(n=>n.value));const p=form.querySelector('[data-registration-professions-v1066]'),g=form.querySelector('[data-registration-origins-v1066]'),e=form.querySelector('[data-registration-equipment-v1066]');if(p)p.innerHTML=registrationOriginCardsWebV1066(socialOriginsV1052(),'socialOriginId','profession',campaign);if(g)g.innerHTML=registrationOriginCardsWebV1066(geographicOriginsV1052(),'geographicOriginId','geographic',campaign);if(e)e.innerHTML=startingEquipmentCardsWebV1066(campaign);if(prevSocial){const x=form.querySelector(`[name="socialOriginId"][value="${CSS.escape(prevSocial)}"]`);if(x)x.checked=true;}if(prevGeo){const x=form.querySelector(`[name="geographicOriginId"][value="${CSS.escape(prevGeo)}"]`);if(x)x.checked=true;}prevItems.forEach(id=>{const x=form.querySelector(`[name="startingEquipmentIds"][value="${CSS.escape(id)}"]`);if(x)x.checked=true;});updateCreationBudgetWebV1066(form);}
+  function validateRegistrationSelectionWebV1066(form){const sel=creationSelectionWebV1066(form);if(!sel.campaign||sel.campaign.availableNow===false)return{ok:false,message:'Кампания недоступна.',...sel};if(!sel.profession||!creationOptionAvailableWebV1066(sel.profession,sel.campaign))return{ok:false,message:'Выберите доступную профессию.',...sel};if(!sel.geographic||!creationOptionAvailableWebV1066(sel.geographic,sel.campaign))return{ok:false,message:'Выберите доступное происхождение.',...sel};if(sel.equipment.some(item=>!(item.availableAsStarting===true||String(item.availableAsStarting||'').toLowerCase()==='true')||!creationOptionAvailableWebV1066(item,sel.campaign)))return{ok:false,message:'Список стартового снаряжения изменился. Выберите предметы заново.',...sel};if(sel.total>CHARACTER_CREATION_BUDGET_V1066)return{ok:false,message:`Превышен бюджет создания: ${sel.total} / ${CHARACTER_CREATION_BUDGET_V1066}.`,...sel};const starter=buildInventoryLayoutWebV1067({inventorySize:12,carryWeightMax:12,equipmentSlots:{primaryWeapon:'',secondaryWeapon:'',armor:''},implantSlotCount:0,implantSlots:[],inventory:sel.equipmentIds.map(itemId=>({itemId,qty:1,positions:[]}))});if(starter.weight>12+1e-9)return{ok:false,message:`Стартовое снаряжение слишком тяжёлое: ${starter.weight.toFixed(1)} / 12.`,...sel};if(starter.overflow.length)return{ok:false,message:'Стартовое снаряжение не помещается в стандартный инвентарь на 12 клеток.',...sel};return{ok:true,...sel};}
   function registrationMarkupV1052(){
-    const campaigns=availableCampaignsV1049();
-    return `<div class="registration-window-v1054" role="dialog" aria-modal="true" aria-labelledby="register-title-v1054"><div class="registration-card-v1052"><div class="registration-sticky-head-v1054 section-head"><div><div class="eyebrow">CHARACTER_APPLICATION</div><div class="section-title" id="register-title-v1054">Регистрация нового персонажа</div><div class="muted">Заполните анкету. После отправки она попадёт ДМу на одобрение.</div></div><button class="ghost-btn" type="button" id="register-close-v1052">Закрыть</button></div>
-      <form id="register-form-v1052" class="form stack-lg registration-form-v1054"><section class="registration-section-v1054"><div class="section-title">Основные данные</div><label class="field"><span>Игровая кампания</span><select class="input" name="campaignId" required>${campaigns.map(c=>`<option value="${esc(c.id)}">${esc(c.name||c.id)}</option>`).join('')}</select></label><div class="form-grid-v1052"><label class="field"><span>Имя</span><input class="input" name="displayName" maxlength="80" required /></label><label class="field"><span>Фото персонажа</span><input class="input" name="photo" type="file" accept="image/png,image/jpeg,image/webp,image/gif" /></label></div><label class="field"><span>Описание персонажа</span><textarea class="input area registration-description-v1054" name="description" maxlength="12000" placeholder="Внешность, характер, история, важные детали биографии…"></textarea></label></section>
-      <section class="registration-section-v1054"><div class="section-title">Профессия</div><p class="muted">Профессия — занятие, служба или социальная роль персонажа. Прочитайте полное описание вариантов перед выбором.</p>${registrationOriginCardsWebV1054(socialOriginsV1052(),'socialOriginId','profession')}</section>
-      <section class="registration-section-v1054"><div class="section-title">Происхождение</div><p class="muted">Происхождением может быть город, регион, станция, колония или целая планета.</p>${registrationOriginCardsWebV1054(geographicOriginsV1052(),'geographicOriginId','geographic')}</section>
+    const campaigns=availableCampaignsV1049();const preferred=String(App.ui?.selectedCampaignId||selectedCampaignV1049()||'');const campaign=campaigns.find(c=>String(c.id)===preferred)||campaigns[0]||null;
+    return `<div class="registration-window-v1054" role="dialog" aria-modal="true" aria-labelledby="register-title-v1054"><div class="registration-card-v1052"><div class="registration-sticky-head-v1054 section-head"><div><div class="eyebrow">CHARACTER_APPLICATION</div><div class="section-title" id="register-title-v1054">Регистрация нового персонажа</div><div class="muted">Бюджет создания — максимум ${CHARACTER_CREATION_BUDGET_V1066} очков. Профессия, происхождение и стартовые предметы складываются.</div></div><button class="ghost-btn" type="button" id="register-close-v1052">Закрыть</button></div>
+      <form id="register-form-v1052" class="form stack-lg registration-form-v1054"><div class="creation-budget-v1066" data-creation-budget-v1066>Потрачено: 0 / ${CHARACTER_CREATION_BUDGET_V1066} · Осталось: ${CHARACTER_CREATION_BUDGET_V1066}</div><section class="registration-section-v1054"><div class="section-title">Основные данные</div><label class="field"><span>Игровая кампания</span><select class="input" name="campaignId" required>${campaigns.map(c=>`<option value="${esc(c.id)}" ${campaign?.id===c.id?'selected':''}>${esc(c.name||c.id)}</option>`).join('')}</select></label><div class="form-grid-v1052"><label class="field"><span>Имя</span><input class="input" name="displayName" maxlength="80" required /></label><label class="field"><span>Фото персонажа</span><input class="input" name="photo" type="file" accept="image/png,image/jpeg,image/webp,image/gif" /></label></div><label class="field"><span>Описание персонажа</span><textarea class="input area registration-description-v1054" name="description" maxlength="12000" placeholder="Внешность, история, важные детали биографии…"></textarea></label></section>
+      <section class="registration-section-v1054"><div class="section-title">Личность</div><div class="form-grid-v1066"><label class="field"><span>Черта характера</span><textarea class="input area" name="personalityTrait" maxlength="3000"></textarea></label><label class="field"><span>Идеал</span><textarea class="input area" name="ideal" maxlength="3000"></textarea></label><label class="field"><span>Слабость</span><textarea class="input area" name="weakness" maxlength="3000"></textarea></label></div></section>
+      <section class="registration-section-v1054"><div class="section-title">Профессия</div><p class="muted">Показываются только варианты, доступные выбранной кампании или её эпохе.</p><div data-registration-professions-v1066>${registrationOriginCardsWebV1066(socialOriginsV1052(),'socialOriginId','profession',campaign)}</div></section>
+      <section class="registration-section-v1054"><div class="section-title">Происхождение</div><p class="muted">Происхождением может быть город, регион, станция, колония или целая планета.</p><div data-registration-origins-v1066>${registrationOriginCardsWebV1066(geographicOriginsV1052(),'geographicOriginId','geographic',campaign)}</div></section>
+      <section class="registration-section-v1054"><div class="section-title">Стартовое снаряжение</div><p class="muted">Можно выбрать несколько предметов. Показываются только предметы с флагом «Доступен как стартовое», доступные кампании или её эпохе.</p><div data-registration-equipment-v1066>${startingEquipmentCardsWebV1066(campaign)}</div></section>
       <section class="registration-section-v1054"><div class="section-title">Доступ</div><div class="form-grid-v1052"><label class="field"><span>Пароль персонажа</span><input class="input" name="pass" type="password" minlength="4" required autocomplete="new-password" /></label><label class="field"><span>Повторите пароль</span><input class="input" name="pass2" type="password" minlength="4" required autocomplete="new-password" /></label></div></section>
       <div class="registration-submit-v1054"><button class="primary" type="submit">ОТПРАВИТЬ АНКЕТУ ДМУ</button><div class="status-line muted" id="register-status-v1052"></div></div></form></div></div>`;
   }
@@ -3849,23 +4235,787 @@
     const max=640;const scale=Math.min(1,max/Math.max(image.width||1,image.height||1));const canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(image.width*scale));canvas.height=Math.max(1,Math.round(image.height*scale));canvas.getContext('2d').drawImage(image,0,0,canvas.width,canvas.height);return canvas.toDataURL('image/webp',0.82);
   }
   function openRegistrationV1052(){const panel=$('#registration-panel-v1052');if(!panel)return;if(panel.parentElement!==document.body)document.body.appendChild(panel);panel.innerHTML=registrationMarkupV1052();panel.classList.remove('hidden');document.body.classList.add('registration-open-v1054');}
-  function closeRegistrationV1052(){const panel=$('#registration-panel-v1052');if(panel){panel.classList.add('hidden');panel.innerHTML='';document.body.classList.remove('registration-open-v1054');}}
-  document.addEventListener('click',event=>{if(event.target?.id==='register-open-v1052')openRegistrationV1052();if(event.target?.id==='register-close-v1052'||event.target?.classList?.contains('registration-window-v1054'))closeRegistrationV1052();});
-  document.addEventListener('keydown',event=>{if(event.key==='Escape'&&!$('#registration-panel-v1052')?.classList.contains('hidden'))closeRegistrationV1052();});
+  function closeRegistrationV1052(){closeProfileItemModalV1060();const panel=$('#registration-panel-v1052');if(panel){panel.classList.add('hidden');panel.innerHTML='';document.body.classList.remove('registration-open-v1054');}}
+  document.addEventListener('click',event=>{
+    if(event.target?.id==='register-open-v1052')openRegistrationV1052();
+    const equipmentCard=event.target?.closest?.('[data-registration-equipment-card-v1072]');
+    if(equipmentCard&&equipmentCard.closest('#registration-panel-v1052')){event.preventDefault();openStartingEquipmentModalWebV1072(equipmentCard.dataset.itemId);return;}
+    const equipmentSelect=event.target?.closest?.('[data-registration-equipment-select-v1072]');
+    if(equipmentSelect){const form=document.getElementById('register-form-v1052');const itemId=String(equipmentSelect.dataset.itemId||'');const input=form?.querySelector(`[name="startingEquipmentIds"][value="${CSS.escape(itemId)}"]`);if(input){input.checked=!input.checked;input.dispatchEvent(new Event('change',{bubbles:true}));}closeProfileItemModalV1060();return;}
+    if(event.target?.id==='register-close-v1052'||event.target?.classList?.contains('registration-window-v1054'))closeRegistrationV1052();
+  });
+  document.addEventListener('change',event=>{const form=event.target?.closest?.('#register-form-v1052');if(!form)return;if(event.target?.name==='campaignId')refreshRegistrationChoicesWebV1066(form);else if(['socialOriginId','geographicOriginId','startingEquipmentIds'].includes(String(event.target?.name||'')))updateCreationBudgetWebV1066(form);});
+  document.addEventListener('keydown',event=>{const card=event.target?.closest?.('[data-registration-equipment-card-v1072]');if(card&&(event.key==='Enter'||event.key===' ')){event.preventDefault();openStartingEquipmentModalWebV1072(card.dataset.itemId);return;}if(event.key==='Escape'&&App.ui.profileItemModal?.registrationEquipment){closeProfileItemModalV1060();return;}if(event.key==='Escape'&&!$('#registration-panel-v1052')?.classList.contains('hidden'))closeRegistrationV1052();});
+  document.addEventListener('keydown', event => { if (event.key === 'Escape' && document.getElementById('profile-item-modal-v1060')) closeProfileItemModalV1060(); });
   document.addEventListener('submit',async event=>{
     if(event.target?.id!=='register-form-v1052')return;event.preventDefault();
     const form=event.target;const fd=new FormData(form);const status=form.querySelector('#register-status-v1052');const campaignId=String(fd.get('campaignId')||'');const campaign=campaignV1049(campaignId);
     if(!campaign||campaign.availableNow===false){status.textContent='Кампания недоступна.';return;}
+    const creation=validateRegistrationSelectionWebV1066(form);if(!creation.ok){status.textContent=creation.message;updateCreationBudgetWebV1066(form);return;}
     const pass=String(fd.get('pass')||'');if(pass!==String(fd.get('pass2')||'')){status.textContent='Пароли не совпадают.';return;}
     const name=String(fd.get('displayName')||'').trim();if(!name)return;status.textContent='Отправка анкеты…';
     try{
       let id=slugText(name).replace(/[^a-zа-яё0-9]+/gi,'_').replace(/^_+|_+$/g,'').toLowerCase()||`player_${Date.now()}`;if(App.data.players.has(id))id=`${id}_${Date.now().toString(36).slice(-5)}`;
       const image=await resizeRegistrationPhotoV1052(form.elements.photo?.files?.[0]);
       const baseAbilities=Object.fromEntries(ABILITIES_V1052.map(row=>[row.key,0]));
-      const player={id,role:'player',pass,displayName:name,shortName:name,rank:'Новый персонаж',avatarGlyph:name.slice(0,2).toUpperCase(),lore:String(fd.get('description')||'').trim(),notes:'',image,approvalStatus:'pending',applicationSubmittedAt:new Date().toISOString(),campaignIds:[campaignId],socialOriginId:String(fd.get('socialOriginId')||''),geographicOriginId:String(fd.get('geographicOriginId')||''),credits:0,stats:{hpCurrent:10,hpMax:10,shieldCurrent:0,shieldMax:0,energyCurrent:1,energyMax:1,baseArmorClass:10},abilities:baseAbilities,abilityBase:baseAbilities,equipmentSlots:{primaryWeapon:'',secondaryWeapon:'',armor:''},installedImplantIds:[],inventory:[],social:{npcIds:[],orgs:[],reputation:[]},currentPlanetId:'',relatedArticleIds:[]};
+      const player={id,role:'player',pass,displayName:name,shortName:name,rank:'Новый персонаж',avatarGlyph:name.slice(0,2).toUpperCase(),lore:String(fd.get('description')||'').trim(),notes:'',image,personalityTrait:String(fd.get('personalityTrait')||'').trim(),ideal:String(fd.get('ideal')||'').trim(),weakness:String(fd.get('weakness')||'').trim(),approvalStatus:'pending',allowCrossCampaignDirectMessages:false,applicationSubmittedAt:new Date().toISOString(),campaignIds:[campaignId],socialOriginId:creation.profession.id,geographicOriginId:creation.geographic.id,creationPointsSpent:creation.total,startingEquipmentIds:creation.equipmentIds,credits:0,stats:{hpCurrent:10,hpMax:10,shieldCurrent:0,shieldMax:0,energyCurrent:1,energyMax:1,baseArmorClass:10},abilities:baseAbilities,abilityBase:baseAbilities,equipmentSlots:{primaryWeapon:'',secondaryWeapon:'',armor:''},implantSlotCount:0,implantSlots:[],installedImplantIds:[],inventorySize:12,carryWeightMax:12,inventory:creation.equipmentIds.map(itemId=>({itemId,qty:1,positions:[]})),social:{npcIds:[],orgs:[],reputation:[]},currentPlanetId:'',relatedArticleIds:[]};
       const segments=decomposePlayer(player);const saved=await apiUpsertPlayer(App.config,{player_id:id,version:1,updated_by:App.config.deviceLabel||'web-registration',...segments});App.data.playerRows.set(id,saved);App.data.players=buildPlayerMap(App.cache.snapshot,Array.from(App.data.playerRows.values()));await saveCache();status.textContent='Анкета отправлена ДМу. После одобрения персонаж появится во входе.';form.reset();renderLogin();
     }catch(error){status.textContent=`Не удалось отправить анкету: ${error.message}`;}
   });
+
+
+  // v1.0.62: campaign-wide chat + NPC contacts in Web + GM actor impersonation in campaign channels.
+  function logicalCampaignIdV1062() {
+    return String(App.session?.campaignId || App.ui?.selectedCampaignId || selectedCampaignV1049() || '').trim();
+  }
+  function campaignThreadKeyV1062(campaignId = logicalCampaignIdV1062()) {
+    return `campaign::${String(campaignId || '').trim()}`;
+  }
+  function approvedCampaignPlayersV1062(campaignId = logicalCampaignIdV1062()) {
+    const id = String(campaignId || '').trim();
+    if (!id) return [];
+    return Array.from(App.data.players.values())
+      .filter(player => String(player.role || '').toLowerCase() !== 'guest')
+      .filter(player => approvedPlayerV1052(player))
+      .filter(player => String(player.role || '').toLowerCase() === 'gm' || campaignIdsForPlayer(player).includes(id))
+      .sort((a,b)=>slugText(a.displayName||a.id).localeCompare(slugText(b.displayName||b.id),'ru'));
+  }
+  function crossCampaignDirectEnabledV1063(player = {}) {
+    return player?.allowCrossCampaignDirectMessages === true || String(player?.allowCrossCampaignDirectMessages || '').toLowerCase() === 'true';
+  }
+  function canPlayersDirectMessageV1063(sender = currentPlayer(), target = null, campaignId = logicalCampaignIdV1062()) {
+    if (!sender || !target) return false;
+    if (String(target.role || '').toLowerCase() === 'gm') return false;
+    if (String(sender.role || '').toLowerCase() === 'gm') return approvedPlayerV1052(target);
+    if (!approvedPlayerV1052(sender) || !approvedPlayerV1052(target)) return false;
+    const activeCampaign = String(campaignId || '').trim();
+    if (activeCampaign && campaignIdsForPlayer(target).includes(activeCampaign)) return true;
+    return crossCampaignDirectEnabledV1063(sender) || crossCampaignDirectEnabledV1063(target);
+  }
+
+  function campaignNpcOptionsV1062(player = currentPlayer()) {
+    return Array.from(App.data.npcs.values())
+      .filter(npc => {
+        if (!npc) return false;
+        if (String(App.session?.role || '').toLowerCase() === 'gm') return true;
+        return npcAllowsPlayerChat(npc) && visibleForPlayer(npc, player?.id || App.session?.userId || '');
+      })
+      .sort((a,b)=>slugText(a.name||a.id).localeCompare(slugText(b.name||b.id),'ru'));
+  }
+  function campaignThreadV1062() {
+    const campaignId = logicalCampaignIdV1062();
+    if (!campaignId || String(App.session?.role || '').toLowerCase() === 'guest') return null;
+    const campaign = App.data.campaigns.get(campaignId) || { id: campaignId, name: campaignId };
+    const members = approvedCampaignPlayersV1062(campaignId).filter(player => String(player.role || '').toLowerCase() !== 'gm');
+    return {
+      key: campaignThreadKeyV1062(campaignId),
+      label: `Общий чат · ${campaign.name || campaign.id}`,
+      type: 'campaign',
+      campaignId,
+      subtitle: `${members.length} ${members.length === 1 ? 'персонаж' : (members.length >= 2 && members.length <= 4 ? 'персонажа' : 'персонажей')} · ДМ`,
+      entity: campaign,
+      members
+    };
+  }
+
+  const __buildThreadsV1062 = buildThreads;
+  buildThreads = function() {
+    const player = currentPlayer();
+    if (!player) return [];
+    const campaignId = logicalCampaignIdV1062();
+    const rows = [];
+    const campaignThread = campaignThreadV1062();
+    if (campaignThread) rows.push(campaignThread);
+
+    Array.from(App.data.players.values())
+      .filter(other => other && other.id !== player.id && String(other.role || '').toLowerCase() !== 'guest')
+      .filter(other => String(other.role || '').toLowerCase() !== 'gm' && approvedPlayerV1052(other))
+      .filter(other => canPlayersDirectMessageV1063(player, other, campaignId))
+      .sort((a,b)=>slugText(a.displayName||a.id).localeCompare(slugText(b.displayName||b.id),'ru'))
+      .forEach(other => {
+        const threadKey = [player.id, other.id].sort().join('__');
+        const sameCurrentCampaign = campaignIdsForPlayer(other).includes(campaignId);
+        rows.push({ key: threadKey, label: other.displayName || other.id, type: 'direct', otherId: other.id, subtitle: String(other.role || '').toLowerCase() === 'gm' ? 'ДМ' : (sameCurrentCampaign ? (other.rank || 'Игрок') : `${other.rank || 'Игрок'} · другая кампания`), entity: other });
+      });
+
+    campaignNpcOptionsV1062(player).forEach(npc => {
+      const threadKey = `${npc.id}__${player.id}`;
+      rows.push({ key: threadKey, label: npc.name || npc.id, type: 'npc', npcId: npc.id, subtitle: npc.role || 'NPC', entity: npc });
+    });
+    return rows;
+  };
+
+  function campaignMessageActorMarkupV1062(row, selected) {
+    const own = String(row.sender_id || '') === String(App.session?.userId || '') && String(row.sender_type || '') !== 'npc';
+    const actor = messageActor(row, selected);
+    return {
+      own,
+      actor,
+      label: row.author_label || actor?.displayName || actor?.name || (own ? (currentPlayer()?.displayName || 'Ты') : 'Участник')
+    };
+  }
+  function campaignMemberLineV1062(thread) {
+    if (!thread || thread.type !== 'campaign') return '';
+    const names = (thread.members || []).map(player => player.displayName || player.id).filter(Boolean);
+    return `<div class="campaign-chat-members-v1062"><span class="eyebrow">УЧАСТНИКИ</span><span>${esc(names.join(' · ') || 'Пока нет одобренных персонажей')}</span><span>· ДМ</span></div>`;
+  }
+  function gmCampaignActorSelectV1062(thread) {
+    if (String(App.session?.role || '').toLowerCase() !== 'gm' || thread?.type !== 'campaign') return '';
+    const gm = currentPlayer();
+    const npcs = campaignNpcOptionsV1062(gm);
+    return `<label class="field campaign-actor-field-v1062"><span>Писать от лица</span><select class="input" name="actor"><option value="gm:${esc(gm?.id || App.session?.userId || '')}">ДМ · ${esc(gm?.displayName || gm?.shortName || 'Ведущий')}</option>${npcs.map(npc=>`<option value="npc:${esc(npc.id)}">NPC · ${esc(npc.name || npc.id)}</option>`).join('')}</select></label>`;
+  }
+
+  const __renderChatV1062 = renderChat;
+  renderChat = function() {
+    setTopbar('Чат', 'Общий канал кампании, личные диалоги и NPC · PocketBase Realtime');
+    const root = $('#screen-chat');
+    const threads = buildThreads();
+    if (!App.ui.selectedThreadKey || !threads.some(thread => thread.key === App.ui.selectedThreadKey)) {
+      App.ui.selectedThreadKey = threads[0]?.key || '';
+    }
+    const selected = threads.find(thread => thread.key === App.ui.selectedThreadKey) || threads[0] || null;
+    const messages = selected ? messagesForThread(selected.key) : [];
+    root.innerHTML = `
+      <div class="chat-mobile-layout">
+        <div class="card chat-active-card" style="padding:16px;">
+          <div class="section-head">
+            <div class="thread-row compact">
+              ${selected ? renderEntityAvatar(selected.entity || {}, selected.label, 'sm') : ''}
+              <div><div class="section-title">${esc(selected?.label || 'Канал')}</div><div class="small-note">${esc(selected?.subtitle || '')}</div></div>
+            </div>
+          </div>
+          ${campaignMemberLineV1062(selected)}
+          <div class="message-list">
+            ${messages.map(row => {
+              const meta = campaignMessageActorMarkupV1062(row, selected);
+              return `
+                <div class="chat-row ${meta.own ? 'own' : ''}">
+                  ${renderEntityAvatar(meta.actor || {}, meta.label, 'sm')}
+                  <div class="chat-bubble ${meta.own ? 'own' : ''} ${row.sender_type === 'npc' ? 'npc-message-v1062' : ''}">
+                    <div class="chat-meta">${esc(meta.label)} · ${formatDate(row.created_at)}</div>
+                    <div class="article-body">${normalizeRichHtml(row.body_html || '')}</div>
+                  </div>
+                </div>
+              `;
+            }).join('') || '<div class="placeholder">Сообщений ещё нет.</div>'}
+          </div>
+          ${selected ? `
+            <form id="chat-compose-form" class="chat-compose" data-thread-key="${esc(selected.key)}">
+              ${gmCampaignActorSelectV1062(selected)}
+              <textarea class="textarea" name="body" rows="4" placeholder="${selected.type === 'campaign' ? 'Написать в общий чат кампании...' : selected.type === 'npc' ? 'Написать NPC...' : 'Написать сообщение...'}">${esc(App.ui.chatDrafts[selected.key] || '')}</textarea>
+              <button class="primary" type="submit">Отправить</button>
+            </form>
+          ` : ''}
+        </div>
+        <div class="thread-list chat-contact-list">
+          ${threads.map(thread => {
+            const last = messagesForThread(thread.key).slice(-1)[0] || null;
+            const eyebrow = thread.type === 'campaign' ? 'CAMPAIGN CHANNEL' : (thread.type === 'npc' ? 'NPC THREAD' : 'DIRECT THREAD');
+            return `
+              <article class="thread-card ${thread.key === selected?.key ? 'active' : ''} ${thread.type === 'campaign' ? 'campaign-thread-card-v1062' : ''}">
+                <div class="thread-row">
+                  ${renderEntityAvatar(thread.entity || {}, thread.label)}
+                  <div class="thread-copy">
+                    <div class="eyebrow">${eyebrow}</div>
+                    <h3>${esc(thread.label)}</h3>
+                    <div class="small-note">${esc(last ? stripHtml(last.body_html || '').slice(0, 82) : (thread.subtitle || 'Без сообщений'))}</div>
+                  </div>
+                </div>
+                <div class="entity-actions"><button class="secondary" type="button" data-action="select-thread" data-thread-key="${esc(thread.key)}">Открыть</button></div>
+              </article>
+            `;
+          }).join('') || '<div class="placeholder">Нет доступных каналов связи.</div>'}
+        </div>
+      </div>
+    `;
+  };
+
+  const __sendMessageV1062 = sendMessage;
+  sendMessage = async function(form) {
+    const threadKey = String(form?.dataset?.threadKey || '');
+    const thread = buildThreads().find(item => item.key === threadKey);
+    if (!thread) return __sendMessageV1062(form);
+    if (thread.type === 'direct') {
+      const sender = currentPlayer();
+      const target = App.data.players.get(thread.otherId);
+      if (!canPlayersDirectMessageV1063(sender, target, logicalCampaignIdV1062())) throw new Error('Личный чат с персонажем другой кампании запрещён его настройками.');
+      return __sendMessageV1062(form);
+    }
+    if (thread.type !== 'campaign') return __sendMessageV1062(form);
+    const fd = new FormData(form);
+    const body = String(fd.get('body') || '').trim();
+    if (!body) return;
+    const player = currentPlayer();
+    if (!player) throw new Error('Профиль не найден');
+    const campaignId = String(thread.campaignId || logicalCampaignIdV1062());
+    if (!campaignId) throw new Error('Кампания не выбрана');
+
+    let senderType = 'player';
+    let senderId = player.id;
+    let npcId = null;
+    let authorLabel = player.displayName || player.id;
+    if (String(App.session?.role || '').toLowerCase() === 'gm') {
+      const actor = String(fd.get('actor') || `gm:${player.id}`);
+      if (actor.startsWith('npc:')) {
+        const requestedNpcId = actor.slice(4);
+        const npc = App.data.npcs.get(requestedNpcId);
+        if (!npc) throw new Error('NPC не найден');
+        senderType = 'npc';
+        senderId = npc.id;
+        npcId = npc.id;
+        authorLabel = npc.name || npc.id;
+      }
+    }
+
+    const row = {
+      message_id: `msg_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`,
+      // Reuse the established PocketBase kind value; campaign identity is the thread_key prefix.
+      kind: 'direct',
+      thread_key: campaignThreadKeyV1062(campaignId),
+      sender_type: senderType,
+      sender_id: senderId,
+      // Keep recipientPlayerId non-empty for existing PocketBase schemas that mark it required.
+      recipient_player_id: player.id,
+      npc_id: npcId,
+      direct_a: null,
+      direct_b: null,
+      author_label: authorLabel,
+      body_html: `<p>${esc(body)}</p>`
+    };
+    const saved = await apiUpsertChat(App.config, row);
+    App.data.chatRows = mergeChatRows(App.data.chatRows, [saved]);
+    await saveCache();
+    App.ui.chatDrafts[thread.key] = '';
+    form.reset();
+    renderChat();
+    notify(senderType === 'npc' ? `Сообщение отправлено от имени ${authorLabel}` : 'Сообщение отправлено в общий чат', 'ok');
+  };
+
+
+  /* v1.0.65 web chat unread state + scalable NPC selectors */
+  const CHAT_READ_STORAGE_PREFIX_V1065 = 'grpg.web.chatRead.v1065';
+
+  function chatReadStorageKeyV1065() {
+    const playerId = String(App.session?.userId || 'guest');
+    const campaignId = String(logicalCampaignIdV1062?.() || App.config?.campaignId || 'main');
+    return `${CHAT_READ_STORAGE_PREFIX_V1065}:${playerId}:${campaignId}`;
+  }
+
+  function messageStampV1065(row = {}) {
+    const raw = row.created_at || row.updated_at || row.client_updated_at || '';
+    const parsed = Date.parse(raw);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+
+  function isOwnChatMessageV1065(row = {}) {
+    const playerId = String(App.session?.userId || '');
+    if (String(row.sender_type || '') === 'player' && String(row.sender_id || '') === playerId) return true;
+    // NPC messages in the Web client are authored by the GM. Do not notify the GM
+    // about their own impersonated NPC messages.
+    if (String(App.session?.role || '').toLowerCase() === 'gm' && String(row.sender_type || '') === 'npc') return true;
+    return false;
+  }
+
+  function writeChatReadStateV1065(state) {
+    try { window.localStorage.setItem(chatReadStorageKeyV1065(), JSON.stringify(state)); } catch {}
+  }
+
+  function ensureChatReadStateV1065(threads = buildThreads()) {
+    const key = chatReadStorageKeyV1065();
+    let state = jsonStorageRead(window.localStorage, key, null);
+    if (!state || typeof state !== 'object' || state.version !== 1 || !state.threads || typeof state.threads !== 'object') {
+      const initializedAt = Date.now();
+      state = { version: 1, initializedAt, threads: {} };
+      // v1.0.65 introduces unread tracking for the first time. Existing history is
+      // treated as already read so users do not receive a wall of legacy badges.
+      for (const thread of threads) {
+        const latest = messagesForThread(thread.key).reduce((max, row) => Math.max(max, messageStampV1065(row)), 0);
+        state.threads[thread.key] = latest || initializedAt;
+      }
+      writeChatReadStateV1065(state);
+    }
+    return state;
+  }
+
+  function threadUnreadCountV1065(thread, state = ensureChatReadStateV1065()) {
+    if (!thread?.key) return 0;
+    const readAt = Number(state.threads?.[thread.key] ?? state.initializedAt ?? 0);
+    return messagesForThread(thread.key).reduce((count, row) => {
+      if (row.deleted_at || isOwnChatMessageV1065(row)) return count;
+      return messageStampV1065(row) > readAt ? count + 1 : count;
+    }, 0);
+  }
+
+  function markThreadReadV1065(threadKey) {
+    const key = String(threadKey || '');
+    if (!key) return;
+    const state = ensureChatReadStateV1065();
+    const latest = messagesForThread(key).reduce((max, row) => Math.max(max, messageStampV1065(row)), 0);
+    state.threads[key] = Math.max(Number(state.threads[key] || 0), latest || Date.now());
+    writeChatReadStateV1065(state);
+  }
+
+  function setUnreadBadgeTextV1065(node, count) {
+    if (!node) return;
+    const value = Number(count || 0);
+    node.textContent = value > 99 ? '99+' : String(value);
+    node.hidden = value <= 0;
+    node.setAttribute('aria-label', value > 0 ? `Непрочитанных сообщений: ${value}` : 'Нет непрочитанных сообщений');
+  }
+
+  function updateChatUnreadIndicatorsV1065(options = {}) {
+    if (!App.session?.userId || App.ui.boot !== 'app') return;
+    const threads = buildThreads();
+    if (options.markSelected && App.ui.screen === 'chat' && App.ui.selectedThreadKey) markThreadReadV1065(App.ui.selectedThreadKey);
+    const state = ensureChatReadStateV1065(threads);
+    let total = 0;
+    const counts = new Map();
+    for (const thread of threads) {
+      const count = threadUnreadCountV1065(thread, state);
+      counts.set(thread.key, count);
+      total += count;
+    }
+
+    const navButton = document.querySelector('.nav-btn[data-screen="chat"]');
+    if (navButton) {
+      let badge = navButton.querySelector('.chat-nav-unread-v1065');
+      if (!badge) {
+        badge = document.createElement('span');
+        badge.className = 'chat-nav-unread-v1065';
+        navButton.appendChild(badge);
+      }
+      setUnreadBadgeTextV1065(badge, total);
+      navButton.classList.toggle('has-unread-v1065', total > 0);
+    }
+
+    document.querySelectorAll('#screen-chat [data-action="select-thread"][data-thread-key]').forEach(button => {
+      const threadKey = String(button.dataset.threadKey || '');
+      const card = button.closest('.thread-card');
+      if (!card) return;
+      let badge = card.querySelector('.chat-thread-unread-v1065');
+      if (!badge) {
+        badge = document.createElement('span');
+        badge.className = 'chat-thread-unread-v1065';
+        const row = card.querySelector('.thread-row') || card;
+        row.appendChild(badge);
+      }
+      const count = counts.get(threadKey) || 0;
+      setUnreadBadgeTextV1065(badge, count);
+      card.classList.toggle('has-unread-v1065', count > 0);
+    });
+  }
+
+  function enhanceWebNpcPickersV1065(root = document) {
+    root?.querySelectorAll?.('select[name="actor"], select[name="npcId"]').forEach(select => {
+      const npcCount = Array.from(select.options || []).filter(option => String(option.value || '').startsWith('npc:') || select.name === 'npcId').length;
+      if (npcCount <= 6) {
+        select.removeAttribute('size');
+        select.classList.remove('npc-scroll-select-v1064', 'npc-scroll-select-v1065');
+        return;
+      }
+      select.dataset.scrollableNpcV1065 = '1';
+      select.classList.add('npc-scroll-select-v1065');
+      select.size = Math.min(8, Math.max(6, npcCount + (select.name === 'actor' ? 1 : 0)));
+      select.title = 'Список NPC прокручивается';
+    });
+  }
+
+  const __renderChatV1065 = renderChat;
+  renderChat = function() {
+    const result = __renderChatV1065();
+    requestAnimationFrame(() => {
+      enhanceWebNpcPickersV1065(document.getElementById('screen-chat') || document);
+      updateChatUnreadIndicatorsV1065({ markSelected: true });
+    });
+    return result;
+  };
+
+  const __renderCurrentScreenV1065 = renderCurrentScreen;
+  renderCurrentScreen = function() {
+    const result = __renderCurrentScreenV1065();
+    requestAnimationFrame(() => updateChatUnreadIndicatorsV1065({ markSelected: App.ui.screen === 'chat' }));
+    return result;
+  };
+
+  const __renderAffectedScreensV1065 = renderAffectedScreens;
+  renderAffectedScreens = function(changed = {}) {
+    const result = __renderAffectedScreensV1065(changed);
+    if (changed.chat) requestAnimationFrame(() => updateChatUnreadIndicatorsV1065({ markSelected: App.ui.screen === 'chat' }));
+    return result;
+  };
+
+
+  /* v1.0.68 chat list + separate conversation master window */
+  function gmChatActorSelectV1068(thread) {
+    if (String(App.session?.role || '').toLowerCase() !== 'gm' || !thread || !['campaign','direct'].includes(thread.type)) return '';
+    const gm = currentPlayer();
+    const npcs = campaignNpcOptionsV1062(gm);
+    return `<label class="field campaign-actor-field-v1062 chat-master-actor-v1068"><span>Писать от лица</span><select class="input" name="actor"><option value="gm:${esc(gm?.id || App.session?.userId || '')}">ДМ · ${esc(gm?.displayName || gm?.shortName || 'Ведущий')}</option>${npcs.map(npc=>`<option value="npc:${esc(npc.id)}">NPC · ${esc(npc.name || npc.id)}</option>`).join('')}</select></label>`;
+  }
+
+  function canManageChatRowWebV1078(row = {}) {
+    if (String(App.session?.role || '').toLowerCase() === 'gm') return true;
+    return String(row.sender_type || '') === 'player'
+      && String(row.sender_id || '') === String(App.session?.userId || '');
+  }
+
+  function chatRowMetaWebV1078(row = {}, label = '') {
+    return `${esc(label)} · ${formatDate(row.created_at)}${row.edited_at ? ' · изменено' : ''}`;
+  }
+
+  function chatRowControlsWebV1078(row = {}) {
+    if (!canManageChatRowWebV1078(row)) return '';
+    return `<div class="chat-actions-v1078">
+      <button class="chat-action-v1078" type="button" data-web-chat-action-v1078="edit" data-message-id="${esc(row.message_id)}">Изменить</button>
+      <button class="chat-action-v1078 danger" type="button" data-web-chat-action-v1078="delete" data-message-id="${esc(row.message_id)}">Скрыть</button>
+    </div>`;
+  }
+
+  function findWebChatRowV1078(messageId) {
+    return App.data.chatRows.find(row => String(row?.message_id || '') === String(messageId || '')) || null;
+  }
+
+  async function editWebChatRowV1078(row) {
+    if (!row || !canManageChatRowWebV1078(row)) throw new Error('Недостаточно прав для изменения сообщения');
+    const current = stripHtml(row.body_html || '');
+    const next = window.prompt('Изменить сообщение', current);
+    if (next == null) return false;
+    const clean = String(next).trim();
+    if (!clean) throw new Error('Пустое сообщение нельзя сохранить');
+    const now = new Date().toISOString();
+    const saved = await apiUpsertChat(App.config, {
+      ...row,
+      body_html: `<p>${esc(clean)}</p>`,
+      edited_at: now,
+      client_updated_at: now
+    });
+    App.data.chatRows = mergeChatRows(App.data.chatRows, [saved]);
+    await saveCache();
+    renderChat();
+    if (App.ui.chatMasterOpenV1068 && App.ui.selectedThreadKey) renderWebChatMasterV1068(App.ui.selectedThreadKey);
+    notify('Сообщение изменено', 'ok');
+    return true;
+  }
+
+  async function softDeleteWebChatRowV1078(row) {
+    if (!row || !canManageChatRowWebV1078(row)) throw new Error('Недостаточно прав для скрытия сообщения');
+    if (!window.confirm('Скрыть сообщение? Оно исчезнет из чата, но сохранится на сервере для модерации и безопасности.')) return false;
+    const now = new Date().toISOString();
+    const saved = await apiUpsertChat(App.config, {
+      ...row,
+      deleted_at: now,
+      edited_at: null,
+      client_updated_at: now
+    });
+    App.data.chatRows = mergeChatRows(App.data.chatRows, [saved]);
+    await saveCache();
+    renderChat();
+    if (App.ui.chatMasterOpenV1068 && App.ui.selectedThreadKey) renderWebChatMasterV1068(App.ui.selectedThreadKey);
+    notify('Сообщение скрыто', 'ok');
+    return true;
+  }
+
+  function chatThreadCardV1068(thread) {
+    const last = messagesForThread(thread.key).slice(-1)[0] || null;
+    const eyebrow = thread.type === 'campaign' ? 'ОБЩИЙ ЧАТ' : (thread.type === 'npc' ? 'NPC' : 'ЛИЧНЫЙ ЧАТ');
+    return `<article class="thread-card chat-list-card-v1068 ${thread.type === 'campaign' ? 'campaign-thread-card-v1062' : ''}">
+      <div class="thread-row">
+        ${renderEntityAvatar(thread.entity || {}, thread.label)}
+        <div class="thread-copy"><div class="eyebrow">${eyebrow}</div><h3>${esc(thread.label)}</h3><div class="small-note">${esc(last ? stripHtml(last.body_html || '').slice(0, 96) : (thread.subtitle || 'Без сообщений'))}</div></div>
+      </div>
+      <div class="entity-actions"><button class="secondary" type="button" data-action="select-thread" data-thread-key="${esc(thread.key)}">Открыть</button></div>
+    </article>`;
+  }
+
+  function ensureWebChatMasterHostV1068() {
+    let host = document.getElementById('chat-master-modal-v1068');
+    if (host) return host;
+    host = document.createElement('div');
+    host.id = 'chat-master-modal-v1068';
+    host.className = 'chat-master-modal-v1068 hidden';
+    host.setAttribute('aria-hidden','true');
+    document.body.appendChild(host);
+    return host;
+  }
+
+  function closeWebChatMasterV1068() {
+    const host = document.getElementById('chat-master-modal-v1068');
+    if (!host) return;
+    App.ui.chatMasterOpenV1068 = false;
+    host.classList.add('hidden');
+    host.setAttribute('aria-hidden','true');
+    host.innerHTML = '';
+    updateChatUnreadIndicatorsV1065({ markSelected: false });
+  }
+
+  function renderWebChatMasterV1068(threadKey = App.ui.selectedThreadKey) {
+    const host = ensureWebChatMasterHostV1068();
+    const thread = buildThreads().find(item => item.key === String(threadKey || ''));
+    if (!thread) { closeWebChatMasterV1068(); return; }
+    App.ui.selectedThreadKey = thread.key;
+    App.ui.chatMasterOpenV1068 = true;
+    markThreadReadV1065(thread.key);
+    const messages = messagesForThread(thread.key);
+    host.innerHTML = `<div class="chat-master-backdrop-v1068" data-chat-master-close-v1068></div>
+      <section class="chat-master-window-v1068" role="dialog" aria-modal="true" aria-label="${esc(thread.label)}">
+        <header class="chat-master-header-v1068">
+          <div class="thread-row compact">${renderEntityAvatar(thread.entity || {}, thread.label, 'sm')}<div><div class="section-title">${esc(thread.label)}</div><div class="small-note">${esc(thread.subtitle || '')}</div></div></div>
+          <button class="chat-master-close-v1068" type="button" data-chat-master-close-v1068 aria-label="Закрыть">×</button>
+        </header>
+        ${campaignMemberLineV1062(thread)}
+        <div class="message-list chat-master-message-list-v1068">
+          ${messages.map(row => { const meta = campaignMessageActorMarkupV1062(row, thread); return `<div class="chat-row ${meta.own ? 'own' : ''}">${renderEntityAvatar(meta.actor || {}, meta.label, 'sm')}<div class="chat-bubble ${meta.own ? 'own' : ''} ${row.sender_type === 'npc' ? 'npc-message-v1062' : ''}"><div class="chat-head-row-v1078"><div class="chat-meta">${chatRowMetaWebV1078(row, meta.label)}</div>${chatRowControlsWebV1078(row)}</div><div class="article-body">${normalizeRichHtml(row.body_html || '')}</div></div></div>`; }).join('') || '<div class="placeholder">Сообщений ещё нет.</div>'}
+        </div>
+        <form id="chat-compose-form" class="chat-compose chat-master-compose-v1068" data-thread-key="${esc(thread.key)}">
+          ${gmChatActorSelectV1068(thread)}
+          <textarea class="textarea" name="body" rows="4" placeholder="${thread.type === 'campaign' ? 'Написать в общий чат кампании...' : thread.type === 'npc' ? 'Написать NPC...' : 'Написать сообщение...'}">${esc(App.ui.chatDrafts[thread.key] || '')}</textarea>
+          <button class="primary" type="submit">Отправить</button>
+        </form>
+      </section>`;
+    host.classList.remove('hidden');
+    host.setAttribute('aria-hidden','false');
+    requestAnimationFrame(() => {
+      enhanceWebNpcPickersV1065(host);
+      const list = host.querySelector('.chat-master-message-list-v1068');
+      if (list) {
+        list.scrollTop = list.scrollHeight;
+        requestAnimationFrame(() => { list.scrollTop = list.scrollHeight; });
+      }
+      updateChatUnreadIndicatorsV1065({ markSelected: false });
+    });
+  }
+
+  function openWebChatMasterV1068(threadKey) {
+    renderWebChatMasterV1068(threadKey);
+  }
+
+  const __renderChatV1068 = renderChat;
+  renderChat = function() {
+    setTopbar('Сообщения', '');
+    const root = $('#screen-chat');
+    if (!root) return;
+    const threads = buildThreads();
+    if (App.ui.selectedThreadKey && !threads.some(thread => thread.key === App.ui.selectedThreadKey)) App.ui.selectedThreadKey = '';
+    root.innerHTML = `<div class="chat-list-only-v1068"><div class="section-head era-article-top-v1060"><div><div class="eyebrow">ЧАТЫ</div><div class="section-title">Сообщения</div></div></div><div class="thread-list chat-contact-list chat-contact-list-only-v1068">${threads.map(chatThreadCardV1068).join('') || '<div class="placeholder">Нет доступных каналов связи.</div>'}</div></div>`;
+    requestAnimationFrame(() => updateChatUnreadIndicatorsV1065({ markSelected: false }));
+  };
+
+  const __updateChatUnreadIndicatorsV1068 = updateChatUnreadIndicatorsV1065;
+  updateChatUnreadIndicatorsV1065 = function(options = {}) {
+    return __updateChatUnreadIndicatorsV1068({ ...options, markSelected: Boolean(options.markSelected && App.ui.chatMasterOpenV1068) });
+  };
+
+  const __sendMessageV1068 = sendMessage;
+  sendMessage = async function(form) {
+    const threadKey = String(form?.dataset?.threadKey || '');
+    const thread = buildThreads().find(item => item.key === threadKey);
+    if (thread?.type === 'direct' && String(App.session?.role || '').toLowerCase() === 'gm') {
+      const fd = new FormData(form);
+      const body = String(fd.get('body') || '').trim();
+      const actor = String(fd.get('actor') || '');
+      if (body && actor.startsWith('npc:')) {
+        const npcId = actor.slice(4);
+        const npc = App.data.npcs.get(npcId);
+        const target = App.data.players.get(thread.otherId);
+        if (!npc) throw new Error('NPC не найден');
+        if (!target || String(target.role || '').toLowerCase() === 'gm') throw new Error('Этот персонаж недоступен для личного чата');
+        const row = { message_id:`msg_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,7)}`, kind:'direct', thread_key:thread.key, sender_type:'npc', sender_id:npc.id, recipient_player_id:target.id, npc_id:npc.id, direct_a:currentPlayer()?.id || App.session?.userId || '', direct_b:target.id, author_label:npc.name || npc.id, body_html:`<p>${esc(body)}</p>` };
+        const saved = await apiUpsertChat(App.config,row);
+        App.data.chatRows = mergeChatRows(App.data.chatRows,[saved]);
+        await saveCache();
+        App.ui.chatDrafts[thread.key]='';
+        form.reset();
+        renderChat();
+        renderWebChatMasterV1068(thread.key);
+        notify(`Сообщение отправлено от имени ${npc.name || npc.id}`,'ok');
+        return;
+      }
+    }
+    await __sendMessageV1068(form);
+    if (App.ui.chatMasterOpenV1068 && threadKey) renderWebChatMasterV1068(threadKey);
+  };
+
+  const __renderAffectedScreensV1068 = renderAffectedScreens;
+  renderAffectedScreens = function(changed = {}) {
+    const result = __renderAffectedScreensV1068(changed);
+    if (changed.chat && App.ui.chatMasterOpenV1068 && App.ui.selectedThreadKey) requestAnimationFrame(() => renderWebChatMasterV1068(App.ui.selectedThreadKey));
+    return result;
+  };
+
+  document.addEventListener('click', event => {
+    const action = event.target?.closest?.('[data-web-chat-action-v1078]');
+    if (action) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (action.disabled) return;
+      const row = findWebChatRowV1078(action.dataset.messageId);
+      if (!row) { notify('Сообщение не найдено', 'warn'); return; }
+      action.disabled = true;
+      const task = action.dataset.webChatActionV1078 === 'delete'
+        ? softDeleteWebChatRowV1078(row)
+        : editWebChatRowV1078(row);
+      Promise.resolve(task).catch(error => notify(error.message || String(error), 'err')).finally(() => { action.disabled = false; });
+      return;
+    }
+    const close = event.target?.closest?.('[data-chat-master-close-v1068]');
+    if (!close) return;
+    if (close.classList.contains('chat-master-backdrop-v1068') && event.target !== close) return;
+    closeWebChatMasterV1068();
+  });
+  document.addEventListener('keydown', event => { if (event.key === 'Escape' && App.ui.chatMasterOpenV1068) closeWebChatMasterV1068(); });
+
+  /* v1.0.67 inventory grid, carrying limits and equipment slots */
+  const DEFAULT_INVENTORY_SIZE_V1067 = 12;
+  const DEFAULT_CARRY_WEIGHT_V1067 = 12;
+  function intNonNegativeWebV1067(value,fallback=0){const n=Number(value);return Number.isFinite(n)?Math.max(0,Math.floor(n)):fallback;}
+  function numNonNegativeWebV1067(value,fallback=0){const n=Number(value);return Number.isFinite(n)?Math.max(0,n):fallback;}
+  function itemSizeWebV1067(item={}){return{w:Math.max(1,intNonNegativeWebV1067(item.inventoryWidth??item.sizeWidth??item.widthCells??1,1)),h:Math.max(1,intNonNegativeWebV1067(item.inventoryHeight??item.sizeHeight??item.heightCells??1,1))};}
+  function itemMassWebV1067(item={}){return numNonNegativeWebV1067(item.mass??item.weight??1,1);}
+  function itemTypeWebV1067(item={}){return normalizedItemTypeV1052(item);}
+  function itemWebV1067(itemId){return App.data.items.get(String(itemId||''))||{id:String(itemId||''),name:String(itemId||''),type:'gear',mass:1,inventoryWidth:1,inventoryHeight:1};}
+  function normalizeInventoryEntryWebV1067(entry={}){const qty=intNonNegativeWebV1067(entry.qty,0);const positions=Array.isArray(entry.positions)?entry.positions.slice(0,qty).map(pos=>pos&&Number.isInteger(Number(pos.x))&&Number.isInteger(Number(pos.y))&&Number(pos.x)>=0&&Number(pos.y)>=0?{x:Number(pos.x),y:Number(pos.y)}:null):[];return{...entry,itemId:String(entry.itemId||''),qty,positions};}
+  function normalizeInventoryPlayerWebV1067(player={}){
+    const next=deep(player||{});
+    next.inventorySize=intNonNegativeWebV1067(next.inventorySize,DEFAULT_INVENTORY_SIZE_V1067);
+    next.carryWeightMax=numNonNegativeWebV1067(next.carryWeightMax??next.maxCarryWeight,DEFAULT_CARRY_WEIGHT_V1067);
+    next.inventory=(Array.isArray(next.inventory)?next.inventory:[]).map(normalizeInventoryEntryWebV1067).filter(entry=>entry.itemId&&entry.qty>0);
+    next.equipmentSlots={primaryWeapon:'',secondaryWeapon:'',armor:'',...(next.equipmentSlots||{})};
+    const legacySlots=Array.isArray(next.implantSlots)?next.implantSlots:(Array.isArray(next.installedImplantIds)?next.installedImplantIds:[]);
+    next.implantSlotCount=next.implantSlotCount==null?legacySlots.filter(Boolean).length:intNonNegativeWebV1067(next.implantSlotCount,0);
+    next.implantSlots=Array.from({length:next.implantSlotCount},(_,index)=>String(legacySlots[index]||''));
+    next.installedImplantIds=next.implantSlots.filter(Boolean);
+    return next;
+  }
+  function inventoryColsWebV1067(size){return Math.max(1,Math.ceil(Math.sqrt(Math.max(1,intNonNegativeWebV1067(size,DEFAULT_INVENTORY_SIZE_V1067)))));}
+  function equippedCountsWebV1067(user={}){const map=new Map();const add=id=>{const key=String(id||'');if(key)map.set(key,(map.get(key)||0)+1);};add(user.equipmentSlots?.primaryWeapon);add(user.equipmentSlots?.secondaryWeapon);add(user.equipmentSlots?.armor);(user.implantSlots||[]).forEach(add);return map;}
+  function inventoryWeightWebV1067(user={}){return(user.inventory||[]).reduce((sum,entry)=>sum+itemMassWebV1067(itemWebV1067(entry.itemId))*intNonNegativeWebV1067(entry.qty,0),0);}
+  function markOccWebV1067(occupied,x,y,w,h,value=true){for(let yy=y;yy<y+h;yy++)for(let xx=x;xx<x+w;xx++){const key=`${xx}:${yy}`;if(value)occupied.add(key);else occupied.delete(key);}}
+  function fitsWebV1067(size,cols,occupied,x,y,w,h){if(x<0||y<0||x+w>cols)return false;for(let yy=y;yy<y+h;yy++)for(let xx=x;xx<x+w;xx++){const index=yy*cols+xx;if(index<0||index>=size||occupied.has(`${xx}:${yy}`))return false;}return true;}
+  function firstFitWebV1067(size,cols,occupied,w,h){const rows=Math.ceil(Math.max(1,size)/cols);for(let y=0;y<rows;y++)for(let x=0;x<cols;x++)if(fitsWebV1067(size,cols,occupied,x,y,w,h))return{x,y};return null;}
+  function buildInventoryLayoutWebV1067(rawUser={}){
+    const user=normalizeInventoryPlayerWebV1067(rawUser);const size=user.inventorySize,cols=inventoryColsWebV1067(size),equipped=equippedCountsWebV1067(user),occupied=new Set(),instances=[],overflow=[];
+    for(const entry of user.inventory){const item=itemWebV1067(entry.itemId),sz=itemSizeWebV1067(item),skip=Math.min(entry.qty,equipped.get(entry.itemId)||0);for(let unitIndex=skip;unitIndex<entry.qty;unitIndex++){const key=`${entry.itemId}::${unitIndex}`;let pos=entry.positions?.[unitIndex]||null;if(!pos||!fitsWebV1067(size,cols,occupied,pos.x,pos.y,sz.w,sz.h))pos=firstFitWebV1067(size,cols,occupied,sz.w,sz.h);const inst={key,itemId:entry.itemId,unitIndex,item,w:sz.w,h:sz.h,pos};if(pos){markOccWebV1067(occupied,pos.x,pos.y,sz.w,sz.h);instances.push(inst);}else overflow.push(inst);}}
+    return{user,size,cols,rows:Math.ceil(Math.max(1,size)/cols),instances,overflow,weight:inventoryWeightWebV1067(user)};
+  }
+  function setPositionWebV1067(user,itemId,unitIndex,pos){const entry=(user.inventory||[]).find(row=>row.itemId===itemId);if(!entry)return false;entry.positions=Array.isArray(entry.positions)?entry.positions:[];while(entry.positions.length<entry.qty)entry.positions.push(null);entry.positions[unitIndex]=pos?{x:intNonNegativeWebV1067(pos.x),y:intNonNegativeWebV1067(pos.y)}:null;return true;}
+  function canPlaceWebV1067(user,itemId,unitIndex,x,y){const layout=buildInventoryLayoutWebV1067(user),occupied=new Set(),moving=`${itemId}::${unitIndex}`;layout.instances.filter(i=>i.key!==moving&&i.pos).forEach(i=>markOccWebV1067(occupied,i.pos.x,i.pos.y,i.w,i.h));const sz=itemSizeWebV1067(itemWebV1067(itemId));return fitsWebV1067(layout.size,layout.cols,occupied,x,y,sz.w,sz.h);}
+  function getSlotWebV1067(user,type,index=-1){return type==='implant'?String(user.implantSlots?.[index]||''):String(user.equipmentSlots?.[type]||'');}
+  function setSlotWebV1067(user,type,index,itemId){if(type==='implant'){user.implantSlots=Array.from({length:user.implantSlotCount},(_,i)=>String(user.implantSlots?.[i]||''));if(index<0||index>=user.implantSlotCount)return false;user.implantSlots[index]=String(itemId||'');user.installedImplantIds=user.implantSlots.filter(Boolean);return true;}user.equipmentSlots={primaryWeapon:'',secondaryWeapon:'',armor:'',...(user.equipmentSlots||{})};user.equipmentSlots[type]=String(itemId||'');return true;}
+  function slotAcceptsWebV1067(type,item){const itemType=itemTypeWebV1067(item);if(type==='armor')return itemType==='armor';if(type==='implant')return itemType==='implant';if(type==='primaryWeapon')return itemType==='weapon'&&['primary','versatile',''].includes(String(item.weaponSlot||'primary'));if(type==='secondaryWeapon')return itemType==='weapon'&&['secondary','versatile',''].includes(String(item.weaponSlot||'secondary'));return false;}
+  function ownedQtyWebV1067(user,itemId){return intNonNegativeWebV1067((user.inventory||[]).find(entry=>entry.itemId===itemId)?.qty,0);}
+  function equippedCountWebV1067(user,itemId){return equippedCountsWebV1067(user).get(String(itemId||''))||0;}
+  function canAddInventoryItemWebV1067(user,itemId,qty=1){const current=normalizeInventoryPlayerWebV1067(user),item=itemWebV1067(itemId),count=Math.max(1,intNonNegativeWebV1067(qty,1)),nextWeight=inventoryWeightWebV1067(current)+itemMassWebV1067(item)*count;if(nextWeight>current.carryWeightMax+1e-9)return{ok:false,reason:`Превышен переносимый вес: ${nextWeight.toFixed(1)} / ${current.carryWeightMax}`};const clone=deep(current);let entry=clone.inventory.find(row=>row.itemId===itemId);if(!entry){entry={itemId,qty:0,positions:[]};clone.inventory.push(entry);}entry.qty+=count;if(buildInventoryLayoutWebV1067(clone).overflow.length)return{ok:false,reason:'В инвентаре недостаточно свободного места для предмета.'};return{ok:true};}
+
+  function webSlotLabelV1067(type,index=-1){return type==='primaryWeapon'?'Основное':type==='secondaryWeapon'?'Вторичное':type==='armor'?'Броня':`Имплант ${index+1}`;}
+  function webSlotMarkupV1067(user,type,index=-1){const itemId=getSlotWebV1067(user,type,index),item=itemId?itemWebV1067(itemId):null;return `<div class="web-inventory-slot-v1067 ${item?'filled':''}" data-web-inventory-slot-v1067 data-slot-type="${type}" data-slot-index="${index}"><div class="web-inventory-slot-label-v1067">${esc(webSlotLabelV1067(type,index))}</div>${item?`<div class="web-inventory-slot-item-v1067" draggable="true" data-web-inventory-drag-v1067 data-source="slot" data-slot-type="${type}" data-slot-index="${index}" data-item-id="${esc(item.id)}" data-action="profile-item" data-item-id="${esc(item.id)}" data-item-label="${esc(webSlotLabelV1067(type,index))}">${renderEntityThumb(item)}<span>${esc(item.name||item.id)}</span></div>`:'<div class="web-inventory-slot-empty-v1067">Перетащите предмет</div>'}</div>`;}
+  function webGridMarkupV1067(user){const layout=buildInventoryLayoutWebV1067(user);const cells=Array.from({length:layout.size},(_,index)=>`<div class="web-inventory-cell-v1067" style="grid-column:${index%layout.cols+1};grid-row:${Math.floor(index/layout.cols)+1}"></div>`).join('');const tiles=layout.instances.map(inst=>`<div class="web-inventory-tile-v1067" draggable="true" data-web-inventory-drag-v1067 data-source="grid" data-item-id="${esc(inst.itemId)}" data-unit-index="${inst.unitIndex}" data-action="profile-item" data-item-id="${esc(inst.itemId)}" data-item-label="Инвентарь" style="grid-column:${inst.pos.x+1}/span ${inst.w};grid-row:${inst.pos.y+1}/span ${inst.h}" title="${esc(inst.item.name||inst.itemId)} · ${inst.w}×${inst.h} · ${itemMassWebV1067(inst.item)} веса">${renderEntityThumb(inst.item)}<span>${esc(inst.item.name||inst.itemId)}</span><small>${inst.w}×${inst.h}</small></div>`).join('');const overflow=layout.overflow.length?`<div class="web-inventory-overflow-v1067"><b>Не помещается: ${layout.overflow.length}</b>${layout.overflow.map(inst=>`<span>${esc(inst.item.name||inst.itemId)} (${inst.w}×${inst.h})</span>`).join('')}</div>`:'';return`<div class="web-inventory-grid-v1067" data-web-inventory-grid-v1067 style="--inv-cols:${layout.cols};--inv-rows:${layout.rows}">${cells}${tiles}</div>${overflow}`;}
+  function webInventoryPanelV1067(rawPlayer){const user=normalizeInventoryPlayerWebV1067(rawPlayer),layout=buildInventoryLayoutWebV1067(user),overweight=layout.weight>user.carryWeightMax+1e-9;return `<section class="panel web-profile-inventory-v1067"><div class="section-head era-article-top-v1060"><div><div class="eyebrow">LOADOUT</div><div class="section-title">Экипировка и инвентарь</div></div></div><div class="web-inventory-capacity-v1067"><span>Инвентарь <b>${[...layout.instances,...layout.overflow].reduce((sum,i)=>sum+i.w*i.h,0)} / ${user.inventorySize}</b> клеток</span><span class="${overweight?'inventory-limit-exceeded-v1067':''}">Вес <b>${layout.weight.toFixed(1)} / ${Number(user.carryWeightMax).toFixed(1)}</b></span><span>Импланты <b>${user.implantSlots.filter(Boolean).length} / ${user.implantSlotCount}</b></span></div><div class="web-inventory-slots-v1067">${webSlotMarkupV1067(user,'primaryWeapon')}${webSlotMarkupV1067(user,'secondaryWeapon')}${webSlotMarkupV1067(user,'armor')}${Array.from({length:user.implantSlotCount},(_,i)=>webSlotMarkupV1067(user,'implant',i)).join('')}</div><div class="section-head era-article-top-v1060 web-inventory-grid-head-v1067"><div class="section-title">Инвентарь</div><div class="muted">Перетаскивайте предметы по сетке и в слоты.</div></div>${webGridMarkupV1067(user)}</section>`;}
+
+  const __renderProfileV1067=renderProfile;
+  renderProfile=function(){const result=__renderProfileV1067();const root=$('#screen-profile'),player=currentPlayer();if(!root||!player)return result;const heads=Array.from(root.querySelectorAll('.section-head'));for(const head of heads){const title=head.querySelector('.section-title')?.textContent?.trim();if(['Текущее снаряжение','Инвентарь'].includes(title)){const next=head.nextElementSibling;head.remove();if(next?.classList.contains('profile-item-grid-v1060'))next.remove();}}root.querySelector('[data-implants-v1052]')?.remove();root.querySelector('.web-profile-inventory-v1067')?.remove();const main=root.querySelector('.profile-card');if(main){main.insertAdjacentHTML('afterend',webInventoryPanelV1067(player));const infoGrid=main.querySelector('.info-grid');if(infoGrid&&!main.querySelector('[data-web-inventory-limits-v1067]'))infoGrid.insertAdjacentHTML('beforeend',`<div class="info-card" data-web-inventory-limits-v1067><div class="k">Инвентарь / вес</div><div class="v">${normalizeInventoryPlayerWebV1067(player).inventorySize} ячеек · ${Number(normalizeInventoryPlayerWebV1067(player).carryWeightMax).toFixed(1)}</div></div>`);}return result;};
+
+  let webInventoryDragV1067=null;
+  document.addEventListener('dragstart',event=>{const node=event.target?.closest?.('[data-web-inventory-drag-v1067]');if(!node)return;webInventoryDragV1067={source:String(node.dataset.source||''),itemId:String(node.dataset.itemId||''),unitIndex:intNonNegativeWebV1067(node.dataset.unitIndex,-1),slotType:String(node.dataset.slotType||''),slotIndex:Number(node.dataset.slotIndex??-1)};event.dataTransfer.effectAllowed='move';try{event.dataTransfer.setData('text/plain',webInventoryDragV1067.itemId);}catch{}node.classList.add('web-inventory-dragging-v1067');});
+  document.addEventListener('dragend',event=>{event.target?.closest?.('[data-web-inventory-drag-v1067]')?.classList.remove('web-inventory-dragging-v1067');webInventoryDragV1067=null;});
+  document.addEventListener('dragover',event=>{if(!webInventoryDragV1067)return;if(event.target?.closest?.('[data-web-inventory-grid-v1067],[data-web-inventory-slot-v1067]')){event.preventDefault();event.dataTransfer.dropEffect='move';}});
+  document.addEventListener('drop',async event=>{if(!webInventoryDragV1067)return;const grid=event.target?.closest?.('[data-web-inventory-grid-v1067]'),slot=event.target?.closest?.('[data-web-inventory-slot-v1067]');if(!grid&&!slot)return;event.preventDefault();const drag={...webInventoryDragV1067};webInventoryDragV1067=null;try{if(slot){const targetType=String(slot.dataset.slotType||''),targetIndex=Number(slot.dataset.slotIndex??-1),item=itemWebV1067(drag.itemId);if(!slotAcceptsWebV1067(targetType,item))throw new Error('Этот предмет нельзя установить в выбранный слот');await commitPlayerMutation(user=>{const normalized=normalizeInventoryPlayerWebV1067(user);Object.assign(user,normalized);if(drag.source==='slot')setSlotWebV1067(user,drag.slotType,drag.slotIndex,'');const owned=ownedQtyWebV1067(user,drag.itemId),equipped=equippedCountWebV1067(user,drag.itemId),targetCurrent=getSlotWebV1067(user,targetType,targetIndex),allowance=targetCurrent===drag.itemId?1:0;if(owned<=equipped-allowance)throw new Error('В инвентаре нет свободного экземпляра этого предмета');setSlotWebV1067(user,targetType,targetIndex,drag.itemId);},'Экипировка обновлена');return;}const rect=grid.getBoundingClientRect(),cols=Number(getComputedStyle(grid).getPropertyValue('--inv-cols'))||1,cell=rect.width/cols,x=Math.max(0,Math.min(cols-1,Math.floor((event.clientX-rect.left)/cell))),y=Math.max(0,Math.floor((event.clientY-rect.top)/cell));await commitPlayerMutation(user=>{const normalized=normalizeInventoryPlayerWebV1067(user);Object.assign(user,normalized);let unitIndex=drag.unitIndex;if(drag.source==='slot'){setSlotWebV1067(user,drag.slotType,drag.slotIndex,'');unitIndex=equippedCountWebV1067(user,drag.itemId);}if(unitIndex<0||!canPlaceWebV1067(user,drag.itemId,unitIndex,x,y))throw new Error('Предмет не помещается в выбранное место');setPositionWebV1067(user,drag.itemId,unitIndex,{x,y});},drag.source==='slot'?'Предмет снят':'Инвентарь перемещён');}catch(error){notify(error.message||String(error),'warn');}});
+
+  async function handlePointerInventoryDropWebV1067(drag,target,clientX,clientY){const grid=target?.closest?.('[data-web-inventory-grid-v1067]'),slot=target?.closest?.('[data-web-inventory-slot-v1067]');if(!grid&&!slot)return;try{if(slot){const targetType=String(slot.dataset.slotType||''),targetIndex=Number(slot.dataset.slotIndex??-1),item=itemWebV1067(drag.itemId);if(!slotAcceptsWebV1067(targetType,item))throw new Error('Этот предмет нельзя установить в выбранный слот');await commitPlayerMutation(user=>{Object.assign(user,normalizeInventoryPlayerWebV1067(user));if(drag.source==='slot')setSlotWebV1067(user,drag.slotType,drag.slotIndex,'');const owned=ownedQtyWebV1067(user,drag.itemId),equipped=equippedCountWebV1067(user,drag.itemId),targetCurrent=getSlotWebV1067(user,targetType,targetIndex),allowance=targetCurrent===drag.itemId?1:0;if(owned<=equipped-allowance)throw new Error('В инвентаре нет свободного экземпляра этого предмета');setSlotWebV1067(user,targetType,targetIndex,drag.itemId);},'Экипировка обновлена');return;}const rect=grid.getBoundingClientRect(),cols=Number(getComputedStyle(grid).getPropertyValue('--inv-cols'))||1,cell=rect.width/cols,x=Math.max(0,Math.min(cols-1,Math.floor((clientX-rect.left)/cell))),y=Math.max(0,Math.floor((clientY-rect.top)/cell));await commitPlayerMutation(user=>{Object.assign(user,normalizeInventoryPlayerWebV1067(user));let unitIndex=drag.unitIndex;if(drag.source==='slot'){setSlotWebV1067(user,drag.slotType,drag.slotIndex,'');unitIndex=equippedCountWebV1067(user,drag.itemId);}if(unitIndex<0||!canPlaceWebV1067(user,drag.itemId,unitIndex,x,y))throw new Error('Предмет не помещается в выбранное место');setPositionWebV1067(user,drag.itemId,unitIndex,{x,y});},drag.source==='slot'?'Предмет снят':'Инвентарь перемещён');}catch(error){notify(error.message||String(error),'warn');}}
+  let touchInventoryDragWebV1067=null;
+  document.addEventListener('pointerdown',event=>{if(event.pointerType==='mouse')return;const node=event.target?.closest?.('[data-web-inventory-drag-v1067]');if(!node)return;const drag={source:String(node.dataset.source||''),itemId:String(node.dataset.itemId||''),unitIndex:intNonNegativeWebV1067(node.dataset.unitIndex,-1),slotType:String(node.dataset.slotType||''),slotIndex:Number(node.dataset.slotIndex??-1)};const state={node,drag,pointerId:event.pointerId,startX:event.clientX,startY:event.clientY,x:event.clientX,y:event.clientY,active:false,timer:null,ghost:null};state.timer=setTimeout(()=>{state.active=true;state.node.classList.add('web-inventory-dragging-v1067');const ghost=state.node.cloneNode(true);ghost.classList.add('web-inventory-touch-ghost-v1067');ghost.removeAttribute('draggable');document.body.appendChild(ghost);state.ghost=ghost;ghost.style.left=`${state.x}px`;ghost.style.top=`${state.y}px`;},280);touchInventoryDragWebV1067=state;});
+  document.addEventListener('pointermove',event=>{const state=touchInventoryDragWebV1067;if(!state||state.pointerId!==event.pointerId)return;state.x=event.clientX;state.y=event.clientY;const dist=Math.hypot(event.clientX-state.startX,event.clientY-state.startY);if(!state.active&&dist>10){clearTimeout(state.timer);touchInventoryDragWebV1067=null;return;}if(state.active){event.preventDefault();if(state.ghost){state.ghost.style.left=`${event.clientX}px`;state.ghost.style.top=`${event.clientY}px`;}}},{passive:false});
+  document.addEventListener('pointerup',async event=>{const state=touchInventoryDragWebV1067;if(!state||state.pointerId!==event.pointerId)return;clearTimeout(state.timer);touchInventoryDragWebV1067=null;if(!state.active)return;event.preventDefault();event.stopPropagation();state.node.classList.remove('web-inventory-dragging-v1067');state.ghost?.remove();const target=document.elementFromPoint(event.clientX,event.clientY);await handlePointerInventoryDropWebV1067(state.drag,target,event.clientX,event.clientY);},{passive:false});
+  document.addEventListener('pointercancel',event=>{const state=touchInventoryDragWebV1067;if(!state||state.pointerId!==event.pointerId)return;clearTimeout(state.timer);state.node.classList.remove('web-inventory-dragging-v1067');state.ghost?.remove();touchInventoryDragWebV1067=null;});
+
+  /* v1.0.71 — transactional daily planetary market */
+  const MarketEngineV1071=window.GRPGMarketEngineV1071;
+  let marketSelectionWebV1071=null,marketDragWebV1071=null,marketTabWebV1073='goods',lastMarketDayWebV1071=MarketEngineV1071?.rotationKey?.()||'';
+  function marketRotationWebV1071(planet=currentPlanet()){
+    if(!MarketEngineV1071||!planet)return{rotationKey:'',nextRotationAt:new Date().toISOString(),offers:[],allOffers:[]};
+    const campaign=App.data.campaigns.get(App.config?.campaignId||'main')||{};
+    return MarketEngineV1071.buildRotation({campaignId:App.config?.campaignId||'main',campaign,gameDate:campaign.marketDate,planet,planets:App.data.planets,equipment:App.data.items,marketState:App.data.state?.marketRuntimeV1071||{claims:{}}});
+  }
+  function marketSizeWebV1071(item={}){return{w:Math.max(1,Number.parseInt(item.inventoryWidth??item.sizeWidth??1,10)||1),h:Math.max(1,Number.parseInt(item.inventoryHeight??item.sizeHeight??1,10)||1)};}
+  function marketItemIsStockWebV1073(item={}){return normalizedItemTypeV1052(item)==='stock';}
+  function marketTabMatchesWebV1073(item={},tab=marketTabWebV1073){return tab==='stocks'?marketItemIsStockWebV1073(item):!marketItemIsStockWebV1073(item);}
+  function marketSellPercentWebV1073(offer,item){const fallback=marketItemIsStockWebV1073(item)?1:.7,rate=Number.isFinite(Number(offer?.sellRate))?Number(offer.sellRate):fallback;return Math.round(rate*100);}
+  function marketOfferTileWebV1071(offer){const item=App.data.items.get(offer.itemId);if(!item)return'';const size=marketSizeWebV1071(item),selected=marketSelectionWebV1071?.source==='market'&&marketSelectionWebV1071?.itemId===item.id;return`<button class="market-shop-tile-v1071 ${selected?'selected':''}" type="button" draggable="true" data-web-market-drag-v1071 data-source="market" data-item-id="${esc(item.id)}" style="grid-column:span ${size.w};grid-row:span ${size.h}" title="${esc(item.name||item.id)} · ${size.w}×${size.h}">${renderEntityThumb(item)}<span class="market-tile-name-v1071">${esc(item.name||item.id)}</span><span class="market-tile-meta-v1071">${size.w}×${size.h}${offer.unique?' · Уникальный':''}</span><b class="market-tile-price-v1071">${formatCredits(offer.price)}</b></button>`;}
+  function marketInventoryWebV1071(player,offers,tab=marketTabWebV1073){const layout=buildInventoryLayoutWebV1067(player),offerMap=new Map(offers.map(offer=>[offer.itemId,offer]));const cells=Array.from({length:layout.size},(_,index)=>`<div class="market-inventory-cell-v1071" style="grid-column:${index%layout.cols+1};grid-row:${Math.floor(index/layout.cols)+1}"></div>`).join('');const visible=layout.instances.filter(inst=>marketTabMatchesWebV1073(inst.item,tab));const tiles=visible.map(inst=>{const offer=offerMap.get(inst.itemId),selected=marketSelectionWebV1071?.source==='inventory'&&marketSelectionWebV1071?.itemId===inst.itemId&&Number(marketSelectionWebV1071?.unitIndex)===Number(inst.unitIndex);return`<button class="market-inventory-tile-v1071 ${selected?'selected':''} ${offer?'sellable':'not-sellable'}" type="button" draggable="true" data-web-market-drag-v1071 data-source="inventory" data-item-id="${esc(inst.itemId)}" data-unit-index="${inst.unitIndex}" style="grid-column:${inst.pos.x+1}/span ${inst.w};grid-row:${inst.pos.y+1}/span ${inst.h}" title="${esc(inst.item.name||inst.itemId)}${offer?` · Продажа за ${formatCredits(offer.sellPrice)}`:' · Сегодня не принимается'}">${renderEntityThumb(inst.item)}<span>${esc(inst.item.name||inst.itemId)}</span><small>${inst.w}×${inst.h}${offer?` · ${formatCredits(offer.sellPrice)}`:''}</small></button>`;}).join('');const overflow=layout.overflow.filter(inst=>marketTabMatchesWebV1073(inst.item||App.data.items.get(inst.itemId),tab));return`<div class="market-inventory-grid-v1071" data-web-market-inventory-drop-v1071 style="--inv-cols:${layout.cols};--inv-rows:${layout.rows}">${cells}${tiles}</div>${overflow.length?`<div class="web-inventory-overflow-v1067"><b>Не помещается: ${overflow.length}</b></div>`:''}`;}
+  function marketTypeLabelWebV1071(item={}){const type=normalizedItemTypeV1052(item);return type==='weapon'?'Оружие':type==='armor'?'Броня':type==='implant'?'Имплант':type==='stock'?'Акции':'Снаряжение';}
+  function marketWeaponSlotLabelWebV1071(value){return({primary:'Основное',secondary:'Вторичное',versatile:'Универсальное'})[String(value||'primary')]||String(value||'Основное');}
+  function marketRequirementTextWebV1071(item={}){const req=item.requirements&&typeof item.requirements==='object'?item.requirements:{};const rows=ABILITIES_V1052.filter(row=>Number(req[row.key]||0)>0).map(row=>`${row.short} ${Number(req[row.key])}`);return rows.length?rows.join(' · '):'нет';}
+  function marketItemDetailsWebV1071(item,offer){const type=normalizedItemTypeV1052(item),size=marketSizeWebV1071(item),mass=Number(item.mass??item.weight??1),facts=[`Тип: ${marketTypeLabelWebV1071(item)}`,item.rarity?`Редкость: ${item.rarity}`:'',`Размер: ${size.w}×${size.h}`,`Масса: ${Number.isFinite(mass)?mass:1}`,offer?.unique?'Уникальный предмет':''];if(type==='weapon'){if(item.damage)facts.push(`Урон: ${item.damage}`);facts.push(`Попадание: ${Number(item.hitBonus||0)>=0?'+':''}${Number(item.hitBonus||0)}`);facts.push(`Слот: ${marketWeaponSlotLabelWebV1071(item.weaponSlot)}`);}if(type==='armor'&&Number(item.armorClass||0)>0)facts.push(`Класс брони: ${Number(item.armorClass)}`);if(type==='implant')facts.push(`Требуемая энергия: ${Number(item.energyRequired??item.requiredEnergy??0)}`);const tags=Array.isArray(item.tags)?item.tags.map(tag=>String(tag||'').trim()).filter(Boolean):[];return`<div class="market-selection-facts-v1071">${facts.filter(Boolean).map(fact=>`<span class="pill">${esc(fact)}</span>`).join('')}</div><p class="market-selection-description-v1071">${esc(item.desc||item.description||item.summary||'Описание предмета не задано.')}</p><div class="market-selection-requirements-v1071"><b>Требования:</b> ${esc(marketRequirementTextWebV1071(item))}</div>${tags.length?`<div class="market-selection-tags-v1071"><b>Категории:</b> ${esc(tags.join(' · '))}</div>`:''}`;}
+  function marketSelectionWebMarkupV1071(rotation,player){const item=marketSelectionWebV1071?.itemId?App.data.items.get(marketSelectionWebV1071.itemId):null;if(!item)return'<div class="market-selection-empty-v1071">Выберите плитку товара или предмета.</div>';const buy=marketSelectionWebV1071.source==='market',offer=(buy?rotation.offers:rotation.allOffers).find(row=>row.itemId===item.id),capacity=buy?canAddInventoryItemWebV1067(player,item.id,1):{ok:true},disabled=!offer||(buy&&(!capacity.ok||Number(player.credits||0)<Number(offer.price||0))),sellPercent=marketSellPercentWebV1073(offer,item);return`<div class="market-selection-card-v1071">${renderEntityThumb(item)}<div class="market-selection-details-v1071"><div class="market-selection-heading-v1071"><b>${esc(item.name||item.id)}</b><strong>${buy?`Покупка: ${formatCredits(offer?.price||0)}`:offer?`Продажа: ${formatCredits(offer.sellPrice)} (${sellPercent}%)`:'Сегодня этот товар не принимается'}</strong></div>${marketItemDetailsWebV1071(item,offer)}${buy&&!capacity.ok?`<small class="error-line">${esc(capacity.reason)}</small>`:''}</div><button class="primary" type="button" data-web-market-action-v1071="${buy?'buy':'sell'}" ${disabled?'disabled':''}>${buy?'КУПИТЬ':'ПРОДАТЬ'}</button></div>`;}
+  renderMarket=function(){
+    const root=$('#screen-market'),player=currentPlayer(),planet=currentPlanet();
+    setTopbar('Торговый терминал','Ежедневная ротация ассортимента и цен');
+    if(!player||!planet){root.innerHTML='<div class="placeholder market-disabled">Терминал заблокирован. У профиля нет текущей планеты.</div>';return;}
+    const rotation=marketRotationWebV1071(planet);
+    const visibleOffers=rotation.offers.filter(offer=>marketTabMatchesWebV1073(App.data.items.get(offer.itemId)));
+    const visibleAllOffers=rotation.allOffers.filter(offer=>marketTabMatchesWebV1073(App.data.items.get(offer.itemId)));
+    if(marketSelectionWebV1071&&(!marketTabMatchesWebV1073(App.data.items.get(marketSelectionWebV1071.itemId))||(marketSelectionWebV1071.source==='market'&&!visibleOffers.some(offer=>offer.itemId===marketSelectionWebV1071.itemId))))marketSelectionWebV1071=null;
+    root.innerHTML=`<div class="market-terminal-v1071"><div class="hero-card market-hero-v1071"><div class="section-head"><div><div class="eyebrow">LOCAL TERMINAL</div><div class="section-title">${esc(planet.name)}</div><div class="small-note">Игровой день рынка: ${esc(formatDate(rotation.rotationKey))}</div></div><div class="pill">Баланс: ${formatCredits(player.credits||0)}</div></div></div><div class="market-tabs-v1073" role="tablist" aria-label="Раздел торгового терминала"><button class="secondary ${marketTabWebV1073==='goods'?'active':''}" type="button" role="tab" aria-selected="${marketTabWebV1073==='goods'}" data-web-market-tab-v1073="goods">ТОВАРЫ</button><button class="secondary ${marketTabWebV1073==='stocks'?'active':''}" type="button" role="tab" aria-selected="${marketTabWebV1073==='stocks'}" data-web-market-tab-v1073="stocks">АКЦИИ</button></div><div class="market-access-banner-v1071 ok">Покупка доступна. Обычные товары продаются за 70% текущей цены.</div><div class="market-dual-grid-v1071"><section class="market-pane-v1071 market-stock-pane-v1071" data-web-market-stock-drop-v1071><div class="market-pane-head-v1071"><div><span class="eyebrow">${marketTabWebV1073==='stocks'?'SECURITIES':'MARKET STOCK'}</span><b>${marketTabWebV1073==='stocks'?'Акции':'Товары'}</b></div><span>${visibleOffers.length} поз.</span></div><div class="market-shop-grid-v1071">${visibleOffers.map(marketOfferTileWebV1071).join('')||`<div class="placeholder">В текущей ротации нет ${marketTabWebV1073==='stocks'?'акций':'товаров'}.</div>`}</div></section><section class="market-pane-v1071"><div class="market-pane-head-v1071"><div><span class="eyebrow">PERSONAL STORAGE</span><b>${marketTabWebV1073==='stocks'?'Портфель':'Инвентарь'}</b></div><span>${formatCredits(player.credits||0)}</span></div>${marketInventoryWebV1071(player,visibleAllOffers,marketTabWebV1073)}</section></div>${marketSelectionWebMarkupV1071(rotation,player)}</div>`;
+  };
+  async function transactMarketWebV1071(payload){const player=currentPlayer(),planet=currentPlanet();if(!player||!planet)throw new Error('Торговый терминал недоступен');let result;try{result=await pbFetch(App.config,'/api/grpgi/market/transaction',{method:'POST',json:{campaignId:App.config.campaignId,playerId:player.id,planetId:planet.id,updatedBy:App.config.deviceLabel||'web-market',clientUpdatedAt:new Date().toISOString(),...payload}});}catch(error){if(/404|not found/i.test(String(error.message||'')))throw new Error('На сервере PocketBase не установлен pb_hooks/grpgi_market.pb.js');throw error;}if(!result?.ok)throw new Error(result?.message||'Операция рынка не выполнена');marketSelectionWebV1071=null;await pullEverything({silent:true,render:false});renderMarket();notify(payload.action==='buy'?'Покупка завершена':'Продажа завершена','ok');return result;}
+  document.addEventListener('click',event=>{const tab=event.target?.closest?.('[data-web-market-tab-v1073]');if(tab&&tab.closest('#screen-market')){marketTabWebV1073=tab.dataset.webMarketTabV1073==='stocks'?'stocks':'goods';marketSelectionWebV1071=null;renderMarket();return;}const tile=event.target?.closest?.('[data-web-market-drag-v1071]');if(tile&&tile.closest('#screen-market')){marketSelectionWebV1071={source:String(tile.dataset.source||''),itemId:String(tile.dataset.itemId||''),unitIndex:Number(tile.dataset.unitIndex??-1)};renderMarket();return;}const action=event.target?.closest?.('[data-web-market-action-v1071]');if(!action||!marketSelectionWebV1071)return;transactMarketWebV1071({action:String(action.dataset.webMarketActionV1071),itemId:marketSelectionWebV1071.itemId,unitIndex:marketSelectionWebV1071.unitIndex}).catch(error=>notify(error.message||String(error),'err'));});
+  document.addEventListener('dragstart',event=>{const node=event.target?.closest?.('[data-web-market-drag-v1071]');if(!node)return;marketDragWebV1071={source:String(node.dataset.source||''),itemId:String(node.dataset.itemId||''),unitIndex:Number(node.dataset.unitIndex??-1)};event.dataTransfer.effectAllowed=marketDragWebV1071.source==='market'?'copy':'move';try{event.dataTransfer.setData('text/plain',marketDragWebV1071.itemId);}catch{}node.classList.add('market-dragging-v1071');});
+  document.addEventListener('dragend',event=>{event.target?.closest?.('[data-web-market-drag-v1071]')?.classList.remove('market-dragging-v1071');marketDragWebV1071=null;});
+  document.addEventListener('dragover',event=>{if(!marketDragWebV1071)return;const target=marketDragWebV1071.source==='market'?event.target?.closest?.('[data-web-market-inventory-drop-v1071]'):event.target?.closest?.('[data-web-market-stock-drop-v1071]');if(target){event.preventDefault();event.dataTransfer.dropEffect=marketDragWebV1071.source==='market'?'copy':'move';}});
+  document.addEventListener('drop',event=>{if(!marketDragWebV1071)return;const inventory=event.target?.closest?.('[data-web-market-inventory-drop-v1071]'),stock=event.target?.closest?.('[data-web-market-stock-drop-v1071]');if((marketDragWebV1071.source==='market'&&!inventory)||(marketDragWebV1071.source==='inventory'&&!stock))return;event.preventDefault();const payload={action:marketDragWebV1071.source==='market'?'buy':'sell',itemId:marketDragWebV1071.itemId,unitIndex:marketDragWebV1071.unitIndex};if(inventory){const rect=inventory.getBoundingClientRect(),cols=Number(getComputedStyle(inventory).getPropertyValue('--inv-cols'))||1,cell=rect.width/cols;payload.targetPosition={x:Math.max(0,Math.min(cols-1,Math.floor((event.clientX-rect.left)/cell))),y:Math.max(0,Math.floor((event.clientY-rect.top)/cell))};}marketDragWebV1071=null;transactMarketWebV1071(payload).catch(error=>notify(error.message||String(error),'err'));});
+  setInterval(()=>{const key=MarketEngineV1071?.rotationKey?.()||'';if(key&&key!==lastMarketDayWebV1071){lastMarketDayWebV1071=key;marketSelectionWebV1071=null;if(App.ui.screen==='market')renderMarket();}},60000);
+
+  /* v1.0.74 — global securities exchange and non-inventory portfolio */
+  let stockSelectionWebV1074=null,stockDragWebV1074=null;
+  function stockTickerWebV1074(item={}){return MarketEngineV1071.stockTicker(item)||'—';}
+  function stockQtyWebV1074(position={}){return Math.max(0,Number(position.knownQty||0))+Math.max(0,Number(position.unpricedQty||0));}
+  function stockChangeClassWebV1074(value){return Number(value||0)>0?'up':Number(value||0)<0?'down':'flat';}
+  function signedCreditsWebV1074(value){const amount=Number(value||0);return`${amount>0?'+':''}${formatCredits(amount)}`;}
+  function normalizeStockPositionWebV1074(itemId,value={}){return{itemId:String(itemId||value.itemId||''),knownQty:Math.max(0,Math.trunc(Number(value.knownQty??value.quantity??0)||0)),unpricedQty:Math.max(0,Math.trunc(Number(value.unpricedQty||0)||0)),costBasis:Math.max(0,Number(value.costBasis||0))};}
+  function normalizeStockPortfolioWebV1074(source={}){
+    const raw=source.stockPortfolio&&typeof source.stockPortfolio==='object'&&!Array.isArray(source.stockPortfolio)?deep(source.stockPortfolio):{},positions={};
+    if(Array.isArray(raw.positions))raw.positions.forEach(row=>{if(row?.itemId)positions[String(row.itemId)]=normalizeStockPositionWebV1074(row.itemId,row);});
+    else Object.entries(raw.positions||{}).forEach(([itemId,row])=>{positions[itemId]=normalizeStockPositionWebV1074(itemId,row);});
+    const migrated=raw.legacyInventoryMigrated&&typeof raw.legacyInventoryMigrated==='object'&&!Array.isArray(raw.legacyInventoryMigrated)?{...raw.legacyInventoryMigrated}:{},inventory=[];
+    (Array.isArray(source.inventory)?source.inventory:[]).forEach(entry=>{const itemId=String(entry?.itemId||''),item=App.data.items.get(itemId);if(!item||!MarketEngineV1071.isStock(item)){inventory.push(entry);return;}const qty=Math.max(0,Math.trunc(Number(entry.qty||0)||0)),accounted=Math.max(0,Math.trunc(Number(migrated[itemId]||0)||0)),delta=Math.max(0,qty-accounted),position=positions[itemId]||normalizeStockPositionWebV1074(itemId);position.unpricedQty+=delta;positions[itemId]=position;migrated[itemId]=Math.max(accounted,qty);});
+    return{positions,ledger:Array.isArray(raw.ledger)?raw.ledger.slice(-500):[],legacyInventoryMigrated:migrated,inventory};
+  }
+  function normalizeStockPlayerWebV1074(player={}){const portfolio=normalizeStockPortfolioWebV1074(player);player.stockPortfolio={positions:portfolio.positions,ledger:portfolio.ledger,legacyInventoryMigrated:portfolio.legacyInventoryMigrated};player.inventory=portfolio.inventory;return player;}
+  const compileDataBeforeStocksWebV1074=compileData;
+  compileData=function(...args){const result=compileDataBeforeStocksWebV1074(...args);App.data.players.forEach(normalizeStockPlayerWebV1074);return result;};
+
+  function stockPortfolioStatsWebV1074(player,rotation){
+    normalizeStockPlayerWebV1074(player);const portfolio=player.stockPortfolio,quotes=new Map((rotation.quotes||[]).map(row=>[row.itemId,row]));let marketValue=0,invested=0,unrealized=0,unpricedQty=0,expenses=0,income=0,realized=0;
+    Object.values(portfolio.positions||{}).forEach(position=>{const quote=quotes.get(position.itemId),qty=stockQtyWebV1074(position),known=Math.max(0,Number(position.knownQty||0)),basis=Math.max(0,Number(position.costBasis||0));invested+=basis;unpricedQty+=Math.max(0,Number(position.unpricedQty||0));if(quote){marketValue+=qty*quote.price;unrealized+=known*quote.price-basis;}});
+    (portfolio.ledger||[]).forEach(row=>{if(row.type==='buy')expenses+=Number(row.total||0);if(row.type==='sell'){income+=Number(row.total||0);if(Number.isFinite(Number(row.realizedPnl)))realized+=Number(row.realizedPnl);}});
+    return{portfolio,quotes,marketValue,invested,unrealized,unpricedQty,expenses,income,realized,totalResult:realized+unrealized};
+  }
+  function stockSparklineWebV1074(history=[]){
+    if(history.length<2)return'';const values=history.map(row=>Number(row.price||0)),min=Math.min(...values),max=Math.max(...values),span=Math.max(1,max-min),width=420,height=110,pad=8,points=history.map((row,index)=>`${pad+(index/(history.length-1))*(width-pad*2)},${height-pad-((Number(row.price||0)-min)/span)*(height-pad*2)}`).join(' '),last=history[history.length-1];
+    return`<div class="stock-chart-v1074 ${stockChangeClassWebV1074(values[values.length-1]-values[0])}"><svg viewBox="0 0 ${width} ${height}" role="img" aria-label="История цены за 30 игровых дней"><polyline points="${points}" /></svg><div><span>${esc(formatDate(history[0]?.day))}</span><b>${formatCredits(min)} — ${formatCredits(max)}</b><span>${esc(formatDate(last?.day))}</span></div></div>`;
+  }
+  function stockRelatedArticlesWebV1074(item={}){const player=currentPlayer(),rows=(Array.isArray(item.relatedArticleIds)?item.relatedArticleIds:[]).map(id=>App.data.articles.get(String(id))).filter(article=>article&&visibleForPlayer(article,player?.id));if(!rows.length)return'';return`<div class="stock-related-v1074"><b>Связанные материалы</b><div>${rows.map(article=>`<button class="secondary" type="button" data-action="open-article" data-article-id="${esc(article.id)}">${esc(article.name||article.title||article.id)}</button>`).join('')}</div></div>`;}
+  function stockOfferTileWebV1074(offer){const item=App.data.items.get(offer.itemId);if(!item)return'';return`<button class="stock-quote-tile-v1074 ${stockSelectionWebV1074?.source==='market'&&stockSelectionWebV1074.itemId===item.id?'selected':''} ${stockChangeClassWebV1074(offer.change)}" type="button" draggable="true" data-web-stock-v1074 data-source="market" data-item-id="${esc(item.id)}"><span>${esc(stockTickerWebV1074(item))}</span><b>${esc(item.name||item.id)}</b><strong>${formatCredits(offer.price)}</strong><small>${offer.change>=0?'▲':'▼'} ${Math.abs(Number(offer.changePercent||0)).toFixed(2)}% · ${signedCreditsWebV1074(offer.change)}</small></button>`;}
+  function stockPortfolioMarkupWebV1074(player,rotation){
+    const stats=stockPortfolioStatsWebV1074(player,rotation),positions=Object.values(stats.portfolio.positions||{}).filter(row=>stockQtyWebV1074(row)>0).sort((a,b)=>stockTickerWebV1074(App.data.items.get(a.itemId)).localeCompare(stockTickerWebV1074(App.data.items.get(b.itemId)),'ru'));
+    const holdings=positions.map(position=>{const item=App.data.items.get(position.itemId)||{id:position.itemId,name:position.itemId},quote=stats.quotes.get(position.itemId),qty=stockQtyWebV1074(position),value=quote?qty*quote.price:0,average=Number(position.knownQty||0)>0?Number(position.costBasis||0)/Number(position.knownQty):null;return`<button class="stock-holding-v1074 ${stockSelectionWebV1074?.source==='portfolio'&&stockSelectionWebV1074.itemId===position.itemId?'selected':''}" type="button" draggable="true" data-web-stock-v1074 data-source="portfolio" data-item-id="${esc(position.itemId)}"><span class="stock-holding-symbol-v1074">${esc(stockTickerWebV1074(item))}</span><span><b>${esc(item.name||item.id)}</b><small>${qty} шт.${average==null?' · без истории покупки':` · средняя ${formatCredits(average)}`}</small></span><span><b>${quote?formatCredits(value):'Нет котировки'}</b>${quote?`<small class="${stockChangeClassWebV1074(quote.change)}">${quote.change>=0?'▲':'▼'} ${Math.abs(Number(quote.changePercent||0)).toFixed(2)}%</small>`:''}</span></button>`;}).join(''),ledger=(stats.portfolio.ledger||[]).slice(-10).reverse();
+    return`<div class="portfolio-shell-v1074" data-web-stock-portfolio-drop-v1074><div class="portfolio-head-v1074"><div><span class="eyebrow">PERSONAL SECURITIES ACCOUNT</span><b>Портфель</b></div><strong>${formatCredits(stats.marketValue)}</strong></div><div class="portfolio-metrics-v1074"><div><span>Стоимость портфеля</span><b>${formatCredits(stats.marketValue)}</b></div><div><span>Вложено</span><b>${formatCredits(stats.invested)}</b></div><div><span>Доход от продаж</span><b>${formatCredits(stats.income)}</b></div><div><span>Расходы на покупки</span><b>${formatCredits(stats.expenses)}</b></div><div class="${stockChangeClassWebV1074(stats.unrealized)}"><span>Нереализованный результат</span><b>${signedCreditsWebV1074(stats.unrealized)}</b></div><div class="${stockChangeClassWebV1074(stats.realized)}"><span>Зафиксированный результат</span><b>${signedCreditsWebV1074(stats.realized)}</b></div><div class="portfolio-result-v1074 ${stockChangeClassWebV1074(stats.totalResult)}"><span>Общий результат</span><b>${signedCreditsWebV1074(stats.totalResult)}</b></div></div>${stats.unpricedQty?`<div class="portfolio-legacy-note-v1074">${stats.unpricedQty} акц. перенесено из старого инвентаря без цены приобретения и не участвует в расчёте прибыли.</div>`:''}<div class="portfolio-holdings-v1074">${holdings||'<div class="market-selection-empty-v1071">Портфель пуст.</div>'}</div><div class="portfolio-ledger-v1074"><div class="portfolio-ledger-head-v1074"><b>Последние операции</b><span>${ledger.length}</span></div>${ledger.map(row=>{const item=App.data.items.get(row.itemId)||{id:row.itemId};return`<div class="portfolio-ledger-row-v1074"><span class="${row.type==='buy'?'down':'up'}">${row.type==='buy'?'ПОКУПКА':'ПРОДАЖА'}</span><b>${esc(stockTickerWebV1074(item))}</b><span>${esc(formatDate(row.marketDay))}</span><strong>${row.type==='buy'?'-':'+'}${formatCredits(row.total||0)}</strong></div>`;}).join('')||'<div class="small-note">Операций ещё нет.</div>'}</div></div>`;
+  }
+  function stockSelectionMarkupWebV1074(player,planet,rotation){
+    const item=stockSelectionWebV1074?.itemId?App.data.items.get(stockSelectionWebV1074.itemId):null;if(!item)return'<div class="market-selection-empty-v1071">Выберите акцию или позицию портфеля.</div>';const buy=stockSelectionWebV1074.source==='market',offer=(buy?rotation.offers:rotation.quotes).find(row=>row.itemId===item.id),position=player.stockPortfolio?.positions?.[item.id],qty=stockQtyWebV1074(position),disabled=!rotation.stockMarketEnabled||!offer||(buy&&Number(player.credits||0)<Number(offer?.price||0))||(!buy&&qty<1),campaign=App.data.campaigns.get(App.config?.campaignId||'main')||{},history=MarketEngineV1071.priceHistory({campaignId:App.config?.campaignId||'main',campaign,gameDate:campaign.marketDate,planet,planets:App.data.planets,equipment:App.data.items,itemId:item.id,endDay:rotation.rotationKey,days:30});
+    return`<div class="stock-selection-v1074"><div class="stock-selection-head-v1074">${renderEntityThumb(item)}<div><span class="stock-symbol-v1074">${esc(stockTickerWebV1074(item))}</span><h2>${esc(item.name||item.id)}</h2><p>${esc(item.desc||item.description||'Описание акции не задано.')}</p></div><div class="stock-selection-quote-v1074 ${stockChangeClassWebV1074(offer?.change)}"><span>Текущая цена</span><b>${formatCredits(offer?.price||0)}</b><small>Предыдущий день: ${formatCredits(offer?.previousPrice||0)}</small><strong>${offer?.change>=0?'▲':'▼'} ${Math.abs(Number(offer?.changePercent||0)).toFixed(2)}% · ${signedCreditsWebV1074(offer?.change||0)}</strong></div></div>${stockSparklineWebV1074(history)}<div class="stock-position-facts-v1074"><span>В портфеле: <b>${qty} шт.</b></span><span>Известная себестоимость: <b>${formatCredits(position?.costBasis||0)}</b></span><span>Игровой день: <b>${esc(formatDate(rotation.rotationKey))}</b></span></div>${stockRelatedArticlesWebV1074(item)}<button class="primary" type="button" data-web-stock-action-v1074="${buy?'buy':'sell'}" ${disabled?'disabled':''}>${buy?'КУПИТЬ АКЦИЮ':'ПРОДАТЬ АКЦИЮ'}</button></div>`;
+  }
+  const renderGoodsMarketBeforeStocksWebV1074=renderMarket;
+  renderMarket=function(){
+    if(marketTabWebV1073!=='stocks'){renderGoodsMarketBeforeStocksWebV1074();return;}
+    const root=$('#screen-market'),player=currentPlayer(),planet=currentPlanet();setTopbar('Торговый терминал','Глобальная биржа и личный портфель');if(!player||!planet){root.innerHTML='<div class="placeholder market-disabled">Терминал заблокирован. У профиля нет текущей планеты.</div>';return;}normalizeStockPlayerWebV1074(player);const rotation=marketRotationWebV1071(planet),offers=rotation.offers.filter(row=>MarketEngineV1071.isStock(App.data.items.get(row.itemId)));if(stockSelectionWebV1074&&!MarketEngineV1071.isStock(App.data.items.get(stockSelectionWebV1074.itemId)))stockSelectionWebV1074=null;
+    root.innerHTML=`<div class="market-terminal-v1071 ${rotation.stockMarketEnabled?'':'locked'}"><div class="hero-card market-hero-v1071"><div class="section-head"><div><div class="eyebrow">GLOBAL SECURITIES</div><div class="section-title">${esc(planet.name)}</div><div class="small-note">Игровой день рынка: ${esc(formatDate(rotation.rotationKey))}</div></div><div class="pill">Баланс: ${formatCredits(player.credits||0)}</div></div></div><div class="market-tabs-v1073" role="tablist"><button class="secondary" type="button" data-web-market-tab-v1073="goods">ТОВАРЫ</button><button class="secondary active" type="button" data-web-market-tab-v1073="stocks">АКЦИИ</button></div><div class="market-access-banner-v1071 ${rotation.stockMarketEnabled?'ok':'err'}">${rotation.stockMarketEnabled?'Все акции доступны по единым ценам на всех планетах. Продажа — 100% текущей котировки.':'На этой планете нет фондового рынка. Портфель доступен для просмотра, торговые операции отключены.'}</div><div class="market-dual-grid-v1071 stock-layout-v1074"><section class="market-pane-v1071" data-web-stock-market-drop-v1074><div class="market-pane-head-v1071"><div><span class="eyebrow">GLOBAL QUOTES</span><b>Биржевые котировки</b></div><span>${offers.length} поз.</span></div><div class="stock-quotes-grid-v1074">${offers.map(stockOfferTileWebV1074).join('')||'<div class="placeholder">На этой планете фондовый рынок недоступен.</div>'}</div></section><section class="market-pane-v1071">${stockPortfolioMarkupWebV1074(player,rotation)}</section></div>${stockSelectionMarkupWebV1074(player,planet,rotation)}</div>`;
+  };
+  document.addEventListener('click',event=>{const tile=event.target?.closest?.('[data-web-stock-v1074]');if(tile&&tile.closest('#screen-market')){stockSelectionWebV1074={source:String(tile.dataset.source||''),itemId:String(tile.dataset.itemId||'')};renderMarket();return;}const action=event.target?.closest?.('[data-web-stock-action-v1074]');if(action&&stockSelectionWebV1074)transactMarketWebV1071({action:String(action.dataset.webStockActionV1074),itemId:stockSelectionWebV1074.itemId}).catch(error=>notify(error.message||String(error),'err'));});
+  document.addEventListener('dragstart',event=>{const node=event.target?.closest?.('[data-web-stock-v1074]');if(!node||!node.closest('#screen-market'))return;stockDragWebV1074={source:String(node.dataset.source||''),itemId:String(node.dataset.itemId||'')};event.dataTransfer.effectAllowed=stockDragWebV1074.source==='market'?'copy':'move';try{event.dataTransfer.setData('text/plain',stockDragWebV1074.itemId);}catch{}});
+  document.addEventListener('dragend',event=>{if(event.target?.closest?.('[data-web-stock-v1074]'))stockDragWebV1074=null;});
+  document.addEventListener('dragover',event=>{if(!stockDragWebV1074)return;const target=stockDragWebV1074.source==='market'?event.target?.closest?.('[data-web-stock-portfolio-drop-v1074]'):event.target?.closest?.('[data-web-stock-market-drop-v1074]');if(target){event.preventDefault();event.dataTransfer.dropEffect=stockDragWebV1074.source==='market'?'copy':'move';}});
+  document.addEventListener('drop',event=>{if(!stockDragWebV1074)return;const portfolio=event.target?.closest?.('[data-web-stock-portfolio-drop-v1074]'),market=event.target?.closest?.('[data-web-stock-market-drop-v1074]');if((stockDragWebV1074.source==='market'&&!portfolio)||(stockDragWebV1074.source==='portfolio'&&!market))return;event.preventDefault();const payload={action:stockDragWebV1074.source==='market'?'buy':'sell',itemId:stockDragWebV1074.itemId};stockDragWebV1074=null;transactMarketWebV1071(payload).catch(error=>notify(error.message||String(error),'err'));});
 
   applyEraThemeV1049('technological');
 

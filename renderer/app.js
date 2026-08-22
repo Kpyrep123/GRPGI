@@ -26,6 +26,32 @@ const clamp = (v,min,max) => Math.min(Math.max(v,min), max);
 const now = () => performance.now();
 const esc = value => String(value ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#39;');
 
+/* v1.0.75 — cosmetic in-world calendar; stored timestamps remain unchanged */
+const GRPG_LORE_YEAR_V1075 = 3616;
+const GRPG_LORE_ERA_V1075 = 'В.Э.';
+function formatLoreDateV1075(value, options = {}) {
+  if (value == null || value === '') return options.fallback ?? '—';
+  const source = String(value).trim();
+  const dateOnly = source.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  let day, month, hour = 0, minute = 0;
+  if (dateOnly) {
+    month = Number(dateOnly[2]);
+    day = Number(dateOnly[3]);
+  } else {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return source;
+    day = date.getDate();
+    month = date.getMonth() + 1;
+    hour = date.getHours();
+    minute = date.getMinutes();
+  }
+  const pad = number => String(number).padStart(2, '0');
+  const dateText = `${pad(day)}.${pad(month)}.${GRPG_LORE_YEAR_V1075} ${GRPG_LORE_ERA_V1075}`;
+  const includeTime = options.includeTime ?? !dateOnly;
+  return includeTime ? `${dateText}, ${pad(hour)}:${pad(minute)}` : dateText;
+}
+window.GRPGCosmeticDateV1075 = Object.freeze({ year: GRPG_LORE_YEAR_V1075, era: GRPG_LORE_ERA_V1075, format: formatLoreDateV1075 });
+
 const Debug = {
   log(label, payload) {
     try { console.log(`[DEBUG] ${label}`, payload ?? ''); } catch {}
@@ -782,7 +808,7 @@ const ChatUI = {
   messageMarkup(message, npcId) {
     const own = message.sender === 'npc';
     const label = own ? (Data.getNpc(npcId)?.name || 'NPC') : getPlayerDisplayName(message.playerId);
-    return `<div class="chat-bubble ${own ? 'npc' : 'player'}"><div class="chat-meta">${esc(label)} · ${esc(new Date(message.createdAt || Date.now()).toLocaleString('ru-RU'))}</div><div>${esc(message.text)}</div></div>`;
+    return `<div class="chat-bubble ${own ? 'npc' : 'player'}"><div class="chat-meta">${esc(label)} · ${esc(formatLoreDateV1075(message.createdAt || Date.now()))}</div><div>${esc(message.text)}</div></div>`;
   },
   bindWithin(root) {
     root?.querySelectorAll('.npc-chat-form').forEach(form => {
@@ -1485,6 +1511,115 @@ const Sync = {
   };
 })();
 
+/* v1.0.74 — full global stock exchange and non-inventory portfolio */
+window.GRPGInstallGlobalStockExchangeV1074 = function(){
+  if (window.__grpgGlobalStockExchangeV1074) return;
+  window.__grpgGlobalStockExchangeV1074 = true;
+  const Engine = window.GRPGMarketEngineV1071;
+  if (!Engine) return;
+
+  let tab = 'goods';
+  let selected = null;
+  let dragged = null;
+
+  function campaignIdV1074() { return String(Sync?.config?.campaignId || App.activeCampaignId || 'main'); }
+  function campaignV1074() { const id=campaignIdV1074(); return Data?.getCampaign?.(id) || Data?.campaigns?.[id] || {}; }
+  function marketStateV1074() { return App.state?.marketRuntimeV1071 || { claims:{} }; }
+  function rotationV1074(planet = Data.getPlanet(UI.selectedPlanetId)) {
+    return Engine.buildRotation({ campaignId:campaignIdV1074(), campaign:campaignV1074(), gameDate:campaignV1074()?.marketDate, planet, planets:PLANETS, equipment:EQUIPMENT, marketState:marketStateV1074() });
+  }
+  function stockItemV1074(item={}) { return Engine.isStock(item); }
+  function tickerV1074(item={}) { return Engine.stockTicker(item) || '—'; }
+  function signedCreditsV1074(value) { const n=Number(value||0); return `${n>0?'+':''}${formatCredits(n)}`; }
+  function changeClassV1074(value) { return Number(value||0)>0?'up':Number(value||0)<0?'down':'flat'; }
+  function positionQtyV1074(position={}) { return Math.max(0,Number(position.knownQty||0))+Math.max(0,Number(position.unpricedQty||0)); }
+  function portfolioV1074(user) { return normalizePlayerProfileV2(user).stockPortfolio || {positions:{},ledger:[],legacyInventoryMigrated:{}}; }
+
+  function stockHistoryV1074(itemId, planet, day) {
+    return Engine.priceHistory({ campaignId:campaignIdV1074(), planet, planets:PLANETS, equipment:EQUIPMENT, itemId, endDay:day, days:30 });
+  }
+  function sparklineV1074(history=[]) {
+    if (history.length<2) return '';
+    const values=history.map(row=>Number(row.price||0)),min=Math.min(...values),max=Math.max(...values),span=Math.max(1,max-min),w=420,h=110,p=8;
+    const points=history.map((row,index)=>`${p+(index/(history.length-1))*(w-p*2)},${h-p-((Number(row.price||0)-min)/span)*(h-p*2)}`).join(' ');
+    const last=values[values.length-1],first=values[0],cls=changeClassV1074(last-first);
+    return `<div class="stock-chart-v1074 ${cls}"><svg viewBox="0 0 ${w} ${h}" role="img" aria-label="История цены за 30 игровых дней"><polyline points="${points}" /></svg><div><span>${esc(formatLoreDateV1075(history[0]?.day, { includeTime:false }))}</span><b>${formatCredits(min)} — ${formatCredits(max)}</b><span>${esc(formatLoreDateV1075(history.at(-1)?.day, { includeTime:false }))}</span></div></div>`;
+  }
+  function linkedArticlesV1074(item={}) {
+    const rows=(Array.isArray(item.relatedArticleIds)?item.relatedArticleIds:[]).map(id=>Data.getArticle?.(id)).filter(article=>article&&isEntityVisible(article));
+    if(!rows.length)return'';
+    return `<div class="stock-related-v1074"><b>Связанные материалы</b><div>${rows.map(article=>`<a class="secondary" href="article:${esc(article.id)}" data-article-id="${esc(article.id)}">${esc(article.name||article.title||article.id)}</a>`).join('')}</div></div>`;
+  }
+
+  function portfolioMetricsV1074(user,rotation) {
+    const portfolio=portfolioV1074(user),quoteMap=new Map((rotation.quotes||[]).map(q=>[q.itemId,q]));
+    let marketValue=0,invested=0,unrealized=0,unpricedQty=0;
+    Object.values(portfolio.positions||{}).forEach(position=>{const quote=quoteMap.get(position.itemId),qty=positionQtyV1074(position),known=Math.max(0,Number(position.knownQty||0)),basis=Math.max(0,Number(position.costBasis||0));invested+=basis;unpricedQty+=Math.max(0,Number(position.unpricedQty||0));if(quote){marketValue+=qty*quote.price;unrealized+=known*quote.price-basis;}});
+    let expenses=0,income=0,realized=0;
+    (portfolio.ledger||[]).forEach(row=>{if(row.type==='buy')expenses+=Number(row.total||0);if(row.type==='sell'){income+=Number(row.total||0);if(Number.isFinite(Number(row.realizedPnl)))realized+=Number(row.realizedPnl);}});
+    return {portfolio,quoteMap,marketValue,invested,unrealized,unpricedQty,expenses,income,realized,totalResult:realized+unrealized};
+  }
+
+  function portfolioMarkupV1074(user,rotation) {
+    const stats=portfolioMetricsV1074(user,rotation);
+    const positions=Object.values(stats.portfolio.positions||{}).filter(row=>positionQtyV1074(row)>0).sort((a,b)=>String(tickerV1074(Data.getItem(a.itemId))).localeCompare(String(tickerV1074(Data.getItem(b.itemId)))));
+    const holdings=positions.map(position=>{const item=Data.getItem(position.itemId)||{id:position.itemId,name:position.itemId},quote=stats.quoteMap.get(position.itemId),qty=positionQtyV1074(position),value=quote?qty*quote.price:0,avg=Number(position.knownQty||0)>0?Number(position.costBasis||0)/Number(position.knownQty):null;return `<button class="stock-holding-v1074 ${selected?.source==='portfolio'&&selected.itemId===position.itemId?'selected':''}" type="button" draggable="true" data-market-v1074 data-source="portfolio" data-item-id="${esc(position.itemId)}"><span class="stock-holding-symbol-v1074">${esc(tickerV1074(item))}</span><span><b>${esc(item.name||item.id)}</b><small>${qty} шт.${avg==null?' · часть пакета без истории покупки':` · средняя ${formatCredits(avg)}`}</small></span><span><b>${quote?formatCredits(value):'Нет котировки'}</b>${quote?`<small class="${changeClassV1074(quote.change)}">${quote.change>=0?'▲':'▼'} ${Math.abs(quote.changePercent).toFixed(2)}%</small>`:''}</span></button>`;}).join('');
+    const ledger=(stats.portfolio.ledger||[]).slice(-10).reverse();
+    return `<div class="portfolio-shell-v1074" data-market-portfolio-drop-v1074><div class="portfolio-head-v1074"><div><span class="mono accent">PERSONAL SECURITIES ACCOUNT</span><b>Портфель</b></div><strong>${formatCredits(stats.marketValue)}</strong></div><div class="portfolio-metrics-v1074"><div><span>Стоимость портфеля</span><b>${formatCredits(stats.marketValue)}</b></div><div><span>Вложено</span><b>${formatCredits(stats.invested)}</b></div><div><span>Доход от продаж</span><b>${formatCredits(stats.income)}</b></div><div><span>Расходы на покупки</span><b>${formatCredits(stats.expenses)}</b></div><div class="${changeClassV1074(stats.unrealized)}"><span>Нереализованный результат</span><b>${signedCreditsV1074(stats.unrealized)}</b></div><div class="${changeClassV1074(stats.realized)}"><span>Зафиксированный результат</span><b>${signedCreditsV1074(stats.realized)}</b></div><div class="portfolio-result-v1074 ${changeClassV1074(stats.totalResult)}"><span>Общий результат</span><b>${signedCreditsV1074(stats.totalResult)}</b></div></div>${stats.unpricedQty?`<div class="portfolio-legacy-note-v1074">${stats.unpricedQty} акц. перенесено из старого инвентаря без цены приобретения и не участвует в расчёте прибыли.</div>`:''}<div class="portfolio-holdings-v1074">${holdings||'<div class="market-selection-empty-v1071">Портфель пуст.</div>'}</div><div class="portfolio-ledger-v1074"><div class="portfolio-ledger-head-v1074"><b>Последние операции</b><span>${ledger.length}</span></div>${ledger.map(row=>{const item=Data.getItem(row.itemId)||{id:row.itemId,name:row.itemId};return `<div class="portfolio-ledger-row-v1074"><span class="${row.type==='buy'?'down':'up'}">${row.type==='buy'?'ПОКУПКА':'ПРОДАЖА'}</span><b>${esc(tickerV1074(item))}</b><span>${esc(formatLoreDateV1075(row.marketDay, { includeTime:false }))}</span><strong>${row.type==='buy'?'-':'+'}${formatCredits(row.total||0)}</strong></div>`;}).join('')||'<div class="small-note">Операций ещё нет.</div>'}</div></div>`;
+  }
+
+  function goodsInventoryMarkupV1074(user,offers) {
+    const layout=window.GRPGInventoryV1067?.buildLayout?.(user)||{size:0,cols:1,rows:1,instances:[],overflow:[]},offerMap=new Map(offers.map(row=>[row.itemId,row]));
+    const cells=Array.from({length:layout.size},(_,index)=>`<div class="market-inventory-cell-v1071" style="grid-column:${index%layout.cols+1};grid-row:${Math.floor(index/layout.cols)+1}"></div>`).join('');
+    const tiles=layout.instances.filter(instance=>!stockItemV1074(instance.item)).map(instance=>{const offer=offerMap.get(instance.itemId),active=selected?.source==='inventory'&&selected.itemId===instance.itemId&&Number(selected.unitIndex)===Number(instance.unitIndex);return `<button class="market-inventory-tile-v1071 ${active?'selected':''} ${offer?'sellable':'not-sellable'}" type="button" draggable="true" data-market-v1074 data-source="inventory" data-item-id="${esc(instance.itemId)}" data-unit-index="${instance.unitIndex}" style="grid-column:${instance.pos.x+1}/span ${instance.w};grid-row:${instance.pos.y+1}/span ${instance.h}">${renderThumb(instance.item,{size:'sm',type:'item',glyph:initials(instance.item.name,'▣')})}<span>${esc(instance.item.name||instance.itemId)}</span><small>${offer?formatCredits(offer.sellPrice):'Нет приёма'}</small></button>`;}).join('');
+    return `<div class="market-inventory-grid-v1071" data-market-inventory-drop-v1074 style="--inv-cols:${layout.cols};--inv-rows:${layout.rows}">${cells}${tiles}</div>`;
+  }
+
+  function offerTileV1074(offer) {
+    const item=Data.getItem(offer.itemId);if(!item)return'';const stock=stockItemV1074(item),active=selected?.source==='market'&&selected.itemId===item.id;
+    if(stock)return `<button class="stock-quote-tile-v1074 ${active?'selected':''} ${changeClassV1074(offer.change)}" type="button" draggable="true" data-market-v1074 data-source="market" data-item-id="${esc(item.id)}"><span>${esc(tickerV1074(item))}</span><b>${esc(item.name||item.id)}</b><strong>${formatCredits(offer.price)}</strong><small>${offer.change>=0?'▲':'▼'} ${Math.abs(offer.changePercent).toFixed(2)}% · ${signedCreditsV1074(offer.change)}</small></button>`;
+    const size={w:Math.max(1,Number(item.inventoryWidth||1)),h:Math.max(1,Number(item.inventoryHeight||1))};
+    return `<button class="market-shop-tile-v1071 ${active?'selected':''}" type="button" draggable="true" data-market-v1074 data-source="market" data-item-id="${esc(item.id)}" style="grid-column:span ${size.w};grid-row:span ${size.h}">${renderThumb(item,{size:'sm',type:'item',glyph:initials(item.name,'▣')})}<span class="market-tile-name-v1071">${esc(item.name||item.id)}</span><span class="market-tile-meta-v1071">${size.w}×${size.h}${offer.unique?' · Уникальный':''}</span><b class="market-tile-price-v1071">${formatCredits(offer.price)}</b></button>`;
+  }
+
+  function selectionMarkupV1074(user,planet,rotation) {
+    const item=selected?.itemId?Data.getItem(selected.itemId):null;if(!item)return'<div class="market-selection-empty-v1071">Выберите товар или позицию портфеля.</div>';
+    const stock=stockItemV1074(item),buy=selected.source==='market',offer=(buy?rotation.offers:(stock?rotation.quotes:rotation.allOffers)).find(row=>row.itemId===item.id),position=portfolioV1074(user).positions?.[item.id],qty=positionQtyV1074(position),capacity=!stock&&buy?window.GRPGInventoryV1067?.canAddItem?.(user,item.id,1):{ok:true};
+    const disabled=!offer||(stock&&!rotation.stockMarketEnabled)||(buy&&Number(user.credits||0)<Number(offer?.price||0))||(buy&&capacity?.ok===false)||(!buy&&stock&&qty<1);
+    if(stock){const history=stockHistoryV1074(item.id,planet,rotation.rotationKey);return `<div class="stock-selection-v1074"><div class="stock-selection-head-v1074">${renderThumb(item,{size:'sm',type:'item',glyph:tickerV1074(item)})}<div><span class="stock-symbol-v1074">${esc(tickerV1074(item))}</span><h2>${esc(item.name||item.id)}</h2><p>${esc(item.desc||item.description||'Описание акции не задано.')}</p></div><div class="stock-selection-quote-v1074 ${changeClassV1074(offer?.change)}"><span>Текущая цена</span><b>${formatCredits(offer?.price||0)}</b><small>Предыдущий день: ${formatCredits(offer?.previousPrice||0)}</small><strong>${offer?.change>=0?'▲':'▼'} ${Math.abs(Number(offer?.changePercent||0)).toFixed(2)}% · ${signedCreditsV1074(offer?.change||0)}</strong></div></div>${sparklineV1074(history)}<div class="stock-position-facts-v1074"><span>В портфеле: <b>${qty} шт.</b></span><span>Известная себестоимость: <b>${formatCredits(position?.costBasis||0)}</b></span><span>Игровой день: <b>${esc(formatLoreDateV1075(rotation.rotationKey, { includeTime:false }))}</b></span></div>${linkedArticlesV1074(item)}<button class="primary" type="button" data-market-action-v1074="${buy?'buy':'sell'}" ${disabled?'disabled':''}>${buy?'КУПИТЬ АКЦИЮ':'ПРОДАТЬ АКЦИЮ'}</button></div>`;}
+    const mass=Number(item.mass??item.weight??1),size=`${Math.max(1,Number(item.inventoryWidth||1))}×${Math.max(1,Number(item.inventoryHeight||1))}`;
+    return `<div class="market-selection-card-v1071">${renderThumb(item,{size:'sm',type:'item',glyph:initials(item.name,'▣')})}<div class="market-selection-details-v1071"><div class="market-selection-heading-v1071"><b>${esc(item.name||item.id)}</b><strong>${buy?'Покупка':'Продажа'}: ${formatCredits(buy?offer?.price||0:offer?.sellPrice||0)}</strong></div><div class="market-selection-facts-v1071"><span class="pill">${esc(item.rarity||'обычный')}</span><span class="pill">Размер ${size}</span><span class="pill">Масса ${mass}</span></div><p class="market-selection-description-v1071">${esc(item.desc||item.description||'Описание предмета не задано.')}</p>${buy&&capacity?.ok===false?`<small class="error-line">${esc(capacity.reason)}</small>`:''}</div><button class="primary" type="button" data-market-action-v1074="${buy?'buy':'sell'}" ${disabled?'disabled':''}>${buy?'КУПИТЬ':'ПРОДАТЬ'}</button></div>`;
+  }
+
+  function renderV1074() {
+    const planet=Data.getPlanet(UI.selectedPlanetId),rawUser=App.currentUser;if(!planet||!rawUser||!isEntityVisible(planet))return;const user=normalizePlayerProfileV2(rawUser);Object.assign(rawUser,user);const access=getMarketAccessState(user,planet.id),rotation=rotationV1074(planet),offers=rotation.offers.filter(row=>stockItemV1074(Data.getItem(row.itemId))===(tab==='stocks'));
+    if(selected){const item=Data.getItem(selected.itemId);if(!item||stockItemV1074(item)!==(tab==='stocks'))selected=null;}
+    $('#market-title').textContent=`LOCAL_TERMINAL: ${planet.name.toUpperCase()}`;$('#market-subtitle').textContent=`Игровой день рынка: ${formatLoreDateV1075(rotation.rotationKey, { includeTime:false })}`;$('#market-balance').textContent=formatCredits(user.credits);$('#market-planet').textContent=planet.name;
+    const root=$('#market-items');const stockMode=tab==='stocks',tradeAllowed=access.canBuy&&(!stockMode||rotation.stockMarketEnabled);
+    root.innerHTML=`<div class="market-terminal-v1071 ${tradeAllowed?'':'locked'}"><div class="market-tabs-v1073"><button class="secondary ${!stockMode?'active':''}" type="button" data-market-tab-v1074="goods">ТОВАРЫ</button><button class="secondary ${stockMode?'active':''}" type="button" data-market-tab-v1074="stocks">АКЦИИ</button></div><div class="market-access-banner-v1071 ${tradeAllowed?'ok':'err'}">${!access.canBuy?`<b>Торговля заблокирована.</b> ${esc(access.reason)}`:stockMode&&!rotation.stockMarketEnabled?'<b>На этой планете нет фондового рынка.</b> Портфель доступен для просмотра, торговые операции отключены.':stockMode?`Глобальная биржа открыта. Все акции доступны по единым ценам. Игровой день: <b>${esc(formatLoreDateV1075(rotation.rotationKey, { includeTime:false }))}</b>.`:`Торговля товарами доступна на планете <b>${esc(planet.name)}</b>. Продажа — 70% текущей цены.`}</div><div class="market-dual-grid-v1071 ${stockMode?'stock-layout-v1074':''}"><section class="market-pane-v1071 market-stock-pane-v1071" data-market-stock-drop-v1074><div class="market-pane-head-v1071"><div><span class="mono accent">${stockMode?'GLOBAL SECURITIES':'MARKET STOCK'}</span><b>${stockMode?'Биржевые котировки':'Товары'}</b></div><span>${offers.length} поз.</span></div><div class="${stockMode?'stock-quotes-grid-v1074':'market-shop-grid-v1071'}">${offers.map(offerTileV1074).join('')||`<div class="small-note">${stockMode?'Фондовый рынок недоступен.':'В текущей ротации нет товаров.'}</div>`}</div></section><section class="market-pane-v1071">${stockMode?portfolioMarkupV1074(user,rotation):`<div class="market-pane-head-v1071"><div><span class="mono accent">PERSONAL STORAGE</span><b>Инвентарь</b></div><span>${formatCredits(user.credits)}</span></div>${goodsInventoryMarkupV1074(user,rotation.allOffers)}`}</section></div>${selectionMarkupV1074(user,planet,rotation)}</div>`;
+  }
+  UI.renderMarket=renderV1074;
+
+  function appendLocalLedgerV1074(portfolio,row){portfolio.ledger=Array.isArray(portfolio.ledger)?portfolio.ledger:[];portfolio.ledger.push(row);if(portfolio.ledger.length>500)portfolio.ledger=portfolio.ledger.slice(-500);}
+  async function localTransactionV1074({action,itemId,unitIndex=-1,targetPosition=null}) {
+    const user=App.currentUser,planet=Data.getPlanet(UI.selectedPlanetId),rotation=rotationV1074(planet),item=Data.getItem(itemId),stock=stockItemV1074(item),offer=(action==='sell'&&stock?rotation.quotes:(action==='sell'?rotation.allOffers:rotation.offers)).find(row=>row.itemId===itemId);if(!offer)throw new Error('Позиция недоступна для операции');if(stock&&!rotation.stockMarketEnabled)throw new Error('На этой планете нет фондового рынка');Object.assign(user,normalizePlayerProfileV2(user));const portfolio=user.stockPortfolio;
+    if(action==='buy'){if(Number(user.credits||0)<offer.price)throw new Error('Недостаточно кредитов');user.credits=Number(user.credits||0)-offer.price;if(stock){const pos=portfolio.positions[itemId]||{itemId,knownQty:0,unpricedQty:0,costBasis:0};pos.knownQty+=1;pos.costBasis+=offer.price;portfolio.positions[itemId]=pos;appendLocalLedgerV1074(portfolio,{id:`stock_${Date.now()}_${Math.random().toString(36).slice(2,8)}`,type:'buy',itemId,quantity:1,unitPrice:offer.price,total:offer.price,planetId:planet.id,marketDay:rotation.rotationKey,createdAt:new Date().toISOString()});}else{const check=window.GRPGInventoryV1067?.canAddItem?.(user,itemId,1);if(check?.ok===false)throw new Error(check.reason);let entry=user.inventory.find(row=>row.itemId===itemId);if(!entry){entry={itemId,qty:0,positions:[]};user.inventory.push(entry);}entry.qty+=1;entry.positions=Array.isArray(entry.positions)?entry.positions:[];while(entry.positions.length<entry.qty)entry.positions.push(null);if(targetPosition)entry.positions[entry.qty-1]={x:Number(targetPosition.x),y:Number(targetPosition.y)};if(offer.unique){const claims={...(App.state.marketRuntimeV1071?.claims||{})};claims[offer.claimKey]={playerId:user.id,boughtAt:new Date().toISOString()};App.state.marketRuntimeV1071={claims,updatedAt:new Date().toISOString()};}}}
+    else if(stock){const pos=portfolio.positions[itemId];if(!pos||positionQtyV1074(pos)<1)throw new Error('В портфеле нет этой акции');let costRemoved=null;if(Number(pos.knownQty||0)>0){costRemoved=Number(pos.costBasis||0)/Number(pos.knownQty);pos.knownQty-=1;pos.costBasis=Math.max(0,Number(pos.costBasis||0)-costRemoved);}else pos.unpricedQty=Math.max(0,Number(pos.unpricedQty||0)-1);if(positionQtyV1074(pos)<1)delete portfolio.positions[itemId];user.credits=Number(user.credits||0)+offer.sellPrice;appendLocalLedgerV1074(portfolio,{id:`stock_${Date.now()}_${Math.random().toString(36).slice(2,8)}`,type:'sell',itemId,quantity:1,unitPrice:offer.sellPrice,total:offer.sellPrice,costRemoved,realizedPnl:costRemoved==null?null:offer.sellPrice-costRemoved,planetId:planet.id,marketDay:rotation.rotationKey,createdAt:new Date().toISOString()});}
+    else{const entry=user.inventory.find(row=>row.itemId===itemId);if(!entry||Number(entry.qty||0)<1)throw new Error('В инвентаре нет этого предмета');const equipped=[user.equipmentSlots?.primaryWeapon||user.equipmentSlots?.weapon,user.equipmentSlots?.secondaryWeapon,user.equipmentSlots?.armor,...(user.implantSlots||[])].filter(id=>id===itemId).length;if(Number(entry.qty||0)<=equipped)throw new Error('Нельзя продать экипированный экземпляр');const removeIndex=Number.isInteger(Number(unitIndex))&&Number(unitIndex)>=equipped?Number(unitIndex):Number(entry.qty)-1;entry.qty-=1;if(Array.isArray(entry.positions))entry.positions.splice(removeIndex,1);if(entry.qty<=0)user.inventory=user.inventory.filter(row=>row!==entry);user.credits=Number(user.credits||0)+offer.sellPrice;if(offer.unique){const claims={...(App.state.marketRuntimeV1071?.claims||{})};delete claims[offer.claimKey];App.state.marketRuntimeV1071={claims,updatedAt:new Date().toISOString()};}}
+    await App.saveState(`${action==='buy'?'Куплено':'Продано'}: ${item?.name||itemId}`);return{ok:true};
+  }
+  async function transactV1074(payload) {const user=App.currentUser,planet=Data.getPlanet(UI.selectedPlanetId),access=getMarketAccessState(user,planet?.id);if(!access.canBuy)throw new Error(access.reason);let result;if(Sync?.config?.enabled&&window.electronAPI?.transactMarket){result=await window.electronAPI.transactMarket({playerId:user.id,planetId:planet.id,...payload});if(!result?.ok)throw new Error(result?.message||'Операция не выполнена');if(result.player){App.state.users[user.id]=normalizePlayerProfileV2({...App.state.users[user.id],...result.player,id:user.id});PLAYER_TEMPLATES[user.id]=deep(App.state.users[user.id]);await App.writeLocalMirrors();}if(result.snapshotChanged)await Sync.checkForRemoteUpdates('market-transaction',{applyIfNewer:true,silent:true});await PlayerSync.pullUpdates('market-transaction',{forceFull:true,silent:true,rerender:false});}else result=await localTransactionV1074(payload);selected=null;App.refreshAfterLocalWrite();Toast.show(payload.action==='buy'?'Покупка завершена':'Продажа завершена','ok');return result;}
+
+  document.addEventListener('click',event=>{const tabButton=event.target?.closest?.('[data-market-tab-v1074]');if(tabButton&&tabButton.closest('#market-items')){tab=tabButton.dataset.marketTabV1074==='stocks'?'stocks':'goods';selected=null;renderV1074();return;}const tile=event.target?.closest?.('[data-market-v1074]');if(tile&&tile.closest('#market-items')){selected={source:String(tile.dataset.source||''),itemId:String(tile.dataset.itemId||''),unitIndex:Number(tile.dataset.unitIndex??-1)};renderV1074();return;}const action=event.target?.closest?.('[data-market-action-v1074]');if(action&&selected)transactV1074({action:String(action.dataset.marketActionV1074),itemId:selected.itemId,unitIndex:selected.unitIndex}).catch(error=>Toast.show(error.message||String(error),'err'));});
+  document.addEventListener('dragstart',event=>{const node=event.target?.closest?.('[data-market-v1074]');if(!node||!node.closest('#market-items'))return;dragged={source:String(node.dataset.source||''),itemId:String(node.dataset.itemId||''),unitIndex:Number(node.dataset.unitIndex??-1)};event.dataTransfer.effectAllowed=dragged.source==='market'?'copy':'move';try{event.dataTransfer.setData('text/plain',dragged.itemId);}catch{}});
+  document.addEventListener('dragend',()=>{dragged=null;});
+  document.addEventListener('dragover',event=>{if(!dragged)return;const stock=stockItemV1074(Data.getItem(dragged.itemId));const valid=dragged.source==='market'?(stock?event.target?.closest?.('[data-market-portfolio-drop-v1074]'):event.target?.closest?.('[data-market-inventory-drop-v1074]')):event.target?.closest?.('[data-market-stock-drop-v1074]');if(valid){event.preventDefault();event.dataTransfer.dropEffect=dragged.source==='market'?'copy':'move';}});
+  document.addEventListener('drop',event=>{if(!dragged)return;const stock=stockItemV1074(Data.getItem(dragged.itemId)),portfolioDrop=event.target?.closest?.('[data-market-portfolio-drop-v1074]'),inventoryDrop=event.target?.closest?.('[data-market-inventory-drop-v1074]'),marketDrop=event.target?.closest?.('[data-market-stock-drop-v1074]');if(dragged.source==='market'&&!((stock&&portfolioDrop)||(!stock&&inventoryDrop)))return;if(dragged.source!=='market'&&!marketDrop)return;event.preventDefault();const payload={action:dragged.source==='market'?'buy':'sell',itemId:dragged.itemId,unitIndex:dragged.unitIndex};if(inventoryDrop){const rect=inventoryDrop.getBoundingClientRect(),cols=Number(getComputedStyle(inventoryDrop).getPropertyValue('--inv-cols'))||1,cell=rect.width/cols;payload.targetPosition={x:Math.max(0,Math.min(cols-1,Math.floor((event.clientX-rect.left)/cell))),y:Math.max(0,Math.floor((event.clientY-rect.top)/cell))};}dragged=null;transactV1074(payload).catch(error=>Toast.show(error.message||String(error),'err'));});
+
+  const renderNewsBeforeStocksV1074=UI.renderNews.bind(UI);
+  UI.renderNews=function(){renderNewsBeforeStocksV1074();const root=document.getElementById('news-content');if(!root)return;root.querySelector('.org-market-ticker')?.remove();const campaign=campaignV1074(),quotes=Engine.buildStockQuotes({campaignId:campaignIdV1074(),campaign,gameDate:campaign?.marketDate,equipment:EQUIPMENT,planets:PLANETS,marketState:marketStateV1074()}).filter(quote=>quote.ticker);if(!quotes.length)return;const row=quotes.map(quote=>`<span class="org-ticker-item ${quote.change>=0?'up':'down'}"><b>${esc(quote.ticker)}</b><span>${formatCredits(quote.price)}</span><em>${quote.change>=0?'▲':'▼'} ${Math.abs(quote.changePercent).toFixed(2)}%</em></span>`).join('');root.insertAdjacentHTML('afterbegin',`<div class="org-market-ticker card" aria-label="Реальные котировки акций"><div class="org-ticker-label">GLOBAL SECURITIES · ${esc(formatLoreDateV1075(quotes[0]?.rotationKey, { includeTime:false }))}</div><div class="org-ticker-track"><div class="org-ticker-line">${row}${row}</div></div></div>`);};
+};
+
 
 const PlayerSync = {
   shouldIsolateUsersFromSnapshot() {
@@ -1807,6 +1942,9 @@ const App = {
     $('#wiki-search-btn').addEventListener('click', () => Wiki.search($('#wiki-input').value));
     $('#wiki-input').addEventListener('keydown', event => {
       if (event.key === 'Enter') Wiki.search($('#wiki-input').value);
+    });
+    document.querySelectorAll('[data-wiki-section-v1060]').forEach(button => {
+      button.addEventListener('click', () => Wiki.setSection(button.dataset.wikiSectionV1060));
     });
     $('#export-profile-btn').addEventListener('click', () => UI.exportProfile());
     $('#restore-data-btn')?.addEventListener('click', () => GM.restoreDefaults());
@@ -2171,7 +2309,43 @@ function drawEraMarkerFrameV1050(ctx, size, palette, glow = 1) {
   ctx.restore();
 }
 
+function computeGalaxyMarkerScaleMapV1058(points = [], dpr = 1) {
+  const items = Array.isArray(points) ? points.filter(point => point && Number.isFinite(point.x) && Number.isFinite(point.y)) : [];
+  const scaleMap = new Map();
+  if (!items.length) return scaleMap;
+  const baseRadius = 46 * Math.max(1, Number(dpr || 1));
+  for (const point of items) {
+    let density = 0;
+    let severe = 0;
+    for (const other of items) {
+      if (!other || other === point) continue;
+      const dist = Math.hypot(point.x - other.x, point.y - other.y);
+      if (dist <= baseRadius * 1.55) density += 1;
+      if (dist <= baseRadius * 0.95) severe += 1;
+    }
+    const densityPenalty = Math.max(0, density - 1) * 0.07;
+    const severePenalty = severe * 0.045;
+    const scale = clamp(1 - densityPenalty - severePenalty, 0.58, 1);
+    scaleMap.set(String(point.id || ''), scale);
+  }
+  return scaleMap;
+}
+
+function galaxyBackgroundSourcesForEraV1058(layerKey) {
+  if (layerKey === 'big') return [
+    `assets/images/galaxy_bigstars.png`,
+    `assets/images/galaxy_bigstarts.png`,
+    `assets/images/galaxy2.png`
+  ];
+  return [
+    `assets/images/galaxy_mainstars.png`,
+    `assets/images/galaxy1.png`
+  ];
+}
+
 function drawSystemMarker(ctx, point, size, system, options = {}) {
+
+
   const active = !!options.active;
   const style = SYSTEM_MARKER_STYLES.some(option => option.id === system?.markerStyle) ? system.markerStyle : 'orbital';
   const palette = options.palette || getEraGalaxyPaletteV1050();
@@ -2800,7 +2974,6 @@ function imageFieldMarkup(entity, title = 'Изображение') {
         <div class="media-actions">
           <input class="input image-file-input" type="file" accept="image/*,.dds,image/vnd.ms-dds,application/octet-stream" />
           <button type="button" class="secondary clear-image-btn">REMOVE_IMAGE</button>
-          <div class="small-note">Изображение копируется в локальную папку world-data/assets. DDS автоматически конвертируется в PNG для корректного отображения. Если включена облачная синхронизация, файл дополнительно грузится в backend и раздаётся на другие ПК по cloud URL.</div>
         </div>
       </div>
     </div>
@@ -3584,19 +3757,48 @@ const UI = {
 };
 
 const Wiki = {
-  entityPool() {
+  activeSection: 'articles',
+  sectionForType(type) {
+    return ({ planet: 'planets', item: 'equipment', article: 'articles', system: 'systems' })[type] || '';
+  },
+  syncSectionNav() {
+    document.querySelectorAll('[data-wiki-section-v1060]').forEach(button => {
+      button.classList.toggle('active', button.dataset.wikiSectionV1060 === this.activeSection);
+    });
+    const input = $('#wiki-input');
+    if (input) {
+      input.placeholder = ({
+        planets: 'Название планеты, система, код...',
+        equipment: 'Название предмета, тип, редкость...',
+        articles: 'Название статьи, категория, текст...',
+        systems: 'Название системы, метка...'
+      })[this.activeSection] || 'Поиск по архиву...';
+    }
+  },
+  setSection(section, options = {}) {
+    const allowed = new Set(['planets', 'equipment', 'articles', 'systems']);
+    this.activeSection = allowed.has(section) ? section : 'articles';
+    if (options.clearSearch !== false && $('#wiki-input')) $('#wiki-input').value = '';
+    this.currentView = null;
+    this.syncSectionNav();
+    this.prime();
+  },
+  entityPool(section = this.activeSection) {
     const pool = [];
-    getVisibleSystems().forEach(system => pool.push({ type: 'system', entity: system, summary: `Система · ${system.planetIds?.length || 0} планет` }));
-    Object.values(Data.planets).filter(entity => isEntityVisible(entity)).forEach(planet => pool.push({ type: 'planet', entity: planet, summary: planet.location?.system || planet.code || 'Планета' }));
-    Object.values(Data.npcs).filter(entity => isEntityVisible(entity)).forEach(npc => pool.push({ type: 'npc', entity: npc, summary: npc.role || npc.location || 'NPC' }));
-    Object.values(Data.equipment).filter(entity => isEntityVisible(entity)).forEach(item => pool.push({ type: 'item', entity: item, summary: `${item.type || 'предмет'} · ${item.rarity || ''}` }));
-    Object.values(Data.flora).filter(entity => isEntityVisible(entity)).forEach(flora => pool.push({ type: 'flora', entity: flora, summary: flora.habitat || 'Флора' }));
-    Object.values(Data.fauna).filter(entity => isEntityVisible(entity)).forEach(fauna => pool.push({ type: 'fauna', entity: fauna, summary: fauna.habitat || 'Фауна' }));
-    Object.values(Data.articles).filter(entity => isEntityVisible(entity)).forEach(article => pool.push({ type: 'article', entity: article, summary: article.category || article.summary || 'Статья архива' }));
+    if (section === 'systems') {
+      getVisibleSystems().forEach(system => pool.push({ type: 'system', entity: system, summary: `Система · ${system.planetIds?.length || 0} планет` }));
+    } else if (section === 'planets') {
+      Object.values(Data.planets).filter(entity => isEntityVisible(entity)).forEach(planet => pool.push({ type: 'planet', entity: planet, summary: planet.location?.system || planet.code || 'Планета' }));
+    } else if (section === 'equipment') {
+      Object.values(Data.equipment).filter(entity => isEntityVisible(entity)).forEach(item => pool.push({ type: 'item', entity: item, summary: `${item.type || item.category || 'снаряжение'} · ${item.rarity || ''}` }));
+    } else {
+      Object.values(Data.articles).filter(entity => isEntityVisible(entity)).forEach(article => pool.push({ type: 'article', entity: article, summary: article.category || article.summary || 'Статья архива' }));
+    }
     return pool;
   },
   prime() {
-    const hits = this.entityPool().slice(0, 10);
+    this.syncSectionNav();
+    const hits = this.entityPool();
     $('#wiki-results').innerHTML = hits.map(hit => `
       <div class="wiki-hit wiki-hit-rich" data-entity="${hit.type}" data-id="${hit.entity.id}">
         ${renderThumb(hit.entity, { size: 'sm', type: hit.type })}
@@ -3654,6 +3856,11 @@ const Wiki = {
   },
   currentView: null,
   showEntity(type, id, autoOpen = false) {
+    const section = this.sectionForType(type);
+    if (section) {
+      this.activeSection = section;
+      this.syncSectionNav();
+    }
     this.currentView = { type, id };
     const entity = entityByType(type, id);
     if (!entity || !isEntityVisible(entity)) {
@@ -3993,6 +4200,80 @@ const GM = {
   }
 };
 
+
+const CONFIG_SEARCH_FIELD_LABELS_V1061 = Object.freeze({
+  id: 'ID', name: 'Название', title: 'Название', displayName: 'Имя', shortName: 'Короткое имя',
+  markerLabel: 'Метка', mapLabel: 'Метка', code: 'Код', summary: 'Описание', desc: 'Описание',
+  category: 'Категория', role: 'Роль', habitat: 'Среда', location: 'Локация',
+  'location.arm': 'Рукав', 'location.node': 'Узел', 'location.system': 'Система', 'location.obj': 'Объект',
+  'physics.type': 'Тип', 'physics.mass': 'Масса', 'physics.radius': 'Радиус', 'physics.gravity': 'Гравитация',
+  'physics.climate': 'Климат', 'physics.temp': 'Температура', 'physics.atm': 'Атмосфера',
+  'socio.pop': 'Население', 'socio.capital': 'Столица', 'socio.gov': 'Правление', 'socio.law': 'Режим',
+  'pilot.reference': 'Справка', 'pilot.info': 'Информация', 'pilot.warning': 'Предупреждение'
+});
+
+function configEntityPrimaryNameV1061(item, type) {
+  if (!item) return '';
+  if (type === 'systems') return item.name || getSystemLabel(item) || item.id;
+  if (type === 'players') return item.displayName || item.shortName || item.name || item.id;
+  if (type === 'articles') return item.title || item.name || item.displayName || item.id;
+  return item.displayName || item.title || item.name || item.label || item.mapLabel || item.id;
+}
+
+function configSearchEntriesV1061(value, prefix = '', depth = 0, out = []) {
+  if (depth > 4 || value == null) return out;
+  if (Array.isArray(value)) {
+    value.forEach((entry, index) => {
+      if (entry == null) return;
+      if (typeof entry === 'string' || typeof entry === 'number') out.push({ path: prefix, value: String(entry) });
+      else if (typeof entry === 'object') configSearchEntriesV1061(entry, prefix ? `${prefix}.${index}` : String(index), depth + 1, out);
+    });
+    return out;
+  }
+  if (typeof value !== 'object') {
+    if (prefix) out.push({ path: prefix, value: String(value) });
+    return out;
+  }
+  for (const [key, entry] of Object.entries(value)) {
+    if (['image','imageLocal','body','visibility','relatedArticleIds','market','routes','tokens','markers','fog'].includes(key)) continue;
+    const path = prefix ? `${prefix}.${key}` : key;
+    if (entry == null) continue;
+    if (typeof entry === 'string' || typeof entry === 'number' || typeof entry === 'boolean') out.push({ path, value: String(entry) });
+    else configSearchEntriesV1061(entry, path, depth + 1, out);
+  }
+  return out;
+}
+
+function configSearchMatchV1061(item, type, query) {
+  const q = String(query || '').trim().toLowerCase();
+  if (!q) return { matched: true, path: '', value: '', score: 0 };
+  const genericValues = new Set(['planet','планета','planets','планеты','system','система','systems','системы','article','статья','articles','статьи','equipment','снаряжение','item','предмет','region','регион','city','город']);
+  const entries = configSearchEntriesV1061(item);
+  if (type === 'systems') entries.push({ path: 'markerLabel', value: getSystemLabel(item) });
+  const canonicalPaths = new Set(['name','title','displayName','shortName','markerLabel','label']);
+  const candidates = [];
+  for (const entry of entries) {
+    const value = String(entry.value || '').trim();
+    if (!value || !value.toLowerCase().includes(q)) continue;
+    const lastKey = String(entry.path || '').split('.').pop();
+    const lowerValue = value.toLowerCase();
+    const genericField = ['category','type','mapLabel','locationType'].includes(lastKey);
+    if (genericField && genericValues.has(lowerValue)) continue;
+    let score = canonicalPaths.has(entry.path) ? 0 : entry.path === 'id' ? 2 : 1;
+    if (/description|summary|desc|reference|info|warning/i.test(entry.path)) score += 2;
+    candidates.push({ ...entry, score });
+  }
+  candidates.sort((a, b) => a.score - b.score || a.value.length - b.value.length);
+  const best = candidates[0];
+  return best ? { matched: true, ...best } : { matched: false, path: '', value: '', score: 99 };
+}
+
+function configSearchFieldLabelV1061(path = '') {
+  if (CONFIG_SEARCH_FIELD_LABELS_V1061[path]) return CONFIG_SEARCH_FIELD_LABELS_V1061[path];
+  const clean = String(path || '').split('.').filter(part => !/^\d+$/.test(part)).pop() || 'Атрибут';
+  return clean.replace(/([a-zа-я])([A-ZА-Я])/g, '$1 $2');
+}
+
 const Configurator = {
   selectedType: 'planets',
   selectedId: null,
@@ -4023,7 +4304,7 @@ const Configurator = {
           <button id="config-clear-reports-btn" class="ghost" type="button">CLEAR_REPORTS</button>
         </div>
         <div class="result-stack report-stack" style="margin-top:12px">
-          ${reports.length ? reports.map(report => `<div class="report-card ${report.success ? 'ok' : 'warn'}"><div class="report-top"><b>${esc(report.title || 'Отчёт')}</b><span>${esc(new Date(report.createdAt || Date.now()).toLocaleString('ru-RU'))}</span></div><div class="small-note" style="margin:6px 0 8px">${esc(report.playerName || getPlayerDisplayName(report.playerId))} · ${esc(report.itemName || report.itemId || report.category || 'tool')}</div><div>${esc(report.text || '')}</div>${report.details ? `<div class="small-note" style="margin-top:8px">${esc(report.details)}</div>` : ''}</div>`).join('') : '<div class="small-note">Журнал пока пуст.</div>'}
+          ${reports.length ? reports.map(report => `<div class="report-card ${report.success ? 'ok' : 'warn'}"><div class="report-top"><b>${esc(report.title || 'Отчёт')}</b><span>${esc(formatLoreDateV1075(report.createdAt || Date.now()))}</span></div><div class="small-note" style="margin:6px 0 8px">${esc(report.playerName || getPlayerDisplayName(report.playerId))} · ${esc(report.itemName || report.itemId || report.category || 'tool')}</div><div>${esc(report.text || '')}</div>${report.details ? `<div class="small-note" style="margin-top:8px">${esc(report.details)}</div>` : ''}</div>`).join('') : '<div class="small-note">Журнал пока пуст.</div>'}
         </div>
       </div>
     `;
@@ -4083,14 +4364,7 @@ const Configurator = {
     const types = Object.entries(WORLD_SECTIONS);
     const rawItems = this.getItems(this.selectedType);
     const search = String(this.searchQuery || '').trim().toLowerCase();
-    const matchesSearch = item => {
-      if (!search) return true;
-      const hay = [item?.id, item?.name, item?.title, item?.displayName, item?.label, item?.mapLabel, item?.subtitle, item?.category, this.selectedType === 'systems' ? getSystemLabel(item) : '']
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase();
-      return hay.includes(search);
-    };
+    const matchesSearch = item => configSearchMatchV1061(item, this.selectedType, search).matched;
     const items = rawItems.filter(matchesSearch);
     if (this.selectedId && !items.some(item => item.id === this.selectedId)) this.selectedId = items[0]?.id || null;
     if (!items.length) this.selectedId = null;
@@ -4115,10 +4389,14 @@ const Configurator = {
           </div>
           <div class="result-stack config-entity-list">
             ${items.length ? items.map(item => {
-              const primary = this.selectedType === 'systems' ? getSystemLabel(item) : (item.name || item.displayName || item.title || item.id);
-              const secondary = this.selectedType === 'systems'
-                ? [item.name && item.name !== getSystemLabel(item) ? item.name : '', item.id].filter(Boolean).join(' · ')
-                : (item.mapLabel || item.id);
+              const primary = configEntityPrimaryNameV1061(item, this.selectedType);
+              const match = configSearchMatchV1061(item, this.selectedType, search);
+              const matchedAttribute = search && match.matched && !['name','title','displayName','shortName','markerLabel','label','id'].includes(match.path)
+                ? `${configSearchFieldLabelV1061(match.path)}: ${match.value}`
+                : '';
+              const secondary = matchedAttribute || (this.selectedType === 'systems'
+                ? [getSystemLabel(item) && getSystemLabel(item) !== item.name ? getSystemLabel(item) : '', item.id].filter(Boolean).join(' · ')
+                : item.id);
               return `<div class="player-chip config-chip ${item.id === this.selectedId ? 'active' : ''}" data-config-id="${esc(item.id)}">${renderThumb(item, { size: 'xs', type: this.selectedType === 'equipment' ? 'item' : this.selectedType.slice(0,-1), glyph: item.avatarGlyph || initials(primary || item.id) })}<div><b>${esc(primary)}</b><div class="subtle" style="margin-top:4px">${esc(secondary)}</div></div></div>`;
             }).join('') : `<div class="subtle">${search ? 'Ничего не найдено' : 'Список пуст'}</div>`}
           </div>
@@ -5240,7 +5518,7 @@ const GalaxyMap = {
         if (index >= sources.length) {
           this.galaxyImages[key] = null;
           this.galaxyImageStatus[key] = 'missing';
-          console.warn(`Galaxy background image not found: ${sources.join(', ')}`);
+          console.warn(`Galaxy background image not found: `);
           return;
         }
         const src = sources[index];
@@ -5249,14 +5527,15 @@ const GalaxyMap = {
         img.onload = () => {
           this.galaxyImages[key] = img;
           this.galaxyImageStatus[key] = 'ready';
+          this.rebuildStaticLayers();
         };
         img.onerror = () => tryLoad(index + 1);
         img.src = src;
       };
       tryLoad(0);
     };
-    loadLayer('big', ['assets/images/galaxy_bigstars.png', 'assets/images/galaxy_bigstarts.png', 'assets/images/galaxy2.png']);
-    loadLayer('main', ['assets/images/galaxy_mainstars.png', 'assets/images/galaxy1.png']);
+    loadLayer('big', galaxyBackgroundSourcesForEraV1058('big'));
+    loadLayer('main', galaxyBackgroundSourcesForEraV1058('main'));
   },
   createLayer(width, height) {
     const layer = document.createElement('canvas');
@@ -5485,6 +5764,7 @@ const GalaxyMap = {
   },
   drawGalaxyBackground() {
     const { ctx, W, H } = this;
+    const isMedievalBackdrop = getEraGalaxyPaletteV1050().era === 'medieval';
     if (this.staticBgCanvas) {
       ctx.drawImage(this.staticBgCanvas, 0, 0, W, H);
     } else {
@@ -5498,13 +5778,13 @@ const GalaxyMap = {
 
     this.drawRepeatedImageLayer(this.galaxyImages.big, {
       tileScale: 4.35,
-      alpha: 0.55,
+      alpha: isMedievalBackdrop ? 0.42 : 0.55,
       composite: 'screen',
       blur: 9.5,
-      brightness: 1.08,
-      saturate: 1.08,
-      glow: 26,
-      glowColor: 'rgba(205,235,255,0.26)',
+      brightness: isMedievalBackdrop ? 0.82 : 1.08,
+      saturate: isMedievalBackdrop ? 0.32 : 1.08,
+      glow: isMedievalBackdrop ? 12 : 26,
+      glowColor: isMedievalBackdrop ? 'rgba(196,147,78,0.18)' : 'rgba(205,235,255,0.26)',
       mouseParallax: 18,
       cameraParallax: -0.03
     });
@@ -5512,14 +5792,30 @@ const GalaxyMap = {
     const pulse = 0.9 + Math.sin(performance.now() * 0.0011) * 0.08 + Math.sin(performance.now() * 0.00037) * 0.04;
     this.drawWorldAnchoredImageLayer(this.galaxyImages.main, {
       bounds: { x: 0, y: 0, w: 1, h: 1 },
-      alpha: 0.96,
+      alpha: isMedievalBackdrop ? 0.74 : 0.96,
       composite: 'screen',
       blur: 0.75,
-      brightness: 0.96,
-      saturate: 1.12,
-      glow: 9 * pulse,
-      glowColor: 'rgba(125,249,255,0.28)'
+      brightness: isMedievalBackdrop ? 0.78 : 0.96,
+      saturate: isMedievalBackdrop ? 0.28 : 1.12,
+      glow: (isMedievalBackdrop ? 4 : 9) * pulse,
+      glowColor: isMedievalBackdrop ? 'rgba(183,126,61,0.18)' : 'rgba(125,249,255,0.28)'
     });
+
+    if (isMedievalBackdrop) {
+      // Keep the same galaxy artwork, but recolor it procedurally toward parchment.
+      ctx.save();
+      const parchment = ctx.createRadialGradient(W * 0.48, H * 0.42, 0, W * 0.5, H * 0.5, Math.max(W, H) * 0.78);
+      parchment.addColorStop(0, 'rgba(236,215,170,0.30)');
+      parchment.addColorStop(0.55, 'rgba(190,148,88,0.24)');
+      parchment.addColorStop(1, 'rgba(96,57,29,0.30)');
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.fillStyle = parchment;
+      ctx.fillRect(0, 0, W, H);
+      ctx.globalCompositeOperation = 'multiply';
+      ctx.fillStyle = 'rgba(133,84,42,0.22)';
+      ctx.fillRect(0, 0, W, H);
+      ctx.restore();
+    }
 
     const vignette = ctx.createRadialGradient(W * 0.5, H * 0.48, Math.min(W, H) * 0.12, W * 0.5, H * 0.5, Math.max(W, H) * 0.72);
     vignette.addColorStop(0, 'rgba(255,255,255,0)');
@@ -5756,14 +6052,24 @@ const GalaxyMap = {
       });
     }
 
-    for (const system of getVisibleSystems()) {
-      const point = this.worldToScreen(system.pos.x, system.pos.y);
+    const visibleSystemEntries = getVisibleSystems().map(system => ({ system, point: this.worldToScreen(system.pos.x, system.pos.y) }));
+    const markerScaleMap = state.viewMode === 'galaxy'
+      ? computeGalaxyMarkerScaleMapV1058(visibleSystemEntries.map(({ system, point }) => ({
+          id: system.id,
+          x: point.sx,
+          y: point.sy,
+          size: ((system.id === state.activeSystemId ? 13 : 8) * 1.4 * this.DPR)
+        })), this.DPR)
+      : new Map();
+
+    for (const { system, point } of visibleSystemEntries) {
       const active = system.id === state.activeSystemId;
       const isCurrentSystem = currentSystemId === system.id;
       if (state.viewMode === 'galaxy' || active) {
         const systemColor = String(system.color || eraPalette.marker || '#7df9ff').trim() || '#7df9ff';
         const ringColor = active ? '245,252,255' : hexToRgbString(systemColor, '96,201,255');
-        const size = (active ? 13 : 8) * 1.4 * this.DPR;
+        const markerScale = markerScaleMap.get(system.id) || 1;
+        const size = ((active ? 13 : 8) * 1.4 * this.DPR) * markerScale;
         const halo = ctx.createRadialGradient(point.sx, point.sy, 0, point.sx, point.sy, size * 4.2);
         halo.addColorStop(0, active ? 'rgba(255,255,255,0.8)' : `rgba(${ringColor},0.42)`);
         halo.addColorStop(0.2, active ? 'rgba(255,255,255,0.28)' : `rgba(${ringColor},0.12)`);
@@ -6027,7 +6333,7 @@ UI.renderNews = function() {
               <div class="section-title">НОВОСТЬ</div>
               <h2>${esc(entry.title || entry.name || 'Без заголовка')}</h2>
               ${entry.subtitle ? `<div class="subtle">${esc(entry.subtitle)}</div>` : ''}
-              <div class="small-note">${esc(new Date(entry.publishedAt || Date.now()).toLocaleString('ru-RU'))}</div>
+              <div class="small-note">${esc(formatLoreDateV1075(entry.publishedAt || Date.now()))}</div>
             </div>
           </div>
           ${__renderRichText(entry.body, '<div class="small-note">Нет текста новости.</div>')}
@@ -6213,7 +6519,7 @@ Wiki.showEntity = function(type, id, autoOpen = false) {
 ChatUI.messageMarkup = function(message, npcId) {
   const own = message.sender === 'npc';
   const label = own ? (Data.getNpc(npcId)?.name || 'NPC') : getPlayerDisplayName(message.playerId);
-  return `<div class="chat-bubble ${own ? 'npc' : 'player'}"><div class="chat-meta">${esc(label)} · ${esc(new Date(message.createdAt || Date.now()).toLocaleString('ru-RU'))}</div>${__renderRichText(message.text, '<div></div>')}</div>`;
+  return `<div class="chat-bubble ${own ? 'npc' : 'player'}"><div class="chat-meta">${esc(label)} · ${esc(formatLoreDateV1075(message.createdAt || Date.now()))}</div>${__renderRichText(message.text, '<div></div>')}</div>`;
 };
 
 const __renderNpcThreadForPlayer = ChatUI.renderNpcThreadForPlayer.bind(ChatUI);
@@ -6390,6 +6696,7 @@ const ITEM_TYPE_OPTIONS_V2 = [
   { value: 'weapon', label: 'Оружие' },
   { value: 'armor', label: 'Броня' },
   { value: 'implant', label: 'Импланты' },
+  { value: 'stock', label: 'Акции' },
   { value: 'gear', label: 'Снаряжение' },
   { value: 'misc', label: 'Разное' },
   { value: 'tech', label: 'Техника' },
@@ -6412,7 +6719,7 @@ function itemRarityLabelV2(value) {
 }
 function mapLegacyItemTypeV2(value) {
   const map = {
-    weapon: 'weapon', armor: 'armor', implant: 'implant', tool: 'hacking', tech: 'tech',
+    weapon: 'weapon', armor: 'armor', implant: 'implant', stock: 'stock', stocks: 'stock', share: 'stock', shares: 'stock', tool: 'hacking', tech: 'tech',
     misc: 'misc', consumable: 'consumable', trade: 'misc', permit: 'document', flora: 'misc', fauna: 'misc'
   };
   return map[String(value || '').trim()] || String(value || 'misc').trim() || 'misc';
@@ -6905,6 +7212,7 @@ Configurator.renderEquipmentEditor = function(item) {
         <div class="field"><label>Редкость</label><select class="select" name="rarity">${ITEM_RARITY_OPTIONS_V2.map(option => `<option value="${option}" ${option === item.rarity ? 'selected' : ''}>${esc(option)}</option>`).join('')}</select></div>
       </div>
       <div class="field"><label>Название</label><input class="input" name="name" value="${esc(item.name || '')}" /></div>
+      <div class="cols2"><div class="field"><label>Стоимость создания</label><input class="input" type="number" min="0" max="10" step="1" name="creationCost" value="${Number(item.creationCost || 0)}" /><div class="small-note">Стоимость выбора этого предмета при регистрации персонажа.</div></div><label class="consent-line starting-equipment-toggle-v1066"><input type="checkbox" name="availableAsStarting" ${item.availableAsStarting ? 'checked' : ''}/><span><b>Доступен как стартовое</b><small>Показывать в выборе стартового снаряжения, если совпадают кампания и эпоха.</small></span></label></div>
       ${this.renderVisibilityField(item)}
       <div class="field"><label>Описание</label><textarea class="area" name="desc">${esc(item.desc || '')}</textarea>${__htmlHint}</div>
       <div class="cols3">
@@ -7203,19 +7511,58 @@ function canEditDeleteDirectMessage(message) {
   return message?.senderId === App.currentUserId;
 }
 
+function findCampaignChatMessageContext(messageId) {
+  const chats = App.state?.campaignChats;
+  if (!chats || typeof chats !== 'object') return null;
+  for (const [campaignId, thread] of Object.entries(chats)) {
+    if (!Array.isArray(thread)) continue;
+    const index = thread.findIndex(message => String(message?.id || '') === String(messageId || ''));
+    if (index >= 0) return { campaignId, thread, index, message: thread[index] };
+  }
+  return null;
+}
+
+function editCampaignChatMessage(messageId, nextText) {
+  const ctx = findCampaignChatMessageContext(messageId);
+  if (!ctx) return null;
+  ctx.message.text = String(nextText || '').trim();
+  ctx.message.editedAt = new Date().toISOString();
+  ChatSync.queue(ChatSync.campaignRowFromMessageV1062(ctx.message, ctx.campaignId));
+  return ctx.message;
+}
+
+function deleteCampaignChatMessage(messageId) {
+  const ctx = findCampaignChatMessageContext(messageId);
+  if (!ctx) return false;
+  const tombstone = { ...ctx.message, deletedAt: new Date().toISOString(), editedAt: null };
+  ChatSync.queue(ChatSync.campaignRowFromMessageV1062(tombstone, ctx.campaignId));
+  ctx.thread.splice(ctx.index, 1);
+  if (!ctx.thread.length) delete App.state.campaignChats[ctx.campaignId];
+  return true;
+}
+
+function canEditDeleteCampaignMessage(message) {
+  if (App.currentUser?.role === 'gm') return true;
+  return message?.senderType !== 'npc' && String(message?.senderId || '') === String(App.currentUserId || '');
+}
+
 function formatMessageMetaTime(message) {
-  const created = new Date(message?.createdAt || Date.now()).toLocaleString('ru-RU');
+  const created = formatLoreDateV1075(message?.createdAt || Date.now());
   if (message?.editedAt) return `${created} · изменено`;
   return created;
 }
 
 function renderChatMessageControls(kind, message) {
-  const can = kind === 'npc' ? canEditDeleteNpcMessage(message) : canEditDeleteDirectMessage(message);
+  const can = kind === 'npc'
+    ? canEditDeleteNpcMessage(message)
+    : kind === 'campaign'
+      ? canEditDeleteCampaignMessage(message)
+      : canEditDeleteDirectMessage(message);
   if (!can) return '';
   return `
     <div class="chat-actions">
       <button class="tiny-btn chat-edit-btn" type="button" data-chat-kind="${esc(kind)}" data-message-id="${esc(message.id)}">EDIT</button>
-      <button class="tiny-btn chat-delete-btn" type="button" data-chat-kind="${esc(kind)}" data-message-id="${esc(message.id)}">DEL</button>
+      <button class="tiny-btn chat-delete-btn" type="button" data-chat-kind="${esc(kind)}" data-message-id="${esc(message.id)}">СКРЫТЬ</button>
     </div>
   `;
 }
@@ -7229,6 +7576,7 @@ function bindChatMessageActions(root, rerender) {
       const messageId = button.dataset.messageId;
       let current = '';
       if (kind === 'npc') current = findNpcChatMessageContext(messageId)?.message?.text || '';
+      else if (kind === 'campaign') current = findCampaignChatMessageContext(messageId)?.message?.text || '';
       else current = findDirectChatMessageContext(messageId)?.message?.text || '';
       const nextText = prompt('Изменить сообщение', current);
       if (nextText == null) return;
@@ -7237,7 +7585,11 @@ function bindChatMessageActions(root, rerender) {
         Toast.show('Пустое сообщение нельзя сохранить', 'err');
         return;
       }
-      const updated = kind === 'npc' ? editNpcChatMessage(messageId, clean) : editDirectChatMessage(messageId, clean);
+      const updated = kind === 'npc'
+        ? editNpcChatMessage(messageId, clean)
+        : kind === 'campaign'
+          ? editCampaignChatMessage(messageId, clean)
+          : editDirectChatMessage(messageId, clean);
       if (!updated) {
         Toast.show('Сообщение не найдено', 'err');
         return;
@@ -7252,13 +7604,17 @@ function bindChatMessageActions(root, rerender) {
     button.addEventListener('click', async () => {
       const kind = button.dataset.chatKind;
       const messageId = button.dataset.messageId;
-      if (!confirm('Удалить сообщение?')) return;
-      const ok = kind === 'npc' ? deleteNpcChatMessage(messageId) : deleteDirectChatMessage(messageId);
+      if (!confirm('Скрыть сообщение? Оно исчезнет из чата, но сохранится на сервере для модерации и безопасности.')) return;
+      const ok = kind === 'npc'
+        ? deleteNpcChatMessage(messageId)
+        : kind === 'campaign'
+          ? deleteCampaignChatMessage(messageId)
+          : deleteDirectChatMessage(messageId);
       if (!ok) {
         Toast.show('Сообщение не найдено', 'err');
         return;
       }
-      await App.saveState('Сообщение удалено');
+      await App.saveState('Сообщение скрыто');
       rerender?.();
     });
   });
@@ -7505,6 +7861,10 @@ const MessagesUI = {
         event.preventDefault();
         const fd = new FormData(form);
         const partnerId = form.dataset.partnerId;
+        if (window.GRPGChatPolicyV1063 && !window.GRPGChatPolicyV1063.canDirect(App.currentUserId, partnerId)) {
+          Toast.show('Личный чат с персонажем другой кампании запрещён его настройками.', 'err');
+          return;
+        }
         const text = String(fd.get('message') || '').trim();
         if (!text) {
           Toast.show('Сообщение пустое', 'err');
@@ -9263,7 +9623,14 @@ MessagesUI.bind = function(root) {
   root.querySelectorAll('.chat-input').forEach(textarea => {
     if (textarea.dataset.pendingRefreshBound === '1') return;
     textarea.dataset.pendingRefreshBound = '1';
-    textarea.addEventListener('blur', () => {
+    textarea.addEventListener('blur', event => {
+      // v1.0.70: do not re-render while focus moves to Submit. The old blur
+      // refresh removed the button before its click event and required a second click.
+      const next = event.relatedTarget;
+      const ownForm = textarea.closest('form');
+      const submitButton = next?.closest?.('button[type="submit"], input[type="submit"]');
+      const recentSubmitPointer = ownForm && (Date.now() - Number(ownForm.dataset.chatSubmitPointerV1070 || 0) < 700);
+      if ((submitButton && ownForm && submitButton.form === ownForm) || recentSubmitPointer) return;
       if (ChatSync.renderPending && UI.activeModuleId === 'messages') {
         ChatSync.renderPending = false;
         MessagesUI.render();
@@ -9293,7 +9660,7 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
 
 const __appSaveState_chatDeltaGuard = App.saveState.bind(App);
 App.saveState = async function(notice = 'Данные сохранены') {
-  const looksLikeChatNotice = /Сообщение отправлено|Ответ NPC отправлен|Сообщение отправлено NPC|NPC отправил сообщение игроку|Сообщение изменено|Сообщение удалено/i.test(String(notice || ''));
+  const looksLikeChatNotice = /Сообщение отправлено|Ответ NPC отправлен|Сообщение отправлено NPC|NPC отправил сообщение игроку|Сообщение изменено|Сообщение удалено|Сообщение скрыто/i.test(String(notice || ''));
   if (looksLikeChatNotice && ChatSync.loadOutbox().length) {
     await Persistence.save(this.state);
     await ChatSync.flushOutbox('save-state-chat');
@@ -9309,7 +9676,7 @@ App.saveState = async function(notice = 'Данные сохранены') {
 
 // ==== v0.5.0.2 patch: only divert chat notices to row-level outbox ====
 App.saveState = async function(notice = 'Данные сохранены') {
-  const looksLikeChatNotice = /Сообщение отправлено|Ответ NPC отправлен|Сообщение отправлено NPC|NPC отправил сообщение игроку|Сообщение изменено|Сообщение удалено/i.test(String(notice || ''));
+  const looksLikeChatNotice = /Сообщение отправлено|Ответ NPC отправлен|Сообщение отправлено NPC|NPC отправил сообщение игроку|Сообщение изменено|Сообщение удалено|Сообщение скрыто/i.test(String(notice || ''));
   if (looksLikeChatNotice && ChatSync.loadOutbox().length) {
     await Persistence.save(this.state);
     await ChatSync.flushOutbox('save-state-chat');
@@ -15487,19 +15854,22 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
     return sorted;
   }
 
-  Wiki.entityPool = function() {
+  Wiki.entityPool = function(section = this.activeSection || 'articles') {
     const pool = [];
-    Object.values(Data.planets).filter(entity => isEntityVisible(entity)).forEach(planet => pool.push({ type: 'planet', entity: planet, summary: planet.location?.system || planet.code || 'Планета' }));
-    Object.values(Data.npcs).filter(entity => isEntityVisible(entity)).forEach(npc => pool.push({ type: 'npc', entity: npc, summary: npc.role || npc.location || 'NPC' }));
-    Object.values(Data.equipment).filter(entity => isEntityVisible(entity)).forEach(item => pool.push({ type: 'item', entity: item, summary: `${item.type || 'предмет'} · ${item.rarity || ''}` }));
-    Object.values(Data.flora).filter(entity => isEntityVisible(entity)).forEach(flora => pool.push({ type: 'flora', entity: flora, summary: flora.habitat || 'Флора' }));
-    Object.values(Data.fauna).filter(entity => isEntityVisible(entity)).forEach(fauna => pool.push({ type: 'fauna', entity: fauna, summary: fauna.habitat || 'Фауна' }));
-    Object.values(Data.articles).filter(entity => isEntityVisible(entity)).forEach(article => pool.push({ type: 'article', entity: article, summary: article.category || article.summary || 'Статья архива' }));
+    if (section === 'systems') {
+      getVisibleSystems().forEach(system => pool.push({ type: 'system', entity: system, summary: `Система · ${system.planetIds?.length || 0} планет` }));
+    } else if (section === 'planets') {
+      Object.values(Data.planets).filter(entity => isEntityVisible(entity)).forEach(planet => pool.push({ type: 'planet', entity: planet, summary: planet.location?.system || planet.code || 'Планета' }));
+    } else if (section === 'equipment') {
+      Object.values(Data.equipment).filter(entity => isEntityVisible(entity)).forEach(item => pool.push({ type: 'item', entity: item, summary: `${item.type || item.category || 'снаряжение'} · ${item.rarity || ''}` }));
+    } else {
+      Object.values(Data.articles).filter(entity => isEntityVisible(entity)).forEach(article => pool.push({ type: 'article', entity: article, summary: article.category || article.summary || 'Статья архива' }));
+    }
     return sortArchiveHitsV42(pool);
   };
 
   Wiki.prime = function() {
-    const hits = this.entityPool().slice(0, 10);
+    const hits = this.entityPool();
     const sorted = renderWikiHitsV42(hits, '<div class="subtle">Нет доступных записей.</div>');
     if (sorted[0]) this.showEntity(sorted[0].type, sorted[0].entity.id);
   };
@@ -16090,7 +16460,7 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
     if (current === 'downloading') return status.message || `Скачивание: ${Math.round(Number(status.percent || 0))}%`;
     if (current === 'downloaded') return status.message || 'Обновление загружено';
     if (current === 'none') return 'Обновлений нет';
-    if (current === 'dev') return status.message || 'Updater работает только в собранном приложении';
+    if (current === 'dev') return status.message || '';
     if (current === 'unavailable') return status.message || 'electron-updater не установлен';
     if (current === 'error') return `Ошибка обновления: ${status.message || 'unknown error'}`;
     if (current === 'ready') return status.message || 'Updater готов';
@@ -16658,7 +17028,7 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
       </div>`;
     }).join('');
     const legacy = legacyRows.length ? `<div class="section-title" style="margin-top:16px">Старые записи</div><div class="tags">${legacyRows.map(row => `<span class="tag">${esc(row.status || row.name)}</span>`).join('')}</div>` : '';
-    return `<div class="small-note" style="margin-bottom:12px">Репутация берётся из профиля персонажа, а список организаций задаётся в World Config → Организации.</div><div class="result-stack">${cards || '<div class="small-note">В World Config пока нет организаций.</div>'}</div>${legacy}`;
+    return `<div class="result-stack">${cards || '<div class="small-note">В World Config пока нет организаций.</div>'}</div>${legacy}`;
   }
 
   function treeNodeIdV51(type, id) {
@@ -17204,7 +17574,6 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
       <div class="row" style="gap:8px;flex-wrap:wrap">
         <div class="chip">ОЧКИ УЛУЧШЕНИЯ: ${Number(user.skillPoints || 0)}</div>
         <span class="chip">SKILL_UI v1.0.35</span>
-        <div class="small-note">Масштаб доступен всем. Информация открывается при наведении. Ветка Славы выдаётся ДМом.</div>
       </div>
       <div class="row" style="gap:8px;flex-wrap:wrap">
         <button class="ghost" type="button" data-skill-zoom-v63="out">−</button>
@@ -21397,7 +21766,10 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
     const selected = selectedCampaignIdV1049();
     const campaign = campaignByIdV1049(selected);
     const user = this.currentUser;
-    if (user && String(user.role || '').toLowerCase() !== 'gm') {
+    const role = String(user?.role || '').toLowerCase();
+    // Guest access is global and read-only: the selected campaign controls the
+    // interface theme, but the technical guest profile is not assigned to it.
+    if (user && role !== 'gm' && role !== 'guest') {
       if (!campaign || campaign.availableNow === false || !playerCampaignIdsV1049(user).includes(selected)) {
         this.currentUserId = null;
         try { Persistence.clearSession(); } catch {}
@@ -21441,7 +21813,8 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
     { value: 'gear', label: 'Снаряжение' },
     { value: 'weapon', label: 'Оружие' },
     { value: 'armor', label: 'Броня' },
-    { value: 'implant', label: 'Импланты' }
+    { value: 'implant', label: 'Импланты' },
+    { value: 'stock', label: 'Акции' }
   ];
   const APPROVAL_V1052 = new Set(['approved', 'pending', 'rejected']);
   let SOCIAL_ORIGINS_V1052 = {};
@@ -21495,6 +21868,11 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
       image: String(entity.image || '').trim(),
       imageLocal: String(entity.imageLocal || '').trim(),
       locationType: String(entity.locationType || entity.placeType || 'other').trim().toLowerCase(),
+      linkedPlanetIds: uniqueStringsV1052(entity.linkedPlanetIds || entity.planetIds || entity.accessPlanetIds || []),
+      linkedRegionIds: uniqueStringsV1052(entity.linkedRegionIds || entity.regionIds || entity.accessRegionIds || []),
+      grantedPlanetIds: uniqueStringsV1052(entity.grantedPlanetIds || entity.accessGrantedPlanetIds || []),
+      grantedSystemIds: uniqueStringsV1052(entity.grantedSystemIds || entity.accessGrantedSystemIds || []),
+      creationCost: clamp(Math.max(0, Number(entity.creationCost ?? entity.characterCreationCost ?? 0)), 0, 10),
       abilityBonuses: normalizeBonusMapV1052(entity.abilityBonuses || entity.bonuses || {}),
       visibility: visibilityV1052(entity)
     };
@@ -21517,6 +21895,36 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
   function originByIdV1052(kind, id) {
     return (kind === 'social' ? SOCIAL_ORIGINS_V1052 : GEOGRAPHIC_ORIGINS_V1052)[String(id || '')] || null;
   }
+
+  function regionMapPoolV1061() {
+    try { return window.RegionMapsV36?.maps?.() || {}; } catch { return {}; }
+  }
+  function deriveOriginAccessV1061(origin = {}) {
+    const regionMaps = regionMapPoolV1061();
+    const linkedRegionIds = uniqueStringsV1052(origin.linkedRegionIds || []);
+    const linkedPlanetIds = uniqueStringsV1052([
+      ...(origin.linkedPlanetIds || []),
+      ...(origin.grantedPlanetIds || []),
+      ...linkedRegionIds.map(id => regionMaps?.[id]?.planetId || '')
+    ]);
+    const linkedSystemIds = uniqueStringsV1052([
+      ...(origin.grantedSystemIds || []),
+      ...linkedPlanetIds.map(planetId => Data.getSystemForPlanet?.(planetId)?.id || '')
+    ]);
+    return { linkedRegionIds, linkedPlanetIds, linkedSystemIds };
+  }
+  function originAccessFieldsV1061(origin = {}) {
+    const regionMaps = regionMapPoolV1061();
+    const placeRows = sortEntitiesForList(Object.values(regionMaps || {}).filter(row => ['region','city'].includes(String(row?.kind || '').toLowerCase())));
+    const selectedPlanetIds = uniqueStringsV1052(origin.linkedPlanetIds || []);
+    const selectedRegionIds = uniqueStringsV1052(origin.linkedRegionIds || []);
+    return `<div class="section-title">Привязка к World Config</div>
+      <div class="small-note" style="margin-bottom:12px">Можно выбрать одну или несколько планет, городов и регионов одновременно. При выборе этого происхождения персонаж автоматически получает доступ к связанным планетам и их звёздным системам.</div>
+      <div class="cols2 origin-world-links-v1061">
+        <div class="field"><label>Планеты</label>${renderCheckboxSelector('linkedPlanetIds', sortEntitiesForList(Object.values(PLANETS || {})), selectedPlanetIds, 'planet', 'Планеты не созданы')}</div>
+        <div class="field"><label>Регионы / города</label>${renderCheckboxSelector('linkedRegionIds', placeRows, selectedRegionIds, 'region', 'Регионы и города не созданы')}</div>
+      </div>`;
+  }
   function originBonusesV1052(player = {}) {
     const out = Object.fromEntries(ABILITIES_V1052.map(item => [item.key, 0]));
     const origins = [originByIdV1052('social', player.socialOriginId), originByIdV1052('geographic', player.geographicOriginId)].filter(Boolean);
@@ -21533,7 +21941,12 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
     if (raw === 'weapon') return 'weapon';
     if (raw === 'armor') return 'armor';
     if (raw === 'implant') return 'implant';
+    if (['stock', 'stocks', 'share', 'shares'].includes(raw)) return 'stock';
     return 'gear';
+  }
+  function isStockEquipmentV1073(item = {}) {
+    const tags = Array.isArray(item.tags) ? item.tags.map(tag => String(tag || '').trim().toLowerCase()) : [];
+    return ['stock','stocks','share','shares'].includes(String(item.type || '').trim().toLowerCase()) || String(item.id || '').toLowerCase().startsWith('stock_') || /^акции(?:\s|$)/i.test(String(item.name || '').trim()) || tags.some(tag => ['акции','stock','stocks','share','shares'].includes(tag));
   }
   function normalizeRequirementsV1052(value = {}) {
     return Object.fromEntries(ABILITIES_V1052.map(item => [item.key, Math.max(0, Number(value?.[item.key] || 0))]));
@@ -21543,7 +21956,7 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
   normalizeEquipmentItemV2 = function(item = {}) {
     const raw = { ...(item || {}) };
     const next = __normalizeEquipmentItemV1052(raw);
-    next.type = mapLegacyItemTypeV1052(raw.type || next.type);
+    next.type = isStockEquipmentV1073(raw) ? 'stock' : mapLegacyItemTypeV1052(raw.type || next.type);
     next.visibility = visibilityV1052(raw);
     next.requirements = normalizeRequirementsV1052(raw.requirements || raw.characteristicRequirements || {});
     next.damage = next.type === 'weapon' ? String(raw.damage || '').trim() : '';
@@ -21551,6 +21964,8 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
     next.weaponSlot = next.type === 'weapon' ? String(raw.weaponSlot || 'primary') : '';
     next.armorClass = next.type === 'armor' ? Math.max(0, Number(raw.armorClass || 0)) : 0;
     next.energyRequired = next.type === 'implant' ? Math.max(0, Number(raw.energyRequired ?? raw.energyCost ?? 0)) : 0;
+    next.creationCost = clamp(Math.max(0, Number(raw.creationCost ?? raw.characterCreationCost ?? 0)), 0, 10);
+    next.availableAsStarting = raw.availableAsStarting === true || String(raw.availableAsStarting || '').toLowerCase() === 'true';
     delete next.energyDelta;
     delete next.mechanicType;
     delete next.mechanic;
@@ -21574,6 +21989,11 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
     if (String(next.role || '').toLowerCase() === 'gm') next.approvalStatus = 'approved';
     next.socialOriginId = String(source.socialOriginId || next.socialOriginId || '').trim();
     next.geographicOriginId = String(source.geographicOriginId || next.geographicOriginId || '').trim();
+    next.personalityTrait = String(source.personalityTrait ?? next.personalityTrait ?? '').trim();
+    next.ideal = String(source.ideal ?? next.ideal ?? '').trim();
+    next.weakness = String(source.weakness ?? next.weakness ?? '').trim();
+    next.startingEquipmentIds = uniqueStringsV1052(source.startingEquipmentIds || next.startingEquipmentIds || []);
+    next.creationPointsSpent = Math.max(0, Number(source.creationPointsSpent ?? next.creationPointsSpent ?? 0));
     next.stats = { ...(next.stats || {}), baseArmorClass: Math.max(0, Number(source.stats?.baseArmorClass ?? next.stats?.baseArmorClass ?? 10)) };
     const baseSource = source.abilityBase && typeof source.abilityBase === 'object' ? source.abilityBase : (next.abilities || {});
     next.abilityBase = Object.fromEntries(ABILITIES_V1052.map(item => [item.key, Number(baseSource?.[item.key] || 0)]));
@@ -21606,7 +22026,7 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
   const __itemExtraSummaryV1052 = itemExtraSummaryV2;
   itemExtraSummaryV2 = function(item = {}) {
     const norm = normalizeEquipmentItemV2(item);
-    const bits = [norm.type === 'gear' ? 'Снаряжение' : norm.type === 'weapon' ? 'Оружие' : norm.type === 'armor' ? 'Броня' : 'Имплант'];
+    const bits = [norm.type === 'gear' ? 'Снаряжение' : norm.type === 'weapon' ? 'Оружие' : norm.type === 'armor' ? 'Броня' : norm.type === 'implant' ? 'Имплант' : 'Акции'];
     if (norm.rarity) bits.push(norm.rarity);
     if (norm.type === 'weapon' && norm.damage) bits.push(`урон ${norm.damage}`);
     if (norm.type === 'weapon' && Number(norm.hitBonus || 0)) bits.push(`${norm.hitBonus >= 0 ? '+' : ''}${norm.hitBonus} к попаданию`);
@@ -21620,7 +22040,16 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
     const map = kind === 'social' ? SOCIAL_ORIGINS_V1052 : GEOGRAPHIC_ORIGINS_V1052;
     const mapKey = kind === 'social' ? 'SOCIAL_ORIGINS' : 'GEOGRAPHIC_ORIGINS';
     const listKey = kind === 'social' ? 'SOCIAL_ORIGIN_LIST' : 'GEOGRAPHIC_ORIGIN_LIST';
-    return { [mapKey]: deep(map), [listKey]: sortEntitiesForList(Object.values(map)).map(deep) };
+    const payloadMap = kind === 'geographic'
+      ? Object.fromEntries(Object.entries(map || {}).map(([id, raw]) => {
+          const origin = normalizeOriginV1052(raw, 'geo_origin');
+          const access = deriveOriginAccessV1061(origin);
+          origin.grantedPlanetIds = access.linkedPlanetIds;
+          origin.grantedSystemIds = access.linkedSystemIds;
+          return [id, origin];
+        }))
+      : map;
+    return { [mapKey]: deep(payloadMap), [listKey]: sortEntitiesForList(Object.values(payloadMap)).map(deep) };
   }
 
   function refreshEquipmentDerivedV1052() {
@@ -21663,9 +22092,9 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
   const __createBlankEntityV1052 = createBlankEntity;
   createBlankEntity = function(type) {
     const stamp = Date.now();
-    if (type === 'socialOrigins' || type === 'geographicOrigins') return normalizeOriginV1052({ id: `${type === 'socialOrigins' ? 'profession' : 'geo'}_origin_${stamp}`, name: type === 'socialOrigins' ? 'Новая профессия' : 'Новое происхождение', description: '', image: '', locationType: type === 'geographicOrigins' ? 'other' : '', abilityBonuses: {}, visibility: { playerIds: [], campaignIds: [], eraIds: [] } }, type === 'socialOrigins' ? 'profession' : 'geo_origin');
-    if (type === 'equipment') return normalizeEquipmentItemV2({ id: `item_${stamp}`, name: 'Новый предмет', type: 'gear', rarity: 'обычный', desc: '', tags: [], visibility: { playerIds: [], campaignIds: [], eraIds: [] } });
-    if (type === 'players') return normalizePlayerProfileV2({ ...__createBlankEntityV1052(type), approvalStatus: 'approved', socialOriginId: '', geographicOriginId: '', installedImplantIds: [], stats: { hpCurrent: 12, hpMax: 12, shieldCurrent: 0, shieldMax: 0, energyCurrent: 1, energyMax: 1, baseArmorClass: 10 } });
+    if (type === 'socialOrigins' || type === 'geographicOrigins') return normalizeOriginV1052({ id: `${type === 'socialOrigins' ? 'profession' : 'geo'}_origin_${stamp}`, name: type === 'socialOrigins' ? 'Новая профессия' : 'Новое происхождение', description: '', image: '', locationType: type === 'geographicOrigins' ? 'other' : '', creationCost: 0, abilityBonuses: {}, visibility: { playerIds: [], campaignIds: [], eraIds: [] } }, type === 'socialOrigins' ? 'profession' : 'geo_origin');
+    if (type === 'equipment') return normalizeEquipmentItemV2({ id: `item_${stamp}`, name: 'Новый предмет', type: 'gear', rarity: 'обычный', desc: '', tags: [], creationCost: 0, availableAsStarting: false, visibility: { playerIds: [], campaignIds: [], eraIds: [] } });
+    if (type === 'players') return normalizePlayerProfileV2({ ...__createBlankEntityV1052(type), approvalStatus: 'approved', socialOriginId: '', geographicOriginId: '', personalityTrait: '', ideal: '', weakness: '', allowCrossCampaignDirectMessages: false, installedImplantIds: [], startingEquipmentIds: [], creationPointsSpent: 0, stats: { hpCurrent: 12, hpMax: 12, shieldCurrent: 0, shieldMax: 0, energyCurrent: 1, energyMax: 1, baseArmorClass: 10 } });
     return __createBlankEntityV1052(type);
   };
 
@@ -21700,8 +22129,8 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
     return `<form id="config-editor-form" class="form" data-entity-type="${isProfession ? 'socialOrigins' : 'geographicOrigins'}">
       ${this.renderHeader(origin, isProfession ? 'Профессия персонажа: занятие, ремесло, служба или социальная роль до начала приключений.' : 'Географическое происхождение: город, планета, регион, станция, колония или иное место, откуда родом персонаж.')}
       ${imageFieldMarkup(origin, isProfession ? 'Изображение профессии' : 'Изображение места происхождения')}
-      <div class="cols2"><div class="field"><label>ID</label><input class="input" name="id" value="${esc(origin.id)}" /></div><div class="field"><label>Название</label><input class="input" name="name" value="${esc(origin.name)}" /></div></div>
-      ${!isProfession ? `<div class="field"><label>Тип места</label><select class="select" name="locationType">${geoTypes.map(([value,label]) => `<option value="${value}" ${String(origin.locationType || 'other') === value ? 'selected' : ''}>${label}</option>`).join('')}</select><div class="small-note">Тип нужен только для понятного отображения игроку. Происхождением может быть как конкретный город, так и целая планета.</div></div>` : ''}
+      <div class="cols3"><div class="field"><label>ID</label><input class="input" name="id" value="${esc(origin.id)}" /></div><div class="field"><label>Название</label><input class="input" name="name" value="${esc(origin.name)}" /></div><div class="field"><label>Стоимость создания</label><input class="input" type="number" min="0" max="10" step="1" name="creationCost" value="${Number(origin.creationCost || 0)}" /><div class="small-note">Из общего бюджета персонажа в 10 очков.</div></div></div>
+      ${!isProfession ? `<div class="field"><label>Тип места</label><select class="select" name="locationType">${geoTypes.map(([value,label]) => `<option value="${value}" ${String(origin.locationType || 'other') === value ? 'selected' : ''}>${label}</option>`).join('')}</select><div class="small-note">Тип нужен только для понятного отображения игроку. Происхождением может быть как конкретный город, так и целая планета.</div></div>${originAccessFieldsV1061(origin)}` : ''}
       ${this.renderVisibilityField(origin)}
       <div class="field"><label>Развёрнутое описание</label><textarea class="area origin-long-description-v1054" name="description" placeholder="Подробно опишите историю, культуру, обязанности, образ жизни, репутацию и то, что игроку важно знать перед выбором.">${esc(origin.description || '')}</textarea></div>
       ${originBonusesInputsV1052(origin)}
@@ -21714,8 +22143,9 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
     const isWeapon = item.type === 'weapon';
     const isArmor = item.type === 'armor';
     const isImplant = item.type === 'implant';
+    const isStock = item.type === 'stock';
     return `<form id="config-editor-form" class="form equipment-editor-v1052" data-entity-type="equipment" data-item-type="${esc(item.type)}">
-      ${this.renderHeader(item, 'Предметы разделены на снаряжение, оружие, броню и импланты. Активные мини-игры предметов удалены.')}
+      ${this.renderHeader(item, 'Предметы разделены на снаряжение, оружие, броню, импланты и акции.')}
       ${imageFieldMarkup(item, 'Изображение предмета')}
       <div class="cols3"><div class="field"><label>ID</label><input class="input" name="id" value="${esc(item.id)}" /></div><div class="field"><label>Категория</label><select class="select" name="type">${ITEM_TYPES_V1052.map(opt => `<option value="${opt.value}" ${opt.value === item.type ? 'selected' : ''}>${esc(opt.label)}</option>`).join('')}</select></div><div class="field"><label>Редкость</label><select class="select" name="rarity">${ITEM_RARITY_OPTIONS_V2.map(r => `<option value="${esc(r)}" ${r === item.rarity ? 'selected' : ''}>${esc(r)}</option>`).join('')}</select></div></div>
       <div class="field"><label>Название</label><input class="input" name="name" value="${esc(item.name || '')}" /></div>
@@ -21727,6 +22157,7 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
       </div>
       <div class="item-specific-v1052 ${isArmor ? '' : 'hidden'}" data-for-item="armor"><div class="field"><label>Класс брони</label><input class="input" type="number" min="0" name="armorClass" value="${Number(item.armorClass || 0)}" /></div>${requirementInputsV1052(item)}</div>
       <div class="item-specific-v1052 ${isImplant ? '' : 'hidden'}" data-for-item="implant"><div class="field"><label>Требуемая энергия</label><input class="input" type="number" min="0" name="energyRequired" value="${Number(item.energyRequired || 0)}" /></div>${requirementInputsV1052(item)}<div class="small-note">Установка импланта задаётся отдельно для каждого персонажа в разделе «Персонажи».</div></div>
+      <div class="item-specific-v1052 ${isStock ? '' : 'hidden'}" data-for-item="stock"><div class="cols3"><div class="field"><label>Тикер</label><input class="input" name="ticker" maxlength="12" value="${esc(item.ticker || '')}" placeholder="KTR" /></div><div class="field"><label>Минимальная цена акции</label><input class="input" type="number" min="0" step="1" name="stockMinPrice" value="${Number(item.stockMinPrice ?? 100)}" /></div><div class="field"><label>Максимальная цена акции</label><input class="input" type="number" min="0" step="1" name="stockMaxPrice" value="${Number(item.stockMaxPrice ?? 100)}" /></div></div><div class="small-note">Тикер и единый диапазон цены действуют на всех планетах. Акции хранятся в портфеле и продаются за 100% котировки.</div></div>
       <div class="item-specific-v1052 ${item.type === 'gear' ? '' : 'hidden'}" data-for-item="gear"><div class="small-note">Снаряжение хранится в инвентаре и не имеет урона, КБ, энергопотребления или требований характеристик.</div></div>
       <div class="field"><label>Теги (по одному на строку)</label><textarea class="area inv-editor" name="tags">${esc(listText(item.tags))}</textarea></div>
       <div class="field"><label>Связанные статьи</label>${renderRelatedArticlesEditor(item.relatedArticleIds || [])}</div>
@@ -21747,6 +22178,9 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
     html = html.replace(/<div class="field"><label>Импланты[^<]*<\/label><textarea[^>]*name="implants"[\s\S]*?<\/textarea><\/div>/g, '');
     const extra = `<div class="section-title">Регистрация, профессия и происхождение</div>
       <div class="cols3"><div class="field"><label>Статус анкеты</label><select class="select" name="approvalStatus"><option value="approved" ${user.approvalStatus === 'approved' ? 'selected' : ''}>Одобрена</option><option value="pending" ${user.approvalStatus === 'pending' ? 'selected' : ''}>Ожидает одобрения</option><option value="rejected" ${user.approvalStatus === 'rejected' ? 'selected' : ''}>Отклонена</option></select></div><div class="field"><label>Профессия</label><select class="select" name="socialOriginId">${originOptionsV1052(SOCIAL_ORIGINS_V1052, user.socialOriginId)}</select></div><div class="field"><label>Происхождение</label><select class="select" name="geographicOriginId">${originOptionsV1052(GEOGRAPHIC_ORIGINS_V1052, user.geographicOriginId)}</select></div></div>
+      <div class="section-title">Личность</div><div class="cols3"><div class="field"><label>Черта характера</label><textarea class="area personality-field-v1066" name="personalityTrait">${esc(user.personalityTrait || '')}</textarea></div><div class="field"><label>Идеал</label><textarea class="area personality-field-v1066" name="ideal">${esc(user.ideal || '')}</textarea></div><div class="field"><label>Слабость</label><textarea class="area personality-field-v1066" name="weakness">${esc(user.weakness || '')}</textarea></div></div>
+      ${user.startingEquipmentIds?.length || Number(user.creationPointsSpent || 0) ? `<div class="card pad18 creation-review-v1066"><div class="data-row"><span class="data-label">Очки создания</span><span class="data-value">${Number(user.creationPointsSpent || 0)} / 10</span></div><div class="small-note">Стартовое снаряжение: ${(user.startingEquipmentIds || []).map(id => EQUIPMENT?.[id]?.name || id).map(esc).join(' · ') || 'не выбрано'}</div></div>` : ''}
+      <label class="consent-line cross-campaign-chat-v1063"><input type="checkbox" name="allowCrossCampaignDirectMessages" ${user.allowCrossCampaignDirectMessages === true ? 'checked' : ''}/><span><b>Разрешить межкампанийные личные сообщения</b><small>Этот персонаж сможет писать персонажам других кампаний и получать от них личные сообщения. По умолчанию личный чат ограничен выбранной сейчас кампанией.</small></span></label>
       <div class="cols2"><div class="field"><label>Базовый класс брони</label><input class="input" type="number" min="0" name="baseArmorClass" value="${Number(user.stats?.baseArmorClass || 10)}" /><div class="small-note">Если надета броня с КБ, используется значение брони.</div></div><div class="field"><label>Эффективный КБ</label><input class="input" value="${getEffectiveArmorClassV1052(user)}" disabled /></div></div>
       <div class="field"><label>Установленные импланты</label>${implantSelectorV1052(user.installedImplantIds)}</div>
       ${user.role !== 'gm' ? `<div class="row approval-actions-v1052"><button type="button" class="secondary" data-approval-v1052="approved">ОДОБРИТЬ АНКЕТУ</button><button type="button" class="ghost" data-approval-v1052="rejected">ОТКЛОНИТЬ</button></div>` : ''}`;
@@ -21836,18 +22270,30 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
     const mediaField = formEl.querySelector('.media-field');
     const image = String(formEl.querySelector('input[name="imageData"]')?.value || formData.get('imageData') || mediaField?.dataset?.savedImageValue || mediaField?.dataset?.pendingImageValue || '').trim();
     if (type === 'socialOrigins' || type === 'geographicOrigins') {
-      return normalizeOriginV1052({
+      const linkedPlanetIds = type === 'geographicOrigins' ? uniqueStringsV1052(getCheckedValues(formEl, 'linkedPlanetIds')) : [];
+      const linkedRegionIds = type === 'geographicOrigins' ? uniqueStringsV1052(getCheckedValues(formEl, 'linkedRegionIds')) : [];
+      const draftOrigin = normalizeOriginV1052({
         id: formData.get('id') || formData.get('name'), name: String(formData.get('name') || '').trim(), description: String(formData.get('description') || '').trim(), image,
         locationType: type === 'geographicOrigins' ? String(formData.get('locationType') || 'other').trim().toLowerCase() : '',
+        linkedPlanetIds,
+        linkedRegionIds,
+        creationCost: clamp(Math.max(0, Number(formData.get('creationCost') || 0)), 0, 10),
         abilityBonuses: Object.fromEntries(ABILITIES_V1052.map(row => [row.key, Number(formData.get(`bonus_${row.key}`) || 0)])),
         visibility: { playerIds: getCheckedValues(formEl, 'visibilityPlayerIds'), campaignIds: getCheckedValues(formEl, 'visibilityCampaignIds'), eraIds: getCheckedValues(formEl, 'visibilityEraIds') }
       }, type === 'socialOrigins' ? 'social_origin' : 'geo_origin');
+      if (type === 'geographicOrigins') {
+        const access = deriveOriginAccessV1061(draftOrigin);
+        draftOrigin.grantedPlanetIds = access.linkedPlanetIds;
+        draftOrigin.grantedSystemIds = access.linkedSystemIds;
+      }
+      return draftOrigin;
     }
     if (type === 'equipment') {
       const itemType = mapLegacyItemTypeV1052(formData.get('type'));
       const entity = normalizeEquipmentItemV2({
         id: slugifyId(formData.get('id') || formData.get('name') || '', 'item'),
         type: itemType, name: String(formData.get('name') || '').trim(), desc: String(formData.get('desc') || '').trim(), rarity: String(formData.get('rarity') || 'обычный').trim(), image,
+        creationCost: clamp(Math.max(0, Number(formData.get('creationCost') || 0)), 0, 10), availableAsStarting: formData.get('availableAsStarting') === 'on',
         tags: parseListEditor(formData.get('tags') || ''), relatedArticleIds: getCheckedValues(formEl, 'relatedArticleIds'),
         visibility: { playerIds: getCheckedValues(formEl, 'visibilityPlayerIds'), campaignIds: getCheckedValues(formEl, 'visibilityCampaignIds'), eraIds: getCheckedValues(formEl, 'visibilityEraIds') },
         damage: itemType === 'weapon' ? String(formData.get('damage') || '').trim() : '',
@@ -21855,6 +22301,9 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
         weaponSlot: itemType === 'weapon' ? String(formData.get('weaponSlot') || 'primary') : '',
         armorClass: itemType === 'armor' ? Number(formData.get('armorClass') || 0) : 0,
         energyRequired: itemType === 'implant' ? Number(formData.get('energyRequired') || 0) : 0,
+        ticker: itemType === 'stock' ? String(formData.get('ticker') || '').trim().toUpperCase() : '',
+        stockMinPrice: itemType === 'stock' ? Math.max(0, Math.trunc(Number(formData.get('stockMinPrice') || 0))) : 0,
+        stockMaxPrice: itemType === 'stock' ? Math.max(0, Math.trunc(Number(formData.get('stockMaxPrice') || 0))) : 0,
         requirements: Object.fromEntries(ABILITIES_V1052.map(row => [row.key, ['weapon','armor','implant'].includes(itemType) ? Number(formData.get(`req_${row.key}`) || 0) : 0]))
       });
       return entity;
@@ -21864,6 +22313,10 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
       entity.approvalStatus = String(formData.get('approvalStatus') || entity.approvalStatus || 'approved').toLowerCase();
       entity.socialOriginId = String(formData.get('socialOriginId') || '').trim();
       entity.geographicOriginId = String(formData.get('geographicOriginId') || '').trim();
+      entity.personalityTrait = String(formData.get('personalityTrait') || '').trim();
+      entity.ideal = String(formData.get('ideal') || '').trim();
+      entity.weakness = String(formData.get('weakness') || '').trim();
+      entity.allowCrossCampaignDirectMessages = formData.get('allowCrossCampaignDirectMessages') === 'on';
       entity.stats = { ...(entity.stats || {}), baseArmorClass: Math.max(0, Number(formData.get('baseArmorClass') || entity.stats?.baseArmorClass || 10)) };
       entity.installedImplantIds = getCheckedValues(formEl, 'installedImplantIds');
       const submittedBase = entity.abilities || {};
@@ -21967,6 +22420,10 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
       const installed = (user.installedImplantIds || []).map(id => normalizeEquipmentItemV2(EQUIPMENT[id] || {})).filter(item => item.id && item.name);
       target.insertAdjacentHTML('beforeend', `<div data-origins-v1052><div class="section-title" style="margin-top:18px">Профессия и происхождение</div><div class="small-note">Профессия: ${esc(social?.name || 'не выбрана')} · Происхождение: ${esc(geo?.name || 'не выбрано')}</div><div class="section-title" style="margin-top:18px">Установленные импланты</div><div class="result-stack">${installed.map(item => `<div class="card pad18"><div class="data-row"><span class="data-label">${esc(item.name)}</span><span class="data-value">${Number(item.energyRequired || 0)} EN</span></div><div class="small-note">Требования: ${esc(requirementsTextV1052(item))}</div></div>`).join('') || '<div class="small-note">Нет установленных имплантов</div>'}</div></div>`);
     }
+    const profileStack = document.querySelector('#profile-content .grid3 > .stack:first-child');
+    if (profileStack && !profileStack.querySelector('[data-personality-v1066]')) {
+      profileStack.insertAdjacentHTML('beforeend', `<div class="card profile-card personality-profile-v1066" data-personality-v1066><div class="section-title">Личность</div><div class="personality-profile-grid-v1066"><div><span class="data-label">Черта характера</span><p>${esc(user.personalityTrait || 'Не указана')}</p></div><div><span class="data-label">Идеал</span><p>${esc(user.ideal || 'Не указан')}</p></div><div><span class="data-label">Слабость</span><p>${esc(user.weakness || 'Не указана')}</p></div></div></div>`);
+    }
     return result;
   };
 
@@ -21988,23 +22445,192 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
       return `<label class="origin-choice-card-v1054">
         <input type="radio" name="${fieldName}" value="${esc(origin.id)}" required />
         <div class="origin-choice-media-v1054">${image ? `<img src="${esc(image)}" alt="" />` : `<div class="origin-choice-placeholder-v1054">${kind === 'profession' ? 'PROF' : 'ORIGIN'}</div>`}</div>
-        <div class="origin-choice-body-v1054"><div class="origin-choice-kicker-v1054">${esc(kicker)}</div><div class="origin-choice-title-v1054">${esc(origin.name || origin.id)}</div><div class="origin-choice-description-v1054">${esc(origin.description || 'Описание пока не заполнено ДМом.')}</div><div class="origin-bonuses-v1054">${originBonusBadgesV1054(origin)}</div><div class="origin-select-indicator-v1054">ВЫБРАТЬ</div></div>
+        <div class="origin-choice-body-v1054"><div class="origin-choice-kicker-v1054">${esc(kicker)}</div><div class="origin-choice-title-v1054">${esc(origin.name || origin.id)}</div><div class="origin-choice-description-v1054">${esc(origin.description || 'Описание пока не заполнено ДМом.')}</div>${kind === 'geographic' ? (() => { const access = deriveOriginAccessV1061(origin); const planets = access.linkedPlanetIds.map(id => PLANETS?.[id]?.name || id).filter(Boolean); return planets.length ? `<div class="small-note origin-access-note-v1061">Доступ: ${esc(planets.join(' · '))}</div>` : ''; })() : ''}<div class="origin-bonuses-v1054">${originBonusBadgesV1054(origin)}</div><div class="origin-select-indicator-v1054">ВЫБРАТЬ</div></div>
       </label>`;
     }).join('')}</div>`;
   }
+  const CHARACTER_CREATION_BUDGET_V1066 = 10;
+  function normalizeCreationEraV1066(value) {
+    const raw = String(value || '').trim().toLowerCase();
+    if (/сред|mediev|feudal|ancient/.test(raw)) return 'medieval';
+    if (/индустр|industrial|steam|diesel|analog/.test(raw)) return 'industrial';
+    return 'technological';
+  }
+  function creationCostV1066(entity = {}) {
+    return clamp(Math.max(0, Number(entity.creationCost ?? entity.characterCreationCost ?? 0)), 0, CHARACTER_CREATION_BUDGET_V1066);
+  }
+  function creationOptionAvailableV1066(entity = {}, campaign = null) {
+    if (!entity || !campaign || entity.availableNow === false || entity.available === false) return false;
+    const visibility = visibilityV1052(entity);
+    const campaignId = String(campaign.id || '').trim();
+    const era = normalizeCreationEraV1066(campaign.era || campaign.epoch || campaign.theme);
+    const campaignMatch = visibility.campaignIds.includes(campaignId);
+    const eraMatch = visibility.eraIds.map(normalizeCreationEraV1066).includes(era);
+    if (visibility.campaignIds.length || visibility.eraIds.length) return campaignMatch || eraMatch;
+    if (visibility.playerIds.length) return false;
+    return true;
+  }
+  function creationOriginRowsV1066(map, campaign) {
+    return sortEntitiesForList(Object.values(map || {}).filter(origin => creationOptionAvailableV1066(origin, campaign)));
+  }
+  function renderCreationOriginCardsV1066(map, fieldName, kind, campaign) {
+    const rows = creationOriginRowsV1066(map, campaign);
+    if (!rows.length) return `<div class="origin-empty-v1054">Для выбранной кампании нет доступных вариантов.</div>`;
+    return `<div class="origin-choice-grid-v1054">${rows.map(origin => {
+      const image = String(origin.image || origin.imageLocal || '').trim();
+      const kicker = kind === 'profession' ? 'ПРОФЕССИЯ' : geoTypeLabelV1054(origin.locationType);
+      const cost = creationCostV1066(origin);
+      return `<label class="origin-choice-card-v1054 creation-choice-card-v1066">
+        <input type="radio" name="${fieldName}" value="${esc(origin.id)}" required />
+        <div class="origin-choice-media-v1054">${image ? `<img src="${esc(image)}" alt="" />` : `<div class="origin-choice-placeholder-v1054">${kind === 'profession' ? 'PROF' : 'ORIGIN'}</div>`}</div>
+        <div class="origin-choice-body-v1054"><div class="origin-choice-kicker-v1054">${esc(kicker)}</div><div class="origin-choice-title-v1054">${esc(origin.name || origin.id)}</div><div class="creation-cost-badge-v1066">${cost} ОЧК.</div><div class="origin-choice-description-v1054">${esc(origin.description || 'Описание пока не заполнено ДМом.')}</div>${kind === 'geographic' ? (() => { const access = deriveOriginAccessV1061(origin); const planets = access.linkedPlanetIds.map(id => PLANETS?.[id]?.name || id).filter(Boolean); return planets.length ? `<div class="small-note origin-access-note-v1061">Доступ: ${esc(planets.join(' · '))}</div>` : ''; })() : ''}<div class="origin-bonuses-v1054">${originBonusBadgesV1054(origin)}</div><div class="origin-select-indicator-v1054">ВЫБРАТЬ</div></div>
+      </label>`;
+    }).join('')}</div>`;
+  }
+  function startingEquipmentRowsV1066(campaign) {
+    return sortEntitiesForList(Object.values(EQUIPMENT || {}).map(normalizeEquipmentItemV2).filter(item => item.availableAsStarting && creationOptionAvailableV1066(item, campaign)));
+  }
+  function startingEquipmentLabelV1066(item = {}) {
+    return item.type === 'weapon' ? 'Оружие' : item.type === 'armor' ? 'Броня' : item.type === 'implant' ? 'Имплант' : item.type === 'stock' ? 'Акции' : 'Снаряжение';
+  }
+  function startingEquipmentDetailMarkupV1072(item = {}, selected = false) {
+    const width = Math.max(1, Number.parseInt(item.inventoryWidth ?? item.sizeWidth ?? 1, 10) || 1);
+    const height = Math.max(1, Number.parseInt(item.inventoryHeight ?? item.sizeHeight ?? 1, 10) || 1);
+    const mass = Number(item.mass ?? item.weight ?? 1);
+    const facts = [
+      `Тип: ${startingEquipmentLabelV1066(item)}`,
+      item.rarity ? `Редкость: ${item.rarity}` : '',
+      `Стоимость: ${creationCostV1066(item)} очк.`,
+      `Размер: ${width}×${height}`,
+      `Масса: ${Number.isFinite(mass) ? mass : 1}`
+    ];
+    if (item.type === 'weapon') {
+      if (item.damage) facts.push(`Урон: ${item.damage}`);
+      facts.push(`Попадание: ${Number(item.hitBonus || 0) >= 0 ? '+' : ''}${Number(item.hitBonus || 0)}`);
+    }
+    if (item.type === 'armor' && Number(item.armorClass || 0) > 0) facts.push(`Класс брони: ${Number(item.armorClass)}`);
+    if (item.type === 'implant') facts.push(`Требуемая энергия: ${Number(item.energyRequired ?? item.requiredEnergy ?? 0)}`);
+    const tags = Array.isArray(item.tags) ? item.tags.map(value => String(value || '').trim()).filter(Boolean) : [];
+    return `<div class="registration-equipment-modal-card-v1072">
+      <button class="ghost registration-equipment-modal-close-v1072" type="button" data-registration-equipment-close-v1072>ЗАКРЫТЬ</button>
+      <div class="registration-equipment-modal-layout-v1072">
+        <div class="registration-equipment-modal-media-v1072">${renderThumb(item, { size: 'hero', type: 'item', glyph: initials(item.name || item.id) })}</div>
+        <div class="registration-equipment-modal-copy-v1072">
+          <div class="section-title">Стартовое снаряжение</div>
+          <h2>${esc(item.name || item.id)}</h2>
+          <div class="registration-equipment-facts-v1072">${facts.filter(Boolean).map(fact => `<span class="pill">${esc(fact)}</span>`).join('')}</div>
+          <p>${esc(item.desc || item.description || item.summary || 'Описание предмета не задано.')}</p>
+          <div class="small-note"><b>Требования:</b> ${esc(requirementsTextV1052(item))}</div>
+          ${tags.length ? `<div class="small-note"><b>Категории:</b> ${esc(tags.join(' · '))}</div>` : ''}
+        </div>
+      </div>
+      <div class="registration-equipment-modal-actions-v1072"><button class="primary" type="button" data-registration-equipment-select-v1072 data-item-id="${esc(item.id)}">${selected ? 'УБРАТЬ ИЗ ВЫБРАННОГО' : 'ВЫБРАТЬ'}</button></div>
+    </div>`;
+  }
+  function closeStartingEquipmentModalV1072(panel = document.getElementById('registration-panel-v1052')) {
+    panel?.querySelector('[data-registration-equipment-modal-v1072]')?.remove();
+  }
+  function openStartingEquipmentModalV1072(panel, itemId) {
+    const form = panel?.querySelector('#registration-form-v1052');
+    const item = EQUIPMENT?.[itemId] ? normalizeEquipmentItemV2(EQUIPMENT[itemId]) : null;
+    const input = form?.querySelector(`[name="startingEquipmentIds"][value="${CSS.escape(String(itemId || ''))}"]`);
+    if (!item || !input) return;
+    closeStartingEquipmentModalV1072(panel);
+    const modal = document.createElement('div');
+    modal.className = 'registration-equipment-modal-v1072';
+    modal.dataset.registrationEquipmentModalV1072 = '1';
+    modal.innerHTML = startingEquipmentDetailMarkupV1072(item, Boolean(input.checked));
+    panel.appendChild(modal);
+  }
+  function renderStartingEquipmentCardsV1066(campaign) {
+    const rows = startingEquipmentRowsV1066(campaign);
+    if (!rows.length) return `<div class="origin-empty-v1054">Для этой кампании нет предметов, отмеченных как стартовые.</div>`;
+    return `<div class="starting-equipment-grid-v1066">${rows.map(item => `<div class="starting-equipment-card-v1066" data-registration-equipment-card-v1072 data-item-id="${esc(item.id)}" role="button" tabindex="0" aria-pressed="false">
+      <input type="checkbox" name="startingEquipmentIds" value="${esc(item.id)}" hidden />
+      ${renderThumb(item, { size: 'md', type: 'item', glyph: initials(item.name || item.id) })}
+      <span class="starting-equipment-copy-v1066"><b>${esc(item.name || item.id)}</b><small>${esc(startingEquipmentLabelV1066(item))}${item.rarity ? ` · ${esc(item.rarity)}` : ''}</small><small>${esc(item.desc || '')}</small></span>
+      <span class="creation-cost-badge-v1066">${creationCostV1066(item)} ОЧК.</span>
+      <span class="starting-equipment-selected-v1072">ВЫБРАНО</span>
+    </div>`).join('')}</div>`;
+  }
+  function creationSelectionV1066(form) {
+    const campaignId = String(form?.elements?.campaignId?.value || '').trim();
+    const campaign = availableCampaignRowsV1052().find(row => String(row.id) === campaignId) || null;
+    const professionId = String(form?.querySelector('[name="socialOriginId"]:checked')?.value || '').trim();
+    const geographicOriginId = String(form?.querySelector('[name="geographicOriginId"]:checked')?.value || '').trim();
+    const profession = originByIdV1052('social', professionId);
+    const geographic = originByIdV1052('geographic', geographicOriginId);
+    const equipmentIds = uniqueStringsV1052(Array.from(form?.querySelectorAll('[name="startingEquipmentIds"]:checked') || []).map(node => node.value));
+    const equipment = equipmentIds.map(id => EQUIPMENT?.[id] ? normalizeEquipmentItemV2(EQUIPMENT[id]) : null).filter(Boolean);
+    const total = creationCostV1066(profession) + creationCostV1066(geographic) + equipment.reduce((sum, item) => sum + creationCostV1066(item), 0);
+    return { campaign, profession, geographic, equipment, equipmentIds, total };
+  }
+  function updateRegistrationBudgetV1066(form) {
+    if (!form) return;
+    const selection = creationSelectionV1066(form);
+    const budget = form.querySelector('[data-creation-budget-v1066]');
+    const submit = form.querySelector('[type="submit"]');
+    const remaining = CHARACTER_CREATION_BUDGET_V1066 - selection.total;
+    form.querySelectorAll('[data-registration-equipment-card-v1072]').forEach(card => {
+      const input = card.querySelector('[name="startingEquipmentIds"]');
+      card.setAttribute('aria-pressed', String(Boolean(input?.checked)));
+    });
+    if (budget) {
+      budget.textContent = `Потрачено: ${selection.total} / ${CHARACTER_CREATION_BUDGET_V1066} · ${remaining >= 0 ? `Осталось: ${remaining}` : `ПЕРЕРАСХОД: ${Math.abs(remaining)}`}`;
+      budget.classList.toggle('over-budget', remaining < 0);
+    }
+    if (submit) submit.disabled = remaining < 0;
+  }
+  function refreshRegistrationChoicesV1066(form) {
+    if (!form) return;
+    const campaignId = String(form.elements?.campaignId?.value || '').trim();
+    const campaign = availableCampaignRowsV1052().find(row => String(row.id) === campaignId) || availableCampaignRowsV1052()[0] || null;
+    const previousProfession = form.querySelector('[name="socialOriginId"]:checked')?.value || '';
+    const previousOrigin = form.querySelector('[name="geographicOriginId"]:checked')?.value || '';
+    const previousItems = new Set(Array.from(form.querySelectorAll('[name="startingEquipmentIds"]:checked')).map(node => node.value));
+    const professionHost = form.querySelector('[data-registration-professions-v1066]');
+    const originHost = form.querySelector('[data-registration-origins-v1066]');
+    const equipmentHost = form.querySelector('[data-registration-equipment-v1066]');
+    if (professionHost) professionHost.innerHTML = renderCreationOriginCardsV1066(SOCIAL_ORIGINS_V1052, 'socialOriginId', 'profession', campaign);
+    if (originHost) originHost.innerHTML = renderCreationOriginCardsV1066(GEOGRAPHIC_ORIGINS_V1052, 'geographicOriginId', 'geographic', campaign);
+    if (equipmentHost) equipmentHost.innerHTML = renderStartingEquipmentCardsV1066(campaign);
+    if (previousProfession) form.querySelector(`[name="socialOriginId"][value="${CSS.escape(previousProfession)}"]`)?.click();
+    if (previousOrigin) form.querySelector(`[name="geographicOriginId"][value="${CSS.escape(previousOrigin)}"]`)?.click();
+    previousItems.forEach(id => { const input = form.querySelector(`[name="startingEquipmentIds"][value="${CSS.escape(id)}"]`); if (input) input.checked = true; });
+    updateRegistrationBudgetV1066(form);
+  }
+  function validateRegistrationSelectionV1066(form) {
+    const selection = creationSelectionV1066(form);
+    if (!selection.campaign) return { ok: false, message: 'Кампания недоступна.', ...selection };
+    if (!selection.profession || !creationOptionAvailableV1066(selection.profession, selection.campaign)) return { ok: false, message: 'Выберите доступную профессию.', ...selection };
+    if (!selection.geographic || !creationOptionAvailableV1066(selection.geographic, selection.campaign)) return { ok: false, message: 'Выберите доступное происхождение.', ...selection };
+    if (selection.equipment.some(item => !item.availableAsStarting || !creationOptionAvailableV1066(item, selection.campaign))) return { ok: false, message: 'Список стартового снаряжения изменился. Выберите предметы заново.', ...selection };
+    if (selection.total > CHARACTER_CREATION_BUDGET_V1066) return { ok: false, message: `Превышен бюджет создания: ${selection.total} / ${CHARACTER_CREATION_BUDGET_V1066}.`, ...selection };
+    const starterLayout = window.GRPGInventoryV1067?.buildLayout?.({ inventorySize: 12, carryWeightMax: 12, equipmentSlots: { primaryWeapon: '', secondaryWeapon: '', armor: '' }, implantSlotCount: 0, implantSlots: [], inventory: selection.equipmentIds.map(itemId => ({ itemId, qty: 1, positions: [] })) });
+    if (starterLayout?.weight > 12 + 1e-9) return { ok: false, message: `Стартовое снаряжение слишком тяжёлое: ${starterLayout.weight.toFixed(1)} / 12.`, ...selection };
+    if (starterLayout?.overflow?.length) return { ok: false, message: 'Стартовое снаряжение не помещается в стандартный инвентарь на 12 клеток.', ...selection };
+    return { ok: true, ...selection };
+  }
   function registrationMarkupV1052() {
     const campaigns = availableCampaignRowsV1052();
+    const preferredCampaignId = String(App.activeCampaignId || localStorage.getItem('grpg-login-campaign-v1049') || '').trim();
+    const campaign = campaigns.find(row => String(row.id) === preferredCampaignId) || campaigns[0] || null;
     return `<div class="registration-window-v1054" role="dialog" aria-modal="true" aria-labelledby="registration-title-v1054">
       <div class="registration-card-v1052">
-        <div class="registration-sticky-head-v1054 row"><div><div class="mono accent tiny-space">CHARACTER_APPLICATION</div><div class="section-title" id="registration-title-v1054">Регистрация нового персонажа</div><div class="small-note">Заполните анкету. После отправки она попадёт ДМу на одобрение.</div></div><button type="button" class="ghost" id="registration-close-v1052">ЗАКРЫТЬ</button></div>
+        <div class="registration-sticky-head-v1054 row"><div><div class="mono accent tiny-space">CHARACTER_APPLICATION</div><div class="section-title" id="registration-title-v1054">Регистрация нового персонажа</div><div class="small-note">Бюджет создания — максимум ${CHARACTER_CREATION_BUDGET_V1066} очков. Профессия, происхождение и стартовые предметы складываются.</div></div><button type="button" class="ghost" id="registration-close-v1052">ЗАКРЫТЬ</button></div>
         <form id="registration-form-v1052" class="form registration-form-v1054">
-          <div class="registration-section-v1054"><div class="section-title">Основные данные</div><div class="field"><label>Игровая кампания</label><select class="select" name="campaignId" required>${campaigns.map(c => `<option value="${esc(c.id)}">${esc(c.name || c.id)}</option>`).join('')}</select></div>
+          <div class="creation-budget-v1066" data-creation-budget-v1066>Потрачено: 0 / ${CHARACTER_CREATION_BUDGET_V1066} · Осталось: ${CHARACTER_CREATION_BUDGET_V1066}</div>
+          <div class="registration-section-v1054"><div class="section-title">Основные данные</div><div class="field"><label>Игровая кампания</label><select class="select" name="campaignId" required>${campaigns.map(c => `<option value="${esc(c.id)}" ${campaign?.id === c.id ? 'selected' : ''}>${esc(c.name || c.id)}</option>`).join('')}</select></div>
           <div class="cols2"><div class="field"><label>Имя</label><input class="input" name="displayName" required maxlength="80" /></div><div class="field"><label>Фото персонажа</label><input class="input" type="file" name="photo" accept="image/png,image/jpeg,image/webp,image/gif" /></div></div>
-          <div class="field"><label>Описание персонажа</label><textarea class="area registration-description-v1054" name="description" maxlength="12000" placeholder="Внешность, характер, история, важные детали биографии…"></textarea></div></div>
+          <div class="field"><label>Описание персонажа</label><textarea class="area registration-description-v1054" name="description" maxlength="12000" placeholder="Внешность, история, важные детали биографии…"></textarea></div></div>
 
-          <div class="registration-section-v1054"><div class="section-title">Профессия</div><div class="small-note">Профессия описывает занятие, службу или социальную роль персонажа. Прочитайте полное описание каждого варианта перед выбором.</div>${renderOriginRegistrationCardsV1054(SOCIAL_ORIGINS_V1052, 'socialOriginId', 'profession')}</div>
+          <div class="registration-section-v1054"><div class="section-title">Личность</div><div class="cols3 personality-registration-grid-v1066"><div class="field"><label>Черта характера</label><textarea class="area" name="personalityTrait" maxlength="3000" placeholder="Как персонаж обычно ведёт себя и проявляет себя?"></textarea></div><div class="field"><label>Идеал</label><textarea class="area" name="ideal" maxlength="3000" placeholder="Во что персонаж верит и к чему стремится?"></textarea></div><div class="field"><label>Слабость</label><textarea class="area" name="weakness" maxlength="3000" placeholder="Что способно поставить персонажа в трудное положение?"></textarea></div></div></div>
 
-          <div class="registration-section-v1054"><div class="section-title">Происхождение</div><div class="small-note">Местом происхождения может быть город, регион, станция, колония или целая планета.</div>${renderOriginRegistrationCardsV1054(GEOGRAPHIC_ORIGINS_V1052, 'geographicOriginId', 'geographic')}</div>
+          <div class="registration-section-v1054"><div class="section-title">Профессия</div><div class="small-note">Показываются только варианты, доступные выбранной кампании или её эпохе.</div><div data-registration-professions-v1066>${renderCreationOriginCardsV1066(SOCIAL_ORIGINS_V1052, 'socialOriginId', 'profession', campaign)}</div></div>
+
+          <div class="registration-section-v1054"><div class="section-title">Происхождение</div><div class="small-note">Местом происхождения может быть город, регион, станция, колония или целая планета.</div><div data-registration-origins-v1066>${renderCreationOriginCardsV1066(GEOGRAPHIC_ORIGINS_V1052, 'geographicOriginId', 'geographic', campaign)}</div></div>
+
+          <div class="registration-section-v1054"><div class="section-title">Стартовое снаряжение</div><div class="small-note">Можно выбрать несколько предметов. Показываются только предметы с флагом «Доступен как стартовое», доступные кампании или её эпохе.</div><div data-registration-equipment-v1066>${renderStartingEquipmentCardsV1066(campaign)}</div></div>
 
           <div class="registration-section-v1054"><div class="section-title">Доступ</div><div class="cols2"><div class="field"><label>Пароль персонажа</label><input class="input" name="pass" type="password" required minlength="4" autocomplete="new-password" /></div><div class="field"><label>Повторите пароль</label><input class="input" name="pass2" type="password" required minlength="4" autocomplete="new-password" /></div></div></div>
           <div class="registration-submit-v1054"><button class="primary" type="submit">ОТПРАВИТЬ АНКЕТУ ДМУ</button><div class="small-note" id="registration-status-v1052"></div></div>
@@ -22029,8 +22655,29 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
     if (panel.parentElement !== document.body) document.body.appendChild(panel);
     open.dataset.boundV1052 = '1';
     open.addEventListener('click', () => { panel.innerHTML = registrationMarkupV1052(); panel.hidden = false; document.body.classList.add('registration-open-v1054'); });
-    panel.addEventListener('click', event => { if (event.target?.id === 'registration-close-v1052' || event.target?.classList?.contains('registration-window-v1054')) { panel.hidden = true; panel.innerHTML = ''; document.body.classList.remove('registration-open-v1054'); } });
-    document.addEventListener('keydown', event => { if (event.key === 'Escape' && !panel.hidden) { panel.hidden = true; panel.innerHTML = ''; document.body.classList.remove('registration-open-v1054'); } });
+    panel.addEventListener('click', event => {
+      const equipmentSelect = event.target?.closest?.('[data-registration-equipment-select-v1072]');
+      if (equipmentSelect) {
+        const form = panel.querySelector('#registration-form-v1052');
+        const itemId = String(equipmentSelect.dataset.itemId || '');
+        const input = form?.querySelector(`[name="startingEquipmentIds"][value="${CSS.escape(itemId)}"]`);
+        if (input) { input.checked = !input.checked; input.dispatchEvent(new Event('change', { bubbles: true })); }
+        closeStartingEquipmentModalV1072(panel);
+        return;
+      }
+      if (event.target?.closest?.('[data-registration-equipment-close-v1072]') || event.target?.hasAttribute?.('data-registration-equipment-modal-v1072')) { closeStartingEquipmentModalV1072(panel); return; }
+      const equipmentCard = event.target?.closest?.('[data-registration-equipment-card-v1072]');
+      if (equipmentCard) { event.preventDefault(); openStartingEquipmentModalV1072(panel, equipmentCard.dataset.itemId); return; }
+      if (event.target?.id === 'registration-close-v1052' || event.target?.classList?.contains('registration-window-v1054')) { panel.hidden = true; panel.innerHTML = ''; document.body.classList.remove('registration-open-v1054'); }
+    });
+    panel.addEventListener('change', event => {
+      const form = event.target?.closest?.('#registration-form-v1052');
+      if (!form) return;
+      if (event.target?.name === 'campaignId') refreshRegistrationChoicesV1066(form);
+      else if (['socialOriginId','geographicOriginId','startingEquipmentIds'].includes(String(event.target?.name || ''))) updateRegistrationBudgetV1066(form);
+    });
+    panel.addEventListener('keydown', event => { const card = event.target?.closest?.('[data-registration-equipment-card-v1072]'); if (card && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); openStartingEquipmentModalV1072(panel, card.dataset.itemId); } });
+    document.addEventListener('keydown', event => { if (event.key === 'Escape' && panel.querySelector('[data-registration-equipment-modal-v1072]')) { closeStartingEquipmentModalV1072(panel); return; } if (event.key === 'Escape' && !panel.hidden) { panel.hidden = true; panel.innerHTML = ''; document.body.classList.remove('registration-open-v1054'); } });
     panel.addEventListener('submit', async event => {
       if (event.target?.id !== 'registration-form-v1052') return;
       event.preventDefault();
@@ -22038,6 +22685,8 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
       const campaignId = String(fd.get('campaignId') || '').trim();
       const campaign = availableCampaignRowsV1052().find(c => c.id === campaignId);
       if (!campaign) { status.textContent = 'Кампания недоступна.'; return; }
+      const creation = validateRegistrationSelectionV1066(form);
+      if (!creation.ok) { status.textContent = creation.message; updateRegistrationBudgetV1066(form); return; }
       const pass = String(fd.get('pass') || ''); if (pass !== String(fd.get('pass2') || '')) { status.textContent = 'Пароли не совпадают.'; return; }
       const displayName = String(fd.get('displayName') || '').trim(); if (!displayName) return;
       status.textContent = 'Сохранение анкеты…';
@@ -22047,9 +22696,11 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
         const image = await registrationPhotoV1052(form.elements.photo?.files?.[0], `registration_${id}`);
         const player = normalizePlayerProfileV2({
           id, role: 'player', pass, shortName: displayName, displayName, rank: 'Новый персонаж', avatarGlyph: initials(displayName), lore: String(fd.get('description') || '').trim(), notes: '', image,
-          approvalStatus: 'pending', applicationSubmittedAt: new Date().toISOString(), campaignIds: [campaignId], socialOriginId: String(fd.get('socialOriginId') || ''), geographicOriginId: String(fd.get('geographicOriginId') || ''),
+          personalityTrait: String(fd.get('personalityTrait') || '').trim(), ideal: String(fd.get('ideal') || '').trim(), weakness: String(fd.get('weakness') || '').trim(),
+          approvalStatus: 'pending', applicationSubmittedAt: new Date().toISOString(), campaignIds: [campaignId], socialOriginId: creation.profession.id, geographicOriginId: creation.geographic.id, allowCrossCampaignDirectMessages: false,
+          creationPointsSpent: creation.total, startingEquipmentIds: creation.equipmentIds,
           credits: 0, stats: { hpCurrent: 10, hpMax: 10, shieldCurrent: 0, shieldMax: 0, energyCurrent: 1, energyMax: 1, baseArmorClass: 10 }, abilities: Object.fromEntries(ABILITIES_V1052.map(row => [row.key, 0])), abilityBase: Object.fromEntries(ABILITIES_V1052.map(row => [row.key, 0])),
-          equipmentSlots: { primaryWeapon: '', secondaryWeapon: '', armor: '' }, installedImplantIds: [], inventory: [], social: { npcIds: [], orgs: [], reputation: [] }, currentPlanetId: '', relatedArticleIds: []
+          equipmentSlots: { primaryWeapon: '', secondaryWeapon: '', armor: '' }, installedImplantIds: [], inventory: creation.equipmentIds.map(itemId => ({ itemId, qty: 1 })), social: { npcIds: [], orgs: [], reputation: [] }, currentPlanetId: '', relatedArticleIds: []
         });
         App.state.users[id] = player; PLAYER_TEMPLATES[id] = deep(player);
         await App.writeLocalMirrors();
@@ -22066,7 +22717,1948 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
   applyWorldData = function(payload = {}) { const result = __finishLoadV1052(payload); bindRegistrationV1052(); return result; };
   bindRegistrationV1052();
 
+  // v1.0.61: a geographic origin can grant visibility to real WC planets and their systems.
+  const __isEntityVisibleV1061 = isEntityVisible;
+  isEntityVisible = function(entity, user = App.currentUser) {
+    if (!entity) return false;
+    const role = String(user?.role || '').toLowerCase();
+    if (user && role !== 'gm' && role !== 'guest') {
+      const origin = originByIdV1052('geographic', user.geographicOriginId);
+      if (origin) {
+        const access = deriveOriginAccessV1061(origin);
+        const entityId = String(entity.id || '');
+        if (entityId && access.linkedPlanetIds.includes(entityId) && Data.getPlanet?.(entityId)) return true;
+        if (entityId && access.linkedSystemIds.includes(entityId) && Data.getSystem?.(entityId)) return true;
+      }
+    }
+    return __isEntityVisibleV1061(entity, user);
+  };
+
   // Ensure legacy mini-game module can never be reopened from stale state.
   const __openModuleV1052 = UI.openModule.bind(UI);
   UI.openModule = function(id, ...args) { if (id === 'tool') return; return __openModuleV1052(id, ...args); };
+})();
+
+
+// ==== v1.0.62 campaign-wide chat + GM NPC voice in campaign channel ====
+(function(){
+  if (window.__campaignChatV1062) return;
+  window.__campaignChatV1062 = true;
+
+  function playerCampaignIdsV1062(player = {}) {
+    const raw = Array.isArray(player.campaignIds) ? player.campaignIds : (Array.isArray(player.campaigns) ? player.campaigns : []);
+    const ids = raw.map(value => String(value?.id || value || '').trim()).filter(Boolean);
+    if (player.campaignId) ids.push(String(player.campaignId).trim());
+    const unique = Array.from(new Set(ids.filter(Boolean)));
+    return unique.length ? unique : ['main'];
+  }
+  function isApprovedCampaignPlayerV1062(player = {}) {
+    const role = String(player.role || '').toLowerCase();
+    if (role === 'gm') return true;
+    return String(player.approvalStatus || 'approved').toLowerCase() === 'approved';
+  }
+  function currentCampaignIdV1062() {
+    return String(App.activeCampaignId || window.GRPGCampaignTheme?.campaign?.()?.id || '').trim();
+  }
+  function canUseCampaignChatV1077(campaignId = currentCampaignIdV1062()) {
+    const id = String(campaignId || '').trim();
+    const role = String(App.currentUser?.role || '').toLowerCase();
+    if (!id || !App.currentUser || role === 'guest') return false;
+    if (role === 'gm') return true;
+    return playerCampaignIdsV1062(App.currentUser).includes(id);
+  }
+  function campaignThreadKeyV1062(campaignId = currentCampaignIdV1062()) {
+    return `campaign::${String(campaignId || '').trim()}`;
+  }
+  function campaignEntityV1062(campaignId = currentCampaignIdV1062()) {
+    const id = String(campaignId || '').trim();
+    return Data?.campaigns?.[id] || worldData?.campaigns?.CAMPAIGNS?.[id] || { id, name: id || 'Кампания' };
+  }
+  function approvedCampaignPlayersV1062(campaignId = currentCampaignIdV1062()) {
+    const id = String(campaignId || '').trim();
+    const rows = Object.values(App.state?.users || PLAYER_TEMPLATES || {});
+    return rows
+      .filter(player => player && String(player.role || '').toLowerCase() !== 'guest')
+      .filter(isApprovedCampaignPlayerV1062)
+      .filter(player => String(player.role || '').toLowerCase() === 'gm' || playerCampaignIdsV1062(player).includes(id))
+      .sort((a,b)=>String(a.displayName||a.shortName||a.id||'').localeCompare(String(b.displayName||b.shortName||b.id||''),'ru'));
+  }
+  function crossCampaignDirectEnabledV1063(player = {}) {
+    return player?.allowCrossCampaignDirectMessages === true || String(player?.allowCrossCampaignDirectMessages || '').toLowerCase() === 'true';
+  }
+  function canPlayersDirectMessageV1063(senderId, targetId, campaignId = currentCampaignIdV1062()) {
+    const sender = getPlayerEntityForChat(String(senderId || ''));
+    const target = getPlayerEntityForChat(String(targetId || ''));
+    if (!sender || !target) return false;
+    if (String(target.role || '').toLowerCase() === 'gm') return false;
+    if (String(sender.role || '').toLowerCase() === 'gm') return isApprovedCampaignPlayerV1062(target);
+    if (!isApprovedCampaignPlayerV1062(sender) || !isApprovedCampaignPlayerV1062(target)) return false;
+    const activeCampaign = String(campaignId || '').trim();
+    if (activeCampaign && playerCampaignIdsV1062(target).includes(activeCampaign)) return true;
+    return crossCampaignDirectEnabledV1063(sender) || crossCampaignDirectEnabledV1063(target);
+  }
+  window.GRPGChatPolicyV1063 = {
+    canDirect: (senderId, targetId) => canPlayersDirectMessageV1063(senderId, targetId, currentCampaignIdV1062()),
+    crossCampaignEnabled: player => crossCampaignDirectEnabledV1063(player)
+  };
+
+  function campaignNpcOptionsV1062() {
+    const list = Object.values(NPCS || {});
+    if (String(App.currentUser?.role || '').toLowerCase() === 'gm') {
+      return list.sort((a,b)=>String(a.name||a.id||'').localeCompare(String(b.name||b.id||''),'ru'));
+    }
+    return list.filter(npc => isEntityVisible(npc)).sort((a,b)=>String(a.name||a.id||'').localeCompare(String(b.name||b.id||''),'ru'));
+  }
+
+  function ensureCampaignChatStateV1062() {
+    if (!App.state.campaignChats || typeof App.state.campaignChats !== 'object') App.state.campaignChats = {};
+    return App.state.campaignChats;
+  }
+  function getCampaignChatThreadV1062(campaignId = currentCampaignIdV1062()) {
+    const chats = ensureCampaignChatStateV1062();
+    const id = String(campaignId || '').trim();
+    if (!Array.isArray(chats[id])) chats[id] = [];
+    return chats[id];
+  }
+  function appendCampaignChatMessageV1062(campaignId, payload = {}) {
+    const id = String(campaignId || '').trim();
+    const text = String(payload.text || '').trim();
+    if (!id || !text || !canUseCampaignChatV1077(id)) return null;
+    const senderType = String(payload.senderType || 'player');
+    const message = {
+      id: `${Date.now()}_${Math.random().toString(36).slice(2,8)}`,
+      campaignId: id,
+      senderType,
+      senderId: String(payload.senderId || App.currentUserId || ''),
+      npcId: senderType === 'npc' ? String(payload.npcId || payload.senderId || '') : '',
+      recipientPlayerId: String(payload.recipientPlayerId || App.currentUserId || payload.senderId || ''),
+      authorLabel: String(payload.authorLabel || ''),
+      text,
+      createdAt: new Date().toISOString()
+    };
+    getCampaignChatThreadV1062(id).push(message);
+    ChatSync.queue(ChatSync.campaignRowFromMessageV1062(message, id));
+    return message;
+  }
+
+  const __makeDefaultStateV1062 = makeDefaultState;
+  makeDefaultState = function() {
+    const state = __makeDefaultStateV1062();
+    if (!state.campaignChats || typeof state.campaignChats !== 'object') state.campaignChats = {};
+    return state;
+  };
+  const __normalizeV1062 = Persistence.normalize.bind(Persistence);
+  Persistence.normalize = function(candidate) {
+    const state = __normalizeV1062(candidate);
+    state.campaignChats = deep(candidate?.campaignChats || state.campaignChats || {});
+    if (!state.campaignChats || typeof state.campaignChats !== 'object') state.campaignChats = {};
+    return state;
+  };
+  ensureCampaignChatStateV1062();
+
+  ChatSync.campaignRowFromMessageV1062 = function(message, campaignId) {
+    const id = String(campaignId || message?.campaignId || '').trim();
+    return {
+      message_id: String(message.id),
+      // Keep the established PocketBase kind value; campaign channel identity lives in thread_key.
+      kind: 'direct',
+      thread_key: campaignThreadKeyV1062(id),
+      sender_type: String(message.senderType || 'player'),
+      sender_id: String(message.senderId || ''),
+      recipient_player_id: String(message.recipientPlayerId || message.senderId || App.currentUserId || ''),
+      npc_id: String(message.npcId || ''),
+      direct_a: null,
+      direct_b: null,
+      author_label: message.authorLabel || (message.senderType === 'npc' ? (Data.getNpc(message.npcId)?.name || 'NPC') : getPlayerDisplayName(message.senderId)),
+      body_html: String(message.text || ''),
+      created_at: message.createdAt || new Date().toISOString(),
+      edited_at: message.editedAt || null,
+      deleted_at: message.deletedAt || null,
+      updated_at: message.editedAt || message.deletedAt || message.createdAt || new Date().toISOString(),
+      client_updated_at: message.editedAt || message.deletedAt || message.createdAt || new Date().toISOString()
+    };
+  };
+
+  const __exportAllLocalRowsV1062 = ChatSync.exportAllLocalRows.bind(ChatSync);
+  ChatSync.exportAllLocalRows = function() {
+    const rows = __exportAllLocalRowsV1062();
+    for (const [campaignId, thread] of Object.entries(ensureCampaignChatStateV1062())) {
+      (Array.isArray(thread) ? thread : []).forEach(message => rows.push(this.campaignRowFromMessageV1062(message, campaignId)));
+    }
+    return rows.sort((a,b)=>{
+      const at = new Date(a.updated_at || a.created_at || 0).getTime();
+      const bt = new Date(b.updated_at || b.created_at || 0).getTime();
+      return at - bt || String(a.message_id||'').localeCompare(String(b.message_id||''));
+    });
+  };
+
+  const __applyRemoteRowsV1062 = ChatSync.applyRemoteRows.bind(ChatSync);
+  ChatSync.applyRemoteRows = function(rows = []) {
+    const campaignRows = (Array.isArray(rows) ? rows : []).filter(row => String(row?.thread_key || '').startsWith('campaign::'));
+    const normalRows = (Array.isArray(rows) ? rows : []).filter(row => !String(row?.thread_key || '').startsWith('campaign::'));
+    let changed = normalRows.length ? __applyRemoteRowsV1062(normalRows) : false;
+    campaignRows.forEach(row => {
+      const campaignId = String(row.thread_key || '').slice('campaign::'.length).trim();
+      if (!campaignId || !row.message_id) return;
+      const thread = getCampaignChatThreadV1062(campaignId);
+      const idx = thread.findIndex(message => String(message.id) === String(row.message_id));
+      if (row.deleted_at) {
+        if (idx >= 0) { thread.splice(idx,1); changed = true; }
+        this.updateCursorFromRow(row);
+        return;
+      }
+      const senderType = String(row.sender_type || 'player');
+      const message = {
+        id: String(row.message_id),
+        campaignId,
+        senderType,
+        senderId: String(row.sender_id || ''),
+        npcId: String(row.npc_id || (senderType === 'npc' ? row.sender_id || '' : '')),
+        recipientPlayerId: String(row.recipient_player_id || ''),
+        authorLabel: row.author_label || (senderType === 'npc' ? (Data.getNpc(row.npc_id || row.sender_id)?.name || 'NPC') : getPlayerDisplayName(row.sender_id)),
+        text: String(row.body_html || ''),
+        createdAt: row.created_at || new Date().toISOString(),
+        editedAt: row.edited_at || null
+      };
+      if (idx >= 0) {
+        if (JSON.stringify(thread[idx]) !== JSON.stringify(message)) { thread[idx] = message; changed = true; }
+      } else {
+        thread.push(message);
+        thread.sort((a,b)=>new Date(a.createdAt||0).getTime()-new Date(b.createdAt||0).getTime() || String(a.id||'').localeCompare(String(b.id||'')));
+        changed = true;
+      }
+      this.updateCursorFromRow(row);
+    });
+    return changed;
+  };
+
+  const __buildSharedV1062 = buildSharedStateSnapshot;
+  buildSharedStateSnapshot = function(state = App?.state || makeDefaultState()) {
+    const snap = __buildSharedV1062(state);
+    delete snap.campaignChats;
+    return snap;
+  };
+  const __applySnapshotV1062 = Sync.applyRemoteSnapshot.bind(Sync);
+  Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}) {
+    const localCampaignChats = deep(App.state?.campaignChats || {});
+    const result = await __applySnapshotV1062(payload, remoteMeta, options);
+    App.state.campaignChats = localCampaignChats;
+    return result;
+  };
+
+  function campaignMessageMarkupV1062(message) {
+    const own = String(message.senderId || '') === String(App.currentUserId || '') && message.senderType !== 'npc';
+    const label = message.authorLabel || (message.senderType === 'npc' ? (Data.getNpc(message.npcId)?.name || 'NPC') : getPlayerDisplayName(message.senderId));
+    return `<div class="chat-bubble ${own ? 'player' : 'npc'} ${message.senderType === 'npc' ? 'campaign-npc-message-v1062' : ''}"><div class="chat-head-row"><div class="chat-meta">${esc(label)} · ${esc(formatMessageMetaTime(message))}</div>${renderChatMessageControls('campaign', message)}</div>${__renderRichText ? __renderRichText(message.text, '<div></div>') : `<div>${esc(message.text)}</div>`}</div>`;
+  }
+  function campaignHeaderV1062(campaignId) {
+    const campaign = campaignEntityV1062(campaignId);
+    const members = approvedCampaignPlayersV1062(campaignId).filter(player => String(player.role||'').toLowerCase() !== 'gm');
+    return `<div class="message-thread-head campaign-chat-head-v1062"><div class="message-thread-avatar"><div class="entity-thumb sm fallback"><span>ALL</span></div></div><div><div class="section-title">Общий чат · ${esc(campaign?.name || campaignId)}</div><div class="small-note">${esc(members.map(player=>player.displayName||player.shortName||player.id).join(' · ') || 'Нет одобренных персонажей')} · ДМ</div></div></div>`;
+  }
+  function campaignComposeV1062(campaignId, gm = false) {
+    if (!canUseCampaignChatV1077(campaignId)) return '';
+    const npcOptions = gm ? campaignNpcOptionsV1062() : [];
+    return `<form class="form campaign-chat-form-v1062" data-campaign-id="${esc(campaignId)}">${gm ? `<div class="field"><label>Писать от лица</label><select class="select" name="actor"><option value="gm:${esc(App.currentUserId)}">ДМ · ${esc(App.currentUser?.displayName || App.currentUser?.shortName || 'Ведущий')}</option>${npcOptions.map(npc=>`<option value="npc:${esc(npc.id)}">NPC · ${esc(npc.name||npc.id)}</option>`).join('')}</select></div>` : ''}<div class="field"><label>Сообщение</label><textarea class="area chat-input" name="message" placeholder="Написать в общий чат кампании..."></textarea>${typeof __htmlHint !== 'undefined' ? __htmlHint : ''}</div><button class="primary" type="submit">ОТПРАВИТЬ В ОБЩИЙ ЧАТ</button></form>`;
+  }
+
+  MessagesUI.renderForPlayer = function() {
+    const campaignId = currentCampaignIdV1062();
+    const campaignAllowed = canUseCampaignChatV1077(campaignId);
+    const campaignThread = campaignAllowed ? getCampaignChatThreadV1062(campaignId) : [];
+    const search = String(this.playerSearch || '').trim().toLowerCase();
+    const matchesSearch = (...parts) => !search || parts.filter(Boolean).join(' ').toLowerCase().includes(search);
+    const directEntries = listDirectChatPartnerIds(App.currentUserId).filter(id=>canPlayersDirectMessageV1063(App.currentUserId, id, campaignId)).map(id=>{
+      const player=getPlayerEntityForChat(id); const key=directChatKey(App.currentUserId,id); const thread=getDirectChatThread(App.currentUserId,id);
+      return {id,player,key,thread,unread:getDirectUnreadCountForViewer(key),lastAt:getThreadLastAt(thread),preview:getThreadLastPreview(thread)};
+    }).filter(entry=>matchesSearch(entry.player.displayName||getPlayerDisplayName(entry.id),entry.preview,entry.id)).sort((a,b)=>b.lastAt-a.lastAt||b.unread-a.unread||String(a.player.displayName||'').localeCompare(String(b.player.displayName||''),'ru'));
+    const npcEntries=listNpcThreadsForPlayer(App.currentUserId).map(npc=>{const thread=getNpcChatThread(npc.id,App.currentUserId);return{npc,thread,unread:getNpcUnreadCountForViewer(npc.id,App.currentUserId),lastAt:getThreadLastAt(thread),preview:getThreadLastPreview(thread)}}).filter(entry=>matchesSearch(entry.npc.name,entry.preview,entry.npc.id,entry.npc.mapLabel)).sort((a,b)=>b.lastAt-a.lastAt||b.unread-a.unread||String(a.npc.name||'').localeCompare(String(b.npc.name||''),'ru'));
+
+    const campaignValid = campaignAllowed && (!search || matchesSearch(campaignEntityV1062(campaignId)?.name,'общий чат','кампания',getThreadLastPreview(campaignThread)));
+    let kind=this.selectedPlayerKind, key=String(this.selectedPlayerKey||'');
+    if (kind==='campaign' && key===campaignId && campaignValid) {}
+    else if (kind==='direct' && directEntries.some(e=>e.id===key)) {}
+    else if (kind==='npc' && npcEntries.some(e=>e.npc.id===key)) {}
+    else if (campaignValid) {kind='campaign';key=campaignId;}
+    else if (directEntries[0]) {kind='direct';key=directEntries[0].id;}
+    else if (npcEntries[0]) {kind='npc';key=npcEntries[0].npc.id;}
+    else {kind=null;key='';}
+    this.selectedPlayerKind=kind;this.selectedPlayerKey=key;
+    const activeDirect=kind==='direct'?directEntries.find(e=>e.id===key):null;
+    const activeNpcEntry=kind==='npc'?npcEntries.find(e=>e.npc.id===key):null;
+    return `<div class="messages-layout"><aside class="messages-side card"><div class="section-title">Сообщения</div><div class="field" style="margin-bottom:12px"><input class="input" id="messages-search-player" value="${esc(this.playerSearch||'')}" placeholder="Поиск по имени, ID или тексту..." /></div><div class="message-contact-list"><div class="tiny-label" style="margin-bottom:8px">Кампания</div>${campaignValid?renderMessageContactRow({active:kind==='campaign',title:`Общий чат · ${campaignEntityV1062(campaignId)?.name||campaignId}`,subtitle:getThreadLastPreview(campaignThread)||'Все одобренные персонажи кампании · ДМ',avatarHtml:'<span class="entity-thumb xs fallback"><span>ALL</span></span>',unread:0,kind:'campaign',key:campaignId}):'<div class="small-note">Общий чат недоступен.</div>'}</div><div class="message-contact-list" style="margin-top:14px"><div class="tiny-label" style="margin-bottom:8px">Игроки</div>${directEntries.map(entry=>renderMessageContactRow({active:kind==='direct'&&key===entry.id,title:entry.player.displayName||getPlayerDisplayName(entry.id),subtitle:entry.preview,avatarHtml:renderThumb(entry.player,{size:'xs',type:'player',glyph:entry.player.avatarGlyph||initials(entry.player.displayName)}),unread:entry.unread,kind:'direct',key:entry.id})).join('')||`<div class="small-note">${search?'Ничего не найдено':'Нет других игроков.'}</div>`}</div><div class="message-contact-list" style="margin-top:14px"><div class="tiny-label" style="margin-bottom:8px">NPC</div>${npcEntries.map(entry=>renderMessageContactRow({active:kind==='npc'&&key===entry.npc.id,title:entry.npc.name,subtitle:entry.preview,avatarHtml:renderThumb(entry.npc,{size:'xs',type:'npc',glyph:entry.npc.avatarGlyph||initials(entry.npc.name||'NPC')}),unread:entry.unread,kind:'npc',key:entry.npc.id})).join('')||`<div class="small-note">${search?'Ничего не найдено':'Нет доступных NPC.'}</div>`}</div></aside><section class="messages-main card pad18">${kind==='campaign'?`${campaignHeaderV1062(campaignId)}<div class="chat-thread message-thread">${campaignThread.map(campaignMessageMarkupV1062).join('')||'<div class="small-note">Общий чат ещё пуст.</div>'}</div>${campaignComposeV1062(campaignId,false)}`:activeDirect?`${renderPlayerChatHeader(activeDirect.id)}<div class="chat-thread message-thread">${activeDirect.thread.map(message=>this.directMessageMarkup(message)).join('')||'<div class="small-note">Диалог ещё не начат.</div>'}</div><form class="form direct-chat-form" data-partner-id="${esc(activeDirect.id)}"><div class="field"><label>Сообщение</label><textarea class="area chat-input" name="message" placeholder="Написать игроку..."></textarea>${typeof __htmlHint!=='undefined'?__htmlHint:''}</div><button class="primary" type="submit">ОТПРАВИТЬ</button></form>`:activeNpcEntry?`${renderNpcChatHeader(activeNpcEntry.npc)}<div class="chat-thread message-thread">${activeNpcEntry.thread.map(message=>ChatUI.messageMarkup(message,activeNpcEntry.npc.id)).join('')||'<div class="small-note">Диалог ещё не начат.</div>'}</div><form class="form messages-npc-chat-form" data-npc-id="${esc(activeNpcEntry.npc.id)}" data-player-id="${esc(App.currentUserId)}"><div class="field"><label>Сообщение для ${esc(activeNpcEntry.npc.name)}</label><textarea class="area chat-input" name="message" placeholder="Написать NPC..."></textarea>${typeof __htmlHint!=='undefined'?__htmlHint:''}</div><button class="primary" type="submit">ОТПРАВИТЬ NPC</button></form>`:'<div class="small-note">Нет доступных диалогов.</div>'}</section></div>`;
+  };
+
+  MessagesUI.renderForGm = function() {
+    const campaignId=currentCampaignIdV1062(); const campaignThread=getCampaignChatThreadV1062(campaignId); const search=String(this.gmSearch||'').trim().toLowerCase(); const matchesSearch=(...parts)=>!search||parts.filter(Boolean).join(' ').toLowerCase().includes(search);
+    const directEntries=listDirectChatKeys().map(threadKey=>{const parts=directChatParticipants(threadKey);const thread=ensureDirectChatState()[threadKey]||[];return{threadKey,parts,thread,unread:getDirectUnreadCountForViewer(threadKey),lastAt:getThreadLastAt(thread),preview:getThreadLastPreview(thread)}}).filter(entry=>matchesSearch(getPlayerDisplayName(entry.parts.a),getPlayerDisplayName(entry.parts.b),entry.preview,entry.threadKey)).sort((a,b)=>b.lastAt-a.lastAt||b.unread-a.unread);
+    const npcEntries=listNpcThreadEntriesForGm().map(entry=>({...entry,unread:getNpcUnreadCountForViewer(entry.npcId,entry.playerId),preview:getThreadLastPreview(entry.thread)})).filter(entry=>matchesSearch(entry.npc.name,getPlayerDisplayName(entry.playerId),entry.preview,entry.key)).sort((a,b)=>b.lastAt-a.lastAt||b.unread-a.unread);
+    const campaignValid=campaignId&&(!search||matchesSearch(campaignEntityV1062(campaignId)?.name,'общий чат','кампания',getThreadLastPreview(campaignThread)));
+    let kind=this.selectedGmKind,key=String(this.selectedGmKey||''); if(kind==='campaign'&&key===campaignId&&campaignValid){}else if(kind==='direct'&&directEntries.some(e=>e.threadKey===key)){}else if(kind==='npc'&&npcEntries.some(e=>e.key===key)){}else if(campaignValid){kind='campaign';key=campaignId;}else if(npcEntries[0]){kind='npc';key=npcEntries[0].key;}else if(directEntries[0]){kind='direct';key=directEntries[0].threadKey;}else{kind=null;key='';} this.selectedGmKind=kind;this.selectedGmKey=key;
+    const activeDirect=kind==='direct'?directEntries.find(e=>e.threadKey===key):null; const activeNpcEntry=kind==='npc'?npcEntries.find(e=>e.key===key):null; const playerOptions=approvedCampaignPlayersV1062(campaignId).filter(p=>String(p.role||'').toLowerCase()!=='gm').map(p=>p.id); const npcOptions=campaignNpcOptionsV1062();
+    return `<div class="messages-layout gm"><aside class="messages-side card"><div class="section-title">Все диалоги</div><div class="field" style="margin-bottom:12px"><input class="input" id="messages-search-gm" value="${esc(this.gmSearch||'')}" placeholder="Поиск по игроку, NPC или тексту..." /></div><div class="message-contact-list"><div class="tiny-label" style="margin-bottom:8px">Кампания</div>${campaignValid?renderMessageContactRow({active:kind==='campaign',title:`Общий чат · ${campaignEntityV1062(campaignId)?.name||campaignId}`,subtitle:getThreadLastPreview(campaignThread)||'Все одобренные персонажи · ДМ',avatarHtml:'<span class="entity-thumb xs fallback"><span>ALL</span></span>',unread:0,kind:'campaign',key:campaignId,gm:true}):'<div class="small-note">Нет общего чата.</div>'}</div><div class="message-contact-list" style="margin-top:14px"><div class="tiny-label" style="margin-bottom:8px">Игрок ↔ Игрок</div>${directEntries.map(entry=>{const pa=getPlayerEntityForChat(entry.parts.a),pb=getPlayerEntityForChat(entry.parts.b);return renderMessageContactRow({active:kind==='direct'&&key===entry.threadKey,title:`${getPlayerDisplayName(entry.parts.a)} ↔ ${getPlayerDisplayName(entry.parts.b)}`,subtitle:entry.preview,avatarHtml:`<span class="message-contact-dual">${renderThumb(pa,{size:'xs',type:'player',glyph:pa.avatarGlyph||initials(pa.displayName)})}${renderThumb(pb,{size:'xs',type:'player',glyph:pb.avatarGlyph||initials(pb.displayName)})}</span>`,unread:entry.unread,kind:'direct',key:entry.threadKey,gm:true})}).join('')||'<div class="small-note">Пока нет личных сообщений игроков.</div>'}</div><div class="message-contact-list" style="margin-top:14px"><div class="tiny-label" style="margin-bottom:8px">NPC ↔ Игрок</div>${npcEntries.map(entry=>renderMessageContactRow({active:kind==='npc'&&key===entry.key,title:`${entry.npc.name} ↔ ${getPlayerDisplayName(entry.playerId)}`,subtitle:entry.preview,avatarHtml:renderThumb(entry.npc,{size:'xs',type:'npc',glyph:entry.npc.avatarGlyph||initials(entry.npc.name||'NPC')}),unread:entry.unread,kind:'npc',key:entry.key,gm:true})).join('')||'<div class="small-note">Пока нет NPC-диалогов.</div>'}</div></aside><section class="messages-main stack"><div class="card pad18"><div class="section-title">Инициировать диалог от NPC</div><form class="form npc-chat-init-form"><div class="grid2"><div class="field"><label>NPC</label><select class="select" name="npcId">${npcOptions.map(npc=>`<option value="${esc(npc.id)}">${esc(npc.name)}</option>`).join('')}</select></div><div class="field"><label>Игрок</label><select class="select" name="playerId">${playerOptions.map(id=>`<option value="${esc(id)}">${esc(getPlayerDisplayName(id))}</option>`).join('')}</select></div></div><div class="field"><label>Первое сообщение</label><textarea class="area chat-input" name="message" placeholder="Сообщение от имени NPC..."></textarea>${typeof __htmlHint!=='undefined'?__htmlHint:''}</div><button class="primary" type="submit">ОТПРАВИТЬ ОТ NPC</button></form></div><div class="card pad18">${kind==='campaign'?`${campaignHeaderV1062(campaignId)}<div class="chat-thread message-thread">${campaignThread.map(campaignMessageMarkupV1062).join('')||'<div class="small-note">Общий чат ещё пуст.</div>'}</div>${campaignComposeV1062(campaignId,true)}`:activeDirect?`${renderDualPlayerChatHeader(activeDirect.parts.a,activeDirect.parts.b)}<div class="chat-thread message-thread">${activeDirect.thread.map(message=>this.directMessageMarkup(message)).join('')||'<div class="small-note">Нет сообщений.</div>'}</div>`:activeNpcEntry?`${renderNpcChatHeader(activeNpcEntry.npc,activeNpcEntry.playerId)}<div class="chat-thread message-thread">${activeNpcEntry.thread.map(message=>ChatUI.messageMarkup(message,activeNpcEntry.npcId)).join('')||'<div class="small-note">Нет сообщений.</div>'}</div><form class="form messages-npc-chat-form" data-npc-id="${esc(activeNpcEntry.npcId)}" data-player-id="${esc(activeNpcEntry.playerId)}" data-role="npc"><div class="field"><label>Ответ от имени ${esc(activeNpcEntry.npc.name)}</label><textarea class="area chat-input" name="message" placeholder="Ответить игроку..."></textarea>${typeof __htmlHint!=='undefined'?__htmlHint:''}</div><button class="primary" type="submit">ОТПРАВИТЬ ОТВЕТ</button></form>`:'<div class="small-note">Выбери диалог слева, чтобы посмотреть историю.</div>'}</div></section></div>`;
+  };
+
+  const __messagesBindV1062 = MessagesUI.bind.bind(MessagesUI);
+  MessagesUI.bind = function(root) {
+    __messagesBindV1062(root);
+    root.querySelectorAll('.campaign-chat-form-v1062').forEach(form=>{
+      if(form.dataset.boundV1062==='1')return;form.dataset.boundV1062='1';
+      form.addEventListener('submit',async event=>{
+        event.preventDefault(); const fd=new FormData(form); const campaignId=String(form.dataset.campaignId||currentCampaignIdV1062()); if(!canUseCampaignChatV1077(campaignId)){Toast.show('Общий чат недоступен','err');return;} const text=String(fd.get('message')||'').trim(); if(!text){Toast.show('Сообщение пустое','err');return;}
+        let senderType='player'; let senderId=App.currentUserId; let npcId=''; let authorLabel=getPlayerDisplayName(App.currentUserId);
+        if(String(App.currentUser?.role||'').toLowerCase()==='gm'){const actor=String(fd.get('actor')||`gm:${App.currentUserId}`);if(actor.startsWith('npc:')){npcId=actor.slice(4);const npc=Data.getNpc(npcId);if(!npc){Toast.show('NPC не найден','err');return;}senderType='npc';senderId=npcId;authorLabel=npc.name||npcId;}}
+        appendCampaignChatMessageV1062(campaignId,{senderType,senderId,npcId,authorLabel,text}); await App.saveState(senderType==='npc'?`Сообщение отправлено от имени ${authorLabel}`:'Сообщение отправлено в общий чат'); this.render();
+      });
+    });
+  };
+})();
+
+/* v1.0.64 planet-owned system links + scalable NPC actor selectors */
+(function(){
+  if (window.__planetOwnedSystemLinksV1064) return;
+  window.__planetOwnedSystemLinksV1064 = true;
+
+  const uniqV1064 = values => Array.from(new Set((Array.isArray(values) ? values : []).map(value => String(value || '').trim()).filter(Boolean)));
+  const systemNameV1064 = system => String(system?.name || system?.markerLabel || system?.id || '').trim();
+
+  function normalizePlanetOwnedLinksV1064({ migrateLegacy = false } = {}) {
+    const systems = Array.isArray(SYSTEMS) ? SYSTEMS : [];
+    const planets = Object.values(PLANETS || {}).filter(Boolean);
+    const systemsById = new Map(systems.map(system => [String(system?.id || '').trim(), system]).filter(entry => entry[0]));
+    const planetsById = new Map(planets.map(planet => [String(planet?.id || '').trim(), planet]).filter(entry => entry[0]));
+
+    const legacyClaims = new Map();
+    if (migrateLegacy) {
+      systems.forEach(system => {
+        uniqV1064(system.planetIds).forEach(planetId => {
+          if (planetsById.has(planetId) && !legacyClaims.has(planetId)) legacyClaims.set(planetId, String(system.id));
+        });
+      });
+    }
+
+    planets.forEach(planet => {
+      const hasExplicitSystemId = Object.prototype.hasOwnProperty.call(planet, 'systemId');
+      let systemId = String(planet.systemId || '').trim();
+      // Legacy system.planetIds is consulted only when an old planet has no systemId field at all.
+      // An explicit empty systemId means the DM intentionally unlinked the planet and must stay empty.
+      if (!hasExplicitSystemId && migrateLegacy) systemId = legacyClaims.get(String(planet.id)) || '';
+      if (!systemsById.has(systemId)) systemId = '';
+      planet.systemId = systemId;
+      planet.location = planet.location && typeof planet.location === 'object' ? { ...planet.location } : {};
+      const system = systemId ? systemsById.get(systemId) : null;
+      if (system) {
+        const arm = String(system.arm || (typeof inferGalaxyArmByPosV34 === 'function' ? inferGalaxyArmByPosV34(system.pos || {}) : system.location?.arm || '')).trim();
+        planet.location.arm = arm;
+        planet.location.system = systemNameV1064(system);
+        planet.location.node = String(system.location?.node || system.markerLabel || system.name || '').trim();
+      } else {
+        planet.location.arm = '';
+        planet.location.system = '';
+        planet.location.node = '';
+      }
+      planet.location.obj = String(planet.location.obj || planet.name || planet.code || planet.id || '').trim();
+    });
+
+    // system.planetIds is now a derived compatibility index only.
+    systems.forEach(system => {
+      system.planetIds = [];
+      system.location = system.location && typeof system.location === 'object' ? { ...system.location } : {};
+      if (typeof inferGalaxyArmByPosV34 === 'function') system.arm = inferGalaxyArmByPosV34(system.pos || {});
+      system.location.arm = String(system.arm || system.location.arm || '').trim();
+      system.location.system = systemNameV1064(system);
+      system.location.node = String(system.location.node || system.markerLabel || system.name || '').trim();
+    });
+    planets.forEach(planet => {
+      const system = systemsById.get(String(planet.systemId || ''));
+      if (system) system.planetIds.push(String(planet.id));
+    });
+    systems.forEach(system => {
+      system.planetIds = uniqV1064(system.planetIds).sort((a, b) => String(planetsById.get(a)?.name || a).localeCompare(String(planetsById.get(b)?.name || b), 'ru'));
+    });
+
+    Data.systems = SYSTEMS;
+    Data.planets = PLANETS;
+  }
+
+  const __applyWorldDataV1064 = applyWorldData;
+  applyWorldData = function(payload = {}) {
+    __applyWorldDataV1064(payload);
+    normalizePlanetOwnedLinksV1064({ migrateLegacy: true });
+  };
+
+  const __buildWorldSnapshotV1064 = buildWorldSnapshot;
+  buildWorldSnapshot = function() {
+    normalizePlanetOwnedLinksV1064({ migrateLegacy: false });
+    return __buildWorldSnapshotV1064();
+  };
+
+  const __renderSystemEditorV1064 = Configurator.renderSystemEditor.bind(Configurator);
+  Configurator.renderSystemEditor = function(system) {
+    normalizePlanetOwnedLinksV1064({ migrateLegacy: false });
+    let html = __renderSystemEditorV1064(system);
+    const linked = (system.planetIds || []).map(id => PLANETS?.[id]).filter(Boolean);
+    const readOnly = `<div class="field planet-links-readonly-v1064"><label>Планеты системы</label><div class="tags">${linked.map(planet => `<span class="tag">${esc(planet.name || planet.id)}</span>`).join('') || '<span class="small-note">Планет пока нет.</span>'}</div><div class="small-note">Привязка редактируется в карточке самой планеты: World Config → Планеты → Система.</div></div>`;
+    html = html.replace(/<div class="field"><label>Планеты в системе<\/label>[\s\S]*?<div class="small-note">Связи система ↔ планеты редактируются только здесь\.<\/div><\/div>/, readOnly);
+    html = html.replace('Система управляет точкой на галактической карте и набором планет внутри. Планеты привязываются только здесь, а в редакторе планеты связь показывается автоматически.', 'Система управляет точкой на галактической карте. Планеты принадлежат системе через поле «Система» в карточке каждой планеты.');
+    return html;
+  };
+
+  const __renderPlanetEditorV1064 = Configurator.renderPlanetEditor.bind(Configurator);
+  Configurator.renderPlanetEditor = function(planet) {
+    normalizePlanetOwnedLinksV1064({ migrateLegacy: true });
+    let html = __renderPlanetEditorV1064(planet);
+    const currentSystemId = String(planet.systemId || Data.getSystemForPlanet(planet.id)?.id || '').trim();
+    const systems = sortEntitiesForList(Array.isArray(SYSTEMS) ? SYSTEMS : []);
+    const select = `<div class="field"><label>Система</label><select class="select" name="systemId"><option value="">Не привязана</option>${systems.map(system => `<option value="${esc(system.id)}" ${String(system.id) === currentSystemId ? 'selected' : ''}>${esc(systemNameV1064(system))}</option>`).join('')}</select><div class="small-note">Это единственное место, где назначается система планеты.</div></div>`;
+    html = html.replace(/<div class="field"><label>Система<\/label><input class="input" value="[^"]*" readonly \/><div class="small-note">Привязка меняется только в разделе «Системы»\.<\/div><\/div>/, select);
+    html = html.replace('Редактор планеты. Система и рукав подтягиваются автоматически от той системы, в которую планета включена в разделе «Системы».', 'Редактор планеты. Здесь выбирается система, к которой относится планета; рукав и служебные поля локации обновляются автоматически.');
+    return html;
+  };
+
+  const __collectEntityV1064 = Configurator.collectEntity.bind(Configurator);
+  Configurator.collectEntity = function(type, formEl, formData = new FormData(formEl)) {
+    const entity = __collectEntityV1064(type, formEl, formData);
+    if (type === 'systems') {
+      // Compatibility list is derived from planets and is never authored in a system form.
+      entity.planetIds = uniqV1064((SYSTEMS.find(item => item.id === entity.id)?.planetIds) || entity.planetIds || []);
+    }
+    if (type === 'planets') {
+      const systemId = String(formData.get('systemId') || '').trim();
+      const system = SYSTEMS.find(item => String(item.id) === systemId) || null;
+      entity.systemId = system?.id || '';
+      entity.location = entity.location && typeof entity.location === 'object' ? entity.location : {};
+      if (system) {
+        entity.location.arm = String(system.arm || (typeof inferGalaxyArmByPosV34 === 'function' ? inferGalaxyArmByPosV34(system.pos || {}) : '')).trim();
+        entity.location.system = systemNameV1064(system);
+        entity.location.node = String(system.location?.node || system.markerLabel || system.name || '').trim();
+      } else {
+        entity.location.arm = '';
+        entity.location.system = '';
+        entity.location.node = '';
+      }
+    }
+    return entity;
+  };
+
+  const __replaceEntityV1064 = Configurator.replaceEntity.bind(Configurator);
+  Configurator.replaceEntity = function(type, oldId, entity) {
+    if (type === 'planets') {
+      const desiredSystemId = String(entity?.systemId || '').trim();
+      SYSTEMS.forEach(system => { system.planetIds = uniqV1064(system.planetIds).filter(id => id !== oldId && id !== entity.id); });
+      const target = SYSTEMS.find(system => String(system.id) === desiredSystemId);
+      if (target) target.planetIds = uniqV1064([...(target.planetIds || []), entity.id]);
+    }
+    if (type === 'systems' && oldId !== entity.id) {
+      Object.values(PLANETS || {}).forEach(planet => {
+        if (String(planet.systemId || '') === String(oldId)) planet.systemId = String(entity.id || '');
+      });
+    }
+    const result = __replaceEntityV1064(type, oldId, entity);
+    if (type === 'systems' || type === 'planets') normalizePlanetOwnedLinksV1064({ migrateLegacy: false });
+    return result;
+  };
+
+  const __cleanupReferencesV1064 = Configurator.cleanupReferences.bind(Configurator);
+  Configurator.cleanupReferences = function(type, id) {
+    if (type === 'systems') {
+      Object.values(PLANETS || {}).forEach(planet => {
+        if (String(planet.systemId || '') === String(id)) {
+          planet.systemId = '';
+          planet.location = planet.location && typeof planet.location === 'object' ? planet.location : {};
+          planet.location.arm = '';
+          planet.location.system = '';
+          planet.location.node = '';
+        }
+      });
+    }
+    const result = __cleanupReferencesV1064(type, id);
+    if (type === 'systems' || type === 'planets') normalizePlanetOwnedLinksV1064({ migrateLegacy: false });
+    return result;
+  };
+
+  const __remapReferencesV1064 = Configurator.remapReferences.bind(Configurator);
+  Configurator.remapReferences = function(type, oldId, newId) {
+    if (type === 'systems' && oldId !== newId) {
+      Object.values(PLANETS || {}).forEach(planet => {
+        if (String(planet.systemId || '') === String(oldId)) planet.systemId = String(newId || '');
+      });
+    }
+    const result = __remapReferencesV1064(type, oldId, newId);
+    if (type === 'systems' || type === 'planets') normalizePlanetOwnedLinksV1064({ migrateLegacy: false });
+    return result;
+  };
+
+  // Long NPC lists become scrollable listboxes instead of viewport-tall native drop-downs.
+  function makeNpcSelectsScrollableV1064(root = document) {
+    root?.querySelectorAll?.('select[name="actor"], select[name="npcId"]').forEach(select => {
+      if (select.dataset.scrollableNpcV1064 === '1') return;
+      const npcCount = Array.from(select.options || []).filter(option => String(option.value || '').startsWith('npc:') || select.name === 'npcId').length;
+      if (npcCount <= 6) return;
+      select.dataset.scrollableNpcV1064 = '1';
+      select.classList.add('npc-scroll-select-v1064');
+      select.size = Math.min(8, Math.max(6, npcCount + (select.name === 'actor' ? 1 : 0)));
+      select.title = 'Список прокручивается колёсиком мыши или полосой прокрутки';
+    });
+  }
+  window.makeNpcSelectsScrollableV1064 = makeNpcSelectsScrollableV1064;
+
+  const __messagesRenderV1064 = MessagesUI.render.bind(MessagesUI);
+  MessagesUI.render = function() {
+    const result = __messagesRenderV1064();
+    requestAnimationFrame(() => makeNpcSelectsScrollableV1064(document.getElementById('messages-content') || document));
+    return result;
+  };
+
+  document.addEventListener('DOMContentLoaded', () => {
+    try { normalizePlanetOwnedLinksV1064({ migrateLegacy: true }); } catch {}
+  });
+})();
+
+/* v1.0.67 inventory grid, carrying limits and equipment slots */
+(() => {
+  if (window.__inventoryGridV1067) return;
+  window.__inventoryGridV1067 = true;
+
+  const DEFAULT_INVENTORY_SIZE_V1067 = 12;
+  const DEFAULT_CARRY_WEIGHT_V1067 = 12;
+
+  function intNonNegativeV1067(value, fallback = 0) {
+    const n = Number(value);
+    return Number.isFinite(n) ? Math.max(0, Math.floor(n)) : fallback;
+  }
+  function numNonNegativeV1067(value, fallback = 0) {
+    const n = Number(value);
+    return Number.isFinite(n) ? Math.max(0, n) : fallback;
+  }
+  function itemSizeV1067(item = {}) {
+    return {
+      w: Math.max(1, intNonNegativeV1067(item.inventoryWidth ?? item.sizeWidth ?? item.widthCells ?? 1, 1)),
+      h: Math.max(1, intNonNegativeV1067(item.inventoryHeight ?? item.sizeHeight ?? item.heightCells ?? 1, 1))
+    };
+  }
+  function itemMassV1067(item = {}) {
+    return numNonNegativeV1067(item.mass ?? item.weight ?? 1, 1);
+  }
+  function inventoryColumnsV1067(size) {
+    const total = Math.max(1, intNonNegativeV1067(size, DEFAULT_INVENTORY_SIZE_V1067));
+    return Math.max(1, Math.ceil(Math.sqrt(total)));
+  }
+  function normalizePositionV1067(pos) {
+    if (!pos || typeof pos !== 'object') return null;
+    const x = Number(pos.x), y = Number(pos.y);
+    if (!Number.isInteger(x) || !Number.isInteger(y) || x < 0 || y < 0) return null;
+    return { x, y };
+  }
+  function normalizeInventoryEntryV1067(entry = {}) {
+    const qty = intNonNegativeV1067(entry.qty, 0);
+    const positions = Array.isArray(entry.positions) ? entry.positions.slice(0, qty).map(normalizePositionV1067) : [];
+    return { ...entry, itemId: String(entry.itemId || '').trim(), qty, positions };
+  }
+
+  const __normalizeEquipmentItemV1067 = normalizeEquipmentItemV2;
+  normalizeEquipmentItemV2 = function(item = {}) {
+    const raw = { ...(item || {}) };
+    const next = __normalizeEquipmentItemV1067(raw);
+    next.creationCost = clamp(Math.max(0, Number(raw.creationCost ?? next.creationCost ?? 0)), 0, 10);
+    next.availableAsStarting = raw.availableAsStarting === true || String(raw.availableAsStarting ?? next.availableAsStarting ?? '').toLowerCase() === 'true';
+    next.mass = itemMassV1067(raw);
+    const size = itemSizeV1067(raw);
+    next.inventoryWidth = size.w;
+    next.inventoryHeight = size.h;
+    return next;
+  };
+
+  const __itemExtraSummaryV1067 = itemExtraSummaryV2;
+  itemExtraSummaryV2 = function(item = {}) {
+    const norm = normalizeEquipmentItemV2(item);
+    const size = itemSizeV1067(norm);
+    const base = __itemExtraSummaryV1067(norm);
+    return `${base} · ${itemMassV1067(norm)} веса · ${size.w}×${size.h}`;
+  };
+
+  const __normalizePlayerProfileV1067 = normalizePlayerProfileV2;
+  normalizePlayerProfileV2 = function(user = {}) {
+    const source = { ...(user || {}) };
+    const next = __normalizePlayerProfileV1067(source);
+    next.inventorySize = intNonNegativeV1067(source.inventorySize ?? next.inventorySize, DEFAULT_INVENTORY_SIZE_V1067);
+    next.carryWeightMax = numNonNegativeV1067(source.carryWeightMax ?? source.maxCarryWeight ?? next.carryWeightMax, DEFAULT_CARRY_WEIGHT_V1067);
+    next.inventory = (Array.isArray(source.inventory) ? source.inventory : (next.inventory || [])).map(normalizeInventoryEntryV1067).filter(entry => entry.itemId && entry.qty > 0);
+    const legacyImplants = Array.isArray(source.implantSlots) ? source.implantSlots : (Array.isArray(source.installedImplantIds) ? source.installedImplantIds : (next.installedImplantIds || []));
+    const explicitCount = source.implantSlotCount ?? next.implantSlotCount;
+    next.implantSlotCount = explicitCount == null ? legacyImplants.filter(Boolean).length : intNonNegativeV1067(explicitCount, 0);
+    next.implantSlots = Array.from({ length: next.implantSlotCount }, (_, index) => String(legacyImplants[index] || '').trim());
+    next.installedImplantIds = next.implantSlots.filter(Boolean);
+    return next;
+  };
+
+  function itemForInventoryV1067(itemId) {
+    return normalizeEquipmentItemV2(EQUIPMENT?.[itemId] || Data.getItem?.(itemId) || { id: itemId, name: itemId, type: 'gear' });
+  }
+  function equippedItemCountsV1067(user = {}) {
+    const counts = new Map();
+    const add = id => { const key = String(id || ''); if (key) counts.set(key, (counts.get(key) || 0) + 1); };
+    add(user.equipmentSlots?.primaryWeapon);
+    add(user.equipmentSlots?.secondaryWeapon);
+    add(user.equipmentSlots?.armor);
+    (user.implantSlots || []).forEach(add);
+    return counts;
+  }
+  function inventoryWeightV1067(user = {}) {
+    return (user.inventory || []).reduce((sum, entry) => sum + itemMassV1067(itemForInventoryV1067(entry.itemId)) * intNonNegativeV1067(entry.qty, 0), 0);
+  }
+  function fitsInventoryAtV1067(size, cols, occupied, x, y, w, h) {
+    if (x < 0 || y < 0 || x + w > cols) return false;
+    for (let yy = y; yy < y + h; yy += 1) {
+      for (let xx = x; xx < x + w; xx += 1) {
+        const cellIndex = yy * cols + xx;
+        if (cellIndex < 0 || cellIndex >= size || occupied.has(`${xx}:${yy}`)) return false;
+      }
+    }
+    return true;
+  }
+  function markOccupiedV1067(occupied, x, y, w, h, value = true) {
+    for (let yy = y; yy < y + h; yy += 1) for (let xx = x; xx < x + w; xx += 1) {
+      const key = `${xx}:${yy}`;
+      if (value) occupied.add(key); else occupied.delete(key);
+    }
+  }
+  function firstFitInventoryV1067(size, cols, occupied, w, h) {
+    const rows = Math.ceil(Math.max(1, size) / cols);
+    for (let y = 0; y < rows; y += 1) for (let x = 0; x < cols; x += 1) {
+      if (fitsInventoryAtV1067(size, cols, occupied, x, y, w, h)) return { x, y };
+    }
+    return null;
+  }
+  function buildInventoryLayoutV1067(rawUser = {}) {
+    const user = normalizePlayerProfileV2(rawUser);
+    const size = user.inventorySize;
+    const cols = inventoryColumnsV1067(size);
+    const equipped = equippedItemCountsV1067(user);
+    const occupied = new Set();
+    const instances = [];
+    const overflow = [];
+    for (const entry of user.inventory || []) {
+      const item = itemForInventoryV1067(entry.itemId);
+      const footprint = itemSizeV1067(item);
+      const skip = Math.min(entry.qty, equipped.get(entry.itemId) || 0);
+      for (let unitIndex = skip; unitIndex < entry.qty; unitIndex += 1) {
+        const key = `${entry.itemId}::${unitIndex}`;
+        let pos = normalizePositionV1067(entry.positions?.[unitIndex]);
+        if (!pos || !fitsInventoryAtV1067(size, cols, occupied, pos.x, pos.y, footprint.w, footprint.h)) {
+          pos = firstFitInventoryV1067(size, cols, occupied, footprint.w, footprint.h);
+        }
+        const instance = { key, itemId: entry.itemId, unitIndex, item, ...footprint, pos };
+        if (pos) { markOccupiedV1067(occupied, pos.x, pos.y, footprint.w, footprint.h); instances.push(instance); }
+        else overflow.push(instance);
+      }
+    }
+    return { user, size, cols, rows: Math.ceil(Math.max(1, size) / cols), instances, overflow, occupied, weight: inventoryWeightV1067(user) };
+  }
+  function setInventoryPositionV1067(user, itemId, unitIndex, pos) {
+    const entry = (user.inventory || []).find(row => row.itemId === itemId);
+    if (!entry) return false;
+    entry.positions = Array.isArray(entry.positions) ? entry.positions : [];
+    while (entry.positions.length < entry.qty) entry.positions.push(null);
+    entry.positions[unitIndex] = pos ? { x: intNonNegativeV1067(pos.x), y: intNonNegativeV1067(pos.y) } : null;
+    return true;
+  }
+  function canPlaceInventoryUnitV1067(user, itemId, unitIndex, x, y) {
+    const layout = buildInventoryLayoutV1067(user);
+    const movingKey = `${itemId}::${unitIndex}`;
+    const occupied = new Set();
+    layout.instances.filter(instance => instance.key !== movingKey && instance.pos).forEach(instance => markOccupiedV1067(occupied, instance.pos.x, instance.pos.y, instance.w, instance.h));
+    const item = itemForInventoryV1067(itemId);
+    const footprint = itemSizeV1067(item);
+    return fitsInventoryAtV1067(layout.size, layout.cols, occupied, x, y, footprint.w, footprint.h);
+  }
+  function slotAcceptsItemV1067(slotType, item) {
+    const type = normalizeEquipmentItemV2(item).type;
+    if (slotType === 'armor') return type === 'armor';
+    if (slotType === 'implant') return type === 'implant';
+    if (slotType === 'primaryWeapon') return type === 'weapon' && ['primary','versatile',''].includes(String(item.weaponSlot || 'primary'));
+    if (slotType === 'secondaryWeapon') return type === 'weapon' && ['secondary','versatile',''].includes(String(item.weaponSlot || 'secondary'));
+    return false;
+  }
+  function getSlotItemV1067(user, slotType, slotIndex = -1) {
+    if (slotType === 'implant') return String(user.implantSlots?.[slotIndex] || '');
+    return String(user.equipmentSlots?.[slotType] || '');
+  }
+  function setSlotItemV1067(user, slotType, slotIndex, itemId) {
+    if (slotType === 'implant') {
+      user.implantSlots = Array.from({ length: user.implantSlotCount }, (_, index) => String(user.implantSlots?.[index] || ''));
+      if (slotIndex < 0 || slotIndex >= user.implantSlotCount) return false;
+      user.implantSlots[slotIndex] = String(itemId || '');
+      user.installedImplantIds = user.implantSlots.filter(Boolean);
+      return true;
+    }
+    user.equipmentSlots = { primaryWeapon: '', secondaryWeapon: '', armor: '', ...(user.equipmentSlots || {}) };
+    user.equipmentSlots[slotType] = String(itemId || '');
+    return true;
+  }
+  function equippedCountForItemV1067(user, itemId) {
+    return equippedItemCountsV1067(user).get(String(itemId || '')) || 0;
+  }
+  function itemOwnedQtyV1067(user, itemId) {
+    return intNonNegativeV1067((user.inventory || []).find(entry => entry.itemId === itemId)?.qty, 0);
+  }
+  function canAddInventoryItemV1067(user, itemId, qty = 1) {
+    const current = normalizePlayerProfileV2(user);
+    const item = itemForInventoryV1067(itemId);
+    const nextWeight = inventoryWeightV1067(current) + itemMassV1067(item) * Math.max(1, intNonNegativeV1067(qty, 1));
+    if (nextWeight > current.carryWeightMax + 1e-9) return { ok: false, reason: `Превышен переносимый вес: ${nextWeight.toFixed(1)} / ${current.carryWeightMax}` };
+    const clone = deep(current);
+    let entry = clone.inventory.find(row => row.itemId === itemId);
+    if (!entry) { entry = { itemId, qty: 0, positions: [] }; clone.inventory.push(entry); }
+    entry.qty += Math.max(1, intNonNegativeV1067(qty, 1));
+    const layout = buildInventoryLayoutV1067(clone);
+    if (layout.overflow.length) return { ok: false, reason: 'В инвентаре недостаточно свободного места для предмета.' };
+    return { ok: true };
+  }
+  window.GRPGInventoryV1067 = { canAddItem: canAddInventoryItemV1067, buildLayout: buildInventoryLayoutV1067, weight: inventoryWeightV1067 };
+
+  // Fix the v1.0.66 WC equipment editor override: the later editor had hidden the new creation fields.
+  const __renderEquipmentEditorV1067 = Configurator.renderEquipmentEditor.bind(Configurator);
+  Configurator.renderEquipmentEditor = function(rawItem) {
+    const item = normalizeEquipmentItemV2(rawItem);
+    let html = __renderEquipmentEditorV1067(item);
+    const anchor = `<div class="field"><label>Название</label><input class="input" name="name" value="${esc(item.name || '')}" /></div>`;
+    const fields = `${anchor}
+      <div class="cols2 creation-economy-item-v1067"><div class="field"><label>Стоимость создания</label><input class="input" type="number" min="0" max="10" step="1" name="creationCost" value="${Number(item.creationCost || 0)}" /><div class="small-note">Стоимость предмета в бюджете регистрации из 10 очков.</div></div><label class="consent-line starting-equipment-toggle-v1066"><input type="checkbox" name="availableAsStarting" ${item.availableAsStarting ? 'checked' : ''}/><span><b>Доступен как стартовое</b><small>Показывать при регистрации, если предмет доступен кампании или её эпохе.</small></span></label></div>
+      <div class="cols3 inventory-item-physics-v1067"><div class="field"><label>Масса</label><input class="input" type="number" min="0" step="0.1" name="mass" value="${Number(item.mass ?? 1)}" /></div><div class="field"><label>Размер по ширине</label><input class="input" type="number" min="1" step="1" name="inventoryWidth" value="${item.inventoryWidth || 1}" /></div><div class="field"><label>Размер по высоте</label><input class="input" type="number" min="1" step="1" name="inventoryHeight" value="${item.inventoryHeight || 1}" /></div></div>
+      <div class="small-note inventory-size-hint-v1067">Размер задаётся в клетках инвентаря, например 1×2 или 2×1.</div>`;
+    if (html.includes(anchor)) html = html.replace(anchor, fields);
+    return html;
+  };
+
+  const __renderPlayerEditorV1067 = Configurator.renderPlayerEditor.bind(Configurator);
+  Configurator.renderPlayerEditor = function(rawUser) {
+    const user = normalizePlayerProfileV2(rawUser);
+    let html = __renderPlayerEditorV1067(user);
+    const settings = `<div class="section-title">Инвентарь и слоты</div>
+      <div class="cols3 inventory-character-settings-v1067"><div class="field"><label>Размер инвентаря</label><input class="input" type="number" min="0" step="1" name="inventorySize" value="${user.inventorySize}" /><div class="small-note">Количество клеток. По умолчанию 12, верхнего ограничения нет.</div></div><div class="field"><label>Переносимый вес</label><input class="input" type="number" min="0" step="0.1" name="carryWeightMax" value="${Number(user.carryWeightMax)}" /><div class="small-note">По умолчанию 12, верхнего ограничения нет.</div></div><div class="field"><label>Слотов имплантов</label><input class="input" type="number" min="0" step="1" name="implantSlotCount" value="${user.implantSlotCount}" /><div class="small-note">По умолчанию 0, верхнего ограничения нет.</div></div></div>`;
+    const implantOptions = Object.values(EQUIPMENT || {}).map(normalizeEquipmentItemV2).filter(item => item.type === 'implant').sort((a,b) => String(a.name||'').localeCompare(String(b.name||''),'ru'));
+    const implantSlots = `<div class="field implant-slot-editor-v1067"><label>Установленные импланты по слотам</label>${user.implantSlotCount ? `<div class="dynamic-list">${Array.from({length:user.implantSlotCount},(_,index)=>`<div class="dynamic-row"><span class="data-label">Слот ${index+1}</span><select class="select" name="implantSlot_${index}"><option value="">— пусто —</option>${implantOptions.map(item=>`<option value="${esc(item.id)}" ${String(user.implantSlots[index]||'')===String(item.id)?'selected':''}>${esc(item.name||item.id)}</option>`).join('')}</select><span class="small-note">${user.implantSlots[index] ? `${Number(EQUIPMENT?.[user.implantSlots[index]]?.energyRequired || 0)} EN` : ''}</span></div>`).join('')}</div>` : '<div class="small-note">У персонажа нет доступных слотов имплантов.</div>'}</div>`;
+    html = html.replace('<button class="primary" type="submit">SAVE_PLAYER</button>', `${settings}${implantSlots}<button class="primary" type="submit">SAVE_PLAYER</button>`);
+    return html;
+  };
+
+  const __configRenderV1067 = Configurator.render.bind(Configurator);
+  Configurator.render = function() {
+    const result = __configRenderV1067();
+    if (this.selectedType === 'players') {
+      const form = document.getElementById('config-editor-form');
+      if (form) {
+        Array.from(form.querySelectorAll('.field > label')).filter(label => label.textContent?.trim() === 'Установленные импланты').forEach(label => {
+          if (!label.closest('.implant-slot-editor-v1067')) label.closest('.field')?.classList.add('legacy-implant-editor-hidden-v1067');
+        });
+      }
+    }
+    return result;
+  };
+
+  const __collectEntityV1067 = Configurator.collectEntity.bind(Configurator);
+  Configurator.collectEntity = function(type, formEl, formData = new FormData(formEl)) {
+    const entity = __collectEntityV1067(type, formEl, formData);
+    if (!entity) return entity;
+    if (type === 'equipment') {
+      entity.creationCost = clamp(Math.max(0, Number(formData.get('creationCost') || 0)), 0, 10);
+      entity.availableAsStarting = formData.get('availableAsStarting') === 'on';
+      entity.mass = numNonNegativeV1067(formData.get('mass'), 1);
+      entity.inventoryWidth = Math.max(1, intNonNegativeV1067(formData.get('inventoryWidth'), 1));
+      entity.inventoryHeight = Math.max(1, intNonNegativeV1067(formData.get('inventoryHeight'), 1));
+      return normalizeEquipmentItemV2(entity);
+    }
+    if (type === 'players') {
+      entity.inventorySize = intNonNegativeV1067(formData.get('inventorySize'), DEFAULT_INVENTORY_SIZE_V1067);
+      entity.carryWeightMax = numNonNegativeV1067(formData.get('carryWeightMax'), DEFAULT_CARRY_WEIGHT_V1067);
+      entity.implantSlotCount = intNonNegativeV1067(formData.get('implantSlotCount'), 0);
+      entity.implantSlots = Array.from({ length: entity.implantSlotCount }, (_, index) => String(formData.get(`implantSlot_${index}`) || '').trim());
+      entity.installedImplantIds = entity.implantSlots.filter(Boolean);
+      return normalizePlayerProfileV2(entity);
+    }
+    return entity;
+  };
+
+  function slotLabelV1067(slotType, index = -1) {
+    if (slotType === 'primaryWeapon') return 'Основное';
+    if (slotType === 'secondaryWeapon') return 'Вторичное';
+    if (slotType === 'armor') return 'Броня';
+    return `Имплант ${index + 1}`;
+  }
+  function inventorySlotMarkupV1067(user, slotType, slotIndex = -1) {
+    const itemId = getSlotItemV1067(user, slotType, slotIndex);
+    const item = itemId ? itemForInventoryV1067(itemId) : null;
+    return `<div class="inventory-equip-slot-v1067 ${item ? 'filled' : ''}" data-inventory-slot-v1067 data-slot-type="${slotType}" data-slot-index="${slotIndex}">
+      <div class="inventory-slot-label-v1067">${esc(slotLabelV1067(slotType, slotIndex))}</div>
+      ${item ? `<div class="inventory-slot-item-v1067" draggable="true" data-inventory-drag-v1067 data-source="slot" data-slot-type="${slotType}" data-slot-index="${slotIndex}" data-item-id="${esc(item.id)}" data-entity="item" data-id="${esc(item.id)}">${renderThumb(item,{size:'sm',type:'item',glyph:initials(item.name,'▣')})}<span>${esc(item.name||item.id)}</span></div>` : '<div class="inventory-slot-empty-v1067">Перетащите предмет</div>'}
+    </div>`;
+  }
+  function inventoryGridMarkupV1067(user) {
+    const layout = buildInventoryLayoutV1067(user);
+    const cells = Array.from({ length: layout.size }, (_, index) => `<div class="inventory-grid-cell-v1067" style="grid-column:${(index % layout.cols) + 1};grid-row:${Math.floor(index / layout.cols) + 1}" data-cell-index="${index}"></div>`).join('');
+    const tiles = layout.instances.map(instance => `<div class="inventory-tile-v1067" draggable="true" data-inventory-drag-v1067 data-source="grid" data-item-id="${esc(instance.itemId)}" data-unit-index="${instance.unitIndex}" data-entity="item" data-id="${esc(instance.itemId)}" style="grid-column:${instance.pos.x + 1}/span ${instance.w};grid-row:${instance.pos.y + 1}/span ${instance.h}" title="${esc(instance.item.name || instance.itemId)} · ${instance.w}×${instance.h} · ${itemMassV1067(instance.item)} веса">${renderThumb(instance.item,{size:'sm',type:'item',glyph:initials(instance.item.name,'▣')})}<span>${esc(instance.item.name||instance.itemId)}</span><small>${instance.w}×${instance.h}</small></div>`).join('');
+    const overflow = layout.overflow.length ? `<div class="inventory-overflow-v1067"><b>Не помещается: ${layout.overflow.length}</b>${layout.overflow.map(instance=>`<span>${esc(instance.item.name||instance.itemId)} (${instance.w}×${instance.h})</span>`).join('')}</div>` : '';
+    return `<div class="inventory-grid-v1067" data-inventory-grid-v1067 style="--inv-cols:${layout.cols};--inv-rows:${layout.rows}">${cells}${tiles}</div>${overflow}`;
+  }
+  function profileInventoryMarkupV1067(user, originsHtml = '') {
+    const layout = buildInventoryLayoutV1067(user);
+    const overweight = layout.weight > user.carryWeightMax + 1e-9;
+    return `<div class="section-title">Экипировка</div>
+      <div class="inventory-capacity-bar-v1067"><span>Инвентарь <b>${[...layout.instances,...layout.overflow].reduce((sum,i)=>sum+i.w*i.h,0)} / ${user.inventorySize}</b> клеток</span><span class="${overweight ? 'inventory-limit-exceeded-v1067' : ''}">Вес <b>${layout.weight.toFixed(1)} / ${Number(user.carryWeightMax).toFixed(1)}</b></span></div>
+      <div class="inventory-equipment-slots-v1067">${inventorySlotMarkupV1067(user,'primaryWeapon')}${inventorySlotMarkupV1067(user,'secondaryWeapon')}${inventorySlotMarkupV1067(user,'armor')}${Array.from({length:user.implantSlotCount},(_,i)=>inventorySlotMarkupV1067(user,'implant',i)).join('')}</div>
+      <div class="section-title" style="margin-top:18px">Инвентарь</div><div class="small-note" style="margin-bottom:8px">Предметы занимают реальный размер в клетках. Перетаскивайте их по сетке или в подходящие слоты экипировки.</div>
+      ${inventoryGridMarkupV1067(user)}
+      ${originsHtml}`;
+  }
+
+  const __renderProfileV1067 = UI.renderProfile.bind(UI);
+  UI.renderProfile = function() {
+    const result = __renderProfileV1067();
+    const user = App.currentUser ? normalizePlayerProfileV2(App.currentUser) : null;
+    const root = document.getElementById('profile-content');
+    if (!user || !root) return result;
+    const equipCard = Array.from(root.querySelectorAll('.profile-card')).find(card => Array.from(card.querySelectorAll('.section-title')).some(title => ['Экипировка','Снаряжение'].includes(title.textContent?.trim())));
+    if (equipCard) {
+      const originsHtml = equipCard.querySelector('[data-origins-v1052]')?.outerHTML || '';
+      equipCard.classList.add('inventory-profile-card-v1067');
+      equipCard.innerHTML = profileInventoryMarkupV1067(user, originsHtml);
+      this.attachEntityLinks(equipCard);
+    }
+    const firstProfile = root.querySelector('.profile-card');
+    if (firstProfile && !firstProfile.querySelector('[data-inventory-limits-v1067]')) {
+      firstProfile.insertAdjacentHTML('beforeend', `<div data-inventory-limits-v1067 style="margin-top:14px"><div class="data-row"><span class="data-label">Размер инвентаря</span><span class="data-value">${user.inventorySize}</span></div><div class="data-row"><span class="data-label">Переносимый вес</span><span class="data-value">${Number(user.carryWeightMax).toFixed(1)}</span></div><div class="data-row"><span class="data-label">Слоты имплантов</span><span class="data-value">${user.implantSlotCount}</span></div></div>`);
+    }
+    return result;
+  };
+
+  async function persistInventoryMutationV1067(mutator, notice = 'Инвентарь обновлён') {
+    const current = App.currentUser;
+    if (!current) return;
+    const next = normalizePlayerProfileV2(deep(current));
+    const outcome = await mutator(next);
+    if (outcome === false) return;
+    next.installedImplantIds = (next.implantSlots || []).filter(Boolean);
+    App.state.users[next.id] = normalizePlayerProfileV2(next);
+    PLAYER_TEMPLATES[next.id] = deep(App.state.users[next.id]);
+    await App.writeLocalMirrors();
+    const patch = {
+      inventory: deep(App.state.users[next.id].inventory),
+      equipmentSlots: deep(App.state.users[next.id].equipmentSlots),
+      implantSlots: deep(App.state.users[next.id].implantSlots),
+      installedImplantIds: deep(App.state.users[next.id].installedImplantIds),
+      inventorySize: App.state.users[next.id].inventorySize,
+      carryWeightMax: App.state.users[next.id].carryWeightMax,
+      implantSlotCount: App.state.users[next.id].implantSlotCount
+    };
+    const res = await PlayerSync.pushPlayerPatch(next.id, patch, { notice, rerender: true });
+    if (!res?.ok && res?.status !== 'disabled') Toast.show(`Локально сохранено, но синхронизация не выполнена: ${res?.message || 'unknown error'}`, 'info');
+  }
+
+  let dragV1067 = null;
+  document.addEventListener('dragstart', event => {
+    const node = event.target?.closest?.('[data-inventory-drag-v1067]');
+    if (!node) return;
+    dragV1067 = {
+      source: node.dataset.source,
+      itemId: String(node.dataset.itemId || ''),
+      unitIndex: intNonNegativeV1067(node.dataset.unitIndex, -1),
+      slotType: String(node.dataset.slotType || ''),
+      slotIndex: Number(node.dataset.slotIndex ?? -1)
+    };
+    event.dataTransfer.effectAllowed = 'move';
+    try { event.dataTransfer.setData('text/plain', dragV1067.itemId); } catch {}
+    node.classList.add('inventory-dragging-v1067');
+  });
+  document.addEventListener('dragend', event => {
+    event.target?.closest?.('[data-inventory-drag-v1067]')?.classList.remove('inventory-dragging-v1067');
+    dragV1067 = null;
+  });
+  document.addEventListener('dragover', event => {
+    if (!dragV1067) return;
+    if (event.target?.closest?.('[data-inventory-grid-v1067],[data-inventory-slot-v1067]')) {
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'move';
+    }
+  });
+  document.addEventListener('drop', async event => {
+    if (!dragV1067) return;
+    const grid = event.target?.closest?.('[data-inventory-grid-v1067]');
+    const slot = event.target?.closest?.('[data-inventory-slot-v1067]');
+    if (!grid && !slot) return;
+    event.preventDefault();
+    const drag = { ...dragV1067 };
+    dragV1067 = null;
+    if (slot) {
+      const targetType = String(slot.dataset.slotType || '');
+      const targetIndex = Number(slot.dataset.slotIndex ?? -1);
+      const item = itemForInventoryV1067(drag.itemId);
+      if (!slotAcceptsItemV1067(targetType, item)) { Toast.show('Этот предмет нельзя установить в выбранный слот', 'err'); return; }
+      await persistInventoryMutationV1067(user => {
+        if (drag.source === 'slot') setSlotItemV1067(user, drag.slotType, drag.slotIndex, '');
+        const owned = itemOwnedQtyV1067(user, drag.itemId);
+        const alreadyEquipped = equippedCountForItemV1067(user, drag.itemId);
+        const targetCurrent = getSlotItemV1067(user, targetType, targetIndex);
+        const allowance = targetCurrent === drag.itemId ? 1 : 0;
+        if (owned <= alreadyEquipped - allowance) { Toast.show('В инвентаре нет свободного экземпляра этого предмета', 'err'); return false; }
+        setSlotItemV1067(user, targetType, targetIndex, drag.itemId);
+        return true;
+      }, 'Экипировка обновлена');
+      return;
+    }
+    const rect = grid.getBoundingClientRect();
+    const cols = Number(getComputedStyle(grid).getPropertyValue('--inv-cols')) || 1;
+    const cell = rect.width / cols;
+    const x = Math.max(0, Math.min(cols - 1, Math.floor((event.clientX - rect.left) / cell)));
+    const y = Math.max(0, Math.floor((event.clientY - rect.top) / cell));
+    await persistInventoryMutationV1067(user => {
+      let unitIndex = drag.unitIndex;
+      if (drag.source === 'slot') {
+        setSlotItemV1067(user, drag.slotType, drag.slotIndex, '');
+        unitIndex = equippedCountForItemV1067(user, drag.itemId);
+      }
+      if (unitIndex < 0 || !canPlaceInventoryUnitV1067(user, drag.itemId, unitIndex, x, y)) { Toast.show('Предмет не помещается в выбранное место', 'err'); return false; }
+      setInventoryPositionV1067(user, drag.itemId, unitIndex, { x, y });
+      return true;
+    }, drag.source === 'slot' ? 'Предмет снят' : 'Инвентарь перемещён');
+  });
+
+
+  /* v1.0.68 World Config inventory pool + drag/drop editor */
+  function wcInventoryStateV1068(rawUser = {}) {
+    const user = normalizePlayerProfileV2(rawUser);
+    return {
+      inventorySize: user.inventorySize,
+      carryWeightMax: user.carryWeightMax,
+      implantSlotCount: user.implantSlotCount,
+      inventory: deep(user.inventory || []),
+      equipmentSlots: deep(user.equipmentSlots || { primaryWeapon:'', secondaryWeapon:'', armor:'' }),
+      implantSlots: deep(user.implantSlots || [])
+    };
+  }
+  function wcInventoryItemsV1068() {
+    return Object.values(EQUIPMENT || {}).map(normalizeEquipmentItemV2).filter(item=>item.type!=='stock').sort((a,b)=>String(a.name||a.id).localeCompare(String(b.name||b.id),'ru'));
+  }
+  function wcInventoryTypeLabelV1068(item = {}) {
+    const type = normalizeEquipmentItemV2(item).type;
+    return type === 'weapon' ? 'Оружие' : type === 'armor' ? 'Броня' : type === 'implant' ? 'Имплант' : type === 'stock' ? 'Акции' : 'Снаряжение';
+  }
+  function wcInventoryReadStateV1068(container) {
+    const hidden = container?.querySelector?.('[name="wcInventoryStateV1068"]');
+    try { return wcInventoryStateV1068(JSON.parse(hidden?.value || '{}')); } catch { return wcInventoryStateV1068({}); }
+  }
+  function wcInventoryWriteStateV1068(container, state) {
+    const hidden = container?.querySelector?.('[name="wcInventoryStateV1068"]');
+    if (hidden) hidden.value = JSON.stringify(wcInventoryStateV1068(state));
+  }
+  function wcInventorySlotMarkupV1068(user, slotType, slotIndex = -1) {
+    const itemId = getSlotItemV1067(user, slotType, slotIndex);
+    const item = itemId ? itemForInventoryV1067(itemId) : null;
+    return `<div class="wc-inventory-slot-v1068 ${item ? 'filled' : ''}" data-wc-inventory-slot-v1068 data-slot-type="${slotType}" data-slot-index="${slotIndex}">
+      <div class="inventory-slot-label-v1067">${esc(slotLabelV1067(slotType,slotIndex))}</div>
+      ${item ? `<div class="wc-inventory-slot-item-v1068" draggable="true" data-wc-inventory-drag-v1068 data-source="slot" data-slot-type="${slotType}" data-slot-index="${slotIndex}" data-item-id="${esc(item.id)}">${renderThumb(item,{size:'sm',type:'item',glyph:initials(item.name,'▣')})}<span>${esc(item.name||item.id)}</span></div>` : '<div class="inventory-slot-empty-v1067">Перетащите предмет</div>'}
+    </div>`;
+  }
+  function wcInventoryGridMarkupV1068(user) {
+    const layout = buildInventoryLayoutV1067(user);
+    const cells = Array.from({length:layout.size},(_,index)=>`<div class="inventory-grid-cell-v1067" style="grid-column:${(index%layout.cols)+1};grid-row:${Math.floor(index/layout.cols)+1}" data-cell-index="${index}"></div>`).join('');
+    const tiles = layout.instances.map(instance=>`<div class="inventory-tile-v1067 wc-inventory-tile-v1068" draggable="true" data-wc-inventory-drag-v1068 data-source="grid" data-item-id="${esc(instance.itemId)}" data-unit-index="${instance.unitIndex}" style="grid-column:${instance.pos.x+1}/span ${instance.w};grid-row:${instance.pos.y+1}/span ${instance.h}" title="${esc(instance.item.name||instance.itemId)} · ${instance.w}×${instance.h} · ${itemMassV1067(instance.item)} веса">${renderThumb(instance.item,{size:'sm',type:'item',glyph:initials(instance.item.name,'▣')})}<span>${esc(instance.item.name||instance.itemId)}</span><small>${instance.w}×${instance.h}</small></div>`).join('');
+    const overflow = layout.overflow.length ? `<div class="inventory-overflow-v1067"><b>Не помещается: ${layout.overflow.length}</b>${layout.overflow.map(instance=>`<span>${esc(instance.item.name||instance.itemId)} (${instance.w}×${instance.h})</span>`).join('')}</div>` : '';
+    return `<div class="inventory-grid-v1067 wc-inventory-grid-v1068" data-wc-inventory-grid-v1068 style="--inv-cols:${layout.cols};--inv-rows:${layout.rows}">${cells}${tiles}</div>${overflow}`;
+  }
+  function wcInventoryStageMarkupV1068(rawState = {}) {
+    const user = normalizePlayerProfileV2(rawState);
+    const layout = buildInventoryLayoutV1067(user);
+    const occupiedCells = [...layout.instances,...layout.overflow].reduce((sum,item)=>sum+item.w*item.h,0);
+    const overweight = layout.weight > user.carryWeightMax + 1e-9;
+    return `<div class="inventory-capacity-bar-v1067"><span>Инвентарь <b>${occupiedCells} / ${user.inventorySize}</b> клеток</span><span class="${overweight?'inventory-limit-exceeded-v1067':''}">Вес <b>${layout.weight.toFixed(1)} / ${Number(user.carryWeightMax).toFixed(1)}</b></span><span>Импланты <b>${user.implantSlots.filter(Boolean).length} / ${user.implantSlotCount}</b></span></div>
+      <div class="inventory-equipment-slots-v1067 wc-inventory-equipment-slots-v1068">${wcInventorySlotMarkupV1068(user,'primaryWeapon')}${wcInventorySlotMarkupV1068(user,'secondaryWeapon')}${wcInventorySlotMarkupV1068(user,'armor')}${Array.from({length:user.implantSlotCount},(_,i)=>wcInventorySlotMarkupV1068(user,'implant',i)).join('')}</div>
+      <div class="section-title" style="margin-top:14px">Инвентарь персонажа</div>${wcInventoryGridMarkupV1068(user)}`;
+  }
+  function wcInventoryEditorMarkupV1068(rawUser = {}) {
+    const state = wcInventoryStateV1068(rawUser);
+    const pool = wcInventoryItemsV1068().map(item=>{const size=itemSizeV1067(item);return `<div class="wc-inventory-pool-item-v1068" draggable="true" data-wc-inventory-drag-v1068 data-source="pool" data-item-id="${esc(item.id)}" data-search="${esc(`${item.name||item.id} ${item.id} ${item.type||''}`.toLowerCase())}">${renderThumb(item,{size:'sm',type:'item',glyph:initials(item.name,'▣')})}<span><b>${esc(item.name||item.id)}</b><small>${esc(wcInventoryTypeLabelV1068(item))} · ${size.w}×${size.h} · ${itemMassV1067(item)} веса</small></span></div>`;}).join('');
+    return `<section class="wc-inventory-editor-v1068" data-wc-inventory-editor-v1068><textarea name="wcInventoryStateV1068" hidden>${esc(JSON.stringify(state))}</textarea><div class="section-title">Редактор инвентаря</div><div class="small-note">Перетащите предмет из общего пула в инвентарь или подходящий слот. Чтобы удалить один экземпляр, перетащите его обратно в общий пул.</div><div class="wc-inventory-layout-v1068"><aside class="wc-inventory-pool-v1068" data-wc-inventory-pool-drop-v1068><div class="field"><label>Общий пул предметов</label><input class="input" type="search" data-wc-inventory-pool-search-v1068 placeholder="Поиск предмета" /></div><div class="wc-inventory-pool-list-v1068">${pool || '<div class="small-note">В World Config ещё нет предметов.</div>'}</div><div class="wc-inventory-pool-remove-v1068">Перетащите сюда предмет персонажа, чтобы удалить</div></aside><div class="wc-inventory-stage-v1068" data-wc-inventory-stage-v1068>${wcInventoryStageMarkupV1068(state)}</div></div></section>`;
+  }
+  function wcInventoryRenderStageV1068(container, state) {
+    const normalized = wcInventoryStateV1068(state);
+    wcInventoryWriteStateV1068(container, normalized);
+    const stage = container.querySelector('[data-wc-inventory-stage-v1068]');
+    if (stage) stage.innerHTML = wcInventoryStageMarkupV1068(normalized);
+  }
+  function wcInventoryAddQtyV1068(state, itemId, qty = 1) {
+    let entry = (state.inventory ||= []).find(row=>String(row.itemId)===String(itemId));
+    if (!entry) { entry={itemId:String(itemId),qty:0,positions:[]}; state.inventory.push(entry); }
+    entry.positions = Array.isArray(entry.positions) ? entry.positions : [];
+    entry.qty = intNonNegativeV1067(entry.qty,0) + Math.max(1,intNonNegativeV1067(qty,1));
+    while (entry.positions.length < entry.qty) entry.positions.push(null);
+    return entry;
+  }
+  function wcInventoryRemoveUnitV1068(state, itemId, unitIndex = -1, fromSlot = false) {
+    const entry = (state.inventory || []).find(row=>String(row.itemId)===String(itemId));
+    if (!entry || intNonNegativeV1067(entry.qty,0) <= 0) return false;
+    entry.positions = Array.isArray(entry.positions) ? entry.positions : [];
+    if (fromSlot) entry.positions.shift();
+    else if (unitIndex >= 0 && unitIndex < entry.positions.length) entry.positions.splice(unitIndex,1);
+    else entry.positions.pop();
+    entry.qty = Math.max(0,intNonNegativeV1067(entry.qty,0)-1);
+    if (!entry.qty) state.inventory = state.inventory.filter(row=>row!==entry);
+    return true;
+  }
+  function wcInventoryCloneAndValidateV1068(state) {
+    const normalized = wcInventoryStateV1068(state);
+    const layout = buildInventoryLayoutV1067(normalized);
+    if (layout.weight > normalized.carryWeightMax + 1e-9) throw new Error(`Превышен переносимый вес: ${layout.weight.toFixed(1)} / ${normalized.carryWeightMax}`);
+    if (layout.overflow.length) throw new Error('Предметы не помещаются в заданный размер инвентаря.');
+    return normalized;
+  }
+
+  const __renderPlayerEditorV1068 = Configurator.renderPlayerEditor.bind(Configurator);
+  Configurator.renderPlayerEditor = function(rawUser) {
+    const user = normalizePlayerProfileV2(rawUser);
+    let html = __renderPlayerEditorV1068(user);
+    const button = '<button class="primary" type="submit">SAVE_PLAYER</button>';
+    if (html.includes(button)) html = html.replace(button, `${wcInventoryEditorMarkupV1068(user)}${button}`);
+    return html;
+  };
+
+  const __configRenderV1068 = Configurator.render.bind(Configurator);
+  Configurator.render = function() {
+    const result = __configRenderV1068();
+    if (this.selectedType === 'players') {
+      const form = document.getElementById('config-editor-form');
+      if (form) {
+        ['primaryWeapon','secondaryWeapon','armor'].forEach(name=>form.querySelector(`[name="${name}"]`)?.closest('.field')?.classList.add('wc-inventory-legacy-hidden-v1068'));
+        form.querySelector('.implant-slot-editor-v1067')?.classList.add('wc-inventory-legacy-hidden-v1068');
+        Array.from(form.querySelectorAll('.field > label')).forEach(label=>{
+          const text=label.textContent?.trim()||'';
+          if (text === 'Инвентарь' || text.startsWith('Импланты (')) label.closest('.field')?.classList.add('wc-inventory-legacy-hidden-v1068');
+        });
+      }
+    }
+    return result;
+  };
+
+  const __collectEntityV1068 = Configurator.collectEntity.bind(Configurator);
+  Configurator.collectEntity = function(type, formEl, formData = new FormData(formEl)) {
+    const entity = __collectEntityV1068(type, formEl, formData);
+    if (type !== 'players' || !entity) return entity;
+    const raw = String(formData.get('wcInventoryStateV1068') || '').trim();
+    if (!raw) return entity;
+    try {
+      const state = wcInventoryStateV1068(JSON.parse(raw));
+      entity.inventory = deep(state.inventory);
+      entity.equipmentSlots = deep(state.equipmentSlots);
+      entity.implantSlotCount = state.implantSlotCount;
+      entity.implantSlots = deep(state.implantSlots);
+      entity.installedImplantIds = state.implantSlots.filter(Boolean);
+      entity.inventorySize = intNonNegativeV1067(formData.get('inventorySize'), state.inventorySize);
+      entity.carryWeightMax = numNonNegativeV1067(formData.get('carryWeightMax'), state.carryWeightMax);
+      return normalizePlayerProfileV2(entity);
+    } catch (error) {
+      console.warn('WC inventory editor state parse failed', error);
+      return entity;
+    }
+  };
+
+  /* v1.0.69: WC inventory writes use the isolated player patch channel immediately. */
+  const wcInventoryRealtimeQueuesV1069 = new Map();
+  const wcInventoryRealtimeLatestV1069 = new Map();
+  let wcInventoryRealtimeSeqV1069 = 0;
+  function wcInventoryTargetPlayerIdV1069(editor) {
+    if (Configurator.selectedType !== 'players') return '';
+    const selected = Configurator.getSelectedEntity?.();
+    return String(selected?.id || Configurator.selectedId || '').trim();
+  }
+  function wcInventoryStateFromEditorV1069(editor, state = null) {
+    const next = wcInventoryStateV1068(state || wcInventoryReadStateV1068(editor));
+    const form = editor?.closest?.('#config-editor-form');
+    if (form) {
+      next.inventorySize = intNonNegativeV1067(form.querySelector('[name="inventorySize"]')?.value, next.inventorySize);
+      next.carryWeightMax = numNonNegativeV1067(form.querySelector('[name="carryWeightMax"]')?.value, next.carryWeightMax);
+      next.implantSlotCount = intNonNegativeV1067(form.querySelector('[name="implantSlotCount"]')?.value, next.implantSlotCount);
+      next.implantSlots = Array.from({ length: next.implantSlotCount }, (_, i) => String(next.implantSlots?.[i] || ''));
+    }
+    return wcInventoryStateV1068(next);
+  }
+  function wcInventoryPatchV1069(state) {
+    const normalized = wcInventoryStateV1068(state);
+    return {
+      inventory: deep(normalized.inventory),
+      equipmentSlots: deep(normalized.equipmentSlots),
+      implantSlots: deep(normalized.implantSlots),
+      installedImplantIds: normalized.implantSlots.filter(Boolean),
+      inventorySize: normalized.inventorySize,
+      carryWeightMax: normalized.carryWeightMax,
+      implantSlotCount: normalized.implantSlotCount
+    };
+  }
+  function wcInventoryApplyLocalV1069(playerId, state) {
+    const base = App.state?.users?.[playerId] || PLAYER_TEMPLATES?.[playerId];
+    if (!base) return null;
+    const patch = wcInventoryPatchV1069(state);
+    const merged = normalizePlayerProfileV2({ ...deep(base), ...deep(patch), id: playerId });
+    App.state.users[playerId] = merged;
+    PLAYER_TEMPLATES[playerId] = deep(merged);
+    return merged;
+  }
+  function wcInventoryRefreshEditorFromPlayerV1069(playerId) {
+    if (Configurator.selectedType !== 'players' || String(Configurator.selectedId || '') !== String(playerId || '')) return;
+    if (wcInventoryRealtimeLatestV1069.has(String(playerId || ''))) return;
+    const editor = document.querySelector('#config-editor-form [data-wc-inventory-editor-v1068]');
+    const player = App.state?.users?.[playerId] || PLAYER_TEMPLATES?.[playerId];
+    if (!editor || !player) return;
+    const normalized = wcInventoryStateV1068(player);
+    const form = editor.closest('#config-editor-form');
+    if (form) {
+      const fields = {
+        inventorySize: normalized.inventorySize,
+        carryWeightMax: normalized.carryWeightMax,
+        implantSlotCount: normalized.implantSlotCount
+      };
+      for (const [name, value] of Object.entries(fields)) {
+        const input = form.querySelector(`[name="${name}"]`);
+        if (input && document.activeElement !== input) input.value = String(value);
+      }
+    }
+    wcInventoryRenderStageV1068(editor, normalized);
+  }
+  async function wcInventoryPersistRealtimeV1069(editor, state, options = {}) {
+    const playerId = wcInventoryTargetPlayerIdV1069(editor);
+    if (!playerId || !(App.state?.users?.[playerId] || PLAYER_TEMPLATES?.[playerId])) return { ok: true, status: 'new-player' };
+    const normalized = wcInventoryStateFromEditorV1069(editor, state);
+    const seq = ++wcInventoryRealtimeSeqV1069;
+    wcInventoryRealtimeLatestV1069.set(playerId, { seq, state: deep(normalized) });
+    wcInventoryApplyLocalV1069(playerId, normalized);
+    await App.writeLocalMirrors();
+
+    const previous = wcInventoryRealtimeQueuesV1069.get(playerId) || Promise.resolve({ ok: true });
+    const task = previous.catch(() => ({ ok: false })).then(async () => {
+      const patch = wcInventoryPatchV1069(normalized);
+      const res = await PlayerSync.pushPlayerPatch(playerId, patch, { notice: null, rerender: false });
+      const latest = wcInventoryRealtimeLatestV1069.get(playerId);
+      if (latest && latest.seq > seq) {
+        // pushPlayerPatch applies its returned row to App.state. Reapply the newer local
+        // editor state so an older response can never visually or locally roll it back.
+        wcInventoryApplyLocalV1069(playerId, latest.state);
+        await App.writeLocalMirrors();
+      }
+      if (!res?.ok && res?.status !== 'disabled') {
+        Toast.show(`Инвентарь изменён локально, но realtime-синхронизация не выполнена: ${res?.message || 'unknown error'}`, 'info');
+      }
+      return res;
+    }).finally(() => {
+      const latest = wcInventoryRealtimeLatestV1069.get(playerId);
+      if (latest?.seq === seq) {
+        wcInventoryRealtimeLatestV1069.delete(playerId);
+        wcInventoryRealtimeQueuesV1069.delete(playerId);
+      }
+    });
+    wcInventoryRealtimeQueuesV1069.set(playerId, task);
+    return task;
+  }
+
+  // Player pulls are deliberately prevented from rerendering the whole WC form while it is
+  // being edited. Update only its inventory widget so remote profile drag/drop remains visible.
+  const __playerSyncApplyRemoteRowV1069 = PlayerSync.applyRemoteRow.bind(PlayerSync);
+  PlayerSync.applyRemoteRow = function(row = {}) {
+    const result = __playerSyncApplyRemoteRowV1069(row);
+    const playerId = String(row.playerId || row.player_id || '').trim();
+    if (playerId) wcInventoryRefreshEditorFromPlayerV1069(playerId);
+    return result;
+  };
+
+  let wcInventoryDragV1068 = null;
+  document.addEventListener('dragstart', event => {
+    const node = event.target?.closest?.('[data-wc-inventory-drag-v1068]');
+    if (!node) return;
+    wcInventoryDragV1068 = { source:String(node.dataset.source||''), itemId:String(node.dataset.itemId||''), unitIndex:intNonNegativeV1067(node.dataset.unitIndex,-1), slotType:String(node.dataset.slotType||''), slotIndex:Number(node.dataset.slotIndex??-1) };
+    event.dataTransfer.effectAllowed='move';
+    try { event.dataTransfer.setData('text/plain',wcInventoryDragV1068.itemId); } catch {}
+    node.classList.add('inventory-dragging-v1067');
+  });
+  document.addEventListener('dragend', event => {
+    event.target?.closest?.('[data-wc-inventory-drag-v1068]')?.classList.remove('inventory-dragging-v1067');
+    wcInventoryDragV1068=null;
+  });
+  document.addEventListener('dragover', event => {
+    if (!wcInventoryDragV1068) return;
+    if (event.target?.closest?.('[data-wc-inventory-grid-v1068],[data-wc-inventory-slot-v1068],[data-wc-inventory-pool-drop-v1068]')) { event.preventDefault(); event.dataTransfer.dropEffect='move'; }
+  });
+  document.addEventListener('drop', async event => {
+    if (!wcInventoryDragV1068) return;
+    const editor=event.target?.closest?.('[data-wc-inventory-editor-v1068]');
+    if (!editor) return;
+    const grid=event.target?.closest?.('[data-wc-inventory-grid-v1068]');
+    const slot=event.target?.closest?.('[data-wc-inventory-slot-v1068]');
+    const pool=event.target?.closest?.('[data-wc-inventory-pool-drop-v1068]');
+    if (!grid&&!slot&&!pool) return;
+    event.preventDefault(); event.stopPropagation();
+    const drag={...wcInventoryDragV1068}; wcInventoryDragV1068=null;
+    try {
+      const state=wcInventoryReadStateV1068(editor);
+      state.inventorySize=intNonNegativeV1067(editor.closest('form')?.querySelector('[name="inventorySize"]')?.value,state.inventorySize);
+      state.carryWeightMax=numNonNegativeV1067(editor.closest('form')?.querySelector('[name="carryWeightMax"]')?.value,state.carryWeightMax);
+      const requestedImplants=intNonNegativeV1067(editor.closest('form')?.querySelector('[name="implantSlotCount"]')?.value,state.implantSlotCount);
+      state.implantSlotCount=requestedImplants;
+      state.implantSlots=Array.from({length:requestedImplants},(_,i)=>String(state.implantSlots?.[i]||''));
+
+      if (pool) {
+        if (drag.source==='pool') return;
+        if (drag.source==='slot') setSlotItemV1067(state,drag.slotType,drag.slotIndex,'');
+        wcInventoryRemoveUnitV1068(state,drag.itemId,drag.unitIndex,drag.source==='slot');
+        wcInventoryRenderStageV1068(editor,state);
+        await wcInventoryPersistRealtimeV1069(editor, state);
+        return;
+      }
+
+      if (slot) {
+        const targetType=String(slot.dataset.slotType||''), targetIndex=Number(slot.dataset.slotIndex??-1), item=itemForInventoryV1067(drag.itemId);
+        if (!slotAcceptsItemV1067(targetType,item)) throw new Error('Этот предмет нельзя установить в выбранный слот');
+        if (drag.source==='pool') wcInventoryAddQtyV1068(state,drag.itemId,1);
+        if (drag.source==='slot') setSlotItemV1067(state,drag.slotType,drag.slotIndex,'');
+        const owned=itemOwnedQtyV1067(state,drag.itemId), equipped=equippedCountForItemV1067(state,drag.itemId), current=getSlotItemV1067(state,targetType,targetIndex), allowance=current===drag.itemId?1:0;
+        if (owned<=equipped-allowance) throw new Error('Нет свободного экземпляра предмета для этого слота');
+        setSlotItemV1067(state,targetType,targetIndex,drag.itemId);
+        const validated=wcInventoryCloneAndValidateV1068(state);
+        wcInventoryRenderStageV1068(editor,validated);
+        await wcInventoryPersistRealtimeV1069(editor, validated);
+        return;
+      }
+
+      if (grid) {
+        const rect=grid.getBoundingClientRect(), cols=Number(getComputedStyle(grid).getPropertyValue('--inv-cols'))||1, cell=rect.width/cols;
+        const x=Math.max(0,Math.min(cols-1,Math.floor((event.clientX-rect.left)/cell))), y=Math.max(0,Math.floor((event.clientY-rect.top)/cell));
+        let unitIndex=drag.unitIndex;
+        if (drag.source==='pool') { const entry=wcInventoryAddQtyV1068(state,drag.itemId,1); unitIndex=entry.qty-1; }
+        if (drag.source==='slot') { setSlotItemV1067(state,drag.slotType,drag.slotIndex,''); unitIndex=equippedCountForItemV1067(state,drag.itemId); }
+        if (unitIndex<0 || !canPlaceInventoryUnitV1067(state,drag.itemId,unitIndex,x,y)) throw new Error('Предмет не помещается в выбранное место');
+        setInventoryPositionV1067(state,drag.itemId,unitIndex,{x,y});
+        const validated=wcInventoryCloneAndValidateV1068(state);
+        wcInventoryRenderStageV1068(editor,validated);
+        await wcInventoryPersistRealtimeV1069(editor, validated);
+      }
+    } catch (error) { Toast.show(error.message||String(error),'err'); }
+  });
+  document.addEventListener('input', event => {
+    const search=event.target?.closest?.('[data-wc-inventory-pool-search-v1068]');
+    if (search) {
+      const q=String(search.value||'').trim().toLowerCase();
+      const editor=search.closest('[data-wc-inventory-editor-v1068]');
+      editor?.querySelectorAll?.('.wc-inventory-pool-item-v1068').forEach(node=>{node.hidden=!!q&&!String(node.dataset.search||'').includes(q);});
+      return;
+    }
+    if (!['inventorySize','carryWeightMax','implantSlotCount'].includes(event.target?.name)) return;
+    const form=event.target.closest('#config-editor-form');
+    const editor=form?.querySelector?.('[data-wc-inventory-editor-v1068]');
+    if (!editor) return;
+    const state=wcInventoryReadStateV1068(editor);
+    state.inventorySize=intNonNegativeV1067(form.querySelector('[name="inventorySize"]')?.value,state.inventorySize);
+    state.carryWeightMax=numNonNegativeV1067(form.querySelector('[name="carryWeightMax"]')?.value,state.carryWeightMax);
+    state.implantSlotCount=intNonNegativeV1067(form.querySelector('[name="implantSlotCount"]')?.value,state.implantSlotCount);
+    state.implantSlots=Array.from({length:state.implantSlotCount},(_,i)=>String(state.implantSlots?.[i]||''));
+    wcInventoryRenderStageV1068(editor,state);
+    clearTimeout(editor.__wcInventoryRealtimeTimerV1069);
+    editor.__wcInventoryRealtimeTimerV1069 = setTimeout(() => {
+      wcInventoryPersistRealtimeV1069(editor, wcInventoryReadStateV1068(editor)).catch(error => Toast.show(error?.message || String(error), 'err'));
+    }, 260);
+  });
+
+  // Keep market purchases within the configured weight and grid capacity.
+  const observerV1067 = new MutationObserver(() => {
+    document.querySelectorAll('#market-items .buy-btn:not([data-capacity-check-v1067])').forEach(button => {
+      button.dataset.capacityCheckV1067 = '1';
+      button.addEventListener('click', event => {
+        const user = App.currentUser;
+        const check = user ? canAddInventoryItemV1067(user, button.dataset.itemId, 1) : { ok: true };
+        if (!check.ok) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          Toast.show(check.reason, 'err');
+        }
+      }, true);
+    });
+  });
+  observerV1067.observe(document.documentElement, { subtree: true, childList: true });
+})();
+
+
+/* v1.0.70 — desktop chat submit stability + scroll to newest message */
+(() => {
+  if (window.__chatSendScrollV1070) return;
+  window.__chatSendScrollV1070 = true;
+
+  function isChatSubmitFormV1070(form) {
+    return Boolean(form?.matches?.('.direct-chat-form, .messages-npc-chat-form, .npc-chat-form, .npc-chat-init-form, .campaign-chat-form-v1062'));
+  }
+
+  function scrollVisibleMessageThreadToBottomV1070(root = document.getElementById('messages-content')) {
+    if (!root) return;
+    const threads = Array.from(root.querySelectorAll('.message-thread, .chat-thread')).filter(node => node.offsetParent !== null);
+    const thread = threads[threads.length - 1];
+    if (!thread) return;
+    thread.scrollTop = thread.scrollHeight;
+  }
+
+  document.addEventListener('pointerdown', event => {
+    const button = event.target?.closest?.('button[type="submit"], input[type="submit"]');
+    const form = button?.form;
+    if (!isChatSubmitFormV1070(form)) return;
+    form.dataset.chatSubmitPointerV1070 = String(Date.now());
+  }, true);
+
+  document.addEventListener('submit', event => {
+    const form = event.target;
+    if (!isChatSubmitFormV1070(form)) return;
+    MessagesUI.__forceBottomUntilV1070 = Date.now() + 1800;
+  }, true);
+
+  document.addEventListener('click', event => {
+    const contact = event.target?.closest?.('[data-message-kind], [data-gm-message-kind]');
+    if (!contact) return;
+    MessagesUI.__forceBottomUntilV1070 = Date.now() + 600;
+  }, true);
+
+  const previousRenderV1070 = MessagesUI.render.bind(MessagesUI);
+  MessagesUI.render = function() {
+    const result = previousRenderV1070();
+    if (Number(this.__forceBottomUntilV1070 || 0) >= Date.now()) {
+      if (typeof ChatSync === 'object') ChatSync.renderPending = false;
+      requestAnimationFrame(() => {
+        scrollVisibleMessageThreadToBottomV1070(document.getElementById('messages-content'));
+        requestAnimationFrame(() => scrollVisibleMessageThreadToBottomV1070(document.getElementById('messages-content')));
+      });
+    }
+    return result;
+  };
+
+window.scrollVisibleMessageThreadToBottomV1070 = scrollVisibleMessageThreadToBottomV1070;
+})();
+
+
+/* v1.0.74 — global securities, portfolio storage and in-game market date */
+(function(){
+  if (window.__grpgStocksPortfolioV1074) return;
+  window.__grpgStocksPortfolioV1074 = true;
+
+  function stockTickerV1074(item = {}) {
+    if (normalizeEquipmentItemV2(item).type !== 'stock') return '';
+    const explicit = String(item.ticker || item.symbol || '').trim().toUpperCase().replace(/[^A-Z0-9.\-]/g, '').slice(0, 12);
+    if (explicit) return explicit;
+    const description = String(item.desc || item.description || '');
+    const match = description.match(/(?:тикер|ticker)\s*[:—-]\s*([A-Z0-9.\-]{2,12})/i) || description.match(/^\s*([A-Z0-9][A-Z0-9.\-]{1,11})\s*[—-]\s*/);
+    return match ? String(match[1]).toUpperCase() : '';
+  }
+
+  function legacyStockRangeV1074(itemId, planets = PLANETS) {
+    const row = Object.values(planets || {}).sort((a,b)=>String(a?.id||'').localeCompare(String(b?.id||''))).flatMap(planet=>Array.isArray(planet?.market)?planet.market:[]).find(entry=>String(entry?.itemId||'')===String(itemId||''));
+    if (!row) return null;
+    const min = Math.max(0, Math.trunc(Number(row.minPrice ?? row.priceMin ?? row.price ?? 100) || 0));
+    const max = Math.max(0, Math.trunc(Number(row.maxPrice ?? row.priceMax ?? row.price ?? min) || 0));
+    return { min: Math.min(min,max), max: Math.max(min,max) };
+  }
+
+  const normalizeEquipmentBeforeStocksV1074 = normalizeEquipmentItemV2;
+  normalizeEquipmentItemV2 = function(item = {}) {
+    const raw = { ...(item || {}) };
+    const next = normalizeEquipmentBeforeStocksV1074(raw);
+    if (next.type === 'stock') {
+      const legacy = legacyStockRangeV1074(next.id);
+      const fallback = Math.max(0, Math.trunc(Number(raw.stockPrice ?? raw.basePrice ?? 100) || 0));
+      const min = Math.max(0, Math.trunc(Number(raw.stockMinPrice ?? raw.stockPriceMin ?? legacy?.min ?? fallback) || 0));
+      const max = Math.max(0, Math.trunc(Number(raw.stockMaxPrice ?? raw.stockPriceMax ?? legacy?.max ?? fallback) || 0));
+      next.ticker = stockTickerV1074Raw(raw, next);
+      next.stockMinPrice = Math.min(min, max);
+      next.stockMaxPrice = Math.max(min, max);
+    } else {
+      delete next.ticker;
+      delete next.stockMinPrice;
+      delete next.stockMaxPrice;
+    }
+    return next;
+  };
+
+  function stockTickerV1074Raw(raw, normalized) {
+    const explicit = String(raw.ticker || raw.symbol || '').trim().toUpperCase().replace(/[^A-Z0-9.\-]/g, '').slice(0, 12);
+    if (explicit) return explicit;
+    const description = String(raw.desc || raw.description || normalized?.desc || '');
+    const match = description.match(/(?:тикер|ticker)\s*[:—-]\s*([A-Z0-9.\-]{2,12})/i) || description.match(/^\s*([A-Z0-9][A-Z0-9.\-]{1,11})\s*[—-]\s*/);
+    return match ? String(match[1]).toUpperCase() : '';
+  }
+
+  function normalizePortfolioPositionV1074(itemId, value = {}) {
+    const knownQty = Math.max(0, Math.trunc(Number(value.knownQty ?? value.quantity ?? 0) || 0));
+    const unpricedQty = Math.max(0, Math.trunc(Number(value.unpricedQty || 0) || 0));
+    return { itemId: String(itemId || value.itemId || ''), knownQty, unpricedQty, costBasis: Math.max(0, Number(value.costBasis || 0)) };
+  }
+
+  function normalizeStockPortfolioV1074(source = {}) {
+    const raw = source.stockPortfolio && typeof source.stockPortfolio === 'object' && !Array.isArray(source.stockPortfolio) ? deep(source.stockPortfolio) : {};
+    const positions = {};
+    if (Array.isArray(raw.positions)) raw.positions.forEach(row=>{if(row?.itemId)positions[String(row.itemId)]=normalizePortfolioPositionV1074(row.itemId,row);});
+    else Object.entries(raw.positions || {}).forEach(([itemId,row])=>{positions[itemId]=normalizePortfolioPositionV1074(itemId,row);});
+    const migrated = raw.legacyInventoryMigrated && typeof raw.legacyInventoryMigrated === 'object' && !Array.isArray(raw.legacyInventoryMigrated) ? { ...raw.legacyInventoryMigrated } : {};
+    const inventory = [];
+    (Array.isArray(source.inventory) ? source.inventory : []).forEach(entry => {
+      const itemId = String(entry?.itemId || '');
+      const item = EQUIPMENT?.[itemId] || {};
+      if (normalizeEquipmentItemV2(item).type !== 'stock') { inventory.push(entry); return; }
+      const qty = Math.max(0, Math.trunc(Number(entry.qty || 0) || 0));
+      const accounted = Math.max(0, Math.trunc(Number(migrated[itemId] || 0) || 0));
+      const delta = Math.max(0, qty - accounted);
+      const position = positions[itemId] || normalizePortfolioPositionV1074(itemId);
+      position.unpricedQty += delta;
+      positions[itemId] = position;
+      migrated[itemId] = Math.max(accounted, qty);
+    });
+    return { positions, ledger: Array.isArray(raw.ledger) ? raw.ledger.slice(-500) : [], legacyInventoryMigrated: migrated, inventory };
+  }
+
+  const normalizePlayerBeforeStocksV1074 = normalizePlayerProfileV2;
+  normalizePlayerProfileV2 = function(user = {}) {
+    const source = { ...(user || {}) };
+    const next = normalizePlayerBeforeStocksV1074(source);
+    const portfolio = normalizeStockPortfolioV1074({ ...source, inventory: Array.isArray(source.inventory) ? source.inventory : next.inventory });
+    next.stockPortfolio = { positions: portfolio.positions, ledger: portfolio.ledger, legacyInventoryMigrated: portfolio.legacyInventoryMigrated };
+    next.inventory = portfolio.inventory;
+    return next;
+  };
+
+  window.GRPGStockPortfolioV1074 = Object.freeze({
+    normalize: normalizeStockPortfolioV1074,
+    positions(user = {}) { return Object.values(normalizePlayerProfileV2(user).stockPortfolio?.positions || {}).filter(row=>row.knownQty+row.unpricedQty>0); },
+    quantity(position = {}) { return Math.max(0, Number(position.knownQty||0)) + Math.max(0, Number(position.unpricedQty||0)); },
+    ticker: stockTickerV1074
+  });
+
+  const applyWorldBeforeStocksV1074 = applyWorldData;
+  applyWorldData = function(payload = {}) {
+    const rawCampaigns = payload?.campaigns?.CAMPAIGNS || {};
+    const result = applyWorldBeforeStocksV1074(payload);
+    Object.entries(rawCampaigns).forEach(([id,raw])=>{if(Data?.campaigns?.[id])Data.campaigns[id].marketDate=String(raw?.marketDate||raw?.gameDate||raw?.currentDate||'').slice(0,10);});
+    Object.entries(EQUIPMENT || {}).forEach(([id,item])=>{EQUIPMENT[id]=normalizeEquipmentItemV2(item);});
+    if (App?.state?.users) Object.entries(App.state.users).forEach(([id,user])=>{App.state.users[id]=normalizePlayerProfileV2(user);});
+    return result;
+  };
+
+  const renderCampaignBeforeStocksV1074 = Configurator.renderCampaignEditor?.bind(Configurator);
+  if (renderCampaignBeforeStocksV1074) Configurator.renderCampaignEditor = function(entity) {
+    let html = renderCampaignBeforeStocksV1074(entity);
+    const field = `<div class="field campaign-market-date-v1074"><label>Текущая игровая дата рынка</label><input class="input" type="date" name="marketDate" value="${esc(String(entity?.marketDate||entity?.gameDate||'').slice(0,10))}" /><div class="small-note">Смена этой даты переводит рынок на новый игровой день и обновляет котировки.</div></div>`;
+    return html.replace('<div class="field"><label>Описание</label>', field + '<div class="field"><label>Описание</label>');
+  };
+
+  const renderPlanetBeforeStocksV1074 = Configurator.renderPlanetEditor?.bind(Configurator);
+  if (renderPlanetBeforeStocksV1074) Configurator.renderPlanetEditor = function(entity) {
+    let html = renderPlanetBeforeStocksV1074(entity);
+    const legacyEnabled = Array.isArray(entity?.market) && entity.market.some(row=>normalizeEquipmentItemV2(EQUIPMENT?.[row?.itemId]||{}).type==='stock');
+    const enabled = typeof entity?.stockMarketEnabled === 'boolean' ? entity.stockMarketEnabled : legacyEnabled;
+    const field = `<label class="consent-line planet-stock-market-toggle-v1074"><input type="checkbox" name="stockMarketEnabled" ${enabled?'checked':''}/><span><b>На планете доступен фондовый рынок</b><small>При включении терминал показывает все акции кампании по единым глобальным ценам.</small></span></label>`;
+    return html.replace('<div class="field"><label>Рынок</label>', field + '<div class="field"><label>Рынок</label>');
+  };
+
+  const collectBeforeStocksV1074 = Configurator.collectEntity.bind(Configurator);
+  Configurator.collectEntity = function(type, formEl, formData = new FormData(formEl)) {
+    const entity = collectBeforeStocksV1074(type, formEl, formData);
+    if (type === 'campaigns' && entity) entity.marketDate = String(formData.get('marketDate') || '').slice(0,10);
+    if (type === 'planets' && entity) entity.stockMarketEnabled = formData.get('stockMarketEnabled') === 'on';
+    return entity;
+  };
+
+  Object.entries(EQUIPMENT || {}).forEach(([id,item])=>{EQUIPMENT[id]=normalizeEquipmentItemV2(item);});
+  if (App?.state?.users) Object.entries(App.state.users).forEach(([id,user])=>{App.state.users[id]=normalizePlayerProfileV2(user);});
+})();
+
+/* v1.0.71 — daily rotating transactional planetary market */
+(() => {
+  if (window.__planetMarketV1071) return;
+  window.__planetMarketV1071 = true;
+  const Engine = window.GRPGMarketEngineV1071;
+  if (!Engine) throw new Error('GRPGMarketEngineV1071 is not loaded');
+
+  let selection = null;
+  let drag = null;
+  let marketTabV1073 = 'goods';
+  let lastRotationKey = Engine.rotationKey();
+
+  function marketCampaignIdV1071() {
+    return String(Sync?.config?.campaignId || 'main');
+  }
+
+  function marketStateV1071() {
+    return App.state?.marketRuntimeV1071 || { claims: {} };
+  }
+
+  function marketRotationV1071(planet = Data.getPlanet(UI.selectedPlanetId)) {
+    if (!planet) return { rotationKey: Engine.rotationKey(), nextRotationAt: Engine.nextRotationAt(), offers: [], allOffers: [] };
+    return Engine.buildRotation({ campaignId: marketCampaignIdV1071(), planet, equipment: EQUIPMENT, marketState: marketStateV1071() });
+  }
+
+  function marketItemSizeV1071(item = {}) {
+    return {
+      w: Math.max(1, Number.parseInt(item.inventoryWidth ?? item.sizeWidth ?? 1, 10) || 1),
+      h: Math.max(1, Number.parseInt(item.inventoryHeight ?? item.sizeHeight ?? 1, 10) || 1)
+    };
+  }
+
+  function marketTypeLabelV1071(item = {}) {
+    const type = normalizeEquipmentItemV2(item).type;
+    return type === 'weapon' ? 'Оружие' : type === 'armor' ? 'Броня' : type === 'implant' ? 'Имплант' : type === 'stock' ? 'Акции' : 'Снаряжение';
+  }
+
+  function marketItemIsStockV1073(item = {}) {
+    return normalizeEquipmentItemV2(item).type === 'stock';
+  }
+
+  function marketTabMatchesV1073(item = {}, tab = marketTabV1073) {
+    return tab === 'stocks' ? marketItemIsStockV1073(item) : !marketItemIsStockV1073(item);
+  }
+
+  function marketSellPercentV1073(offer, item) {
+    const fallback = marketItemIsStockV1073(item) ? 1 : 0.7;
+    const rate = Number.isFinite(Number(offer?.sellRate)) ? Number(offer.sellRate) : fallback;
+    return Math.round(rate * 100);
+  }
+
+  function marketConfigMarkupV1071(planet = {}) {
+    const configured = new Map((Array.isArray(planet.market) ? planet.market : []).map(entry => [String(entry.itemId || ''), entry]));
+    const items = Object.values(EQUIPMENT || {}).map(normalizeEquipmentItemV2).filter(item => item.type !== 'stock').sort((a, b) => String(a.name || a.id).localeCompare(String(b.name || b.id), 'ru'));
+    return `<div class="market-config-v1071" data-market-config-v1071>
+      <div class="market-config-head-v1071">
+        <div><b>Ежедневная ротация рынка</b><div class="small-note">Галочка разрешает появление товара. Вероятность видна только ДМу. Цена на каждый день выбирается из указанного диапазона.</div></div>
+        <input class="input" type="search" placeholder="Поиск товара..." data-market-config-search-v1071 />
+      </div>
+      <div class="market-config-columns-v1071"><span>Товар</span><span>Вероятность</span><span>Цена от</span><span>Цена до</span></div>
+      <div class="market-config-list-v1071">
+        ${items.map(item => {
+          const raw = configured.get(String(item.id)) || {};
+          const cfg = Engine.normalizeEntry(raw, item);
+          const selected = configured.has(String(item.id)) && raw.enabled !== false;
+          const unique = Engine.isUnique(item, raw);
+          const search = [item.name, item.id, item.type, item.rarity].filter(Boolean).join(' ').toLowerCase();
+          return `<label class="market-config-row-v1071 ${selected ? 'selected' : ''}" data-market-config-row-v1071 data-search="${esc(search)}">
+            <span class="market-config-item-v1071"><input type="checkbox" data-market-enabled-v1071 ${selected ? 'checked' : ''} />${renderThumb(item,{size:'xs',type:'item',glyph:initials(item.name,'▣')})}<span><b>${esc(item.name || item.id)}</b><small>${esc(marketTypeLabelV1071(item))}${unique ? ' · УНИКАЛЬНЫЙ' : ''}</small></span></span>
+            <span class="market-config-number-v1071"><input class="input" type="number" min="0" max="100" step="0.1" value="${cfg.appearanceChance}" data-market-chance-v1071 /><small>%</small></span>
+            <input class="input" type="number" min="0" step="1" value="${cfg.minPrice}" data-market-min-v1071 />
+            <input class="input" type="number" min="0" step="1" value="${cfg.maxPrice}" data-market-max-v1071 />
+            <input type="hidden" value="${esc(item.id)}" data-market-item-id-v1071 />
+          </label>`;
+        }).join('')}
+      </div>
+    </div>`;
+  }
+
+  const previousPlanetEditorV1071 = Configurator.renderPlanetEditor.bind(Configurator);
+  Configurator.renderPlanetEditor = function(planet) {
+    let html = previousPlanetEditorV1071(planet);
+    const replacement = `<div class="field market-config-field-v1071"><label>Рынок</label>${marketConfigMarkupV1071(planet)}</div>`;
+    html = html.replace(/<div class="field"><label>Рынок<\/label><div id="market-rows"[\s\S]*?<button id="add-market-row"[\s\S]*?<\/button><\/div>/, replacement);
+    return html;
+  };
+
+  const previousCollectEntityV1071 = Configurator.collectEntity.bind(Configurator);
+  Configurator.collectEntity = function(type, formEl, formData = new FormData(formEl)) {
+    const entity = previousCollectEntityV1071(type, formEl, formData);
+    if (type !== 'planets') return entity;
+    entity.market = Array.from(formEl.querySelectorAll('[data-market-config-row-v1071]')).filter(row => row.querySelector('[data-market-enabled-v1071]')?.checked).map(row => {
+      const minRaw = Math.max(0, Math.trunc(Number(row.querySelector('[data-market-min-v1071]')?.value || 0)));
+      const maxRaw = Math.max(0, Math.trunc(Number(row.querySelector('[data-market-max-v1071]')?.value || 0)));
+      return {
+        itemId: String(row.querySelector('[data-market-item-id-v1071]')?.value || ''),
+        enabled: true,
+        appearanceChance: Math.max(0, Math.min(100, Number(row.querySelector('[data-market-chance-v1071]')?.value || 0))),
+        minPrice: Math.min(minRaw, maxRaw),
+        maxPrice: Math.max(minRaw, maxRaw)
+      };
+    }).filter(entry => entry.itemId);
+    return entity;
+  };
+
+  document.addEventListener('input', event => {
+    const search = event.target?.closest?.('[data-market-config-search-v1071]');
+    if (!search) return;
+    const query = String(search.value || '').trim().toLowerCase();
+    search.closest('[data-market-config-v1071]')?.querySelectorAll('[data-market-config-row-v1071]').forEach(row => { row.hidden = Boolean(query && !String(row.dataset.search || '').includes(query)); });
+  });
+  document.addEventListener('change', event => {
+    const toggle = event.target?.closest?.('[data-market-enabled-v1071]');
+    if (toggle) toggle.closest('[data-market-config-row-v1071]')?.classList.toggle('selected', toggle.checked);
+  });
+
+  function marketOfferTileV1071(offer) {
+    const item = Data.getItem(offer.itemId);
+    if (!item) return '';
+    const size = marketItemSizeV1071(item);
+    const selected = selection?.source === 'market' && selection?.itemId === offer.itemId;
+    return `<button class="market-shop-tile-v1071 ${selected ? 'selected' : ''}" type="button" draggable="true" data-market-drag-v1071 data-source="market" data-item-id="${esc(item.id)}" style="grid-column:span ${size.w};grid-row:span ${size.h}" title="${esc(item.name || item.id)} · ${size.w}×${size.h}">
+      ${renderThumb(item,{size:'sm',type:'item',glyph:initials(item.name,'▣')})}
+      <span class="market-tile-name-v1071">${esc(item.name || item.id)}</span>
+      <span class="market-tile-meta-v1071">${size.w}×${size.h}${offer.unique ? ' · Уникальный' : ''}</span>
+      <b class="market-tile-price-v1071">${formatCredits(offer.price)}</b>
+    </button>`;
+  }
+
+  function marketInventoryGridV1071(user, offers, tab = marketTabV1073) {
+    const layout = window.GRPGInventoryV1067?.buildLayout?.(user) || { size:0, cols:1, rows:1, instances:[], overflow:[], weight:0 };
+    const offerMap = new Map(offers.map(offer => [offer.itemId, offer]));
+    const cells = Array.from({length:layout.size},(_,index)=>`<div class="market-inventory-cell-v1071" style="grid-column:${index%layout.cols+1};grid-row:${Math.floor(index/layout.cols)+1}"></div>`).join('');
+    const visibleInstances = layout.instances.filter(instance => marketTabMatchesV1073(instance.item, tab));
+    const tiles = visibleInstances.map(instance => {
+      const offer = offerMap.get(instance.itemId);
+      const selected = selection?.source === 'inventory' && selection?.itemId === instance.itemId && Number(selection?.unitIndex) === Number(instance.unitIndex);
+      return `<button class="market-inventory-tile-v1071 ${selected ? 'selected' : ''} ${offer ? 'sellable' : 'not-sellable'}" type="button" draggable="true" data-market-drag-v1071 data-source="inventory" data-item-id="${esc(instance.itemId)}" data-unit-index="${instance.unitIndex}" style="grid-column:${instance.pos.x+1}/span ${instance.w};grid-row:${instance.pos.y+1}/span ${instance.h}" title="${esc(instance.item.name || instance.itemId)}${offer ? ` · Продажа за ${formatCredits(offer.sellPrice)}` : ' · Сегодня не принимается'}">
+        ${renderThumb(instance.item,{size:'sm',type:'item',glyph:initials(instance.item.name,'▣')})}<span>${esc(instance.item.name||instance.itemId)}</span><small>${instance.w}×${instance.h}${offer ? ` · ${formatCredits(offer.sellPrice)}` : ''}</small>
+      </button>`;
+    }).join('');
+    const visibleOverflow = layout.overflow.filter(instance => marketTabMatchesV1073(instance.item || Data.getItem(instance.itemId), tab));
+    const overflow = visibleOverflow.length ? `<div class="inventory-overflow-v1067"><b>Не помещается: ${visibleOverflow.length}</b></div>` : '';
+    return `<div class="market-inventory-grid-v1071" data-market-inventory-drop-v1071 style="--inv-cols:${layout.cols};--inv-rows:${layout.rows}">${cells}${tiles}</div>${overflow}`;
+  }
+
+  function selectedOfferV1071(rotation) {
+    return rotation.offers.find(offer => offer.itemId === selection?.itemId) || null;
+  }
+
+  function marketWeaponSlotLabelV1071(value) {
+    return ({ primary:'Основное', secondary:'Вторичное', versatile:'Универсальное' })[String(value || 'primary')] || String(value || 'Основное');
+  }
+
+  function marketRequirementsTextV1071(item = {}) {
+    const labels = [
+      ['strength','СИЛ'], ['dexterity','ЛОВ'], ['intelligence','ИНТ'],
+      ['endurance','ВЫН'], ['will','ВОЛ'], ['glory','СЛА']
+    ];
+    const requirements = item.requirements && typeof item.requirements === 'object' ? item.requirements : {};
+    const rows = labels.filter(([key]) => Number(requirements[key] || 0) > 0).map(([key, label]) => `${label} ${Number(requirements[key])}`);
+    return rows.length ? rows.join(' · ') : 'нет';
+  }
+
+  function marketItemDetailsV1071(item, offer) {
+    const normalized = normalizeEquipmentItemV2(item);
+    const size = marketItemSizeV1071(normalized);
+    const mass = Number(normalized.mass ?? normalized.weight ?? 1);
+    const facts = [
+      `Тип: ${marketTypeLabelV1071(normalized)}`,
+      normalized.rarity ? `Редкость: ${normalized.rarity}` : '',
+      `Размер: ${size.w}×${size.h}`,
+      `Масса: ${Number.isFinite(mass) ? mass : 1}`,
+      offer?.unique ? 'Уникальный предмет' : ''
+    ];
+    if (normalized.type === 'weapon') {
+      if (normalized.damage) facts.push(`Урон: ${normalized.damage}`);
+      facts.push(`Попадание: ${Number(normalized.hitBonus || 0) >= 0 ? '+' : ''}${Number(normalized.hitBonus || 0)}`);
+      facts.push(`Слот: ${marketWeaponSlotLabelV1071(normalized.weaponSlot)}`);
+    }
+    if (normalized.type === 'armor' && Number(normalized.armorClass || 0) > 0) facts.push(`Класс брони: ${Number(normalized.armorClass)}`);
+    if (normalized.type === 'implant') facts.push(`Требуемая энергия: ${Number(normalized.energyRequired || 0)}`);
+    const tags = Array.isArray(normalized.tags) ? normalized.tags.map(tag => String(tag || '').trim()).filter(Boolean) : [];
+    return `<div class="market-selection-facts-v1071">${facts.filter(Boolean).map(fact => `<span class="pill">${esc(fact)}</span>`).join('')}</div>
+      <p class="market-selection-description-v1071">${esc(normalized.desc || normalized.description || normalized.summary || 'Описание предмета не задано.')}</p>
+      <div class="market-selection-requirements-v1071"><b>Требования:</b> ${esc(marketRequirementsTextV1071(normalized))}</div>
+      ${tags.length ? `<div class="market-selection-tags-v1071"><b>Категории:</b> ${esc(tags.join(' · '))}</div>` : ''}`;
+  }
+
+  function marketSelectionPanelV1071(rotation, user) {
+    const offer = (selection?.source === 'inventory' ? rotation.allOffers : rotation.offers).find(row => row.itemId === selection?.itemId) || null;
+    const item = selection?.itemId ? Data.getItem(selection.itemId) : null;
+    if (!item) return `<div class="market-selection-empty-v1071">Выберите плитку товара или предмета.</div>`;
+    const buy = selection.source === 'market';
+    const price = buy ? offer?.price : offer?.sellPrice;
+    const capacity = buy ? window.GRPGInventoryV1067?.canAddItem?.(user, item.id, 1) : {ok:true};
+    const disabled = !offer || (buy && (!capacity?.ok || Number(user.credits||0) < Number(offer.price||0)));
+    const sellPercent = marketSellPercentV1073(offer, item);
+    return `<div class="market-selection-card-v1071">${renderThumb(item,{size:'sm',type:'item',glyph:initials(item.name,'▣')})}<div class="market-selection-details-v1071"><div class="market-selection-heading-v1071"><b>${esc(item.name||item.id)}</b><strong>${buy ? `Покупка: ${formatCredits(price||0)}` : offer ? `Продажа: ${formatCredits(price||0)} (${sellPercent}%)` : 'Сегодня этот товар не принимается'}</strong></div>${marketItemDetailsV1071(item,offer)}${buy && capacity?.ok===false ? `<small class="error-line">${esc(capacity.reason)}</small>` : ''}</div><button class="primary" type="button" data-market-action-v1071="${buy?'buy':'sell'}" ${disabled?'disabled':''}>${buy?'КУПИТЬ':'ПРОДАТЬ'}</button></div>`;
+  }
+
+  function renderMarketV1071() {
+    const planet = Data.getPlanet(UI.selectedPlanetId);
+    const user = App.currentUser;
+    if (!planet || !user || !isEntityVisible(planet)) return;
+    const access = getMarketAccessState(user, planet.id);
+    const rotation = marketRotationV1071(planet);
+    const visibleOffers = rotation.offers.filter(offer => marketTabMatchesV1073(Data.getItem(offer.itemId)));
+    const visibleAllOffers = rotation.allOffers.filter(offer => marketTabMatchesV1073(Data.getItem(offer.itemId)));
+    if (selection && (!marketTabMatchesV1073(Data.getItem(selection.itemId)) || (selection.source === 'market' && !visibleOffers.some(offer => offer.itemId === selection.itemId)))) selection = null;
+    $('#market-title').textContent = `LOCAL_TERMINAL: ${planet.name.toUpperCase()}`;
+    $('#market-subtitle').textContent = access.canBuy ? `Игровой день рынка: ${formatLoreDateV1075(rotation.rotationKey, { includeTime: false })}` : access.reason;
+    $('#market-balance').textContent = formatCredits(user.credits);
+    $('#market-planet').textContent = planet.name;
+    const root = $('#market-items');
+    root.innerHTML = `<div class="market-terminal-v1071 ${access.canBuy?'':'locked'}">
+      <div class="market-tabs-v1073" role="tablist" aria-label="Раздел торгового терминала"><button class="secondary ${marketTabV1073 === 'goods' ? 'active' : ''}" type="button" role="tab" aria-selected="${marketTabV1073 === 'goods'}" data-market-tab-v1073="goods">ТОВАРЫ</button><button class="secondary ${marketTabV1073 === 'stocks' ? 'active' : ''}" type="button" role="tab" aria-selected="${marketTabV1073 === 'stocks'}" data-market-tab-v1073="stocks">АКЦИИ</button></div>
+      <div class="market-access-banner-v1071 ${access.canBuy?'ok':'err'}">${access.canBuy ? `Торговля доступна на планете <b>${esc(planet.name)}</b>. Обычные товары продаются за 70%, акции — за 100% текущей цены.` : `<b>Торговля заблокирована.</b> ${esc(access.reason)}`}</div>
+      <div class="market-dual-grid-v1071">
+        <section class="market-pane-v1071 market-stock-pane-v1071" data-market-stock-drop-v1071><div class="market-pane-head-v1071"><div><span class="mono accent">${marketTabV1073 === 'stocks' ? 'SECURITIES' : 'MARKET STOCK'}</span><b>${marketTabV1073 === 'stocks' ? 'Акции' : 'Товары'}</b></div><span>${visibleOffers.length} поз.</span></div><div class="market-shop-grid-v1071">${visibleOffers.map(marketOfferTileV1071).join('') || `<div class="small-note">В текущей ротации нет ${marketTabV1073 === 'stocks' ? 'акций' : 'товаров'}.</div>`}</div></section>
+        <section class="market-pane-v1071"><div class="market-pane-head-v1071"><div><span class="mono accent">PERSONAL STORAGE</span><b>${marketTabV1073 === 'stocks' ? 'Портфель' : 'Инвентарь'}</b></div><span>${formatCredits(user.credits)}</span></div>${marketInventoryGridV1071(user,visibleAllOffers,marketTabV1073)}</section>
+      </div>
+      ${marketSelectionPanelV1071(rotation,user)}
+      <div class="small-note market-rotation-note-v1071">Экипированные предметы нельзя продать.</div>
+    </div>`;
+    root.querySelectorAll('[data-market-drag-v1071]').forEach(node => node.disabled = !access.canBuy);
+  }
+
+  UI.renderMarket = renderMarketV1071;
+
+  async function localMarketTransactionV1071({ action, itemId, unitIndex = -1, targetPosition = null }) {
+    const user = App.currentUser;
+    const planet = Data.getPlanet(UI.selectedPlanetId);
+    const rotation = marketRotationV1071(planet);
+    const offer = (action === 'sell' ? rotation.allOffers : rotation.offers).find(row => row.itemId === itemId);
+    if (!offer) throw new Error('Товар отсутствует в текущей ротации');
+    if (action === 'buy') {
+      const check = window.GRPGInventoryV1067?.canAddItem?.(user,itemId,1);
+      if (check?.ok === false) throw new Error(check.reason);
+      if (Number(user.credits||0) < offer.price) throw new Error('Недостаточно кредитов');
+      user.credits = Number(user.credits||0) - offer.price;
+      user.inventory = Array.isArray(user.inventory) ? user.inventory : [];
+      let entry = user.inventory.find(row=>row.itemId===itemId);
+      if(!entry){entry={itemId,qty:0,positions:[]};user.inventory.push(entry);}
+      entry.qty=Number(entry.qty||0)+1;entry.positions=Array.isArray(entry.positions)?entry.positions:[];while(entry.positions.length<entry.qty)entry.positions.push(null);
+      if(targetPosition)entry.positions[entry.qty-1]={x:Number(targetPosition.x),y:Number(targetPosition.y)};
+      if(offer.unique){const claims={...(App.state.marketRuntimeV1071?.claims||{})};claims[Engine.claimKey(marketCampaignIdV1071(),planet.id,rotation.rotationKey,itemId)]={playerId:user.id,boughtAt:new Date().toISOString()};App.state.marketRuntimeV1071={claims,updatedAt:new Date().toISOString()};}
+    } else {
+      const entry=user.inventory?.find(row=>row.itemId===itemId);if(!entry)throw new Error('В инвентаре нет этого предмета');
+      const equipped=[user.equipmentSlots?.primaryWeapon||user.equipmentSlots?.weapon,user.equipmentSlots?.secondaryWeapon,user.equipmentSlots?.armor,...(user.implantSlots||[])].filter(id=>id===itemId).length;
+      if(Number(entry.qty||0)<=equipped)throw new Error('Нельзя продать экипированный экземпляр');
+      const removeIndex=Number.isInteger(Number(unitIndex))&&Number(unitIndex)>=equipped?Number(unitIndex):Number(entry.qty)-1;entry.qty-=1;if(Array.isArray(entry.positions))entry.positions.splice(removeIndex,1);if(entry.qty<=0)user.inventory=user.inventory.filter(row=>row!==entry);
+      user.credits=Number(user.credits||0)+offer.sellPrice;
+      if(offer.unique){const claims={...(App.state.marketRuntimeV1071?.claims||{})};delete claims[Engine.claimKey(marketCampaignIdV1071(),planet.id,rotation.rotationKey,itemId)];App.state.marketRuntimeV1071={claims,updatedAt:new Date().toISOString()};}
+    }
+    await App.saveState(`${action==='buy'?'Куплено':'Продано'}: ${Data.getItem(itemId)?.name||itemId}`);
+    return {ok:true,status:'local'};
+  }
+
+  async function transactMarketV1071(payload) {
+    const user = App.currentUser;
+    const planet = Data.getPlanet(UI.selectedPlanetId);
+    const access = getMarketAccessState(user,planet?.id);
+    if (!access.canBuy) throw new Error(access.reason);
+    let result;
+    if (Sync?.config?.enabled && window.electronAPI?.transactMarket) {
+      result = await window.electronAPI.transactMarket({playerId:user.id,planetId:planet.id,...payload});
+      if (!result?.ok) throw new Error(result?.message||'Операция рынка не выполнена');
+      if (result.player) {
+        App.state.users[user.id]=normalizePlayerProfileV2({...App.state.users[user.id],...result.player,id:user.id});
+        PLAYER_TEMPLATES[user.id]=deep(App.state.users[user.id]);
+        await App.writeLocalMirrors();
+      }
+      if(result.snapshotChanged)await Sync.checkForRemoteUpdates('market-transaction',{applyIfNewer:true,silent:true});
+      await PlayerSync.pullUpdates('market-transaction',{forceFull:true,silent:true,rerender:false});
+    } else result = await localMarketTransactionV1071(payload);
+    selection=null;
+    AudioManager.play(payload.action==='buy'?'marketBuy':'uiClick',{volume:0.9});
+    App.refreshAfterLocalWrite();
+    Toast.show(payload.action==='buy'?'Покупка завершена':'Продажа завершена','ok');
+    return result;
+  }
+
+  document.addEventListener('click', event => {
+    const tab=event.target?.closest?.('[data-market-tab-v1073]');
+    if(tab&&tab.closest('#market-items')){marketTabV1073=tab.dataset.marketTabV1073==='stocks'?'stocks':'goods';selection=null;renderMarketV1071();return;}
+    const tile=event.target?.closest?.('[data-market-drag-v1071]');
+    if(tile&&tile.closest('#market-items')){selection={source:String(tile.dataset.source||''),itemId:String(tile.dataset.itemId||''),unitIndex:Number(tile.dataset.unitIndex??-1)};renderMarketV1071();return;}
+    const action=event.target?.closest?.('[data-market-action-v1071]');
+    if(!action||!selection)return;
+    transactMarketV1071({action:String(action.dataset.marketActionV1071),itemId:selection.itemId,unitIndex:selection.unitIndex}).catch(error=>Toast.show(error.message||String(error),'err'));
+  });
+
+  document.addEventListener('dragstart',event=>{const node=event.target?.closest?.('[data-market-drag-v1071]');if(!node||!node.closest('#market-items'))return;drag={source:String(node.dataset.source||''),itemId:String(node.dataset.itemId||''),unitIndex:Number(node.dataset.unitIndex??-1)};event.dataTransfer.effectAllowed=drag.source==='market'?'copy':'move';try{event.dataTransfer.setData('text/plain',drag.itemId);}catch{}node.classList.add('market-dragging-v1071');});
+  document.addEventListener('dragend',event=>{event.target?.closest?.('[data-market-drag-v1071]')?.classList.remove('market-dragging-v1071');drag=null;});
+  document.addEventListener('dragover',event=>{if(!drag)return;const target=drag.source==='market'?event.target?.closest?.('[data-market-inventory-drop-v1071]'):event.target?.closest?.('[data-market-stock-drop-v1071]');if(target){event.preventDefault();event.dataTransfer.dropEffect=drag.source==='market'?'copy':'move';}});
+  document.addEventListener('drop',event=>{if(!drag)return;const inventory=event.target?.closest?.('[data-market-inventory-drop-v1071]'),stock=event.target?.closest?.('[data-market-stock-drop-v1071]');if((drag.source==='market'&&!inventory)||(drag.source==='inventory'&&!stock))return;event.preventDefault();const payload={action:drag.source==='market'?'buy':'sell',itemId:drag.itemId,unitIndex:drag.unitIndex};if(inventory){const rect=inventory.getBoundingClientRect(),cols=Number(getComputedStyle(inventory).getPropertyValue('--inv-cols'))||1,cell=rect.width/cols;payload.targetPosition={x:Math.max(0,Math.min(cols-1,Math.floor((event.clientX-rect.left)/cell))),y:Math.max(0,Math.floor((event.clientY-rect.top)/cell))};}drag=null;transactMarketV1071(payload).catch(error=>Toast.show(error.message||String(error),'err'));});
+
+  setInterval(()=>{const key=Engine.rotationKey();if(key!==lastRotationKey){lastRotationKey=key;selection=null;if(UI.activeModuleId==='market')UI.renderMarket?.();}},60000);
+})();
+
+window.GRPGInstallGlobalStockExchangeV1074?.();
+
+// ==== v1.0.79 scalable archive catalog, global search and personal collections ====
+(function(){
+  if (window.__archiveCatalogV1079) return;
+  window.__archiveCatalogV1079 = true;
+
+  const FAVORITES_KEY_V1079 = 'GRI_ARCHIVE_FAVORITES_V1079';
+  const RECENT_KEY_V1079 = 'GRI_ARCHIVE_RECENT_V1079';
+  const READ_KEY_V1079 = 'GRI_ARCHIVE_ARTICLE_READ_V42';
+  const SECTION_ORDER_V1079 = ['articles','planets','systems','equipment'];
+  const SECTION_LABELS_V1079 = {articles:'Статьи',planets:'Планеты',systems:'Системы',equipment:'Снаряжение'};
+
+  Wiki.archiveScopeV1079 = Wiki.archiveScopeV1079 || 'section';
+  Wiki.archiveCategoryV1079 = Wiki.archiveCategoryV1079 || 'all';
+  Wiki.archiveStatusV1079 = Wiki.archiveStatusV1079 || 'all';
+  Wiki.archiveSortV1079 = Wiki.archiveSortV1079 || 'title';
+  Wiki.archiveQueryV1079 = Wiki.archiveQueryV1079 || '';
+
+  function archiveUserKeyV1079(){
+    return App?.currentUser?.role === 'gm' ? 'gm' : String(App?.currentUserId || App?.currentUser?.id || 'guest');
+  }
+  function readLocalMapV1079(key){
+    try { const value=JSON.parse(localStorage.getItem(key)||'{}'); return value&&typeof value==='object'?value:{}; }
+    catch { return {}; }
+  }
+  function writeLocalMapV1079(key,value){ try { localStorage.setItem(key,JSON.stringify(value||{})); } catch {} }
+  function archiveHitKeyV1079(hitOrType,id=''){
+    if(typeof hitOrType==='object') return `${String(hitOrType.type||hitOrType.entity?._type||'')}:${String(hitOrType.entity?.id||hitOrType.id||'')}`;
+    return `${String(hitOrType||'')}:${String(id||'')}`;
+  }
+  function favoritesV1079(){
+    const map=readLocalMapV1079(FAVORITES_KEY_V1079);
+    return new Set((map[archiveUserKeyV1079()]||[]).map(String));
+  }
+  function toggleFavoriteV1079(type,id){
+    const map=readLocalMapV1079(FAVORITES_KEY_V1079),user=archiveUserKeyV1079(),set=new Set((map[user]||[]).map(String)),key=archiveHitKeyV1079(type,id);
+    if(set.has(key))set.delete(key);else set.add(key);
+    map[user]=Array.from(set);writeLocalMapV1079(FAVORITES_KEY_V1079,map);
+  }
+  function recentV1079(){
+    const map=readLocalMapV1079(RECENT_KEY_V1079);
+    return Array.isArray(map[archiveUserKeyV1079()])?map[archiveUserKeyV1079()].map(String):[];
+  }
+  function rememberRecentV1079(type,id){
+    const map=readLocalMapV1079(RECENT_KEY_V1079),user=archiveUserKeyV1079(),key=archiveHitKeyV1079(type,id);
+    map[user]=[key,...(Array.isArray(map[user])?map[user]:[]).filter(value=>String(value)!==key)].slice(0,30);
+    writeLocalMapV1079(RECENT_KEY_V1079,map);
+  }
+  function isUnreadV1079(hit){
+    if(hit?.type!=='article'||!hit.entity?.id)return false;
+    const map=readLocalMapV1079(READ_KEY_V1079),read=new Set((map[archiveUserKeyV1079()]||[]).map(String));
+    return !read.has(String(hit.entity.id));
+  }
+  function normalizedTextV1079(value){
+    return String(value??'').replace(/<[^>]*>/g,' ').replace(/&[a-z#0-9]+;/gi,' ').replace(/ё/g,'е').replace(/\s+/g,' ').trim().toLowerCase();
+  }
+  function searchableValuesV1079(value,out=[],depth=0,key=''){
+    if(value==null||depth>4)return out;
+    if(typeof value==='string'||typeof value==='number'){
+      const text=String(value);
+      if(!/^data:/i.test(text)&&!/(image|avatar|media|thumb|background|asset)/i.test(key))out.push(text);
+      return out;
+    }
+    if(Array.isArray(value)){value.slice(0,100).forEach(entry=>searchableValuesV1079(entry,out,depth+1,key));return out;}
+    if(typeof value==='object')Object.entries(value).forEach(([childKey,entry])=>searchableValuesV1079(entry,out,depth+1,childKey));
+    return out;
+  }
+  function sectionForHitV1079(hit){
+    return ({article:'articles',planet:'planets',system:'systems',item:'equipment'})[hit?.type]||'articles';
+  }
+  function baseCategoryV1079(hit){
+    const entity=hit?.entity||{};
+    if(hit?.type==='article')return String(entity.category||entity.section||'Без категории').trim()||'Без категории';
+    if(hit?.type==='item')return String(typeof itemTypeLabelV2==='function'?itemTypeLabelV2(entity.type||entity.category):entity.type||entity.category||'Прочее').trim()||'Прочее';
+    if(hit?.type==='planet')return String(entity.location?.system||entity.location?.obj||entity.code||'Другие планеты').trim()||'Другие планеты';
+    return 'Звёздные системы';
+  }
+  function categoryV1079(hit,globalScope=false){
+    const base=baseCategoryV1079(hit);
+    return globalScope?`${SECTION_LABELS_V1079[sectionForHitV1079(hit)]} · ${base}`:base;
+  }
+  function allHitsV1079(){
+    const sections=Wiki.archiveScopeV1079==='all'?SECTION_ORDER_V1079:[Wiki.activeSection||'articles'];
+    const found=new Map();
+    sections.forEach(section=>(Wiki.entityPool(section)||[]).forEach(hit=>found.set(archiveHitKeyV1079(hit),hit)));
+    return Array.from(found.values());
+  }
+  function filterHitsV1079(){
+    const base=allHitsV1079(),globalScope=Wiki.archiveScopeV1079==='all';
+    const categories=Array.from(new Set(base.map(hit=>categoryV1079(hit,globalScope)))).sort((a,b)=>a.localeCompare(b,'ru'));
+    if(Wiki.archiveCategoryV1079!=='all'&&!categories.includes(Wiki.archiveCategoryV1079))Wiki.archiveCategoryV1079='all';
+    const favorites=favoritesV1079(),recent=recentV1079(),recentIndex=new Map(recent.map((key,index)=>[key,index]));
+    const tokens=normalizedTextV1079(Wiki.archiveQueryV1079).split(' ').filter(Boolean);
+    let rows=base.filter(hit=>{
+      if(Wiki.archiveCategoryV1079!=='all'&&categoryV1079(hit,globalScope)!==Wiki.archiveCategoryV1079)return false;
+      const key=archiveHitKeyV1079(hit);
+      if(Wiki.archiveStatusV1079==='unread'&&!isUnreadV1079(hit))return false;
+      if(Wiki.archiveStatusV1079==='favorites'&&!favorites.has(key))return false;
+      if(Wiki.archiveStatusV1079==='recent'&&!recentIndex.has(key))return false;
+      if(!tokens.length)return true;
+      const hay=normalizedTextV1079([hit.summary,...searchableValuesV1079(hit.entity)].join(' '));
+      return tokens.every(token=>hay.includes(token));
+    });
+    rows.sort((a,b)=>{
+      if(Wiki.archiveStatusV1079==='recent')return (recentIndex.get(archiveHitKeyV1079(a))??999)-(recentIndex.get(archiveHitKeyV1079(b))??999);
+      if(Wiki.archiveSortV1079==='unread'){
+        const unread=Number(isUnreadV1079(b))-Number(isUnreadV1079(a));if(unread)return unread;
+      }
+      const titleOrder=String(titleForEntity(a.type,a.entity)).localeCompare(String(titleForEntity(b.type,b.entity)),'ru');
+      return Wiki.archiveSortV1079==='title_desc'?-titleOrder:titleOrder;
+    });
+    return {base,rows,categories,globalScope};
+  }
+  function updateNavCountsV1079(){
+    const labels={planets:'ПЛАНЕТЫ',equipment:'СНАРЯЖЕНИЕ',articles:'СТАТЬИ',systems:'СИСТЕМЫ'};
+    document.querySelectorAll('[data-wiki-section-v1060]').forEach(button=>{
+      const section=button.dataset.wikiSectionV1060;
+      button.textContent=`${labels[section]||section} · ${(Wiki.entityPool(section)||[]).length}`;
+      button.classList.toggle('active',Wiki.archiveScopeV1079!=='all'&&section===Wiki.activeSection);
+    });
+  }
+  function updateControlsV1079(result){
+    const scope=$('#wiki-scope-v1079'),category=$('#wiki-category-v1079'),status=$('#wiki-status-v1079'),sort=$('#wiki-sort-v1079'),meta=$('#wiki-results-meta-v1079');
+    if(scope)scope.value=Wiki.archiveScopeV1079;
+    if(category){category.innerHTML=`<option value="all">Все категории</option>${result.categories.map(value=>`<option value="${esc(value)}">${esc(value)}</option>`).join('')}`;category.value=Wiki.archiveCategoryV1079;}
+    if(status)status.value=Wiki.archiveStatusV1079;
+    if(sort)sort.value=Wiki.archiveSortV1079;
+    if(meta)meta.innerHTML=`<span>Найдено: <b>${result.rows.length}</b></span><span>Доступно: ${result.base.length}</span>`;
+  }
+  function renderHitsV1079(){
+    updateNavCountsV1079();
+    const result=filterHitsV1079(),target=$('#wiki-results');
+    if(!target)return [];
+    updateControlsV1079(result);
+    const favorites=favoritesV1079(),groups=new Map(),selectedKey=Wiki.currentView?archiveHitKeyV1079(Wiki.currentView.type,Wiki.currentView.id):'';
+    result.rows.forEach(hit=>{const group=categoryV1079(hit,result.globalScope);if(!groups.has(group))groups.set(group,[]);groups.get(group).push(hit);});
+    const forceOpen=Boolean(normalizedTextV1079(Wiki.archiveQueryV1079))||Wiki.archiveCategoryV1079!=='all'||Wiki.archiveStatusV1079!=='all';
+    target.classList.add('wiki-results-v1079');
+    target.innerHTML=Array.from(groups.entries()).map(([group,rows],groupIndex)=>{
+      const containsSelected=rows.some(hit=>archiveHitKeyV1079(hit)===selectedKey);
+      return `<details class="wiki-group-v1079" ${forceOpen||containsSelected||groupIndex===0?'open':''}><summary><span>${esc(group)}</span><span class="wiki-group-count-v1079">${rows.length}</span></summary><div class="wiki-group-list-v1079">${rows.map(hit=>{
+        const key=archiveHitKeyV1079(hit),unread=isUnreadV1079(hit),favorite=favorites.has(key);
+        return `<div class="wiki-hit wiki-hit-rich wiki-hit-v1079 ${unread?'wiki-hit-unread-v42':''} ${key===selectedKey?'active':''}" data-entity="${esc(hit.type)}" data-id="${esc(hit.entity.id)}" tabindex="0" role="button">${renderThumb(hit.entity,{size:'sm',type:hit.type})}<div class="wiki-hit-copy-v1079"><div class="wiki-hit-title-v1079"><b>${esc(titleForEntity(hit.type,hit.entity))}</b>${unread?'<span class="wiki-unread-pill-v42">NEW</span>':''}</div><div class="subtle wiki-hit-summary-v1079">${esc(hit.summary||baseCategoryV1079(hit))}</div></div><button class="wiki-favorite-v1079 ${favorite?'active':''}" type="button" data-wiki-favorite-v1079 data-entity="${esc(hit.type)}" data-id="${esc(hit.entity.id)}" aria-label="${favorite?'Убрать из избранного':'Добавить в избранное'}">${favorite?'★':'☆'}</button></div>`;
+      }).join('')}</div></details>`;
+    }).join('')||'<div class="subtle">Ничего не найдено в пределах текущего доступа и выбранных фильтров.</div>';
+    target.querySelectorAll('.wiki-hit-v1079').forEach(node=>{
+      const open=()=>Wiki.showEntity(node.dataset.entity,node.dataset.id);
+      node.addEventListener('click',event=>{if(!event.target.closest('[data-wiki-favorite-v1079]'))open();});
+      node.addEventListener('keydown',event=>{if((event.key==='Enter'||event.key===' ')&&!event.target.closest('[data-wiki-favorite-v1079]')){event.preventDefault();open();}});
+    });
+    return result.rows;
+  }
+
+  Wiki.prime=function(){
+    this.archiveQueryV1079=String($('#wiki-input')?.value||'');
+    renderHitsV1079();
+    if(!this.currentView)$('#wiki-detail').innerHTML='<div class="wiki-archive-welcome-v1079"><div class="section-title">Каталог архива</div><p class="subtle">Выберите материал в каталоге. Поиск проверяет заголовок, категорию, краткое описание и полный текст.</p></div>';
+  };
+  Wiki.search=function(query){this.archiveQueryV1079=String(query||'');renderHitsV1079();};
+
+  const originalSetSectionV1079=Wiki.setSection.bind(Wiki);
+  Wiki.setSection=function(section,options={}){
+    this.archiveCategoryV1079='all';
+    this.archiveQueryV1079='';
+    return originalSetSectionV1079(section,options);
+  };
+  const originalShowEntityV1079=Wiki.showEntity.bind(Wiki);
+  Wiki.showEntity=function(type,id,autoOpen=false){
+    const result=originalShowEntityV1079(type,id,autoOpen);
+    rememberRecentV1079(type,id);
+    requestAnimationFrame(()=>renderHitsV1079());
+    return result;
+  };
+
+  let searchTimerV1079=null;
+  $('#wiki-input')?.addEventListener('input',event=>{
+    clearTimeout(searchTimerV1079);
+    const value=event.target.value;
+    searchTimerV1079=setTimeout(()=>Wiki.search(value),120);
+  });
+  [['#wiki-scope-v1079','archiveScopeV1079'],['#wiki-category-v1079','archiveCategoryV1079'],['#wiki-status-v1079','archiveStatusV1079'],['#wiki-sort-v1079','archiveSortV1079']].forEach(([selector,key])=>{
+    $(selector)?.addEventListener('change',event=>{Wiki[key]=event.target.value||'all';if(key==='archiveScopeV1079')Wiki.archiveCategoryV1079='all';renderHitsV1079();});
+  });
+  document.addEventListener('click',event=>{
+    const button=event.target?.closest?.('[data-wiki-favorite-v1079]');
+    if(!button||!button.closest('#mod-wiki'))return;
+    event.preventDefault();event.stopPropagation();
+    toggleFavoriteV1079(button.dataset.entity,button.dataset.id);
+    renderHitsV1079();
+  });
 })();

@@ -1247,6 +1247,10 @@ function selfhostCombatPath(config = {}) {
   return `/api/combat/${encodePathPart(config.campaignId)}`;
 }
 
+function selfhostMarketPath(config = {}) {
+  return `/api/market/${encodePathPart(config.campaignId)}`;
+}
+
 function selfhostAssetPath(config = {}) {
   return `/api/assets/${encodePathPart(config.campaignId)}`;
 }
@@ -2050,7 +2054,7 @@ async function checkForUpdatesSafe(manual = false) {
   setupAutoUpdater();
   if (!autoUpdater) return broadcastUpdaterStatus({ status: 'unavailable', message: 'electron-updater не установлен' });
   if (!app.isPackaged) {
-    return broadcastUpdaterStatus({ status: 'dev', message: 'Проверка обновлений работает только в собранном приложении' });
+    return broadcastUpdaterStatus({ status: 'dev', message: '' });
   }
   try {
     broadcastUpdaterStatus({ status: 'checking', message: manual ? 'Ручная проверка обновлений...' : 'Проверка обновлений при запуске...' });
@@ -2370,6 +2374,22 @@ async function pushRemoteCombatRuntime(config = {}, payload = {}) {
       }
     });
     return result;
+  }
+  throw new Error('Неподдерживаемый провайдер синхронизации');
+}
+
+async function transactRemoteMarket(config = {}, payload = {}) {
+  const body = {
+    ...payload,
+    campaignId: config.campaignId,
+    updatedBy: payload?.updatedBy || config.deviceLabel || `market:${payload?.playerId || 'player'}`,
+    clientUpdatedAt: payload?.clientUpdatedAt || new Date().toISOString()
+  };
+  if (isPocketBaseSyncConfig(config)) {
+    return pocketbaseFetch(config, '/api/grpgi/market/transaction', { method: 'POST', json: body });
+  }
+  if (isSelfhostSyncConfig(config)) {
+    return selfhostFetch(config, selfhostMarketPath(config), { method: 'POST', json: body });
   }
   throw new Error('Неподдерживаемый провайдер синхронизации');
 }
@@ -3011,6 +3031,25 @@ ipcMain.handle('players:delete', async (_event, payload) => {
   } catch (error) {
     debugLog('PLAYER_DELETE_FAILED', { message: error.message, stack: error.stack, payload });
     return { ok: false, enabled: true, connected: false, status: 'error', message: error.message };
+  }
+});
+
+ipcMain.handle('market:transaction', async (_event, payload) => {
+  try {
+    const config = await loadSyncConfig();
+    if (!config.enabled) return { ok: true, enabled: false, status: 'disabled', message: 'Синхронизация выключена' };
+    const result = await transactRemoteMarket(config, payload || {});
+    return { ...result, enabled: true, connected: true };
+  } catch (error) {
+    debugLog('MARKET_TRANSACTION_FAILED', { message: error.message, stack: error.stack, payload });
+    const hookMissing = /404|not found/i.test(String(error?.message || ''));
+    return {
+      ok: false,
+      enabled: true,
+      connected: false,
+      status: hookMissing ? 'hook-missing' : 'error',
+      message: hookMissing ? 'На сервере PocketBase не установлен pb_hooks/grpgi_market.pb.js' : error.message
+    };
   }
 });
 

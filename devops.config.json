@@ -19,7 +19,14 @@
       "renderer/app.js",
       "renderer/index.html"
     ],
-    "maxUnprotectedDeletions": 20
+    "allowedDeletedPaths": [
+      "renderer/assets/images/.png",
+      "renderer/assets/images/2E6ns.jpg",
+      "renderer/assets/images/galaxy#U0438#U0444#U0432.png",
+      "renderer/assets/images/galaxy12.png",
+      "renderer/assets/images/galaxyифв.png"
+    ],
+    "maxUnprotectedDeletions": 30
   },
   "webDeploy": {
     "source": "deploy/site",
