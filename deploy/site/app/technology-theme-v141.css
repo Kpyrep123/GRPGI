@@ -1,0 +1,25 @@
+/* v1.0.141 — technological-era inventory, trade and galaxy map. */
+html[data-era-theme="technological"]{--map-route:#ae8b55;--map-marker:#b99358;--map-text:#e0d3b9}
+html[data-era-theme="technological"] :is(.web-inventory-capacity-v1067,.market-tabs-v1073,.web-galaxy-controls){border-color:rgba(177,142,84,.35);border-radius:2px;background:rgba(17,15,11,.92)}
+html[data-era-theme="technological"] :is(.web-inventory-slot-v1067,.market-inventory-grid-v1071){border-color:rgba(176,140,81,.38);border-radius:2px;background:#0c0b08}
+html[data-era-theme="technological"] .web-inventory-slot-v1067.filled{border-color:rgba(198,157,94,.7);background:rgba(139,102,53,.10)}
+html[data-era-theme="technological"] .web-inventory-grid-v1067{border-color:rgba(176,140,81,.35);border-radius:2px;background:#0c0b08}
+html[data-era-theme="technological"] :is(.web-inventory-cell-v1067,.market-inventory-cell-v1071){border-color:rgba(176,140,81,.20);border-radius:1px;background:rgba(151,115,63,.045)}
+html[data-era-theme="technological"] :is(.web-inventory-tile-v1067,.web-inventory-slot-item-v1067,.market-shop-tile-v1071,.market-inventory-tile-v1071){border:1px solid rgba(182,146,86,.42);border-radius:2px;color:#e1d6c1;background:linear-gradient(155deg,rgba(45,38,27,.98),rgba(13,12,9,.99) 60%);box-shadow:inset 0 1px rgba(226,191,129,.07),0 4px 12px rgba(0,0,0,.35)}
+html[data-era-theme="technological"] :is(.web-inventory-tile-v1067,.market-shop-tile-v1071,.market-inventory-tile-v1071):hover,
+html[data-era-theme="technological"] :is(.market-shop-tile-v1071,.market-inventory-tile-v1071).selected{border-color:#c19b5f;background:linear-gradient(155deg,#4b3b26,#17140e 68%);box-shadow:inset 0 0 0 1px rgba(218,177,107,.18),0 7px 22px rgba(0,0,0,.48)}
+html[data-era-theme="technological"] .web-item-stats-v118>span{border-color:rgba(180,143,82,.32);border-radius:2px;background:rgba(111,81,40,.12)}
+html[data-era-theme="technological"] .market-tabs-v1073>button.active{border-color:#b99358;color:#e4d2b1;background:rgba(128,94,47,.24);box-shadow:inset 0 -2px #ad844b}
+html[data-era-theme="technological"] :is(.web-galaxy-stage,.web-galaxy-inspector,.web-galaxy-tooltip){border:1px solid rgba(183,146,84,.4);border-radius:3px;color:#ddd5c4;background:linear-gradient(180deg,#181611,#090907);box-shadow:0 18px 50px rgba(0,0,0,.55)}
+html[data-era-theme="technological"] .web-galaxy-stage{background:radial-gradient(circle at 50% 38%,rgba(140,98,48,.09),transparent 60%),#080806}
+html[data-era-theme="technological"] .web-galaxy-controls{background:transparent}
+html[data-era-theme="technological"] .web-galaxy-controls .secondary{border-color:rgba(190,153,91,.5);color:#dcc498;background:rgba(25,22,16,.94)}
+html[data-era-theme="technological"] .web-galaxy-controls .secondary:hover{border-color:#c19b5f;background:#443421}
+html[data-era-theme="technological"] .web-galaxy-hint{color:#b3a287}
+html[data-era-theme="technological"] .web-galaxy-inspector h2,
+html[data-era-theme="technological"] .galaxy-inspector-grid b{color:#e4d4b5}
+html[data-era-theme="technological"] .galaxy-inspector-grid>div{border-color:rgba(176,140,81,.28);border-radius:2px;background:rgba(119,89,48,.07)}
+html[data-era-theme="technological"] .galaxy-planet-row{border-color:rgba(176,140,81,.32);border-radius:2px;color:#d9c49d;background:rgba(103,78,42,.10)}
+html[data-era-theme="technological"] .galaxy-planet-row:hover{border-color:#b99358;background:rgba(129,95,49,.20)}
+html[data-era-theme="technological"] .item-fact-v141{border-color:rgba(186,148,86,.4);color:#d9c49d;background:rgba(111,81,40,.12)}
+html[data-era-theme="technological"] .item-modifier-v141{border-color:rgba(205,165,99,.5);background:rgba(133,94,40,.18)}

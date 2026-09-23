@@ -1,0 +1,166 @@
+{
+  "SHIPS": {
+    "ship_hjl3uc": {
+      "id": "ship_hjl3uc",
+      "name": "Чушея",
+      "callsign": "",
+      "model": "SBS-222",
+      "factionId": "",
+      "status": "operational",
+      "image": "https://sync.grpg-sync.ru/api/files/campaign_assets/m95sm4147k152rt/1783845560100_entity_ship_hjl3uc_novyy_korabl_9v5tf43cr8.png",
+      "ownerPlayerId": "",
+      "currentRegionId": "region_planet_155688_2sfa5",
+      "currentPlanetId": "planet_155688",
+      "fuel": 12.922133589336436,
+      "fuelCapacity": 100,
+      "hullCapacity": 100,
+      "hull": 100,
+      "fuelConsumption": 1,
+      "mass": 100,
+      "enginePower": 100,
+      "visionRadius": 500,
+      "radarRadius": 1200,
+      "radarEnabled": true,
+      "missileIds": [],
+      "missileStock": {},
+      "radarIds": [],
+      "cargoMass": 0,
+      "crewPlayerIds": [
+        "player_202919"
+      ],
+      "crewNpcIds": [],
+      "guns": [],
+      "notes": "",
+      "visibility": {
+        "playerIds": []
+      },
+      "relatedArticleIds": []
+    },
+    "ship_o2vaxt": {
+      "id": "ship_o2vaxt",
+      "name": "Номад",
+      "callsign": "",
+      "model": "Картрамон",
+      "factionId": "",
+      "status": "operational",
+      "image": "https://sync.grpg-sync.ru/api/files/campaign_assets/t9upu5z7fsl9mme/1782063968971_entity_ship_o2vaxt_novyy_korabl_9fitmb63s0.jpg",
+      "ownerPlayerId": "",
+      "currentRegionId": "region_planet_155688_2sfa5",
+      "currentPlanetId": "planet_155688",
+      "fuel": 0.07198611210697065,
+      "fuelCapacity": 100,
+      "hullCapacity": 100,
+      "hull": 100,
+      "fuelConsumption": 1,
+      "mass": 100,
+      "enginePower": 100,
+      "visionRadius": 500,
+      "radarRadius": 1000,
+      "radarEnabled": true,
+      "missileIds": [
+        "missile_i855ce",
+        "missile_i84pxt",
+        "missile_i85kq6"
+      ],
+      "missileStock": {
+        "missile_i855ce": -1,
+        "missile_i84pxt": -1,
+        "missile_i85kq6": -1
+      },
+      "radarIds": [
+        "radar_i84f03"
+      ],
+      "cargoMass": 0,
+      "crewPlayerIds": [],
+      "crewNpcIds": [],
+      "guns": [],
+      "notes": "",
+      "visibility": {
+        "playerIds": []
+      },
+      "relatedArticleIds": []
+    }
+  },
+  "SHIP_LIST": [
+    {
+      "id": "ship_o2vaxt",
+      "name": "Номад",
+      "callsign": "",
+      "model": "Картрамон",
+      "factionId": "",
+      "status": "operational",
+      "image": "https://sync.grpg-sync.ru/api/files/campaign_assets/t9upu5z7fsl9mme/1782063968971_entity_ship_o2vaxt_novyy_korabl_9fitmb63s0.jpg",
+      "ownerPlayerId": "",
+      "currentRegionId": "region_planet_155688_2sfa5",
+      "currentPlanetId": "planet_155688",
+      "fuel": 0.07198611210697065,
+      "fuelCapacity": 100,
+      "hullCapacity": 100,
+      "hull": 100,
+      "fuelConsumption": 1,
+      "mass": 100,
+      "enginePower": 100,
+      "visionRadius": 500,
+      "radarRadius": 1000,
+      "radarEnabled": true,
+      "missileIds": [
+        "missile_i855ce",
+        "missile_i84pxt",
+        "missile_i85kq6"
+      ],
+      "missileStock": {
+        "missile_i855ce": -1,
+        "missile_i84pxt": -1,
+        "missile_i85kq6": -1
+      },
+      "radarIds": [
+        "radar_i84f03"
+      ],
+      "cargoMass": 0,
+      "crewPlayerIds": [],
+      "crewNpcIds": [],
+      "guns": [],
+      "notes": "",
+      "visibility": {
+        "playerIds": []
+      },
+      "relatedArticleIds": []
+    },
+    {
+      "id": "ship_hjl3uc",
+      "name": "Чушея",
+      "callsign": "",
+      "model": "SBS-222",
+      "factionId": "",
+      "status": "operational",
+      "image": "https://sync.grpg-sync.ru/api/files/campaign_assets/m95sm4147k152rt/1783845560100_entity_ship_hjl3uc_novyy_korabl_9v5tf43cr8.png",
+      "ownerPlayerId": "",
+      "currentRegionId": "region_planet_155688_2sfa5",
+      "currentPlanetId": "planet_155688",
+      "fuel": 12.922133589336436,
+      "fuelCapacity": 100,
+      "hullCapacity": 100,
+      "hull": 100,
+      "fuelConsumption": 1,
+      "mass": 100,
+      "enginePower": 100,
+      "visionRadius": 500,
+      "radarRadius": 1200,
+      "radarEnabled": true,
+      "missileIds": [],
+      "missileStock": {},
+      "radarIds": [],
+      "cargoMass": 0,
+      "crewPlayerIds": [
+        "player_202919"
+      ],
+      "crewNpcIds": [],
+      "guns": [],
+      "notes": "",
+      "visibility": {
+        "playerIds": []
+      },
+      "relatedArticleIds": []
+    }
+  ]
+}

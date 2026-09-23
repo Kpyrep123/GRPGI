@@ -1,166 +1,936 @@
 {
   "NPCS": {
-    "garrus": {
-      "id": "garrus",
-      "name": "Гаррус Вакариан",
-      "role": "Тактический советник",
-      "location": "Кассилия",
-      "summary": "Специалист по полевым операциям и дальнему бою. Любит простые решения для сложных угроз.",
-      "traits": [
-        "дисциплина",
-        "ирония",
-        "меткость"
-      ]
+    "fetch": {
+      "abilities": {
+        "strength": 0,
+        "dexterity": 0,
+        "intelligence": 0,
+        "endurance": 0,
+        "will": 0,
+        "glory": 0
+      },
+      "allowPlayerChat": true,
+      "id": "fetch",
+      "image": "https://sync.grpg-sync.ru/api/files/campaign_assets/krbhgou0to8x7wy/3a2ef5e78c3de6cf05d228b3919e810a_entity_fetch_fetch_sjaqzz9ofp.png",
+      "location": "Альвир III",
+      "name": "Фетч",
+      "npcKind": "unique",
+      "relatedArticleIds": [],
+      "role": "Барыга",
+      "skills": [],
+      "specializations": {
+        "skill_015530": 0,
+        "skill_397435": 0,
+        "skill_455994": 0,
+        "skill_884013": 0
+      },
+      "stats": {
+        "hpCurrent": 0,
+        "hpMax": 0,
+        "shieldCurrent": 0,
+        "shieldMax": 0,
+        "energyCurrent": 0,
+        "energyMax": 1
+      },
+      "summary": "",
+      "traits": [],
+      "visibility": {
+        "playerIds": [
+          "player_582319",
+          "player_849364",
+          "player_202919",
+          "player_481909",
+          "player_486258"
+        ],
+        "campaignIds": [
+          "campaign_919916"
+        ],
+        "eraIds": []
+      }
     },
-    "liara": {
-      "id": "liara",
-      "name": "Лиара Т'Сони",
-      "role": "Исследователь архивов",
-      "location": "Кассилия",
-      "summary": "Помогает сопоставлять древние источники, фрагменты истории и политические последствия.",
-      "traits": [
-        "аналитика",
-        "биотика",
-        "архивы"
-      ]
+    "npc_027625": {
+      "abilities": {
+        "strength": 5,
+        "dexterity": 5,
+        "intelligence": 5,
+        "endurance": 5,
+        "will": 5,
+        "glory": 5
+      },
+      "allowPlayerChat": true,
+      "id": "npc_027625",
+      "image": "https://sync.grpg-sync.ru/api/files/campaign_assets/bxsg3vhamg87xel/572095d843c587c729f0ef5ac3615e0d_entity_npc_027625_estem_streyt_aqgt7ymzzj.png",
+      "location": "Неизвестно",
+      "name": "Эстем Стрейт",
+      "npcKind": "unique",
+      "relatedArticleIds": [],
+      "role": "Лидер корпуса \"Акариус\"",
+      "skills": [],
+      "specializations": {
+        "skill_015530": 0,
+        "skill_397435": 0,
+        "skill_455994": 0,
+        "skill_884013": 0
+      },
+      "stats": {
+        "hpCurrent": 0,
+        "hpMax": 0,
+        "shieldCurrent": 0,
+        "shieldMax": 0,
+        "energyCurrent": 0,
+        "energyMax": 1
+      },
+      "summary": "Автоматическая система фильрации обращений.",
+      "traits": [],
+      "visibility": {
+        "playerIds": [],
+        "campaignIds": [
+          "campaign_453839"
+        ],
+        "eraIds": []
+      }
     },
-    "hacket": {
-      "id": "hacket",
-      "name": "Адмирал Хакет",
-      "role": "Куратор операций",
-      "location": "Орбита Кассилии",
+    "npc_159604": {
+      "abilities": {
+        "strength": 0,
+        "dexterity": 0,
+        "intelligence": 5,
+        "endurance": 0,
+        "will": 5,
+        "glory": 3
+      },
+      "allowPlayerChat": true,
+      "id": "npc_159604",
+      "image": "https://sync.grpg-sync.ru/api/files/campaign_assets/rg1mrdoc3dk28hg/83f1d7e365e71a32e5da1e66abee2ca3_entity_npc_159604_novyy_npc_zhwq74seiw.png",
+      "location": "Крепость \"Астерион\"",
+      "name": "Элти",
+      "npcKind": "unique",
+      "relatedArticleIds": [],
+      "role": "Хирург",
+      "skills": [],
+      "specializations": {
+        "skill_015530": 0,
+        "skill_397435": 0,
+        "skill_455994": 0,
+        "skill_884013": 0
+      },
+      "stats": {
+        "hpCurrent": 10,
+        "hpMax": 10,
+        "shieldCurrent": 6,
+        "shieldMax": 6,
+        "energyCurrent": 6,
+        "energyMax": 6
+      },
+      "summary": "",
+      "traits": [],
+      "visibility": {
+        "playerIds": [],
+        "campaignIds": [
+          "campaign_453839"
+        ],
+        "eraIds": []
+      }
+    },
+    "npc_264825": {
+      "abilities": {
+        "strength": 0,
+        "dexterity": 0,
+        "intelligence": 0,
+        "endurance": 0,
+        "will": 0,
+        "glory": 0
+      },
+      "allowPlayerChat": true,
+      "id": "npc_264825",
+      "image": "https://sync.grpg-sync.ru/api/files/campaign_assets/7ptgt4b376nlu2n/d847ad4695cd820387946cc8cbeda4ee_entity_npc_264825_adyutant_d67kcdow8j.png",
+      "location": "Галлактическая Паутина",
+      "name": "Адъютант",
+      "npcKind": "unique",
+      "relatedArticleIds": [],
+      "role": "Ваш личный ИИ",
+      "skills": [],
+      "specializations": {},
+      "stats": {
+        "hpCurrent": 0,
+        "hpMax": 0,
+        "shieldCurrent": 0,
+        "shieldMax": 0,
+        "energyCurrent": 0,
+        "energyMax": 1
+      },
+      "summary": "",
+      "traits": [],
+      "visibility": {
+        "playerIds": [],
+        "campaignIds": [],
+        "eraIds": [
+          "technological"
+        ]
+      }
+    },
+    "npc_415750": {
+      "abilities": {
+        "strength": 3,
+        "dexterity": 1,
+        "intelligence": 3,
+        "endurance": 0,
+        "will": 2,
+        "glory": 4
+      },
+      "allowPlayerChat": true,
+      "id": "npc_415750",
+      "image": "https://sync.grpg-sync.ru/api/files/campaign_assets/eik52j2qul1cglz/71581304b98e2cfaa367e3a295d4d015_entity_npc_415750_novyy_npc_hfsgtjusj9.png",
+      "location": "Джемейка",
+      "name": "Мадам Цин",
+      "npcKind": "unique",
+      "relatedArticleIds": [],
+      "role": "Лидер группировки пиратов",
+      "skills": [],
+      "specializations": {
+        "skill_015530": 0,
+        "skill_397435": 0,
+        "skill_455994": 0,
+        "skill_884013": 0
+      },
+      "stats": {
+        "hpCurrent": 13,
+        "hpMax": 13,
+        "shieldCurrent": 0,
+        "shieldMax": 0,
+        "energyCurrent": 0,
+        "energyMax": 0
+      },
+      "summary": "Жестока, но при должном уважении и мотивации может достать всё что угодно.",
+      "traits": [],
+      "visibility": {
+        "playerIds": [],
+        "campaignIds": [
+          "campaign_453839"
+        ],
+        "eraIds": []
+      }
+    },
+    "npc_484280": {
+      "abilities": {
+        "strength": 0,
+        "dexterity": 0,
+        "intelligence": 0,
+        "endurance": 0,
+        "will": 0,
+        "glory": 0
+      },
+      "allowPlayerChat": false,
+      "id": "npc_484280",
+      "image": "https://sync.grpg-sync.ru/api/files/campaign_assets/4simi8c0xjmpa16/1781811080701_entity_npc_484280_said_ixfpsjmz28.png",
+      "location": "Элаат",
+      "name": "Саид",
+      "npcKind": "unique",
+      "relatedArticleIds": [],
+      "role": "",
+      "skills": [],
+      "specializations": {
+        "skill_397435": 0,
+        "skill_884013": 0
+      },
+      "stats": {
+        "hpCurrent": 0,
+        "hpMax": 0,
+        "shieldCurrent": 0,
+        "shieldMax": 0,
+        "energyCurrent": 0,
+        "energyMax": 1
+      },
+      "summary": "",
+      "traits": [],
+      "visibility": {
+        "playerIds": [],
+        "campaignIds": [],
+        "eraIds": []
+      }
+    },
+    "npc_499859": {
+      "abilities": {
+        "strength": 5,
+        "dexterity": 5,
+        "intelligence": 0,
+        "endurance": 3,
+        "will": 0,
+        "glory": 1
+      },
+      "allowPlayerChat": true,
+      "id": "npc_499859",
+      "image": "https://sync.grpg-sync.ru/api/files/campaign_assets/isxyolvuy2l76e9/9fdcc0afc94c66f9e7822b3ea70fc75e_entity_npc_499859_novyy_npc_79og9phdo8.png",
+      "location": "Крепость \"Астерион\"",
+      "name": "Паша",
+      "npcKind": "unique",
+      "relatedArticleIds": [],
+      "role": "Штурмовик",
+      "skills": [],
+      "specializations": {
+        "skill_015530": 0,
+        "skill_397435": 0,
+        "skill_455994": 0,
+        "skill_884013": 0
+      },
+      "stats": {
+        "hpCurrent": 19,
+        "hpMax": 19,
+        "shieldCurrent": 0,
+        "shieldMax": 0,
+        "energyCurrent": 0,
+        "energyMax": 0
+      },
+      "summary": "",
+      "traits": [
+        "Странный акцент"
+      ],
+      "visibility": {
+        "playerIds": [],
+        "campaignIds": [
+          "campaign_453839"
+        ],
+        "eraIds": []
+      }
+    },
+    "npc_604343": {
+      "abilities": {
+        "strength": 0,
+        "dexterity": 0,
+        "intelligence": 0,
+        "endurance": 0,
+        "will": 0,
+        "glory": 0
+      },
+      "allowPlayerChat": false,
+      "id": "npc_604343",
+      "image": "https://sync.grpg-sync.ru/api/files/campaign_assets/p73ydn65yt5l8xj/1781810993469_entity_npc_604343_abdula_u5ii24lfag.png",
+      "location": "Элаат",
+      "name": "Абдула",
+      "npcKind": "unique",
+      "relatedArticleIds": [],
+      "role": "",
+      "skills": [],
+      "specializations": {
+        "skill_397435": 0,
+        "skill_884013": 0
+      },
+      "stats": {
+        "hpCurrent": 0,
+        "hpMax": 0,
+        "shieldCurrent": 0,
+        "shieldMax": 0,
+        "energyCurrent": 0,
+        "energyMax": 1
+      },
+      "summary": "",
+      "traits": [],
+      "visibility": {
+        "playerIds": [],
+        "campaignIds": [],
+        "eraIds": []
+      }
+    },
+    "npc_855192": {
+      "abilities": {
+        "strength": 1,
+        "dexterity": 3,
+        "intelligence": 0,
+        "endurance": 0,
+        "will": 0,
+        "glory": 1
+      },
+      "allowPlayerChat": true,
+      "id": "npc_855192",
+      "image": "https://sync.grpg-sync.ru/api/files/campaign_assets/v0jc32f9n4uxc7d/64f5f4909af856432a1a3b1ed736d4ce_entity_npc_855192_novyy_npc_atn5jcsgpe.png",
+      "location": "Крепость \"Астерион\"",
+      "name": "Чех",
+      "npcKind": "unique",
+      "relatedArticleIds": [],
+      "role": "Водитель",
+      "skills": [],
+      "specializations": {
+        "skill_015530": 0,
+        "skill_397435": 0,
+        "skill_455994": 0,
+        "skill_884013": 0
+      },
+      "stats": {
+        "hpCurrent": 12,
+        "hpMax": 12,
+        "shieldCurrent": 0,
+        "shieldMax": 0,
+        "energyCurrent": 0,
+        "energyMax": 1
+      },
+      "summary": "Дёрганые движения и речь, глаза постоянно бегают. Зависим.",
+      "traits": [],
+      "visibility": {
+        "playerIds": [],
+        "campaignIds": [
+          "campaign_453839"
+        ],
+        "eraIds": []
+      }
+    },
+    "npc_980297": {
+      "abilities": {
+        "strength": 2,
+        "dexterity": 1,
+        "intelligence": 0,
+        "endurance": 5,
+        "will": 1,
+        "glory": 3
+      },
+      "allowPlayerChat": true,
+      "id": "npc_980297",
+      "image": "https://sync.grpg-sync.ru/api/files/campaign_assets/iy9vlyszqm9aahm/8e2e9f18263a3212c5fce5617e264247_entity_npc_980297_novyy_npc_qfhttccir6.png",
+      "location": "Эстреза",
+      "name": "Хитч",
+      "npcKind": "unique",
+      "relatedArticleIds": [],
+      "role": "Рекрутёр",
+      "skills": [],
+      "specializations": {
+        "skill_015530": 0,
+        "skill_397435": 0,
+        "skill_455994": 0,
+        "skill_884013": 0
+      },
+      "stats": {
+        "hpCurrent": 16,
+        "hpMax": 16,
+        "shieldCurrent": 5,
+        "shieldMax": 5,
+        "energyCurrent": 2,
+        "energyMax": 4
+      },
+      "summary": "",
+      "traits": [],
+      "visibility": {
+        "playerIds": [],
+        "campaignIds": [
+          "campaign_453839"
+        ],
+        "eraIds": []
+      }
+    },
+    "vicard": {
+      "abilities": {
+        "strength": 0,
+        "dexterity": 0,
+        "intelligence": 0,
+        "endurance": 0,
+        "will": 0,
+        "glory": 0
+      },
+      "allowPlayerChat": true,
+      "id": "vicard",
+      "image": "https://sync.grpg-sync.ru/api/files/campaign_assets/y7c03lhqehm9eci/65e2bfd1f7e638a0cf00c75f4b4fac17_entity_vicard_vikard_w180eca8rl.png",
+      "location": "Альвир III",
+      "name": "Викард",
+      "npcKind": "unique",
+      "relatedArticleIds": [],
+      "role": "Продюссер",
+      "skills": [],
+      "specializations": {
+        "skill_015530": 0,
+        "skill_397435": 0,
+        "skill_455994": 0,
+        "skill_884013": 0
+      },
+      "stats": {
+        "hpCurrent": 0,
+        "hpMax": 0,
+        "shieldCurrent": 0,
+        "shieldMax": 0,
+        "energyCurrent": 0,
+        "energyMax": 1
+      },
       "summary": "Контролирует стратегические задачи и держит под прицелом логистику системы.",
       "traits": [
-        "стратегия",
-        "авторитет"
-      ]
-    },
-    "mirabel": {
-      "id": "mirabel",
-      "name": "Мирабель Куин",
-      "role": "Управляющая торговым терминалом",
-      "location": "Иридия, Кассилия",
-      "summary": "Продаёт доступ, снаряжение для пустынь и редкие логистические разрешения.",
-      "traits": [
-        "торговля",
         "связи",
-        "холодный расчёт"
-      ]
-    },
-    "jackie": {
-      "id": "jackie",
-      "name": "Джеки Уэллс",
-      "role": "Контакт в теневом секторе",
-      "location": "Транзитный канал",
-      "summary": "Добывает транспорт, слухи и контракты там, где официалы не заходят.",
-      "traits": [
-        "обаяние",
-        "уличные связи"
-      ]
-    },
-    "viktor": {
-      "id": "viktor",
-      "name": "Вик Вектор",
-      "role": "Риппердок",
-      "location": "Нижний орбитальный пояс",
-      "summary": "Чинит импланты и ненавидит плохую кибернетику.",
-      "traits": [
-        "медицина",
-        "импланты"
-      ]
-    },
-    "judy": {
-      "id": "judy",
-      "name": "Джуди Альварес",
-      "role": "Техник памяти",
-      "location": "Свободный порт",
-      "summary": "Разбирается в записях восприятия, нейролинках и нестандартных интерфейсах.",
-      "traits": [
-        "нейросети",
-        "техника"
-      ]
+        "авторитет"
+      ],
+      "visibility": {
+        "playerIds": [
+          "player_582319",
+          "player_849364",
+          "player_975424",
+          "player_202919",
+          "player_481909",
+          "player_486258"
+        ],
+        "campaignIds": [],
+        "eraIds": []
+      }
     }
   },
   "NPC_LIST": [
     {
-      "id": "garrus",
-      "name": "Гаррус Вакариан",
-      "role": "Тактический советник",
-      "location": "Кассилия",
-      "summary": "Специалист по полевым операциям и дальнему бою. Любит простые решения для сложных угроз.",
-      "traits": [
-        "дисциплина",
-        "ирония",
-        "меткость"
-      ]
+      "abilities": {
+        "strength": 0,
+        "dexterity": 0,
+        "intelligence": 0,
+        "endurance": 0,
+        "will": 0,
+        "glory": 0
+      },
+      "allowPlayerChat": false,
+      "id": "npc_604343",
+      "image": "https://sync.grpg-sync.ru/api/files/campaign_assets/p73ydn65yt5l8xj/1781810993469_entity_npc_604343_abdula_u5ii24lfag.png",
+      "location": "Элаат",
+      "name": "Абдула",
+      "npcKind": "unique",
+      "relatedArticleIds": [],
+      "role": "",
+      "skills": [],
+      "specializations": {
+        "skill_397435": 0,
+        "skill_884013": 0
+      },
+      "stats": {
+        "hpCurrent": 0,
+        "hpMax": 0,
+        "shieldCurrent": 0,
+        "shieldMax": 0,
+        "energyCurrent": 0,
+        "energyMax": 1
+      },
+      "summary": "",
+      "traits": [],
+      "visibility": {
+        "playerIds": [],
+        "campaignIds": [],
+        "eraIds": []
+      }
     },
     {
-      "id": "liara",
-      "name": "Лиара Т'Сони",
-      "role": "Исследователь архивов",
-      "location": "Кассилия",
-      "summary": "Помогает сопоставлять древние источники, фрагменты истории и политические последствия.",
-      "traits": [
-        "аналитика",
-        "биотика",
-        "архивы"
-      ]
+      "abilities": {
+        "strength": 0,
+        "dexterity": 0,
+        "intelligence": 0,
+        "endurance": 0,
+        "will": 0,
+        "glory": 0
+      },
+      "allowPlayerChat": true,
+      "id": "npc_264825",
+      "image": "https://sync.grpg-sync.ru/api/files/campaign_assets/7ptgt4b376nlu2n/d847ad4695cd820387946cc8cbeda4ee_entity_npc_264825_adyutant_d67kcdow8j.png",
+      "location": "Галлактическая Паутина",
+      "name": "Адъютант",
+      "npcKind": "unique",
+      "relatedArticleIds": [],
+      "role": "Ваш личный ИИ",
+      "skills": [],
+      "specializations": {},
+      "stats": {
+        "hpCurrent": 0,
+        "hpMax": 0,
+        "shieldCurrent": 0,
+        "shieldMax": 0,
+        "energyCurrent": 0,
+        "energyMax": 1
+      },
+      "summary": "",
+      "traits": [],
+      "visibility": {
+        "playerIds": [],
+        "campaignIds": [],
+        "eraIds": [
+          "technological"
+        ]
+      }
     },
     {
-      "id": "hacket",
-      "name": "Адмирал Хакет",
-      "role": "Куратор операций",
-      "location": "Орбита Кассилии",
+      "abilities": {
+        "strength": 0,
+        "dexterity": 0,
+        "intelligence": 0,
+        "endurance": 0,
+        "will": 0,
+        "glory": 0
+      },
+      "allowPlayerChat": true,
+      "id": "vicard",
+      "image": "https://sync.grpg-sync.ru/api/files/campaign_assets/y7c03lhqehm9eci/65e2bfd1f7e638a0cf00c75f4b4fac17_entity_vicard_vikard_w180eca8rl.png",
+      "location": "Альвир III",
+      "name": "Викард",
+      "npcKind": "unique",
+      "relatedArticleIds": [],
+      "role": "Продюссер",
+      "skills": [],
+      "specializations": {
+        "skill_015530": 0,
+        "skill_397435": 0,
+        "skill_455994": 0,
+        "skill_884013": 0
+      },
+      "stats": {
+        "hpCurrent": 0,
+        "hpMax": 0,
+        "shieldCurrent": 0,
+        "shieldMax": 0,
+        "energyCurrent": 0,
+        "energyMax": 1
+      },
       "summary": "Контролирует стратегические задачи и держит под прицелом логистику системы.",
       "traits": [
-        "стратегия",
-        "авторитет"
-      ]
-    },
-    {
-      "id": "mirabel",
-      "name": "Мирабель Куин",
-      "role": "Управляющая торговым терминалом",
-      "location": "Иридия, Кассилия",
-      "summary": "Продаёт доступ, снаряжение для пустынь и редкие логистические разрешения.",
-      "traits": [
-        "торговля",
         "связи",
-        "холодный расчёт"
-      ]
+        "авторитет"
+      ],
+      "visibility": {
+        "playerIds": [
+          "player_582319",
+          "player_849364",
+          "player_975424",
+          "player_202919",
+          "player_481909",
+          "player_486258"
+        ],
+        "campaignIds": [],
+        "eraIds": []
+      }
     },
     {
-      "id": "jackie",
-      "name": "Джеки Уэллс",
-      "role": "Контакт в теневом секторе",
-      "location": "Транзитный канал",
-      "summary": "Добывает транспорт, слухи и контракты там, где официалы не заходят.",
-      "traits": [
-        "обаяние",
-        "уличные связи"
-      ]
+      "abilities": {
+        "strength": 3,
+        "dexterity": 1,
+        "intelligence": 3,
+        "endurance": 0,
+        "will": 2,
+        "glory": 4
+      },
+      "allowPlayerChat": true,
+      "id": "npc_415750",
+      "image": "https://sync.grpg-sync.ru/api/files/campaign_assets/eik52j2qul1cglz/71581304b98e2cfaa367e3a295d4d015_entity_npc_415750_novyy_npc_hfsgtjusj9.png",
+      "location": "Джемейка",
+      "name": "Мадам Цин",
+      "npcKind": "unique",
+      "relatedArticleIds": [],
+      "role": "Лидер группировки пиратов",
+      "skills": [],
+      "specializations": {
+        "skill_015530": 0,
+        "skill_397435": 0,
+        "skill_455994": 0,
+        "skill_884013": 0
+      },
+      "stats": {
+        "hpCurrent": 13,
+        "hpMax": 13,
+        "shieldCurrent": 0,
+        "shieldMax": 0,
+        "energyCurrent": 0,
+        "energyMax": 0
+      },
+      "summary": "Жестока, но при должном уважении и мотивации может достать всё что угодно.",
+      "traits": [],
+      "visibility": {
+        "playerIds": [],
+        "campaignIds": [
+          "campaign_453839"
+        ],
+        "eraIds": []
+      }
     },
     {
-      "id": "viktor",
-      "name": "Вик Вектор",
-      "role": "Риппердок",
-      "location": "Нижний орбитальный пояс",
-      "summary": "Чинит импланты и ненавидит плохую кибернетику.",
+      "abilities": {
+        "strength": 5,
+        "dexterity": 5,
+        "intelligence": 0,
+        "endurance": 3,
+        "will": 0,
+        "glory": 1
+      },
+      "allowPlayerChat": true,
+      "id": "npc_499859",
+      "image": "https://sync.grpg-sync.ru/api/files/campaign_assets/isxyolvuy2l76e9/9fdcc0afc94c66f9e7822b3ea70fc75e_entity_npc_499859_novyy_npc_79og9phdo8.png",
+      "location": "Крепость \"Астерион\"",
+      "name": "Паша",
+      "npcKind": "unique",
+      "relatedArticleIds": [],
+      "role": "Штурмовик",
+      "skills": [],
+      "specializations": {
+        "skill_015530": 0,
+        "skill_397435": 0,
+        "skill_455994": 0,
+        "skill_884013": 0
+      },
+      "stats": {
+        "hpCurrent": 19,
+        "hpMax": 19,
+        "shieldCurrent": 0,
+        "shieldMax": 0,
+        "energyCurrent": 0,
+        "energyMax": 0
+      },
+      "summary": "",
       "traits": [
-        "медицина",
-        "импланты"
-      ]
+        "Странный акцент"
+      ],
+      "visibility": {
+        "playerIds": [],
+        "campaignIds": [
+          "campaign_453839"
+        ],
+        "eraIds": []
+      }
     },
     {
-      "id": "judy",
-      "name": "Джуди Альварес",
-      "role": "Техник памяти",
-      "location": "Свободный порт",
-      "summary": "Разбирается в записях восприятия, нейролинках и нестандартных интерфейсах.",
-      "traits": [
-        "нейросети",
-        "техника"
-      ]
+      "abilities": {
+        "strength": 0,
+        "dexterity": 0,
+        "intelligence": 0,
+        "endurance": 0,
+        "will": 0,
+        "glory": 0
+      },
+      "allowPlayerChat": false,
+      "id": "npc_484280",
+      "image": "https://sync.grpg-sync.ru/api/files/campaign_assets/4simi8c0xjmpa16/1781811080701_entity_npc_484280_said_ixfpsjmz28.png",
+      "location": "Элаат",
+      "name": "Саид",
+      "npcKind": "unique",
+      "relatedArticleIds": [],
+      "role": "",
+      "skills": [],
+      "specializations": {
+        "skill_397435": 0,
+        "skill_884013": 0
+      },
+      "stats": {
+        "hpCurrent": 0,
+        "hpMax": 0,
+        "shieldCurrent": 0,
+        "shieldMax": 0,
+        "energyCurrent": 0,
+        "energyMax": 1
+      },
+      "summary": "",
+      "traits": [],
+      "visibility": {
+        "playerIds": [],
+        "campaignIds": [],
+        "eraIds": []
+      }
+    },
+    {
+      "abilities": {
+        "strength": 0,
+        "dexterity": 0,
+        "intelligence": 0,
+        "endurance": 0,
+        "will": 0,
+        "glory": 0
+      },
+      "allowPlayerChat": true,
+      "id": "fetch",
+      "image": "https://sync.grpg-sync.ru/api/files/campaign_assets/krbhgou0to8x7wy/3a2ef5e78c3de6cf05d228b3919e810a_entity_fetch_fetch_sjaqzz9ofp.png",
+      "location": "Альвир III",
+      "name": "Фетч",
+      "npcKind": "unique",
+      "relatedArticleIds": [],
+      "role": "Барыга",
+      "skills": [],
+      "specializations": {
+        "skill_015530": 0,
+        "skill_397435": 0,
+        "skill_455994": 0,
+        "skill_884013": 0
+      },
+      "stats": {
+        "hpCurrent": 0,
+        "hpMax": 0,
+        "shieldCurrent": 0,
+        "shieldMax": 0,
+        "energyCurrent": 0,
+        "energyMax": 1
+      },
+      "summary": "",
+      "traits": [],
+      "visibility": {
+        "playerIds": [
+          "player_582319",
+          "player_849364",
+          "player_202919",
+          "player_481909",
+          "player_486258"
+        ],
+        "campaignIds": [
+          "campaign_919916"
+        ],
+        "eraIds": []
+      }
+    },
+    {
+      "abilities": {
+        "strength": 2,
+        "dexterity": 1,
+        "intelligence": 0,
+        "endurance": 5,
+        "will": 1,
+        "glory": 3
+      },
+      "allowPlayerChat": true,
+      "id": "npc_980297",
+      "image": "https://sync.grpg-sync.ru/api/files/campaign_assets/iy9vlyszqm9aahm/8e2e9f18263a3212c5fce5617e264247_entity_npc_980297_novyy_npc_qfhttccir6.png",
+      "location": "Эстреза",
+      "name": "Хитч",
+      "npcKind": "unique",
+      "relatedArticleIds": [],
+      "role": "Рекрутёр",
+      "skills": [],
+      "specializations": {
+        "skill_015530": 0,
+        "skill_397435": 0,
+        "skill_455994": 0,
+        "skill_884013": 0
+      },
+      "stats": {
+        "hpCurrent": 16,
+        "hpMax": 16,
+        "shieldCurrent": 5,
+        "shieldMax": 5,
+        "energyCurrent": 2,
+        "energyMax": 4
+      },
+      "summary": "",
+      "traits": [],
+      "visibility": {
+        "playerIds": [],
+        "campaignIds": [
+          "campaign_453839"
+        ],
+        "eraIds": []
+      }
+    },
+    {
+      "abilities": {
+        "strength": 1,
+        "dexterity": 3,
+        "intelligence": 0,
+        "endurance": 0,
+        "will": 0,
+        "glory": 1
+      },
+      "allowPlayerChat": true,
+      "id": "npc_855192",
+      "image": "https://sync.grpg-sync.ru/api/files/campaign_assets/v0jc32f9n4uxc7d/64f5f4909af856432a1a3b1ed736d4ce_entity_npc_855192_novyy_npc_atn5jcsgpe.png",
+      "location": "Крепость \"Астерион\"",
+      "name": "Чех",
+      "npcKind": "unique",
+      "relatedArticleIds": [],
+      "role": "Водитель",
+      "skills": [],
+      "specializations": {
+        "skill_015530": 0,
+        "skill_397435": 0,
+        "skill_455994": 0,
+        "skill_884013": 0
+      },
+      "stats": {
+        "hpCurrent": 12,
+        "hpMax": 12,
+        "shieldCurrent": 0,
+        "shieldMax": 0,
+        "energyCurrent": 0,
+        "energyMax": 1
+      },
+      "summary": "Дёрганые движения и речь, глаза постоянно бегают. Зависим.",
+      "traits": [],
+      "visibility": {
+        "playerIds": [],
+        "campaignIds": [
+          "campaign_453839"
+        ],
+        "eraIds": []
+      }
+    },
+    {
+      "abilities": {
+        "strength": 0,
+        "dexterity": 0,
+        "intelligence": 5,
+        "endurance": 0,
+        "will": 5,
+        "glory": 3
+      },
+      "allowPlayerChat": true,
+      "id": "npc_159604",
+      "image": "https://sync.grpg-sync.ru/api/files/campaign_assets/rg1mrdoc3dk28hg/83f1d7e365e71a32e5da1e66abee2ca3_entity_npc_159604_novyy_npc_zhwq74seiw.png",
+      "location": "Крепость \"Астерион\"",
+      "name": "Элти",
+      "npcKind": "unique",
+      "relatedArticleIds": [],
+      "role": "Хирург",
+      "skills": [],
+      "specializations": {
+        "skill_015530": 0,
+        "skill_397435": 0,
+        "skill_455994": 0,
+        "skill_884013": 0
+      },
+      "stats": {
+        "hpCurrent": 10,
+        "hpMax": 10,
+        "shieldCurrent": 6,
+        "shieldMax": 6,
+        "energyCurrent": 6,
+        "energyMax": 6
+      },
+      "summary": "",
+      "traits": [],
+      "visibility": {
+        "playerIds": [],
+        "campaignIds": [
+          "campaign_453839"
+        ],
+        "eraIds": []
+      }
+    },
+    {
+      "abilities": {
+        "strength": 5,
+        "dexterity": 5,
+        "intelligence": 5,
+        "endurance": 5,
+        "will": 5,
+        "glory": 5
+      },
+      "allowPlayerChat": true,
+      "id": "npc_027625",
+      "image": "https://sync.grpg-sync.ru/api/files/campaign_assets/bxsg3vhamg87xel/572095d843c587c729f0ef5ac3615e0d_entity_npc_027625_estem_streyt_aqgt7ymzzj.png",
+      "location": "Неизвестно",
+      "name": "Эстем Стрейт",
+      "npcKind": "unique",
+      "relatedArticleIds": [],
+      "role": "Лидер корпуса \"Акариус\"",
+      "skills": [],
+      "specializations": {
+        "skill_015530": 0,
+        "skill_397435": 0,
+        "skill_455994": 0,
+        "skill_884013": 0
+      },
+      "stats": {
+        "hpCurrent": 0,
+        "hpMax": 0,
+        "shieldCurrent": 0,
+        "shieldMax": 0,
+        "energyCurrent": 0,
+        "energyMax": 1
+      },
+      "summary": "Автоматическая система фильрации обращений.",
+      "traits": [],
+      "visibility": {
+        "playerIds": [],
+        "campaignIds": [
+          "campaign_453839"
+        ],
+        "eraIds": []
+      }
     }
   ]
 }

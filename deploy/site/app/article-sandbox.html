@@ -27,6 +27,16 @@
       min-width: 0;
       overflow-wrap: anywhere;
     }
+    #grpgi-article-root img.rich-inline-image-v1086 {
+      display: block;
+      max-width: min(100%, 900px);
+      max-height: 720px;
+      width: auto;
+      height: auto;
+      margin: 12px 0;
+      border-radius: 10px;
+      object-fit: contain;
+    }
   </style>
 </head>
 <body>
@@ -52,6 +62,14 @@
         const id = String(direct?.[1] || uri?.[1] || '').replace(/^\/+/, '').trim();
         if (!id) return '';
         try { return decodeURIComponent(id); } catch { return id; }
+      };
+
+      const entityFromLink = link => {
+        const raw = String(link?.getAttribute?.('href') || '').trim();
+        const match = raw.match(/^(player|character|npc):(?:\/\/)?(.+)$/i);
+        const entityType = String(link?.dataset?.entityType || match?.[1] || '').toLowerCase();
+        const entityId = String(link?.dataset?.entityId || match?.[2] || '').replace(/^\/+/, '').trim();
+        return { entityType: entityType === 'character' ? 'player' : entityType, entityId };
       };
 
       const currentHeight = () => Math.max(
@@ -105,12 +123,18 @@
       };
 
       document.addEventListener('click', event => {
-        const link = event.target?.closest?.('a[href], a[data-article-id], [data-article-link]');
+        const link = event.target?.closest?.('a[href], a[data-article-id], [data-article-link], a[data-entity-id]');
         if (!link) return;
         const articleId = String(link.dataset?.articleId || link.dataset?.articleLink || articleIdFromHref(link.getAttribute('href') || '')).trim();
-        if (!articleId) return;
+        if (articleId) {
+          event.preventDefault();
+          post('article-link', { articleId });
+          return;
+        }
+        const { entityType, entityId } = entityFromLink(link);
+        if (!['player', 'npc'].includes(entityType) || !entityId) return;
         event.preventDefault();
-        post('article-link', { articleId });
+        post('entity-link', { entityType, entityId });
       });
 
       window.addEventListener('message', event => {

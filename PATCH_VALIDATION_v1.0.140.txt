@@ -1,0 +1,77 @@
+GRPGI cumulative patch 1.0.140 validation
+Base: GRPGI-source-v1.0.136-20260919-1904.zip
+Validation date: 2026-09-22 UTC
+
+PASS  JavaScript syntax and JSON parsing:
+      main.js
+      renderer/app.js
+      renderer/campaign-studio.js
+      renderer/scene-editor-v113.js
+      renderer/region-command-center.js
+      renderer/stats-engine-v113.js
+      deploy/site/app/app.js
+      pocketbase/pb_hooks/grpgi_market_v139.js
+      pocketbase/pb_hooks/grpgi_market_v139.pb.js
+      pocketbase/pb_hooks/grpgi_integrity_v140.js
+      pocketbase/pb_hooks/grpgi_integrity_v140.pb.js
+      package.json, package-lock.json and deploy/site/build-info.json
+
+PASS  tests/v140-integrity-server.integration.mjs
+      Reproduction of debited credits with an erased portfolio, automatic
+      recovery from the v139 operation ledger, future destructive-write guard,
+      valid stock sale, bundled-equipment reset guard and normal WC edits.
+
+PASS  tests/v140-world-integrity.cjs
+      Backup-first recovery for a missing/corrupt equipment file, atomic local
+      writes, section-scoped cloud writes and bundled-reset protection.
+
+PASS  tests/v135-player-sync-client.mjs
+      Rapid desktop inventory writes, skills/attributes, profile/market merge,
+      same-version stale-event rejection and stockPortfolio disk persistence.
+
+PASS  tests/v135-player-sync-web.mjs
+      Rapid web inventory writes, retry idempotence, market/profile queue and
+      same-version realtime protection for stock holdings.
+
+PASS  tests/v139-market-quantity-server.integration.mjs
+      Atomic multi-item and multi-stock operations, server-side price,
+      inventory capacity, unique limit, sale, auth and operation idempotence.
+
+PASS  tests/v139-market-quantity-ui.mjs
+      Desktop/web quantity controls, totals, limits and 1.0.140 cache versions.
+
+PASS  tests/v139-market.browser.mjs
+      Real Chromium desktop terminal with goods and stock quantity controls.
+
+PASS  tests/v139-technological-theme.browser.mjs
+      Real Chromium landing, web login and desktop login rendering.
+
+PASS  tests/v137-loot-server.integration.mjs
+      Capacity, weight, race safety, authorization and durable replay.
+
+PASS  tests/v138-credit-server.integration.mjs
+      Concurrent exactly-once credit grants and replay after restart.
+
+PASS  tests/v138-lua-combat-api.cjs
+      Reactions, states, ammo, durability, charges, absorption, attacks,
+      credit commands and sight-blocking zones.
+
+PASS  tests/v137-ui-loot.mjs
+      Movement, item search, inventory checks, scrolling, Shift duplication
+      and durable direct loot delivery.
+
+PASS  tests/v137-web-archive.mjs
+      Correct web archive equipment modifier values.
+
+PASS  tests/v137-combat-performance.mjs
+      Cached runtime and visibility calculations on larger scenes.
+
+PASS  tests/v138-ui-money-items.mjs
+      Durability/charge fields and idempotent local/remote credit grants.
+
+PASS  tests/v137-browser.mjs
+      Real Chromium NPC save cycles, World Config search and 250-sound scroll.
+
+PASS  Packaging verification
+      ZIP integrity, exact comparison with staged files, per-file SHA-256
+      verification and exclusion of node_modules/build/temp output.

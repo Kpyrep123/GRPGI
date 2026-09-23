@@ -4,35 +4,62 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: file: https:; font-src 'self' data:; connect-src 'self'; frame-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; worker-src 'self'; media-src 'self' data: blob: file: https:" />
-  <title>Galactic RPG Interface</title>
-  <link rel="stylesheet" href="./styles.css" />
+  <title>GRPGI · интерфейс кампании</title>
+  <script src="./graphics-mode-bootstrap.js?v=1.0.140"></script>
+  <link rel="stylesheet" href="./styles.css?v=1.0.140" />
+  <link rel="stylesheet" href="./scene-editor-v113.css?v=1.0.140" />
+  <link rel="stylesheet" href="./stats-engine-v113.css?v=1.0.140" />
+  <link rel="stylesheet" href="./stats-engine-v114.css?v=1.0.140" />
+  <link rel="stylesheet" href="./stats-engine-v115.css?v=1.0.140" />
   <link rel="stylesheet" href="./region-command-center.css" />
   <link rel="stylesheet" href="./campaign-studio.css" />
+  <link rel="stylesheet" href="./stats-engine-v116.css?v=1.0.140" />
+  <link rel="stylesheet" href="./feature-pack-v118.css?v=1.0.140" />
+  <link rel="stylesheet" href="./feature-pack-v119.css?v=1.0.140" />
+  <link rel="stylesheet" href="./feature-pack-v120.css?v=1.0.140" />
+  <link rel="stylesheet" href="./technology-theme-v139.css?v=1.0.140" />
 </head>
 <body>
   <div id="app">
     <div class="title-bar">
       <div class="row">
-        <div id="sync-chip" class="chip">SYNC_MODE: LOCAL_FILE_CACHE</div>
-        <button id="sync-open-btn" class="tiny-btn">СИНХР.</button>
-        <div id="status-line" class="status-line">OS_CORE: v5.2 // STATUS: IDLE</div>
+        <div id="sync-chip" class="chip">ЛОКАЛЬНЫЕ ДАННЫЕ</div>
+        <button id="sync-open-btn" class="tiny-btn">СИНХРОНИЗАЦИЯ</button>
+        <button id="data-update-indicator" class="data-update-indicator" type="button" title="Обновления данных: ожидание" aria-label="Обновления данных: ожидание">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h12l3 3v15H4V3h1z"></path><path d="M8 3v6h8V3M8 21v-7h8v7"></path></svg>
+          <span id="data-update-label">ДАННЫЕ</span>
+        </button>
+        <div id="status-line" class="status-line">GRPGI · версия 1.0.140</div>
       </div>
       <div class="row">
         <div id="state-path" class="tiny-note"></div>
         <div id="clock">00:00:00</div>
-        <button id="ambient-mute-btn" class="tiny-btn" type="button">AMBIENT</button><input id="ambient-volume" class="ambient-slider" type="range" min="0" max="1" step="0.01" value="0.22" /><span id="ambient-volume-value" class="tiny-note">22%</span><button id="logout-btn" class="tiny-btn" style="display:none">LOGOUT</button>
+        <button id="lite-graphics-btn" class="tiny-btn lite-graphics-btn" type="button" aria-pressed="false" title="Упрощённая графика">ГРАФИКА: ПОЛНАЯ</button>
+        <button id="ambient-mute-btn" class="tiny-btn" type="button">ФОНОВЫЙ ЗВУК</button><input id="ambient-volume" class="ambient-slider" type="range" min="0" max="1" step="0.01" value="0.22" /><span id="ambient-volume-value" class="tiny-note">22%</span><button id="logout-btn" class="tiny-btn" style="display:none">ВЫЙТИ</button>
       </div>
     </div>
 
+    <div id="data-transfer-notice" class="data-transfer-notice" role="status" aria-live="assertive" hidden>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h12l3 3v15H4V3h1z"></path><path d="M8 3v6h8V3M8 21v-7h8v7"></path></svg>
+      <div>
+        <strong id="data-transfer-title">Обновления данных</strong>
+        <span id="data-transfer-copy">Не изменяйте данные до завершения операции.</span>
+      </div>
+    </div>
+
+    <div id="galaxy-backdrop" aria-hidden="true">
+      <div class="galaxy-backdrop-layer galaxy-backdrop-main"></div>
+      <div class="galaxy-backdrop-layer galaxy-backdrop-big"></div>
+    </div>
     <canvas id="galaxy"></canvas>
-    <div id="back-to-galaxy">← RETURN_TO_GALAXY</div>
+    <div id="back-to-galaxy">← К ГАЛАКТИКЕ</div>
     <div id="return-to-center">◎ ВЕРНУТЬСЯ К ЦЕНТРУ</div>
     <div id="add-system-map-btn">✚ ДОБАВИТЬ СИСТЕМУ</div>
 
     <div id="hud-analysis" class="card">
       <div class="hud-top">
         <div>
-          <h2 id="obj-name">SCAN_IDLE</h2>
+          <h2 id="obj-name">ОБЪЕКТ НЕ ВЫБРАН</h2>
           <div id="obj-subname" class="subtle">Выберите систему, затем планету</div>
         </div>
         <div id="obj-id" class="chip">---</div>
@@ -47,7 +74,7 @@
 
     <div id="login-screen" class="modal open">
       <div class="login-box card">
-        <div class="mono accent tiny-space">GALACTIC_ACCESS_NODE</div>
+        <div class="mono accent tiny-space">ВХОД В ПРОФИЛЬ</div>
         <h2>Вход в профиль</h2>
         <div id="login-copy" class="subtle login-copy">
           Локальный вход и изменения профиля сохраняются между перезапусками. Исходные сущности мира вынесены в отдельные файлы. У каждого игрока теперь может быть свой доступ к планетам, NPC и статьям архива.
@@ -88,20 +115,20 @@
       <div class="dock-item" data-label="ЗАДАНИЯ" id="open-tasks">
         <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7H3V5h11"></path></svg>
       </div>
-      <div id="gm-dock-btn" class="dock-item" style="display:none" data-label="WORLD CONFIG">
+      <div id="gm-dock-btn" class="dock-item" style="display:none" data-label="НАСТРОЙКА МИРА">
         <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M12 2l3 7 7 3-7 3-3 7-3-7-7-3 7-3 3-7z"></path></svg>
       </div>
-      <div id="campaign-studio-dock-btn" class="dock-item" style="display:none" data-label="CAMPAIGN STUDIO">
+      <div id="campaign-studio-dock-btn" class="dock-item" style="display:none" data-label="РЕДАКТОР КАМПАНИИ">
         <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.7" viewBox="0 0 24 24"><circle cx="5" cy="6" r="2.2"></circle><circle cx="18.5" cy="5" r="2.2"></circle><circle cx="12" cy="18" r="2.2"></circle><path d="M7 6.3l9.3-1M6.2 7.8l4.7 8.3M17.6 7l-4.4 9"></path></svg>
       </div>
     </div>
 
     <div id="mod-profile" class="fs-module">
       <div class="fs-header">
-        <div class="mono accent">OPERATIVE_PROFILE_DATA</div>
+        <div class="mono accent">ПРОФИЛЬ ПЕРСОНАЖА</div>
         <div class="row">
-          <button id="export-profile-btn" class="secondary">EXPORT_JSON</button>
-          <button class="secondary module-close">CLOSE_X</button>
+          <button id="export-profile-btn" class="secondary">ЭКСПОРТ ДАННЫХ</button>
+          <button class="secondary module-close">ЗАКРЫТЬ</button>
         </div>
       </div>
       <div id="profile-content"></div>
@@ -110,10 +137,10 @@
     <div id="mod-market" class="fs-module">
       <div class="fs-header">
         <div>
-          <div id="market-title" class="mono accent">LOCAL_TERMINAL</div>
+          <div id="market-title" class="mono accent">ТОРГОВЫЙ ТЕРМИНАЛ</div>
           <div id="market-subtitle" class="subtle">Планетарный рынок</div>
         </div>
-        <button class="secondary module-close">CLOSE_X</button>
+        <button class="secondary module-close">ЗАКРЫТЬ</button>
       </div>
       <div class="module-wrap">
         <div class="card pad18">
@@ -126,8 +153,8 @@
 
     <div id="mod-wiki" class="fs-module">
       <div class="fs-header">
-        <div class="mono accent">NEURAL_ARCHIVE</div>
-        <button class="secondary module-close">CLOSE_X</button>
+        <div class="mono accent">АРХИВ</div>
+        <button class="secondary module-close">ЗАКРЫТЬ</button>
       </div>
       <div id="wiki-section-nav-v1060" class="wiki-section-nav-v1060" aria-label="Разделы архива">
         <button class="secondary wiki-section-tab-v1060" type="button" data-wiki-section-v1060="planets">ПЛАНЕТЫ</button>
@@ -158,33 +185,33 @@
 
     <div id="mod-messages" class="fs-module">
       <div class="fs-header">
-        <div class="mono accent">COMMS_NODE</div>
-        <button class="secondary module-close">CLOSE_X</button>
+        <div class="mono accent">СООБЩЕНИЯ</div>
+        <button class="secondary module-close">ЗАКРЫТЬ</button>
       </div>
       <div id="messages-content" class="module-wrap"></div>
     </div>
 
     <div id="mod-news" class="fs-module">
       <div class="fs-header">
-        <div class="mono accent">GALACTIC_NEWS_FEED</div>
-        <button class="secondary module-close">CLOSE_X</button>
+        <div class="mono accent">НОВОСТИ</div>
+        <button class="secondary module-close">ЗАКРЫТЬ</button>
       </div>
       <div id="news-content" class="module-wrap"></div>
     </div>
 
     <div id="mod-tasks" class="fs-module">
       <div class="fs-header">
-        <div class="mono accent">MISSION_BOARD</div>
-        <button class="secondary module-close">CLOSE_X</button>
+        <div class="mono accent">ЗАДАНИЯ</div>
+        <button class="secondary module-close">ЗАКРЫТЬ</button>
       </div>
       <div id="tasks-content" class="module-wrap"></div>
     </div>
 
     <div id="mod-gm" class="fs-module">
       <div class="fs-header">
-        <div class="mono accent">WORLD_CONFIG_SHORTCUT</div>
+        <div class="mono accent">НАСТРОЙКА МИРА</div>
         <div class="row">
-                              <button class="secondary module-close">CLOSE_X</button>
+                              <button class="secondary module-close">ЗАКРЫТЬ</button>
         </div>
       </div>
       <div id="gm-content"></div>
@@ -193,12 +220,11 @@
     <div id="mod-config" class="fs-module">
       <div class="fs-header">
         <div>
-          <div class="mono accent">WORLD_CONFIGURATOR</div>
+          <div class="mono accent">НАСТРОЙКА МИРА</div>
           <div class="subtle">Добавление, удаление и редактирование планет, систем, NPC, флоры, фауны, предметов и шаблонов персонажей.</div>
         </div>
         <div class="row">
-          <button id="reset-world-btn" class="secondary">RESET_WORLD_FILES</button>
-          <button class="secondary module-close">CLOSE_X</button>
+          <button class="secondary module-close">ЗАКРЫТЬ</button>
         </div>
       </div>
       <div id="config-content"></div>
@@ -207,13 +233,13 @@
     <div id="mod-campaign-studio" class="fs-module campaign-studio-module-v1056">
       <div class="fs-header campaign-studio-header-v1056">
         <div>
-          <div class="mono accent">CAMPAIGN_STUDIO</div>
+          <div class="mono accent">РЕДАКТОР КАМПАНИИ</div>
           <div class="subtle">Паутина знаний и дерево сюжета выбранной кампании.</div>
         </div>
         <div class="row campaign-studio-head-actions-v1056">
           <select id="campaign-studio-campaign-v1056" class="select campaign-studio-campaign-select-v1056" aria-label="Игровая кампания"></select>
-          <button id="campaign-studio-save-v1056" class="secondary" type="button">SAVE</button>
-          <button class="secondary module-close">CLOSE_X</button>
+          <button id="campaign-studio-save-v1056" class="secondary" type="button">СОХРАНИТЬ</button>
+          <button class="secondary module-close">ЗАКРЫТЬ</button>
         </div>
       </div>
       <div id="campaign-studio-content-v1056" class="campaign-studio-content-v1056"></div>
@@ -221,10 +247,10 @@
 <div id="mod-sync" class="fs-module">
       <div class="fs-header">
         <div>
-          <div class="mono accent">POCKETBASE_СИНХР.</div>
+          <div class="mono accent">СИНХРОНИЗАЦИЯ</div>
           <div class="subtle"></div>
         </div>
-        <button class="secondary module-close">CLOSE_X</button>
+        <button class="secondary module-close">ЗАКРЫТЬ</button>
       </div>
       <div id="sync-content"></div>
     </div>
@@ -232,10 +258,25 @@
     <div id="toast" class="toast info"></div>
   </div>
 
-  <script src="./rich-text-scope.js?v=1.0.83"></script>
-  <script src="./market-engine.js?v=1.0.83"></script>
-  <script src="./app.js?v=1.0.83"></script>
-  <script src="./region-command-center.js"></script>
-  <script src="./campaign-studio.js"></script>
+  <script src="./rich-text-scope.js?v=1.0.140"></script>
+  <script src="./market-engine.js?v=1.0.140"></script>
+  <script src="./player-sync-core.js?v=135"></script>
+  <script src="./app.js?v=1.0.140"></script>
+  <script src="./region-command-center.js?v=1.0.140"></script>
+  <script src="./campaign-studio.js?v=1.0.140"></script>
+  <script src="./stats-engine-v113.js?v=1.0.140"></script>
+  <script src="./stats-engine-v114.js?v=1.0.140"></script>
+  <script src="./stats-engine-v115.js?v=1.0.140"></script>
+  <script src="./stats-engine-v116.js?v=1.0.140"></script>
+  <script src="./combat-rules-v119.js?v=1.0.140"></script>
+  <script src="./asset-transform-v133.js?v=1.0.140"></script>
+  <script src="./scene-editor-v113.js?v=1.0.140"></script>
+  <script src="./feature-pack-v118.js?v=1.0.140"></script>
+  <script src="./feature-pack-v119.js?v=1.0.140"></script>
+  <script src="./world-json-transfer-v132.js?v=1.0.140"></script>
+  <script src="./world-json-ui-v134.js?v=1.0.140"></script>
+  <script src="./feature-pack-v120.js?v=1.0.140"></script>
+<script src="./player-sync-ui-v135.js?v=135"></script>
+  <script src="./feature-pack-v138.js?v=1.0.140"></script>
 </body>
 </html>

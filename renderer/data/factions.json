@@ -1,4 +1,88 @@
 {
-  "FACTIONS": {},
-  "FACTION_LIST": []
+  "FACTIONS": {
+    "org_590472": {
+      "id": "org_590472",
+      "name": "Корпус \"Акариус\"",
+      "type": "Фракция",
+      "influence": "Локальное влияние",
+      "reputationScale": "0",
+      "description": "Межзвёздный наёмнический корпус, принимающий военные, охранные и специальные контракты.",
+      "color": "#7df9ff",
+      "image": "https://sync.grpg-sync.ru/api/files/campaign_assets/0wfwzvhg0lzslgs/cdabb197d4b0dcdc275c75acc00d961b_entity_org_590472_novaya_organizatsiya_8485hrgm1z.png",
+      "imageLocal": "",
+      "imageStoragePath": "",
+      "relatedArticleIds": [
+        "article_737336"
+      ],
+      "visibility": {
+        "playerIds": [],
+        "campaignIds": [],
+        "eraIds": []
+      }
+    },
+    "org_644557": {
+      "id": "org_644557",
+      "name": "Консорциум Лексис",
+      "type": "Фракция",
+      "influence": "Надсидерархийное влияние",
+      "reputationScale": "0",
+      "description": "Надсидерархийный правовой консорциум, поддерживающий транзитный арбитраж, реестры и минимальные общие нормы связанной галактики.",
+      "color": "#7df9ff",
+      "image": "https://sync.grpg-sync.ru/api/files/campaign_assets/vpbwlnmk44m8a6g/e096fd42db4da635e879f13ed7a4c3cd_entity_org_644557_novaya_organizatsiya_ekjvd9486g.png",
+      "imageLocal": "",
+      "imageStoragePath": "",
+      "relatedArticleIds": [
+        "article_331975",
+        "article_930605"
+      ],
+      "visibility": {
+        "playerIds": [],
+        "campaignIds": [],
+        "eraIds": []
+      }
+    }
+  },
+  "FACTION_LIST": [
+    {
+      "id": "org_644557",
+      "name": "Консорциум Лексис",
+      "type": "Фракция",
+      "influence": "Надсидерархийное влияние",
+      "reputationScale": "0",
+      "description": "Надсидерархийный правовой консорциум, поддерживающий транзитный арбитраж, реестры и минимальные общие нормы связанной галактики.",
+      "color": "#7df9ff",
+      "image": "https://sync.grpg-sync.ru/api/files/campaign_assets/vpbwlnmk44m8a6g/e096fd42db4da635e879f13ed7a4c3cd_entity_org_644557_novaya_organizatsiya_ekjvd9486g.png",
+      "imageLocal": "",
+      "imageStoragePath": "",
+      "relatedArticleIds": [
+        "article_331975",
+        "article_930605"
+      ],
+      "visibility": {
+        "playerIds": [],
+        "campaignIds": [],
+        "eraIds": []
+      }
+    },
+    {
+      "id": "org_590472",
+      "name": "Корпус \"Акариус\"",
+      "type": "Фракция",
+      "influence": "Локальное влияние",
+      "reputationScale": "0",
+      "description": "Межзвёздный наёмнический корпус, принимающий военные, охранные и специальные контракты.",
+      "color": "#7df9ff",
+      "image": "https://sync.grpg-sync.ru/api/files/campaign_assets/0wfwzvhg0lzslgs/cdabb197d4b0dcdc275c75acc00d961b_entity_org_590472_novaya_organizatsiya_8485hrgm1z.png",
+      "imageLocal": "",
+      "imageStoragePath": "",
+      "relatedArticleIds": [
+        "article_737336"
+      ],
+      "visibility": {
+        "playerIds": [],
+        "campaignIds": [],
+        "eraIds": []
+      }
+    }
+  ]
 }

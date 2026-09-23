@@ -1,7 +1,7 @@
 {
   "name": "galactic-rpg-interface",
-  "version": "1.0.87",
-  "description": "Electron/Web tabletop interface with transactional planetary markets and a separate stock exchange tab",
+  "version": "1.0.141",
+  "description": "Electron/Web tabletop interface with cloud rich-media authoring and fast in-session player editing",
   "author": "qwq",
   "main": "main.js",
   "scripts": {
@@ -14,8 +14,8 @@
     "mobile:sync": "npm --prefix mobile run sync",
     "mobile:open:android": "npm --prefix mobile run open:android",
     "mobile:copy": "npm --prefix mobile run copy",
-    "release": "electron-builder --win nsis --publish always",
-    "release:draft": "electron-builder --win nsis --publish onTagOrDraft",
+    "release": "electron-builder --win nsis --publish never",
+    "release:draft": "electron-builder --win nsis --publish never",
     "release:local": "electron-builder --win nsis --publish never",
     "prestart": "node tools/ensure-electron.cjs",
     "electron:repair": "node tools/ensure-electron.cjs --force",
@@ -24,15 +24,22 @@
   "build": {
     "appId": "com.qwq.galacticrpg",
     "productName": "Galactic RPG Interface",
+    "asarUnpack": [
+      "lua-sandbox-worker.cjs",
+      "node_modules/wasmoon/**/*"
+    ],
     "files": [
       "main.js",
       "preload.js",
+      "lua-sandbox-worker.cjs",
       "renderer/**/*",
       "package.json",
       "README.md",
       "SOUND_SETUP.md",
       "POCKETBASE_SETUP.md",
-      "SELFHOST_SYNC_SETUP.md"
+      "SELFHOST_SYNC_SETUP.md",
+      "LUA_COMBAT_SCRIPTING.md",
+      "COMBAT_RULES_AND_AMMUNITION_1.0.122.md"
     ],
     "win": {
       "target": [
@@ -44,13 +51,12 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true
     },
-    "buildVersion": "1.0.87.0",
+    "buildVersion": "1.0.141.0",
     "publish": [
       {
-        "provider": "github",
-        "owner": "Kpyrep123",
-        "repo": "GRPGI",
-        "releaseType": "release"
+        "provider": "generic",
+        "url": "https://app.grpg-sync.ru/downloads",
+        "channel": "latest"
       }
     ]
   },
@@ -59,7 +65,11 @@
     "electron-builder": "26.15.3"
   },
   "dependencies": {
-    "electron-updater": "6.8.9"
+    "electron-updater": "6.8.9",
+    "wasmoon": "^1.16.0"
+  },
+  "overrides": {
+    "js-yaml": "4.3.1"
   },
   "repository": {
     "type": "git",
@@ -73,5 +83,5 @@
     "node": ">=22 <25",
     "npm": ">=10"
   },
-  "buildVersion": "1.0.84.0"
+  "buildVersion": "1.0.140.0"
 }

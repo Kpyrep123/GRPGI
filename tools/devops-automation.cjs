@@ -29,6 +29,14 @@ const DEFAULT_CONFIG = Object.freeze({
     ],
     healthAddress: '127.0.0.1'
   },
+  desktopRelease: {
+    target: '/var/www/grpg-app/downloads',
+    publicUrl: 'https://app.grpg-sync.ru/downloads',
+    installerAlias: 'GRPGI-Setup-latest.exe',
+    updateManifest: 'latest.yml',
+    releaseMetadata: 'release.json',
+    buildScript: 'release:local'
+  },
   archive: {
     maxFileSizeMb: 20,
     excludePrefixes: [
@@ -181,6 +189,48 @@ function patchVersion(version) {
   return `${Number(match[1])}.${Number(match[2])}.${Number(match[3]) + 1}`;
 }
 
+function compareVersions(left, right) {
+  const parse = value => {
+    const match = String(value || '').trim().match(/^(\d+)\.(\d+)\.(\d+)$/);
+    return match ? match.slice(1).map(Number) : null;
+  };
+  const a = parse(left);
+  const b = parse(right);
+  if (!a || !b) throw new Error(`Невозможно сравнить версии: ${left || '—'} и ${right || '—'}`);
+  for (let index = 0; index < 3; index += 1) {
+    if (a[index] !== b[index]) return a[index] > b[index] ? 1 : -1;
+  }
+  return 0;
+}
+
+function releaseVersionFor(localVersion, publishedVersion = '') {
+  if (!publishedVersion) return String(localVersion);
+  const comparison = compareVersions(localVersion, publishedVersion);
+  if (comparison < 0) throw new Error(`Локальная версия ${localVersion} старее опубликованной ${publishedVersion}`);
+  return comparison === 0 ? patchVersion(localVersion) : String(localVersion);
+}
+
+async function probePublishedRelease(release) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5000);
+  try {
+    const response = await fetch(`${release.publicUrl}/${release.releaseMetadata}?status=${Date.now()}`, {
+      method: 'GET',
+      signal: controller.signal,
+      headers: { 'cache-control': 'no-cache', accept: 'application/json' }
+    });
+    if (!response.ok) return { version: '', reachable: true, status: response.status };
+    const payload = await response.json();
+    const version = String(payload?.version || '').trim();
+    if (version && !/^\d+\.\d+\.\d+$/.test(version)) return { version: '', reachable: true, status: response.status };
+    return { version, reachable: true, status: response.status };
+  } catch (error) {
+    return { version: '', reachable: false, status: 0, message: error?.name === 'AbortError' ? 'timeout' : (error?.message || String(error)) };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function parsePorcelain(output) {
   return String(output || '').split(/\r?\n/).filter(Boolean).map(line => {
     const status = line.slice(0, 2);
@@ -284,9 +334,79 @@ async function getGitStatus(rootDir, config) {
   };
 }
 
+function npmInvocation(args = []) {
+  const npmExecPath = String(process.env.npm_execpath || '').trim();
+  const npmNodeExecPath = String(process.env.npm_node_execpath || '').trim();
+  if (npmExecPath && npmNodeExecPath && fs.existsSync(npmExecPath) && fs.existsSync(npmNodeExecPath)) {
+    return { command: npmNodeExecPath, args: [npmExecPath, ...args] };
+  }
+  if (process.platform === 'win32') {
+    const command = String(process.env.ComSpec || 'cmd.exe');
+    const safeArgs = args.map(value => String(value));
+    if (safeArgs.some(value => !/^[a-zA-Z0-9:._-]+$/.test(value))) throw new Error('Некорректный аргумент npm');
+    return { command, args: ['/d', '/s', '/c', ['npm', ...safeArgs].join(' ')] };
+  }
+  return { command: 'npm', args };
+}
+
 async function getStatus(rootDir) {
   try {
-    return await getGitStatus(rootDir, loadConfig(rootDir));
+    const config = loadConfig(rootDir);
+    const pkg = readPackage(rootDir).parsed;
+    const npmVersionCall = npmInvocation(['--version']);
+    const [npmInfo, sshInfo, scpInfo, gitInfo] = await Promise.all([
+      commandAvailable(npmVersionCall.command, npmVersionCall.args),
+      commandAvailable('ssh', ['-V']),
+      commandAvailable('scp', ['-V']),
+      commandAvailable('git')
+    ]);
+    let changes = [];
+    let branch = '';
+    if (gitInfo.available) {
+      const inside = await run('git', ['rev-parse', '--is-inside-work-tree'], { cwd: rootDir, allowNonZero: true, timeoutMs: 15000 });
+      if (inside.code === 0 && String(inside.stdout).trim() === 'true') {
+        const [branchResult, changesResult] = await Promise.all([
+          run('git', ['branch', '--show-current'], { cwd: rootDir, allowNonZero: true, timeoutMs: 15000 }),
+          run('git', ['-c', 'core.quotepath=false', 'status', '--porcelain=v1', '--untracked-files=all'], { cwd: rootDir, timeoutMs: 30000 })
+        ]);
+        branch = String(branchResult.stdout || '').trim();
+        changes = parsePorcelain(changesResult.stdout);
+      }
+    }
+    const release = validateDesktopReleaseConfig(config, rootDir);
+    const published = await probePublishedRelease(release);
+    let nextVersion = String(pkg.version || '');
+    let versionError = '';
+    try {
+      nextVersion = releaseVersionFor(pkg.version, published.version);
+    } catch (error) {
+      versionError = error?.message || String(error);
+    }
+    const available = npmInfo.available && sshInfo.available && scpInfo.available && !versionError;
+    const missing = [
+      !npmInfo.available ? 'npm' : '',
+      !sshInfo.available ? 'ssh' : '',
+      !scpInfo.available ? 'scp' : ''
+    ].filter(Boolean);
+    return {
+      ok: true,
+      available,
+      reason: available ? '' : 'missing-tools',
+      message: available ? 'Сборка и публикация на сайт готовы' : (versionError || `Не найдены инструменты: ${missing.join(', ')}`),
+      rootDir,
+      version: String(pkg.version || ''),
+      nextVersion,
+      publishedVersion: published.version,
+      releaseProbe: published,
+      branch: branch || 'Git не используется',
+      changeCount: changes.length,
+      changes,
+      releaseTarget: release.target,
+      publicUrl: release.publicUrl,
+      installerAlias: release.installerAlias,
+      tools: { npm: npmInfo, ssh: sshInfo, scp: scpInfo, git: gitInfo },
+      busy: activeOperation || ''
+    };
   } catch (error) {
     return sanitizeError(error);
   }
@@ -308,132 +428,247 @@ function updateVersionFiles(rootDir, nextVersion) {
   }
 }
 
-async function checkChangedFileSizes(rootDir, changes) {
-  const warnings = [];
-  const blocked = [];
-  for (const item of changes) {
-    if (isDeletedStatus(item.status)) continue;
-    const absolute = path.join(rootDir, item.path);
-    try {
-      const stat = await fs.promises.stat(absolute);
-      if (!stat.isFile()) continue;
-      if (stat.size >= 95 * 1024 * 1024) blocked.push({ path: item.path, size: stat.size });
-      else if (stat.size >= 25 * 1024 * 1024) warnings.push({ path: item.path, size: stat.size });
-    } catch {}
-  }
-  return { blocked, warnings };
-}
-
-async function publishPatch(rootDir) {
-  if (activeOperation) throw new Error(`Уже выполняется операция: ${activeOperation}`);
-  activeOperation = 'github-publish';
-  try {
-    const config = loadConfig(rootDir);
-    const status = await getGitStatus(rootDir, config);
-    if (!status.ok || !status.available) throw new Error(status.message || 'GitHub-публикация недоступна');
-    if (status.blockedDeletions.length) {
-      const preview = status.blockedDeletions.slice(0, 20).join('\n');
-      throw new Error(`Обнаружены запрещённые удаления. Публикация остановлена.\n${preview}${status.blockedDeletions.length > 20 ? '\n…' : ''}`);
-    }
-    if (status.blockedSecrets.length) {
-      throw new Error(`Обнаружены потенциальные секреты или пользовательские данные:\n${status.blockedSecrets.join('\n')}`);
-    }
-    const sizes = await checkChangedFileSizes(rootDir, status.changes);
-    if (sizes.blocked.length) {
-      throw new Error(`GitHub-публикация остановлена: файлы размером 95 МБ и больше:\n${sizes.blocked.map(item => item.path).join('\n')}`);
-    }
-
-    const remote = status.remoteName;
-    const targetBranch = status.targetBranch;
-    await run('git', ['fetch', remote, targetBranch, '--tags'], {
-      cwd: rootDir,
-      timeoutMs: 180000,
-      env: { GIT_TERMINAL_PROMPT: '0' }
-    });
-    const ancestor = await run('git', ['merge-base', '--is-ancestor', `${remote}/${targetBranch}`, 'HEAD'], {
-      cwd: rootDir,
-      timeoutMs: 30000,
-      allowNonZero: true
-    });
-    if (ancestor.code !== 0) {
-      throw new Error(`Текущий HEAD не основан на ${remote}/${targetBranch}. Сначала объедините актуальный main без force push.`);
-    }
-
-    const nextVersion = status.nextVersion;
-    const tagName = `v${nextVersion}`;
-    if (config.github.createTag === true) {
-      const localTag = await run('git', ['rev-parse', '-q', '--verify', `refs/tags/${tagName}`], {
-        cwd: rootDir,
-        timeoutMs: 15000,
-        allowNonZero: true
-      });
-      if (localTag.code === 0) throw new Error(`Тег ${tagName} уже существует локально`);
-      const remoteTag = await run('git', ['ls-remote', '--tags', remote, `refs/tags/${tagName}`], {
-        cwd: rootDir,
-        timeoutMs: 60000,
-        env: { GIT_TERMINAL_PROMPT: '0' }
-      });
-      if (String(remoteTag.stdout).trim()) throw new Error(`Тег ${tagName} уже существует на GitHub`);
-    }
-
-    updateVersionFiles(rootDir, nextVersion);
-    await run('git', ['add', '-A', '--', '.'], { cwd: rootDir, timeoutMs: 120000 });
-    const staged = await run('git', ['diff', '--cached', '--name-status'], { cwd: rootDir, timeoutMs: 30000 });
-    if (!String(staged.stdout).trim()) throw new Error('После обновления версии нет файлов для коммита');
-
-    const commitMessage = `Release ${tagName}`;
-    await run('git', ['commit', '-m', commitMessage], {
-      cwd: rootDir,
-      timeoutMs: 120000,
-      env: { GIT_TERMINAL_PROMPT: '0' }
-    });
-    if (config.github.createTag !== false) {
-      await run('git', ['tag', '-a', tagName, '-m', commitMessage], { cwd: rootDir, timeoutMs: 30000 });
-      await run('git', [
-        'push', '--atomic', remote,
-        `HEAD:refs/heads/${targetBranch}`,
-        `refs/tags/${tagName}:refs/tags/${tagName}`
-      ], {
-        cwd: rootDir,
-        timeoutMs: 300000,
-        env: { GIT_TERMINAL_PROMPT: '0' }
-      });
-    } else {
-      await run('git', ['push', remote, `HEAD:refs/heads/${targetBranch}`], {
-        cwd: rootDir,
-        timeoutMs: 300000,
-        env: { GIT_TERMINAL_PROMPT: '0' }
-      });
-    }
-    const commit = await run('git', ['rev-parse', '--short', 'HEAD'], { cwd: rootDir, timeoutMs: 15000 });
-    return {
-      ok: true,
-      version: nextVersion,
-      tag: config.github.createTag === false ? '' : tagName,
-      commit: String(commit.stdout).trim(),
-      targetBranch,
-      warnings: sizes.warnings,
-      staged: String(staged.stdout).trim().split(/\r?\n/).filter(Boolean)
-    };
-  } finally {
-    activeOperation = '';
-  }
-}
-
 function validateWebConfig(config, rootDir) {
   const web = config.webDeploy || {};
   if (!/^[a-z0-9.-]+$/i.test(String(web.host || ''))) throw new Error('Некорректный webDeploy.host');
   if (!/^[a-z_][a-z0-9_-]*$/i.test(String(web.user || ''))) throw new Error('Некорректный webDeploy.user');
   if (!Number.isInteger(Number(web.port)) || Number(web.port) < 1 || Number(web.port) > 65535) throw new Error('Некорректный webDeploy.port');
   if (!/^\/[a-zA-Z0-9._/-]+$/.test(String(web.target || ''))) throw new Error('Некорректный webDeploy.target');
-  const identityFile = expandHome(web.identityFile);
-  if (identityFile && !fs.existsSync(identityFile)) throw new Error(`SSH-ключ не найден: ${identityFile}`);
   const sourcePath = path.resolve(rootDir, String(web.source || 'deploy/site'));
   const rootResolved = path.resolve(rootDir);
   if (!sourcePath.startsWith(`${rootResolved}${path.sep}`)) throw new Error('webDeploy.source выходит за пределы проекта');
   if (!fs.existsSync(path.join(sourcePath, 'index.html'))) throw new Error(`Не найден ${path.join(web.source, 'index.html')}`);
   if (!fs.existsSync(path.join(sourcePath, 'app', 'index.html'))) throw new Error(`Не найден ${path.join(web.source, 'app', 'index.html')}`);
   return { ...web, sourcePath };
+}
+
+function validateDesktopReleaseConfig(config, rootDir) {
+  const web = validateWebConfig(config, rootDir);
+  const release = config.desktopRelease || {};
+  const target = String(release.target || `${String(web.target).replace(/\/+$/, '')}/downloads`).replace(/\/+$/, '');
+  const publicUrl = String(release.publicUrl || '').replace(/\/+$/, '');
+  const installerAlias = String(release.installerAlias || 'GRPGI-Setup-latest.exe');
+  const updateManifest = String(release.updateManifest || 'latest.yml');
+  const releaseMetadata = String(release.releaseMetadata || 'release.json');
+  const buildScript = String(release.buildScript || 'release:local');
+  if (!/^\/[a-zA-Z0-9._/-]+$/.test(target)) throw new Error('Некорректный desktopRelease.target');
+  if (!/^https:\/\/[a-z0-9.-]+(?:\/[a-zA-Z0-9._~!$&'()*+,;=:@%/-]*)?$/i.test(publicUrl)) {
+    throw new Error('desktopRelease.publicUrl должен быть корректным HTTPS-адресом');
+  }
+  for (const [label, value] of Object.entries({ installerAlias, updateManifest, releaseMetadata })) {
+    if (!/^[a-zA-Z0-9._-]+$/.test(value)) throw new Error(`Некорректное имя desktopRelease.${label}`);
+  }
+  if (!/^[a-zA-Z0-9:_-]+$/.test(buildScript)) throw new Error('Некорректный desktopRelease.buildScript');
+  return { ...web, ...release, target, publicUrl, installerAlias, updateManifest, releaseMetadata, buildScript };
+}
+
+function desktopBuildOutputDir(rootDir, pkg) {
+  const configured = String(pkg?.build?.directories?.output || 'dist').trim() || 'dist';
+  const output = path.resolve(rootDir, configured);
+  const root = path.resolve(rootDir);
+  if (!output.startsWith(`${root}${path.sep}`)) throw new Error('Каталог сборки выходит за пределы проекта');
+  return output;
+}
+
+async function collectDesktopReleaseArtifacts(rootDir, pkg, version, release) {
+  const outputDir = desktopBuildOutputDir(rootDir, pkg);
+  const manifestPath = path.join(outputDir, release.updateManifest);
+  if (!fs.existsSync(manifestPath)) throw new Error(`Сборка не создала ${release.updateManifest}`);
+  const manifestText = await fs.promises.readFile(manifestPath, 'utf8');
+  if (!new RegExp(`^version:\\s*${String(version).replace(/\./g, '\\.')}\\s*$`, 'm').test(manifestText)) {
+    throw new Error(`${release.updateManifest} не подтверждает версию ${version}`);
+  }
+  const entries = await fs.promises.readdir(outputDir, { withFileTypes: true });
+  const installers = entries
+    .filter(entry => entry.isFile() && entry.name.toLowerCase().endsWith('.exe') && entry.name.includes(version))
+    .map(entry => path.join(outputDir, entry.name));
+  if (installers.length !== 1) {
+    throw new Error(`Ожидался один установщик версии ${version}, найдено: ${installers.length}`);
+  }
+  const installerPath = installers[0];
+  const blockmapPath = `${installerPath}.blockmap`;
+  const files = [manifestPath, installerPath];
+  if (fs.existsSync(blockmapPath)) files.push(blockmapPath);
+  return { outputDir, manifestPath, installerPath, blockmapPath: fs.existsSync(blockmapPath) ? blockmapPath : '', files };
+}
+
+async function stageDesktopRelease(rootDir, version, release, artifacts) {
+  const stagingRoot = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'grpgi-desktop-release-'));
+  const stagingDir = path.join(stagingRoot, 'release');
+  await fs.promises.mkdir(stagingDir, { recursive: true });
+  const publishedFiles = [];
+  for (const source of artifacts.files) {
+    const name = path.basename(source);
+    const target = path.join(stagingDir, name);
+    await fs.promises.copyFile(source, target);
+    const stat = await fs.promises.stat(target);
+    publishedFiles.push({ name, size: stat.size, sha256: await sha256File(target) });
+  }
+  const aliasPath = path.join(stagingDir, release.installerAlias);
+  await fs.promises.copyFile(artifacts.installerPath, aliasPath);
+  const aliasStat = await fs.promises.stat(aliasPath);
+  publishedFiles.push({ name: release.installerAlias, size: aliasStat.size, sha256: await sha256File(aliasPath), alias: true });
+  const metadata = {
+    schema: 1,
+    version,
+    mandatory: true,
+    publishedAt: new Date().toISOString(),
+    updateFeedUrl: release.publicUrl,
+    installerUrl: `${release.publicUrl}/${release.installerAlias}`,
+    files: publishedFiles
+  };
+  const metadataPath = path.join(stagingDir, release.releaseMetadata);
+  await fs.promises.writeFile(metadataPath, `${JSON.stringify(metadata, null, 2)}\n`, 'utf8');
+  const metadataStat = await fs.promises.stat(metadataPath);
+  publishedFiles.push({ name: release.releaseMetadata, size: metadataStat.size, sha256: await sha256File(metadataPath), metadata: true });
+  return { stagingRoot, stagingDir, metadata, publishedFiles };
+}
+
+async function publishDesktopRelease(rootDir, options = {}) {
+  if (activeOperation) throw new Error(`Уже выполняется операция: ${activeOperation}`);
+  activeOperation = 'desktop-release';
+  const notify = (stage, message, extra = {}) => {
+    try { options.onProgress?.({ stage, message, ...extra }); } catch {}
+  };
+  let staging = null;
+  let originalPackage = null;
+  let originalLock = null;
+  let versionChanged = false;
+  let published = false;
+  try {
+    const config = loadConfig(rootDir);
+    const release = validateDesktopReleaseConfig(config, rootDir);
+    const status = await getStatus(rootDir);
+    if (!status.ok || !status.available) throw new Error(status.message || 'Публикация установщика недоступна');
+    const currentPackage = readPackage(rootDir);
+    const currentVersion = String(currentPackage.parsed.version || '');
+    const endpoint = `${release.user}@${release.host}`;
+    const sshArgs = sshBaseArgs(release);
+    notify('connection', `Проверка SSH ${endpoint}`);
+    const remoteVersionScript = [
+      `target=${shellQuote(release.target)}`,
+      'version=""',
+      `if [ -s "$target/${release.releaseMetadata}" ]; then version=$(grep -m1 -Eo '[0-9]+\\.[0-9]+\\.[0-9]+' "$target/${release.releaseMetadata}" || true); fi`,
+      `if [ -z "$version" ] && [ -s "$target/${release.updateManifest}" ]; then version=$(grep -m1 -Eo '[0-9]+\\.[0-9]+\\.[0-9]+' "$target/${release.updateManifest}" || true); fi`,
+      'printf "GRPGI_SSH_OK\\nGRPGI_REMOTE_VERSION:%s\\n" "$version"'
+    ].join('; ');
+    const connectionTest = await run('ssh', [...sshArgs, endpoint, remoteVersionScript], {
+      cwd: rootDir,
+      timeoutMs: 30000,
+      env: { SSH_ASKPASS: '', DISPLAY: '' }
+    });
+    if (!String(connectionTest.stdout).includes('GRPGI_SSH_OK')) throw new Error('SSH-проверка не вернула ожидаемый ответ');
+    const publishedVersion = String(connectionTest.stdout).match(/GRPGI_REMOTE_VERSION:(\d+\.\d+\.\d+)/)?.[1] || '';
+    const nextVersion = releaseVersionFor(currentVersion, publishedVersion);
+    const packageLockPath = path.join(rootDir, 'package-lock.json');
+    originalPackage = await fs.promises.readFile(currentPackage.packagePath);
+    if (fs.existsSync(packageLockPath)) originalLock = await fs.promises.readFile(packageLockPath);
+
+    if (nextVersion !== currentVersion) {
+      notify('version', `Опубликована ${publishedVersion}; версия повышается до ${nextVersion}`, { version: nextVersion, publishedVersion });
+      versionChanged = true;
+      updateVersionFiles(rootDir, nextVersion);
+    } else {
+      notify('version', `Локальная версия ${nextVersion} ещё не опубликована и будет собрана без повторного повышения`, { version: nextVersion, publishedVersion });
+    }
+
+    notify('build', `Сборка установщика ${nextVersion}. Это может занять несколько минут.`, { version: nextVersion });
+    const npmBuildCall = npmInvocation(['run', release.buildScript]);
+    await run(npmBuildCall.command, npmBuildCall.args, {
+      cwd: rootDir,
+      timeoutMs: 30 * 60 * 1000,
+      maxOutputBytes: 8 * 1024 * 1024,
+      env: { CSC_IDENTITY_AUTO_DISCOVERY: 'false' }
+    });
+    const builtPackage = readPackage(rootDir).parsed;
+    const artifacts = await collectDesktopReleaseArtifacts(rootDir, builtPackage, nextVersion, release);
+    staging = await stageDesktopRelease(rootDir, nextVersion, release, artifacts);
+
+    const stamp = new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 14);
+    const parent = path.posix.dirname(release.target);
+    const incomingRoot = `${parent}/.grpgi-release-incoming-${stamp}`;
+    await run('ssh', [...sshArgs, endpoint, `rm -rf ${shellQuote(incomingRoot)} && mkdir -p ${shellQuote(incomingRoot)}`], {
+      cwd: rootDir,
+      timeoutMs: 60000,
+      env: { SSH_ASKPASS: '', DISPLAY: '' }
+    });
+
+    notify('upload', `Загрузка установщика ${nextVersion} на сайт`, { version: nextVersion });
+    await run('scp', [...scpBaseArgs(release), '-r', staging.stagingDir, `${endpoint}:${incomingRoot}/`], {
+      cwd: rootDir,
+      timeoutMs: 30 * 60 * 1000,
+      maxOutputBytes: 4 * 1024 * 1024,
+      env: { SSH_ASKPASS: '', DISPLAY: '' }
+    });
+
+    const incoming = `${incomingRoot}/${path.basename(staging.stagingDir)}`;
+    const orderedNames = [
+      ...staging.publishedFiles.filter(item => item.name !== release.updateManifest && item.name !== release.releaseMetadata).map(item => item.name),
+      release.releaseMetadata,
+      release.updateManifest
+    ];
+    const remoteLines = [
+      'set -eu',
+      `target=${shellQuote(release.target)}`,
+      `incoming=${shellQuote(incoming)}`,
+      `incoming_root=${shellQuote(incomingRoot)}`,
+      'mkdir -p "$target"',
+      'chmod 755 "$target"'
+    ];
+    for (const file of staging.publishedFiles) {
+      remoteLines.push(`[ -s "$incoming/${file.name}" ]`);
+      remoteLines.push(`[ "$(sha256sum "$incoming/${file.name}" | awk '{print $1}')" = ${shellQuote(file.sha256)} ]`);
+    }
+    for (const name of orderedNames) {
+      remoteLines.push(`cp "$incoming/${name}" "$target/.${name}.uploading"`);
+      remoteLines.push(`chmod 644 "$target/.${name}.uploading"`);
+      remoteLines.push(`mv -f "$target/.${name}.uploading" "$target/${name}"`);
+    }
+    remoteLines.push('rm -rf "$incoming_root"');
+    remoteLines.push('printf GRPGI_RELEASE_OK');
+    const deployed = await run('ssh', [...sshArgs, endpoint, remoteLines.join('; ')], {
+      cwd: rootDir,
+      timeoutMs: 300000,
+      maxOutputBytes: 4 * 1024 * 1024,
+      env: { SSH_ASKPASS: '', DISPLAY: '' }
+    });
+    if (!String(deployed.stdout).includes('GRPGI_RELEASE_OK')) throw new Error('Сервер не подтвердил публикацию установщика');
+
+    published = true;
+    notify('verify', 'Проверка опубликованной версии', { version: nextVersion });
+    const healthChecks = await probePublicHealth([
+      `${release.publicUrl}/${release.updateManifest}?v=${encodeURIComponent(nextVersion)}`,
+      `${release.publicUrl}/${release.releaseMetadata}?v=${encodeURIComponent(nextVersion)}`
+    ]);
+    notify('done', `Версия ${nextVersion} опубликована`, { version: nextVersion });
+    return {
+      ok: true,
+      version: nextVersion,
+      endpoint,
+      target: release.target,
+      publicUrl: release.publicUrl,
+      installerUrl: `${release.publicUrl}/${release.installerAlias}`,
+      updateManifestUrl: `${release.publicUrl}/${release.updateManifest}`,
+      installerPath: artifacts.installerPath,
+      files: staging.publishedFiles,
+      healthChecks,
+      healthWarnings: healthChecks.filter(item => !item.ok)
+    };
+  } catch (error) {
+    notify('error', error?.message || String(error));
+    throw error;
+  } finally {
+    if (!published && versionChanged && originalPackage) {
+      try {
+        await fs.promises.writeFile(path.join(rootDir, 'package.json'), originalPackage);
+        if (originalLock) await fs.promises.writeFile(path.join(rootDir, 'package-lock.json'), originalLock);
+      } catch {}
+    }
+    if (staging?.stagingRoot) {
+      try { await fs.promises.rm(staging.stagingRoot, { recursive: true, force: true }); } catch {}
+    }
+    activeOperation = '';
+  }
 }
 
 function shellQuote(value) {
@@ -495,7 +730,7 @@ function sshBaseArgs(web) {
     '-o', 'StrictHostKeyChecking=accept-new'
   ];
   const identityFile = expandHome(web.identityFile);
-  if (identityFile) args.push('-i', identityFile);
+  if (identityFile && fs.existsSync(identityFile)) args.push('-i', identityFile);
   return args;
 }
 
@@ -507,7 +742,7 @@ function scpBaseArgs(web) {
     '-o', 'StrictHostKeyChecking=accept-new'
   ];
   const identityFile = expandHome(web.identityFile);
-  if (identityFile) args.push('-i', identityFile);
+  if (identityFile && fs.existsSync(identityFile)) args.push('-i', identityFile);
   return args;
 }
 
@@ -883,7 +1118,7 @@ async function createSourceArchive(rootDir, outputPath) {
 
 module.exports = {
   getStatus,
-  publishPatch,
+  publishDesktopRelease,
   deployWeb,
   createSourceArchive,
   defaultArchiveName,

@@ -1,0 +1,68 @@
+/* GRPGI v1.0.114 — World Config layout + implant inventory hotfix */
+
+/* Never let a wide editor child define the width of the whole World Config grid. */
+#config-content .config-grid{
+  width:100%;
+  max-width:1500px;
+  grid-template-columns:320px minmax(0,1fr);
+}
+#config-content .config-grid > *,
+#config-content .config-main,
+#config-editor-form,
+#config-editor-form > *,
+#config-editor-form .cols2,
+#config-editor-form .cols3,
+#config-editor-form .cols4,
+#config-editor-form .field{
+  min-width:0;
+  max-width:100%;
+}
+#config-content .config-main{overflow-x:clip}
+#config-editor-form.form{
+  width:100%;
+  grid-template-columns:minmax(0,1fr)!important;
+  grid-auto-flow:row!important;
+  align-content:start;
+}
+
+/* v113 modifier rows were ten columns wide and could expand WC past the viewport.
+   Keep all controls, but arrange them in two compact rows. */
+.modifier-editor-v113,
+.modifier-list-v113,
+.modifier-row-v113{
+  min-width:0;
+  max-width:100%;
+  width:100%;
+  box-sizing:border-box;
+}
+.modifier-editor-v113{overflow:hidden}
+.modifier-row-v113{
+  grid-template-columns:minmax(150px,1.35fr) minmax(115px,.9fr) minmax(82px,.55fr) minmax(120px,.9fr) minmax(120px,.9fr);
+  grid-auto-flow:row;
+}
+.modifier-row-v113 > .input,
+.modifier-row-v113 > .select{min-width:0;width:100%;max-width:100%}
+.modifier-row-v113 > button{width:36px;min-width:36px;justify-self:end}
+
+/* The old checkbox/dropdown implant installers are retired. A real implant instance
+   is installed only by dragging it from the character inventory into an implant slot. */
+#config-editor-form[data-entity-type="players"] .legacy-implant-editor-hidden-v1067,
+#config-editor-form[data-entity-type="players"] .implant-slot-editor-v1067{
+  display:none!important;
+}
+#config-editor-form[data-entity-type="equipment"][data-item-type="implant"] label.consent-line:has(input[name="stackableV113"]),
+#config-editor-form[data-entity-type="equipment"][data-item-type="implant"] label.consent-line:has(input[name="textOnlyInventoryV113"]),
+#config-editor-form[data-entity-type="equipment"][data-item-type="implant"] .field:has(input[name="stackLimitV113"]){
+  display:none!important;
+}
+
+@media(max-width:1320px){
+  #config-content .config-grid{grid-template-columns:minmax(0,1fr)}
+}
+@media(max-width:1000px){
+  .modifier-row-v113{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .modifier-row-v113 > button{justify-self:start}
+}
+@media(max-width:700px){
+  .modifier-row-v113{grid-template-columns:minmax(0,1fr)}
+}

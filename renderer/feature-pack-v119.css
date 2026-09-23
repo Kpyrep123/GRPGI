@@ -1,0 +1,63 @@
+/* GRPGI v1.0.119 — command deck always remains inside the combat viewport */
+.scene-board-shell-v104{
+  grid-template-rows:minmax(0,1fr) clamp(88px,24vh,190px)!important;
+}
+.scene-command-deck-v118{
+  min-width:0;
+  min-height:0;
+  height:100%;
+  overflow:hidden;
+  display:grid;
+  grid-template-rows:auto minmax(0,1fr);
+  overscroll-behavior:contain;
+}
+.scene-measurebar-v118{
+  min-height:34px;
+  max-height:38px;
+  overflow-x:auto!important;
+  overflow-y:hidden!important;
+  flex-wrap:nowrap!important;
+}
+.scene-character-actions-v118{
+  min-height:0!important;
+  height:auto!important;
+  max-height:none!important;
+  overflow-x:hidden!important;
+  overflow-y:auto!important;
+  flex-wrap:wrap!important;
+  align-content:flex-start;
+  white-space:normal!important;
+  scrollbar-gutter:stable;
+  overscroll-behavior:contain;
+}
+.scene-character-actions-v118>.scene-action-spacer-v104{flex:1 1 18px!important}
+.scene-character-actions-v118 .scene-skill-actions-v118{flex-wrap:wrap;min-width:0}
+
+@media(max-height:700px){
+  .scene-board-shell-v104{grid-template-rows:minmax(0,1fr) 108px!important}
+}
+@media(max-width:760px){
+  .scene-board-shell-v104{grid-template-rows:minmax(0,1fr) clamp(104px,29vh,210px)!important}
+}
+
+.lua-editor-v119{margin-top:14px;padding:12px;border:1px solid rgba(125,249,255,.2);border-radius:10px;background:rgba(4,13,23,.45)}
+.lua-code-v119{min-height:260px!important;font:13px/1.55 Consolas,"Cascadia Code",monospace!important;tab-size:2;white-space:pre;overflow:auto;background:#07111b!important;color:#d9faff!important}
+.lua-editor-actions-v119{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.lua-editor-actions-v119 [data-lua-status-v119].ok{color:#77f0aa}.lua-editor-actions-v119 [data-lua-status-v119].err{color:#ff8e98}
+.lua-behavior-targets-v125{display:flex;align-items:stretch;gap:8px;flex-wrap:wrap;margin:8px 0 12px}
+.lua-behavior-targets-v125 .toggle-row{flex:1 1 150px;margin:0;min-width:140px}
+
+.scene-lua-overlay-v119{position:absolute;inset:0;z-index:2500;display:grid;place-items:center;padding:18px;background:rgba(0,5,11,.76);backdrop-filter:blur(4px)}
+.scene-lua-modal-v119{width:min(760px,96%);max-height:min(760px,92%);overflow:auto;border:1px solid rgba(125,249,255,.38);border-radius:14px;background:linear-gradient(145deg,#0d1d2b,#08121d);box-shadow:0 24px 70px rgba(0,0,0,.62);padding:16px}
+.scene-lua-modal-v119 header h3{margin:4px 0 2px;color:#ecfbff}.scene-lua-modal-v119 header p{margin:0;color:#91a8b8}.scene-lua-modal-v119 footer{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
+.scene-lua-modal-body-v119{display:grid;gap:12px;margin-top:14px}.scene-lua-modal-body-v119 small{display:block;margin-top:4px;color:#8299a8}
+.scene-lua-participants-v119{display:flex;align-items:center;gap:9px;flex-wrap:wrap;padding:10px;border:1px solid rgba(255,255,255,.1);border-radius:9px;background:rgba(0,0,0,.2)}
+.scene-lua-participants-v119 span{color:#7df9ff}.scene-lua-participants-v119 strong{margin-left:auto;color:#ffcf73}
+.scene-lua-reactions-v119,.scene-lua-targets-v119{display:grid;gap:7px;max-height:340px;overflow:auto}
+.scene-lua-reactions-v119 label,.scene-lua-targets-v119 label{display:flex;align-items:center;gap:10px;padding:10px;border:1px solid rgba(255,255,255,.11);border-radius:9px;cursor:pointer;background:rgba(255,255,255,.025)}
+.scene-lua-reactions-v119 label:has(input:checked),.scene-lua-targets-v119 label:has(input:checked){border-color:#7df9ff;background:rgba(125,249,255,.09)}
+.scene-lua-reactions-v119 span,.scene-lua-targets-v119 span{display:grid;gap:2px}.scene-lua-reactions-v119 small,.scene-lua-targets-v119 small{margin:0}
+.scene-lua-modal-error-v119{min-height:18px;color:#ff8e98}
+.scene-lua-particle-v119{position:absolute;z-index:150;left:50%;top:50%;width:12px;height:12px;border:2px solid var(--particle-color,#7df9ff);border-radius:50%;pointer-events:none;transform:translate(-50%,-50%);box-shadow:0 0 18px var(--particle-color,#7df9ff);animation:lua-particle-v119 var(--particle-duration,700ms) ease-out forwards}
+@keyframes lua-particle-v119{0%{opacity:1;transform:translate(-50%,-50%) scale(.25)}70%{opacity:.8}100%{opacity:0;transform:translate(-50%,-50%) scale(5)}}
+.scene-lua-particle-v119.effect-impact{border-width:4px}.scene-lua-particle-v119.effect-heal{box-shadow:0 0 26px #6dff9b}.scene-lua-particle-v119.effect-shield{border-style:double;border-width:5px}

@@ -50,6 +50,7 @@
     spaceDown: false,
     raf: 0,
     lastFrameAt: 0,
+    lastLiteFrameAt: 0,
     saveTimer: 0,
     saveState: 'saved',
     saveLabel: 'Сохранено',
@@ -621,7 +622,7 @@
     const kind = token.type === 'ship' || token.type === 'squadron' ? 'ship' : token.type === 'city' || token.type === 'facility' ? 'facility' : token.type === 'player' ? 'player' : token.type === 'aircraft' ? 'air' : 'unit';
     const glyph = kind === 'ship' ? '◉' : kind === 'facility' ? '▣' : kind === 'player' ? '●' : kind === 'air' ? '◆' : '▲';
     const status = ship?.status || token.status || 'active';
-    return `<button class="rcc-token-v2 kind-${kind} status-${escapeHtml(status)} ${token.locked ? 'is-locked' : ''}" data-token-id="${escapeHtml(token.id)}" data-rcc-token="${escapeHtml(token.id)}" style="--token-color:${escapeHtml(token.color || '#7df9ff')}"><span class="rcc-token-core-v2">${glyph}</span><span class="rcc-token-label-v2">${escapeHtml(label)}</span><i class="rcc-token-layer-v2">${token.layer === 'orbit' ? 'ORB' : token.layer === 'air' ? 'AIR' : ''}</i></button>`;
+    return `<button class="rcc-token-v2 kind-${kind} status-${escapeHtml(status)} ${token.locked ? 'is-locked' : ''}" data-token-id="${escapeHtml(token.id)}" data-rcc-token="${escapeHtml(token.id)}" ${token.playerId ? `data-player-id="${escapeHtml(token.playerId)}"` : ''} style="--token-color:${escapeHtml(token.color || '#7df9ff')}"><span class="rcc-token-core-v2">${glyph}</span><span class="rcc-token-label-v2">${escapeHtml(label)}</span><i class="rcc-token-layer-v2">${token.layer === 'orbit' ? 'ORB' : token.layer === 'air' ? 'AIR' : ''}</i></button>`;
   }
 
   function markerMarkup(marker) {
@@ -1020,6 +1021,7 @@
     const runtime = api()?.getRuntime?.() || {};
     return {
       mode: 'region',
+      graphicsMode: document.documentElement.dataset.graphicsMode === 'lite' ? 'lite' : 'full',
       activeRegionMapId: state.mapId,
       selectedRegionTokenId: state.selectedKind === 'token' ? state.selectedId : '',
       regionCamera: { zoom: state.camera.zoom, panFracX: state.camera.panX / fw, panFracY: state.camera.panY / fh },
@@ -1806,8 +1808,14 @@
   function startLoop() {
     cancelAnimationFrame(state.raf);
     state.lastFrameAt = performance.now();
+    state.lastLiteFrameAt = 0;
     const tick = now => {
       if (!state.open) return;
+      if (document.documentElement.dataset.graphicsMode === 'lite' && now - state.lastLiteFrameAt < 100) {
+        state.raf = requestAnimationFrame(tick);
+        return;
+      }
+      state.lastLiteFrameAt = now;
       const dt = Math.min(100, now - state.lastFrameAt);
       state.lastFrameAt = now;
       const wallNow = Date.now();
@@ -1826,7 +1834,7 @@
       if (!tactical.has(this.selectedType)) return originalRenderEditor(entity);
       const view = this.selectedType === 'regionMaps' ? 'map' : this.selectedType === 'ships' ? 'fleet' : 'systems';
       const type = this.selectedType === 'missiles' ? 'missiles' : this.selectedType === 'radars' ? 'radars' : '';
-      return `<div class="rcc-config-redirect-v2"><span>ЕДИНЫЙ ТАКТИЧЕСКИЙ КОНТУР</span><h2>${escapeHtml(entity?.name || entity?.id || WORLD_SECTIONS[this.selectedType]?.label || '')}</h2><p>Карты регионов, корабли, ракеты и РЛС теперь управляются в одном центре. Это исключает расхождение параметров между картой и World Config.</p><button class="primary" type="button" data-rcc-config-open="${view}" data-rcc-config-type="${type}" data-rcc-config-id="${escapeHtml(entity?.id || '')}">ОТКРЫТЬ REGION COMMAND CENTER</button></div>`;
+      return `<div class="rcc-config-redirect-v2"><span>ЕДИНЫЙ ТАКТИЧЕСКИЙ КОНТУР</span><h2>${escapeHtml(entity?.name || entity?.id || WORLD_SECTIONS[this.selectedType]?.label || '')}</h2><p>Карты регионов, корабли, ракеты и РЛС теперь управляются в одном центре. Это исключает расхождение параметров между картой и настройкой мира.</p><button class="primary" type="button" data-rcc-config-open="${view}" data-rcc-config-type="${type}" data-rcc-config-id="${escapeHtml(entity?.id || '')}">ОТКРЫТЬ ЦЕНТР УПРАВЛЕНИЯ РЕГИОНОМ</button></div>`;
     };
     const originalCreateNew = Configurator.createNew.bind(Configurator);
     Configurator.createNew = function createNewRcc() {

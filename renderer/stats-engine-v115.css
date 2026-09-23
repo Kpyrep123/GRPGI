@@ -1,0 +1,273 @@
+/* GRPGI v1.0.115 — World Config / profile regression recovery */
+
+/* ---- World Config player editor --------------------------------------------------
+   Nothing inside the editor is allowed to define the page width.  v1.0.113 added
+   calculated-stat/modifier controls after the legacy inventory block; this layer
+   restores a single vertical form flow and keeps SAVE_PLAYER in that flow. */
+#config-content{
+  overflow-x:hidden;
+}
+#config-content .config-grid{
+  width:min(100%,1600px);
+  max-width:1600px;
+  grid-template-columns:minmax(260px,320px) minmax(0,1fr);
+  align-items:start;
+}
+#config-content .config-side,
+#config-content .config-main,
+#config-content .config-main > *,
+#config-editor-form,
+#config-editor-form > *,
+#config-editor-form .field,
+#config-editor-form .cols2,
+#config-editor-form .cols3,
+#config-editor-form .cols4{
+  min-width:0;
+  max-width:100%;
+  box-sizing:border-box;
+}
+#config-content .config-main{
+  width:100%;
+  overflow-x:hidden;
+}
+#config-editor-form.wc-player-editor-v115{
+  display:grid!important;
+  grid-template-columns:minmax(0,1fr)!important;
+  grid-auto-flow:row!important;
+  grid-auto-columns:minmax(0,1fr)!important;
+  align-content:start;
+  width:100%;
+  min-width:0;
+  max-width:100%;
+  gap:14px;
+}
+#config-editor-form.wc-player-editor-v115 > *{
+  grid-column:1 / -1!important;
+}
+#config-editor-form.wc-player-editor-v115 .cols2{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+}
+#config-editor-form.wc-player-editor-v115 .cols3{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+}
+#config-editor-form.wc-player-editor-v115 .cols4{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+}
+
+.wc-stats-section-v115{
+  display:grid;
+  grid-template-columns:minmax(0,1fr);
+  gap:14px;
+  width:100%;
+  min-width:0;
+  max-width:100%;
+  padding:0;
+  margin:0;
+}
+
+/* Universal modifiers: labelled, wrapping controls instead of one unbounded row. */
+.modifier-editor-v113,
+.modifier-list-v113,
+.modifier-row-v113{
+  width:100%;
+  min-width:0;
+  max-width:100%;
+  box-sizing:border-box;
+}
+.modifier-editor-v113{
+  overflow:hidden;
+}
+.modifier-list-v113{
+  display:grid;
+  gap:10px;
+}
+.modifier-row-v113{
+  display:grid!important;
+  grid-template-columns:repeat(4,minmax(0,1fr))!important;
+  grid-auto-flow:row!important;
+  gap:10px!important;
+  align-items:end;
+  padding:10px;
+}
+.modifier-field-v115{
+  display:grid;
+  grid-template-columns:minmax(0,1fr);
+  gap:5px;
+  min-width:0;
+  max-width:100%;
+}
+.modifier-field-v115 > span{
+  min-width:0;
+  color:var(--muted);
+  font:10px/1.25 var(--mono);
+  letter-spacing:.055em;
+  text-transform:uppercase;
+  overflow-wrap:anywhere;
+}
+.modifier-field-v115 > .input,
+.modifier-field-v115 > .select,
+.modifier-row-v113 > .input,
+.modifier-row-v113 > .select{
+  width:100%;
+  min-width:0;
+  max-width:100%;
+  box-sizing:border-box;
+}
+.modifier-remove-v115{
+  align-self:end;
+  justify-self:start;
+  min-width:36px;
+}
+
+/* The drag/drop inventory is the only equipment editor for a player. */
+#config-editor-form.wc-player-editor-v115 .wc-inventory-legacy-hidden-v1068,
+#config-editor-form.wc-player-editor-v115 .legacy-implant-editor-hidden-v1067,
+#config-editor-form.wc-player-editor-v115 .implant-slot-editor-v1067{
+  display:none!important;
+}
+#config-editor-form.wc-player-editor-v115 [data-wc-inventory-editor-v1068]{
+  width:100%;
+  min-width:0;
+  max-width:100%;
+  overflow:hidden;
+}
+#config-editor-form.wc-player-editor-v115 [data-wc-inventory-editor-v1068] > *{
+  min-width:0;
+  max-width:100%;
+}
+#config-editor-form.wc-player-editor-v115 button.primary[type="submit"]{
+  justify-self:start;
+  width:auto;
+  max-width:100%;
+}
+
+/* ---- Player profile --------------------------------------------------------------
+   Keep the v1.0.112 three-column profile.  Stats Engine augments cards instead of
+   pulling the inventory into a full-width fourth block. */
+#profile-content .profile-card{
+  min-width:0;
+}
+#profile-content .inventory-profile-v115{
+  grid-column:auto!important;
+  width:auto!important;
+  min-width:0!important;
+  max-width:100%!important;
+  margin:0!important;
+  overflow:hidden!important;
+}
+.profile-derived-block-v115{
+  display:grid;
+  gap:0;
+  margin-top:14px;
+  padding-top:12px;
+  border-top:1px solid rgba(125,249,255,.12);
+}
+.profile-derived-row-v115{
+  min-width:0;
+}
+.profile-derived-row-v115 .data-value{
+  white-space:nowrap;
+}
+.profile-location-compact-v113{
+  min-width:0;
+}
+
+.inventory-equipment-layout-v115{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1fr);
+  gap:8px;
+  align-items:stretch;
+}
+.inventory-equipment-center-v115{
+  display:grid;
+  gap:8px;
+  min-width:0;
+}
+.inventory-equip-slot-v115{
+  min-width:0;
+  height:100%;
+}
+.inventory-slot-item-v1067,
+.inventory-slot-empty-v1067{
+  min-width:0;
+}
+.inventory-slot-item-v1067 > span{
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.inventory-slot-item-v1067 > small{
+  display:block;
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.inventory-implant-strip-v115{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(92px,1fr));
+  gap:7px;
+  margin-top:8px;
+  min-width:0;
+}
+.inventory-implant-strip-v115 .inventory-equip-slot-v1067{
+  min-height:72px;
+  padding:7px;
+}
+.inventory-implant-strip-v115 .inventory-slot-label-v1067{
+  font-size:9px;
+}
+.inventory-grid-v115{
+  grid-template-columns:repeat(5,minmax(48px,1fr))!important;
+  width:100%!important;
+  max-width:100%!important;
+  min-width:0!important;
+  overflow:hidden;
+}
+.inventory-tile-v115{
+  min-width:0;
+}
+.profile-documents-v115{
+  margin-top:14px;
+  min-width:0;
+}
+.profile-documents-v115 .entity-button-row{
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
+}
+.inventory-overload-v115{
+  color:var(--danger,#ff6b7a);
+  letter-spacing:.08em;
+}
+
+@media(max-width:1320px){
+  #config-content .config-grid{
+    grid-template-columns:minmax(0,1fr);
+  }
+}
+@media(max-width:1050px){
+  .modifier-row-v113{
+    grid-template-columns:repeat(2,minmax(0,1fr))!important;
+  }
+  #config-editor-form.wc-player-editor-v115 .cols3,
+  #config-editor-form.wc-player-editor-v115 .cols4{
+    grid-template-columns:repeat(2,minmax(0,1fr));
+  }
+}
+@media(max-width:760px){
+  #config-editor-form.wc-player-editor-v115 .cols2,
+  #config-editor-form.wc-player-editor-v115 .cols3,
+  #config-editor-form.wc-player-editor-v115 .cols4,
+  .modifier-row-v113,
+  .inventory-equipment-layout-v115{
+    grid-template-columns:minmax(0,1fr)!important;
+  }
+  .inventory-grid-v115{
+    grid-template-columns:repeat(5,minmax(42px,1fr))!important;
+  }
+}

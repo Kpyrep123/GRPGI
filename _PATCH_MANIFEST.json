@@ -1,0 +1,23 @@
+{
+  "version": "1.0.134",
+  "baseVersion": "1.0.133",
+  "type": "source-release",
+  "scope": "World Config extension initialization, equipment units, ammunition family and independent JSON toolbar",
+  "files": [
+    "PATCH_NOTES_v1.0.134.md",
+    "PATCH_VALIDATION_v1.0.134.txt",
+    "WORLD_CONFIG_JSON_IMPORT_EXPORT.md",
+    "package-lock.json",
+    "package.json",
+    "renderer/app.js",
+    "renderer/feature-pack-v118.js",
+    "renderer/feature-pack-v120.js",
+    "renderer/index.html",
+    "renderer/world-json-ui-v134.js",
+    "tests/v132-world-config-json-transfer.cjs",
+    "tests/v133-integration.cjs",
+    "tests/v133-ui.cjs",
+    "tests/v134-world-config-browser.cjs",
+    "tests/v134-world-config-full-load.mjs"
+  ]
+}

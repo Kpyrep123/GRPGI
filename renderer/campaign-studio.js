@@ -1,4 +1,4 @@
-/* v1.0.57 Campaign Studio — persistent local view state + drag-to-connect graph ports */
+/* v1.0.102 Campaign Studio — persistent world section + realtime-safe editing */
 (() => {
   'use strict';
   if (window.__campaignStudioV1057) return;
@@ -10,6 +10,10 @@
   const CAMPAIGN_KEY = 'grpg-campaign-studio-campaign-v1056';
   const MODE_KEY = 'grpg-campaign-studio-mode-v1056';
   const VIEW_KEY = 'grpg-campaign-studio-view-v1057';
+  const STRUCTURE_SAVE_DELAY_MS = 650;
+  const TEXT_SAVE_DELAY_MS = 2400;
+  const BLUR_SAVE_DELAY_MS = 350;
+  const QUEUED_SAVE_DELAY_MS = 250;
   const PORTS = ['top', 'right', 'bottom', 'left'];
   const PLOT_TYPES = {
     scene: 'Сюжетный элемент',
@@ -148,6 +152,15 @@
       campaigns: Object.fromEntries(Object.entries(source).map(([id, value]) => [id, normalizeCampaignWorkspace(value)]))
     };
   }
+  function storeContentSignature(raw = {}) {
+    const value = normalizeStore(raw);
+    delete value.updatedAt;
+    Object.values(value.campaigns || {}).forEach(workspace => {
+      if (workspace?.knowledge) delete workspace.knowledge.camera;
+      if (workspace?.plot) delete workspace.plot.camera;
+    });
+    try { return JSON.stringify(value); } catch { return ''; }
+  }
   function loadLocalViews() {
     try {
       const parsed = JSON.parse(localStorage.getItem(VIEW_KEY) || '{}');
@@ -172,6 +185,12 @@
     selectedKind: null,
     saveTimer: null,
     saving: false,
+    editRevision: 0,
+    savedRevision: 0,
+    queuedSaveReason: '',
+    manualToastPending: false,
+    pendingIncomingStore: null,
+    pendingIncomingTimer: null,
     drag: null,
     pan: null,
     lastRandomId: '',
@@ -222,18 +241,51 @@
     },
     rememberViewSoon() { this.captureLocalView(); },
 
-    load(payload = {}) {
-      // Realtime/world refresh must never own the local camera or selection.
+    isEditing() {
+      if (this.drag || this.pan || this.linkDrag) return true;
+      const active = document.activeElement;
+      if (!active?.closest?.('#mod-campaign-studio')) return false;
+      const tag = String(active.tagName || '').toLowerCase();
+      return tag === 'input' || tag === 'textarea' || tag === 'select' || active.isContentEditable;
+    },
+    queueIncoming(incoming) {
+      const queuedAt = num(this.pendingIncomingStore?.updatedAt, 0);
+      if (!this.pendingIncomingStore || num(incoming?.updatedAt, 0) >= queuedAt) this.pendingIncomingStore = clone(incoming);
+      clearTimeout(this.pendingIncomingTimer);
+      this.pendingIncomingTimer = setTimeout(() => {
+        this.pendingIncomingTimer = null;
+        this.flushIncomingIfIdle();
+      }, 500);
+    },
+    flushIncomingIfIdle() {
+      if (!this.pendingIncomingStore || this.localDirty || this.saving || this.isEditing()) return false;
+      const incoming = this.pendingIncomingStore;
+      this.pendingIncomingStore = null;
+      if (num(incoming.updatedAt, 0) < num(this.store?.updatedAt, 0)) return true;
+      if (storeContentSignature(incoming) === storeContentSignature(this.store)) return true;
       this.captureDomState();
       this.captureLocalView();
-      const incoming = normalizeStore(payload?.campaignStudio || worldData?.campaignStudio || this.store);
-      if (!this.localDirty && !this.saving && num(incoming.updatedAt, 0) >= num(this.store?.updatedAt, 0)) this.store = incoming;
-      loadMilestonesFromPayload(payload);
+      this.store = normalizeStore(incoming);
       const ids = new Set(allCampaigns().map(c => c.id));
       if (!ids.has(this.campaignId)) this.campaignId = '';
       this.ensureCampaignSelection();
       this.restoreLocalView();
       if (UI?.activeModuleId === 'campaign-studio') this.render({ preserveSelection: true, preserveScroll: true, externalRefresh: true });
+      return true;
+    },
+    load(payload = {}) {
+      // Incoming snapshots may update data, but must not rebuild an active editor.
+      const incoming = normalizeStore(payload?.campaignStudio || worldData?.campaignStudio || this.store);
+      loadMilestonesFromPayload(payload);
+      const incomingAt = num(incoming.updatedAt, 0);
+      const currentAt = num(this.store?.updatedAt, 0);
+      if (incomingAt < currentAt || storeContentSignature(incoming) === storeContentSignature(this.store)) return;
+      if (this.localDirty || this.saving || this.isEditing()) {
+        this.queueIncoming(incoming);
+        return;
+      }
+      this.pendingIncomingStore = incoming;
+      this.flushIncomingIfIdle();
     },
     ensureCampaignSelection() {
       const campaigns = allCampaigns();
@@ -257,29 +309,79 @@
       this.updateEra();
       UI.openModule('campaign-studio');
     },
-    scheduleSave(reason = 'campaign-studio-change') {
+    scheduleSave(reason = 'campaign-studio-change', options = {}) {
       this.localDirty = true;
-      this.store.updatedAt = Date.now();
+      this.editRevision += 1;
+      this.store.updatedAt = Math.max(Date.now(), num(this.store.updatedAt, 0) + 1);
       clearTimeout(this.saveTimer);
-      this.saveTimer = setTimeout(() => this.persist(reason, { silent: true }), 700);
+      const delay = Math.max(0, num(options.delay, STRUCTURE_SAVE_DELAY_MS));
+      this.saveTimer = setTimeout(() => {
+        this.saveTimer = null;
+        this.persist(reason, { silent: true });
+      }, delay);
+    },
+    scheduleTextSave(reason = 'campaign-studio-text-change') {
+      this.scheduleSave(reason, { delay: TEXT_SAVE_DELAY_MS });
+    },
+    acceleratePendingSave(reason = 'campaign-studio-field-blur') {
+      if (!this.localDirty || this.saving) return;
+      clearTimeout(this.saveTimer);
+      this.saveTimer = setTimeout(() => {
+        this.saveTimer = null;
+        this.persist(reason, { silent: true });
+      }, BLUR_SAVE_DELAY_MS);
     },
     async persist(reason = 'campaign-studio-save', options = {}) {
-      if (this.saving || !window.electronAPI?.saveWorldData) return;
+      if (!window.electronAPI?.saveWorldData) return { ok: false, message: 'Electron API unavailable' };
+      if (this.saving) {
+        this.queuedSaveReason = String(reason || 'campaign-studio-queued-save');
+        if (!options.silent) this.manualToastPending = true;
+        return { ok: true, status: 'queued' };
+      }
+      clearTimeout(this.saveTimer);
+      this.saveTimer = null;
       this.saving = true;
+      const targetRevision = this.editRevision;
+      const outgoingStore = clone(this.store);
+      let result = null;
+      let succeeded = false;
       try {
-        if (worldData && typeof worldData === 'object') worldData.campaignStudio = clone(this.store);
+        if (worldData && typeof worldData === 'object') worldData.campaignStudio = clone(outgoingStore);
         const snapshot = buildWorldSnapshot();
-        snapshot.campaignStudio = clone(this.store);
+        snapshot.campaignStudio = clone(outgoingStore);
         const res = await window.electronAPI.saveWorldData(snapshot);
         if (!res?.ok) throw new Error(res?.message || 'Не удалось сохранить Campaign Studio');
+        if (!res?.world?.campaignStudio || typeof res.world.campaignStudio !== 'object') {
+          throw new Error('Campaign Studio не был записан в локальное хранилище');
+        }
         try { Sync?.markLocalDirty?.('CAMPAIGN_STUDIO_EDIT'); } catch {}
         try { await Sync?.pushCurrentSnapshot?.(reason, { silent: true }); } catch (err) { Debug?.error?.('CAMPAIGN_STUDIO_SYNC_FAILED', { message: err?.message || String(err) }); }
-        this.localDirty = false;
-        if (!options.silent) Toast?.show?.('Campaign Studio сохранён', 'ok');
+        succeeded = true;
+        result = res;
+        this.savedRevision = Math.max(this.savedRevision, targetRevision);
+        this.localDirty = this.editRevision > targetRevision;
+        if (!options.silent || this.manualToastPending) Toast?.show?.('Campaign Studio сохранён', 'ok');
+        this.manualToastPending = false;
       } catch (err) {
         Debug?.error?.('CAMPAIGN_STUDIO_SAVE_FAILED', { message: err?.message || String(err) });
         if (!options.silent) Toast?.show?.(`Ошибка сохранения: ${err?.message || err}`, 'err');
-      } finally { this.saving = false; }
+        result = { ok: false, message: err?.message || String(err) };
+      } finally {
+        this.saving = false;
+        const changedDuringSave = this.editRevision > targetRevision;
+        const queuedReason = this.queuedSaveReason;
+        this.queuedSaveReason = '';
+        if (changedDuringSave) {
+          clearTimeout(this.saveTimer);
+          this.saveTimer = setTimeout(() => {
+            this.saveTimer = null;
+            this.persist(queuedReason || 'campaign-studio-queued-save', { silent: true });
+          }, QUEUED_SAVE_DELAY_MS);
+        } else if (succeeded) {
+          this.flushIncomingIfIdle();
+        }
+      }
+      return result;
     },
 
     render(options = {}) {
@@ -324,14 +426,14 @@
     sidebarMarkup() {
       if (this.mode === 'plot') return this.plotSidebarMarkup();
       const catalog = this.entityCatalog(this.catalogQuery);
-      return `<div class="cs-panel-v1056"><div class="cs-panel-title-v1056"><span>World Config</span><span class="cs-count-v1056" id="cs-catalog-count-v1056">${catalog.length}</span></div><input class="input cs-search-v1056" id="cs-catalog-search-v1056" value="${hx(this.catalogQuery)}" placeholder="Поиск сущности…"/><div class="cs-catalog-v1056" id="cs-catalog-list-v1056">${this.catalogRowsMarkup(catalog)}</div></div>
-        <div class="cs-panel-v1056"><div class="cs-panel-title-v1056">Как работать</div><div class="small-note">Добавляйте сущности World Config и свободные заметки. Перетаскивайте карточки. Связи можно создавать в инспекторе или перетягиванием коннектора на грани карточки к коннектору другой карточки. Колесо — масштаб, перетаскивание пустого поля — камера.</div></div>`;
+      return `<div class="cs-panel-v1056"><div class="cs-panel-title-v1056"><span>Настройка мира</span><span class="cs-count-v1056" id="cs-catalog-count-v1056">${catalog.length}</span></div><input class="input cs-search-v1056" id="cs-catalog-search-v1056" value="${hx(this.catalogQuery)}" placeholder="Поиск сущности…"/><div class="cs-catalog-v1056" id="cs-catalog-list-v1056">${this.catalogRowsMarkup(catalog)}</div></div>
+        <div class="cs-panel-v1056"><div class="cs-panel-title-v1056">Как работать</div><div class="small-note">Добавляйте сущности из настройки мира и свободные заметки. Перетаскивайте карточки. Связи можно создавать в инспекторе или перетягиванием коннектора на грани карточки к коннектору другой карточки. Колесо — масштаб, перетаскивание пустого поля — камера.</div></div>`;
     },
     plotSidebarMarkup() {
       const milestones = campaignMilestones(this.campaignId);
       const conditions = this.plot()?.conditions || [];
       const randoms = (this.plot()?.nodes || []).filter(n => n.type === 'random');
-      return `<div class="cs-panel-v1056"><div class="cs-panel-title-v1056"><span>Вехи сюжета</span><span class="cs-count-v1056">${milestones.length}</span></div>${milestones.map(m => `<label class="cs-milestone-v1056"><input type="checkbox" data-cs-milestone="${hx(m.id)}" ${m.reached ? 'checked' : ''}/><span><b>${hx(m.name)}</b>${m.description ? `<small>${hx(m.description)}</small>` : ''}</span></label>`).join('') || '<div class="small-note">Вехи ещё не заданы. Добавьте их в World Config → Игровые кампании.</div>'}<button class="secondary" data-cs-action="open-campaign-config" type="button">ОТКРЫТЬ ЛИСТ КАМПАНИИ</button></div>
+      return `<div class="cs-panel-v1056"><div class="cs-panel-title-v1056"><span>Вехи сюжета</span><span class="cs-count-v1056">${milestones.length}</span></div>${milestones.map(m => `<label class="cs-milestone-v1056"><input type="checkbox" data-cs-milestone="${hx(m.id)}" ${m.reached ? 'checked' : ''}/><span><b>${hx(m.name)}</b>${m.description ? `<small>${hx(m.description)}</small>` : ''}</span></label>`).join('') || '<div class="small-note">Вехи ещё не заданы. Добавьте их в разделе «Настройка мира» → «Игровые кампании».</div>'}<button class="secondary" data-cs-action="open-campaign-config" type="button">ОТКРЫТЬ ЛИСТ КАМПАНИИ</button></div>
         <div class="cs-panel-v1056"><div class="cs-panel-title-v1056"><span>Условия</span><span class="cs-count-v1056">${conditions.length}</span></div><div class="small-note">Одно условие можно назначить любому количеству сюжетных элементов. Условие проверяет достигнутые вехи кампании.</div></div>
         <div class="cs-panel-v1056"><div class="cs-panel-title-v1056"><span>Случайные события</span><span class="cs-count-v1056">${randoms.length}</span></div>${this.lastRandomId ? `<div class="cs-roll-result-v1056">Последний результат: <b>${hx(this.plotNodeById(this.lastRandomId)?.title || '—')}</b></div>` : '<div class="small-note">Кнопка «Бросить событие» выбирает по весам только те случайные события, условия которых выполнены.</div>'}</div>`;
     },
@@ -371,7 +473,7 @@
     nodeDisplay(node) {
       if (node.kind === 'note') return { title: node.title || 'Заметка', typeLabel: 'Заметка ДМа', missing: false, note: node.note || '' };
       const entity = this.resolveEntity(node.entityType, node.entityId);
-      const typeLabel = WORLD_SECTIONS?.[node.entityType]?.label || node.entityType || 'World Config';
+      const typeLabel = WORLD_SECTIONS?.[node.entityType]?.label || node.entityType || 'Настройка мира';
       return { title: entity?.name || entity?.displayName || entity?.title || node.title || node.entityId || 'Удалённая сущность', typeLabel, missing: !entity, note: node.note || '', entity };
     },
     boardMarkup() {
@@ -382,7 +484,7 @@
       return `<div class="cs-world-v1056" id="cs-world-v1056" data-x="${camera.x}" data-y="${camera.y}" data-zoom="${camera.zoom}">
         <svg class="cs-links-v1056" id="cs-links-v1056" viewBox="0 0 4200 3000"><defs><marker id="cs-arrow-v1056" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="currentColor"></path></marker></defs>${this.edgesMarkup(edges, nodes)}</svg>
         <div class="cs-node-layer-v1056">${nodes.map(node => this.nodeMarkup(node)).join('')}</div>
-      </div>${nodes.length ? '' : `<div class="cs-empty-v1056"><div class="cs-empty-card-v1056">${this.mode === 'plot' ? 'Добавьте первый сюжетный элемент или условие. Вехи создаются в листе кампании, а здесь из них собираются условия и ветви сюжета.' : 'Паутина этой кампании пока пуста. Добавьте сущности из World Config слева или создайте свободную заметку.'}</div></div>`}`;
+      </div>${nodes.length ? '' : `<div class="cs-empty-v1056"><div class="cs-empty-card-v1056">${this.mode === 'plot' ? 'Добавьте первый сюжетный элемент или условие. Вехи создаются в листе кампании, а здесь из них собираются условия и ветви сюжета.' : 'Паутина этой кампании пока пуста. Добавьте сущности из настройки мира слева или создайте свободную заметку.'}</div></div>`}`;
     },
     plotRenderableNodes() {
       const plot = this.plot();
@@ -446,7 +548,7 @@
     plotNodeById(id = this.selectedId) { return this.plot()?.nodes.find(n => n.id === id) || null; },
     conditionById(id = this.selectedId) { return this.plot()?.conditions.find(c => c.id === id) || null; },
     inspectorMarkup() {
-      if (!this.selectedId) return '<div class="cs-inspector-empty-v1056"><div class="section-title">Инспектор</div>Выберите узел. Здесь редактируются заметки, условия и связи; сами данные World Config остаются в исходной карточке сущности.</div>';
+      if (!this.selectedId) return '<div class="cs-inspector-empty-v1056"><div class="section-title">Инспектор</div>Выберите узел. Здесь редактируются заметки, условия и связи; сами данные настройки мира остаются в исходной карточке сущности.</div>';
       if (this.mode === 'knowledge') return this.knowledgeInspectorMarkup();
       if (this.selectedKind === 'condition') return this.conditionInspectorMarkup();
       return this.plotInspectorMarkup();
@@ -455,15 +557,15 @@
       const node = this.selectedKnowledgeNode(); if (!node) return '<div class="cs-inspector-empty-v1056">Узел не найден.</div>';
       const display = this.nodeDisplay(node); const allNodes = this.knowledge()?.nodes || [];
       const edges = (this.knowledge()?.edges || []).filter(e => e.from === node.id || e.to === node.id);
-      return `<div class="section-title">${node.kind === 'note' ? 'Заметка' : 'Сущность World Config'}</div>
-        ${node.kind === 'note' ? `<div class="field"><label>Название</label><input class="input" data-cs-edit="title" value="${hx(node.title)}"/></div>` : `<div class="cs-entity-preview-v1056"><b>${hx(display.title)}</b><div class="small-note">${hx(display.typeLabel)} · ${hx(node.entityId)}</div>${this.entityAttributesMarkup(display.entity)}</div><button class="secondary" data-cs-action="open-entity-config" type="button">ОТКРЫТЬ В WORLD CONFIG</button>`}
+      return `<div class="section-title">${node.kind === 'note' ? 'Заметка' : 'Сущность настройки мира'}</div>
+        ${node.kind === 'note' ? `<div class="field"><label>Название</label><input class="input" data-cs-edit="title" value="${hx(node.title)}"/></div>` : `<div class="cs-entity-preview-v1056"><b>${hx(display.title)}</b><div class="small-note">${hx(display.typeLabel)} · ${hx(node.entityId)}</div>${this.entityAttributesMarkup(display.entity)}</div><button class="secondary" data-cs-action="open-entity-config" type="button">ОТКРЫТЬ В НАСТРОЙКЕ МИРА</button>`}
         <div class="field"><label>Заметка ДМа</label><textarea class="area" data-cs-edit="note" placeholder="Контекст, гипотезы, планы, секреты…">${hx(node.note)}</textarea></div>
         <div class="cs-panel-v1056"><div class="cs-panel-title-v1056">Новая связь</div><select class="select" id="cs-link-target-v1056"><option value="">Выберите узел…</option>${allNodes.filter(n => n.id !== node.id).map(n => `<option value="${hx(n.id)}">${hx(this.nodeDisplay(n).title)}</option>`).join('')}</select><input class="input" id="cs-link-label-v1056" placeholder="Название связи: союзник, владеет, знает…"/><button class="secondary" data-cs-action="add-link" type="button">СВЯЗАТЬ</button></div>
         <div class="cs-panel-v1056"><div class="cs-panel-title-v1056"><span>Связи</span><span class="cs-count-v1056">${edges.length}</span></div>${edges.map(edge => { const other = edge.from === node.id ? edge.to : edge.from; const target = allNodes.find(n => n.id === other); return `<div class="cs-connection-row-v1056"><div class="cs-connection-main-v1057"><span class="cs-connection-target-v1057">${hx(target ? this.nodeDisplay(target).title : other)}</span><input class="input cs-edge-label-input-v1057" data-cs-edge-label="${hx(edge.id)}" value="${hx(edge.label)}" placeholder="Название связи…"/></div><button class="cs-delete-v1056" data-cs-delete-edge="${hx(edge.id)}">×</button></div>`; }).join('') || '<div class="small-note">Связей пока нет.</div>'}</div>
         <button class="ghost" data-cs-action="delete-selected" type="button">УДАЛИТЬ УЗЕЛ ИЗ ПАУТИНЫ</button>`;
     },
     entityAttributesMarkup(entity) {
-      if (!entity) return '<div class="small-note">Исходная сущность удалена из World Config. Заметка и связи сохранены.</div>';
+      if (!entity) return '<div class="small-note">Исходная сущность удалена из настройки мира. Заметка и связи сохранены.</div>';
       const skip = new Set(['image', 'imageLocal', 'imageData', 'visibility', 'relatedArticleIds']);
       const rows = Object.entries(entity).filter(([k, v]) => !skip.has(k) && v !== '' && v !== null && v !== undefined).slice(0, 9);
       return rows.map(([key, value]) => {
@@ -539,9 +641,12 @@
       if (plot.edges.some(e => e.from === node.id && e.to === target)) { Toast?.show?.('Такая ветка уже существует', 'info'); return; }
       plot.edges.push(normalizeEdge({ id: uid('plot_edge'), from: node.id, to: target, label: document.getElementById('cs-plot-link-label-v1056')?.value || '' })); this.scheduleSave(); this.render({ preserveSelection: true, preserveScroll: true });
     },
-    deleteSelected() {
+    async deleteSelected() {
       if (!this.selectedId) return;
-      if (!window.confirm('Удалить выбранный узел из Campaign Studio? World Config не будет изменён.')) return;
+      const confirmDelete = window.requestConfirmationV1090
+        ? await window.requestConfirmationV1090('Удалить выбранный узел из студии кампании? Настройка мира не будет изменена.', { acceptLabel: 'Удалить' })
+        : window.confirm('Удалить выбранный узел из студии кампании? Настройка мира не будет изменена.');
+      if (!confirmDelete) return;
       if (this.mode === 'knowledge') {
         const graph = this.knowledge(); graph.nodes = graph.nodes.filter(n => n.id !== this.selectedId); graph.edges = graph.edges.filter(e => e.from !== this.selectedId && e.to !== this.selectedId);
       } else if (this.selectedKind === 'condition') {
@@ -627,14 +732,14 @@
     onInput(event) {
       if (event.target?.id === 'cs-catalog-search-v1056') { this.catalogQuery = event.target.value; const catalog = this.entityCatalog(this.catalogQuery); const list = document.getElementById('cs-catalog-list-v1056'); const count = document.getElementById('cs-catalog-count-v1056'); if (list) list.innerHTML = this.catalogRowsMarkup(catalog); if (count) count.textContent = String(catalog.length); this.captureLocalView(); return; }
       const edgeLabelId = event.target?.dataset?.csEdgeLabel;
-      if (edgeLabelId) { const edge = this.knowledge()?.edges.find(item => item.id === edgeLabelId); if (edge) { edge.label = String(event.target.value || ''); this.scheduleSave(); this.redrawEdges(); } return; }
+      if (edgeLabelId) { const edge = this.knowledge()?.edges.find(item => item.id === edgeLabelId); if (edge) { edge.label = String(event.target.value || ''); this.scheduleTextSave(); this.redrawEdges(); } return; }
       const plotEdgeLabelId = event.target?.dataset?.csPlotEdgeLabel;
-      if (plotEdgeLabelId) { const edge = this.plot()?.edges.find(item => item.id === plotEdgeLabelId); if (edge) { edge.label = String(event.target.value || ''); this.scheduleSave(); this.redrawEdges(); } return; }
+      if (plotEdgeLabelId) { const edge = this.plot()?.edges.find(item => item.id === plotEdgeLabelId); if (edge) { edge.label = String(event.target.value || ''); this.scheduleTextSave(); this.redrawEdges(); } return; }
       const node = this.mode === 'knowledge' ? this.selectedKnowledgeNode() : null;
       const edit = event.target?.dataset?.csEdit;
-      if (node && edit && ['title', 'note'].includes(edit)) { node[edit] = String(event.target.value || ''); this.scheduleSave(); const card = document.querySelector(`[data-cs-node="${CSS.escape(node.id)}"]`); if (card) { const title = card.querySelector('.cs-node-title-v1056'), note = card.querySelector('.cs-node-note-v1056'); if (title && edit === 'title') title.textContent = node.title; if (edit === 'note') { if (note) note.textContent = node.note; else if (node.note) title?.insertAdjacentHTML('afterend', `<div class="cs-node-note-v1056">${hx(node.note)}</div>`); } } return; }
-      const cedit = event.target?.dataset?.csConditionEdit; if (cedit) { const c = this.conditionById(); if (!c) return; c[cedit] = String(event.target.value || ''); if (cedit === 'mode') c.mode = c.mode === 'any' ? 'any' : 'all'; this.scheduleSave(); return; }
-      const pedit = event.target?.dataset?.csPlotEdit; if (pedit) { const p = this.plotNodeById(); if (!p) return; if (pedit === 'randomWeight') p.randomWeight = Math.max(1, Math.floor(num(event.target.value, 1))); else p[pedit] = String(event.target.value || ''); if (pedit === 'type' && !PLOT_TYPES[p.type]) p.type = 'scene'; if (pedit === 'status' && !STATUS_LABELS[p.status]) p.status = 'planned'; this.scheduleSave(); return; }
+      if (node && edit && ['title', 'note'].includes(edit)) { node[edit] = String(event.target.value || ''); this.scheduleTextSave(); const card = document.querySelector(`[data-cs-node="${CSS.escape(node.id)}"]`); if (card) { const title = card.querySelector('.cs-node-title-v1056'), note = card.querySelector('.cs-node-note-v1056'); if (title && edit === 'title') title.textContent = node.title; if (edit === 'note') { if (note) note.textContent = node.note; else if (node.note) title?.insertAdjacentHTML('afterend', `<div class="cs-node-note-v1056">${hx(node.note)}</div>`); } } return; }
+      const cedit = event.target?.dataset?.csConditionEdit; if (cedit) { const c = this.conditionById(); if (!c) return; c[cedit] = String(event.target.value || ''); if (cedit === 'mode') c.mode = c.mode === 'any' ? 'any' : 'all'; this.scheduleTextSave(); return; }
+      const pedit = event.target?.dataset?.csPlotEdit; if (pedit) { const p = this.plotNodeById(); if (!p) return; if (pedit === 'randomWeight') p.randomWeight = Math.max(1, Math.floor(num(event.target.value, 1))); else p[pedit] = String(event.target.value || ''); if (pedit === 'type' && !PLOT_TYPES[p.type]) p.type = 'scene'; if (pedit === 'status' && !STATUS_LABELS[p.status]) p.status = 'planned'; this.scheduleTextSave(); return; }
     },
     onChange(event) {
       if (event.target?.id === 'campaign-studio-campaign-v1056') { this.captureLocalView(); this.campaignId = String(event.target.value || ''); localStorage.setItem(CAMPAIGN_KEY, this.campaignId); this.workspace(); this.restoreLocalView(); this.updateEra(); this.render({ preserveSelection: true, preserveScroll: true }); return; }
@@ -754,6 +859,7 @@
       if (this.linkDrag) { this.finishPortLink(event); return; }
       if (this.drag) { if (this.drag.moved) this.scheduleSave('campaign-studio-drag'); this.captureLocalView(); this.drag = null; }
       if (this.pan) { this.captureLocalView(); this.pan = null; document.getElementById('cs-viewport-v1056')?.classList.remove('dragging'); }
+      this.flushIncomingIfIdle();
     },
     onWheel(event) {
       const viewport = event.target.closest('#cs-viewport-v1056'); if (!viewport) return;
@@ -839,6 +945,11 @@
   });
   document.addEventListener('input', event => { if (event.target.closest('#mod-campaign-studio')) Studio.onInput(event); });
   document.addEventListener('change', event => { if (event.target.closest('#mod-campaign-studio')) Studio.onChange(event); });
+  document.addEventListener('focusout', event => {
+    if (!event.target.closest?.('#mod-campaign-studio')) return;
+    Studio.acceleratePendingSave();
+    setTimeout(() => Studio.flushIncomingIfIdle(), 0);
+  });
   document.addEventListener('pointerdown', event => { if (event.target.closest('#mod-campaign-studio')) Studio.onPointerDown(event); });
   document.addEventListener('pointermove', event => Studio.onPointerMove(event));
   document.addEventListener('pointerup', event => Studio.onPointerUp(event));

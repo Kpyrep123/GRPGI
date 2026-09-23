@@ -1,0 +1,54 @@
+'use strict';
+const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
+const {chromium}=require(process.env.CODEX_PRIMARY_RUNTIME_NODE_MODULES+'/playwright');
+const root=path.resolve(__dirname,'..'),read=f=>fs.readFileSync(path.join(root,f),'utf8');
+(async()=>{
+ const browser=await chromium.launch({headless:true,args:['--no-sandbox']});const page=await browser.newPage({viewport:{width:1280,height:900}});
+ const errors=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.setContent('<div id="config-content"></div>');
+ await page.addStyleTag({content:read('renderer/feature-pack-v120.css')});
+ await page.addScriptTag({content:read('renderer/world-json-transfer-v132.js')});
+ await page.evaluate(()=>{
+  window.WORLD_SECTIONS={equipment:{label:'Снаряжение',mapKey:'EQUIPMENT'},npcs:{label:'NPC',mapKey:'NPCS'},players:{label:'Персонажи',mapKey:'PLAYER_TEMPLATES'}};
+  window.data={equipment:{EQUIPMENT:{old:{id:'old',name:'Old'}}},npcs:{NPCS:{n:{id:'n'}}},players:{PLAYER_TEMPLATES:{gm:{id:'gm',role:'gm'}}}};
+  window.worldData=data;window.saved=null;window.messages=[];window.App={state:{users:{gm:{id:'gm',role:'gm'}},meta:{}},refreshAfterLocalWrite(){}};
+  window.Configurator={selectedType:'equipment',buildPayload:t=>data[t],render(){document.getElementById('config-content').innerHTML='<div class="config-grid"><div class="config-type-list">Категории</div></div>';},removeEntity(t,id){delete data[t][WORLD_SECTIONS[t].mapKey][id]},insertEntity(t,e){data[t][WORLD_SECTIONS[t].mapKey][e.id]=e}};
+  window.buildWorldSnapshot=()=>structuredClone(data);window.applyWorldData=w=>{data=structuredClone(w)};
+  window.PlayerSync={shouldIsolateUsersFromSnapshot:()=>false};window.Sync={markLocalDirty(){},pushCurrentSnapshot:async()=>({ok:true})};window.Persistence={save:async()=>{},load:async()=>App.state};
+  window.Toast={show:(m,t)=>messages.push({m,t})};
+  window.electronAPI={exportWorldSectionJson:async(t,p)=>{window.exported=p;return{ok:true,fileName:t+'.json'}},importWorldSectionJson:async()=>({ok:true,fileName:'equipment.json',payload:{EQUIPMENT:{new:{id:'new',name:'Changed'}}}}),saveWorldSection:async(t,p)=>{saved=structuredClone(p);return{ok:true}},loadWorldData:async()=>({ok:true,world:structuredClone(data)})};
+ });
+ await page.addScriptTag({content:read('renderer/world-json-ui-v134.js')});
+ await page.evaluate(()=>Configurator.render());
+ await page.locator('[data-world-json-action-v132="export"]').click();
+ assert.equal(await page.evaluate(()=>exported.EQUIPMENT.old.id),'old');
+ await page.locator('[data-world-json-action-v132="import"]').click();await page.locator('[data-world-json-mode-v132="replace"]').click();
+ await page.waitForFunction(()=>saved?.EQUIPMENT.new);
+ assert.equal(await page.evaluate(()=>data.equipment.EQUIPMENT.old),undefined);
+ assert.equal(await page.evaluate(()=>messages.some(x=>x.t==='err')),false);
+ await page.evaluate(()=>{Configurator.render();Configurator.render()});assert.equal(await page.locator('.world-json-transfer-v132').count(),1);
+ assert.equal(await page.evaluate(()=>document.querySelector('#config-content').firstElementChild.classList.contains('world-json-transfer-v132')),true);
+ // Exercise the actual scene pointer handlers with the real CSS and geometry.
+ const sceneSource=read('renderer/scene-editor-v113.js');
+ await page.setContent('<div id="combat-stage" style="position:relative;width:800px;height:600px"></div>');
+ await page.addStyleTag({content:read('renderer/styles.css')+read('renderer/scene-editor-v113.css')});await page.addScriptTag({content:read('renderer/asset-transform-v133.js')});
+ await page.evaluate(()=>{
+  window.scene={id:'test',width:20,height:15,assets:[{id:'asset',x:5,y:5,w:4,h:2,rotation:30}],templates:[]};
+  window.local={ui:{action:'select'},lua119:{},draw:null};window.saves=0;window.num=(v,f=0)=>Number(v)||f;window.list=v=>Array.isArray(v)?v:[];window.clone=structuredClone;window.html=String;window.clamp104=(v,a,b)=>Math.max(a,Math.min(b,Number(v)));window.normalizeCoverType120=()=> 'none';
+  window.Combat={selectedObject:{kind:'asset',id:'asset'},getScene:()=>scene,render(){document.getElementById('combat-stage').innerHTML=assetMarkup(scene.assets[0],scene)}};
+  window.queueStoreSave=()=>{saves++;window.persisted=structuredClone(scene)};window.broadcastScene104=()=>{};
+  window.scenePointFromEvent=(e,stage,s)=>{const b=stage.getBoundingClientRect();return{x:(e.clientX-b.left)/b.width*s.width,y:(e.clientY-b.top)/b.height*s.height}};
+ });
+ const objectStart=sceneSource.indexOf('  function objectStyle('),objectEnd=sceneSource.indexOf('\n  function ',objectStart+10);
+ const assetStart=sceneSource.indexOf('  function assetMarkup('),assetEnd=sceneSource.indexOf('\n  function ',assetStart+10);
+ const ptrStart=sceneSource.indexOf('  function startBoardPointer104('),ptrEnd=sceneSource.indexOf('  function contextMenu104(',ptrStart);
+ await page.addScriptTag({content:sceneSource.slice(objectStart,objectEnd)+sceneSource.slice(assetStart,assetEnd)+sceneSource.slice(ptrStart,ptrEnd)});
+ await page.evaluate(()=>{Combat.render();document.addEventListener('pointerdown',startBoardPointer104,true);document.addEventListener('pointermove',moveBoardPointer104,true);document.addEventListener('pointerup',endBoardPointer104,true);document.addEventListener('pointercancel',endBoardPointer104,true)});
+ const box=await page.locator('[data-asset-transform-v133="se"]').boundingBox();assert.ok(box);
+ await page.mouse.move(box.x+box.width/2,box.y+box.height/2);await page.mouse.down();await page.mouse.move(box.x+box.width/2+70,box.y+box.height/2+40,{steps:8});await page.mouse.up();
+ assert.equal(await page.evaluate(()=>saves),1);assert.ok(await page.evaluate(()=>scene.assets[0].w>4));
+ const rot=await page.locator('[data-asset-transform-v133="rotate"]').boundingBox();await page.mouse.move(rot.x+rot.width/2,rot.y+rot.height/2);await page.mouse.down();await page.mouse.move(rot.x+120,rot.y+80,{steps:5});await page.mouse.up();
+ assert.equal(await page.evaluate(()=>saves),2);assert.notEqual(await page.evaluate(()=>scene.assets[0].rotation),30);
+ assert.deepEqual(await page.evaluate(()=>persisted.assets[0]),await page.evaluate(()=>scene.assets[0]));
+ assert.deepEqual(errors,[]);await browser.close();console.log('v133 Chromium UI: visible JSON buttons, export, replace without gm, no duplicate toolbar; real asset resize/rotate pointer events and persistence callback OK');
+})().catch(e=>{console.error(e);process.exit(1)});

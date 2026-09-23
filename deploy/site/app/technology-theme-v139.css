@@ -1,0 +1,71 @@
+/* v1.0.139 — quantity selector and technological-era visual system */
+.market-quantity-v139{align-self:stretch;min-width:220px;display:grid;grid-template-columns:minmax(0,1fr) auto;align-content:center;gap:8px 12px;padding:10px 12px;border:1px solid var(--line-strong,var(--line));border-radius:10px;background:rgba(0,0,0,.16)}
+.market-quantity-v139>label{align-self:center;color:var(--muted);font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase}
+.market-quantity-input-v139{display:grid;grid-template-columns:34px minmax(64px,86px) 34px;gap:5px}
+.market-quantity-input-v139 .secondary{min-width:0;padding:0;display:grid;place-items:center;font-size:18px}
+.market-quantity-input-v139 .input{width:100%;min-width:0;padding:7px 5px;text-align:center;font-weight:800;font-variant-numeric:tabular-nums}
+.market-quantity-total-v139{grid-column:1/-1;display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding-top:7px;border-top:1px solid var(--line);color:var(--muted);font-size:11px}
+.market-quantity-total-v139 b{color:var(--text);font-size:16px;font-variant-numeric:tabular-nums}
+.market-quantity-error-v139{grid-column:1/-1;display:none;color:var(--err);line-height:1.35}.market-quantity-error-v139.visible{display:block}
+.market-quantity-v139>.primary{grid-column:1/-1;width:100%;min-height:40px}
+.stock-selection-v1074>.market-quantity-v139{grid-column:2;grid-row:2/5;align-self:stretch}
+
+html[data-era-theme="technological"]{
+  --bg:#080806;--panel:#11100d;--panel-2:#17150f;--panel-3:#211d15;
+  --line:rgba(179,145,88,.22);--line-strong:rgba(190,153,91,.44);
+  --text:#ddd5c4;--muted:#968d79;--accent:#b99358;--ok:#86966e;--warn:#c4a267;--err:#c7796f;
+  --shadow:0 24px 72px rgba(0,0,0,.68),inset 0 0 0 1px rgba(232,199,137,.025);
+  --radius:3px;--radius-sm:2px;--material-radius:3px;--material-radius-sm:2px;
+  --surface-highlight:rgba(232,199,137,.035);--surface-shadow:rgba(0,0,0,.62);
+  --map-marker:#b99358;--map-route:#80663e;--map-text:#d8cfbd;
+}
+html[data-era-theme="technological"] body{
+  font-family:"Bahnschrift","Arial Narrow","Segoe UI",sans-serif;
+  background:radial-gradient(circle at 18% 12%,rgba(139,104,54,.09),transparent 30%),radial-gradient(circle at 82% 8%,rgba(100,80,48,.05),transparent 25%),repeating-linear-gradient(117deg,rgba(255,241,211,.009) 0 1px,transparent 1px 5px),linear-gradient(180deg,#0d0c09,#070705 58%,#030302);
+}
+html[data-era-theme="technological"] body::after{background:radial-gradient(circle at center,transparent 38%,rgba(0,0,0,.56) 100%),repeating-linear-gradient(0deg,transparent 0 3px,rgba(205,180,132,.012) 3px 4px),repeating-linear-gradient(91deg,transparent 0 19px,rgba(255,255,255,.006) 19px 20px)!important}
+html[data-era-theme="technological"] :is(h1,h2,h3,h4,.eyebrow,.section-title,.primary,.secondary,.ghost-btn,.chip-btn,.nav-btn,.link-btn,.pill,.tag){font-family:"Bahnschrift Condensed","Arial Narrow","Roboto Condensed","Segoe UI",sans-serif}
+html[data-era-theme="technological"] :is(h1,h2,h3,h4,.eyebrow,.section-title){letter-spacing:.075em}
+html[data-era-theme="technological"] :is(.eyebrow,.section-title,.accent,.stock-symbol-v1074){color:var(--accent)}
+html[data-era-theme="technological"] a{color:#c2a36f}
+
+html[data-era-theme="technological"] .web-galaxy-bg{filter:sepia(.38) saturate(.55) brightness(.68) contrast(1.12);opacity:.7}
+html[data-era-theme="technological"] :is(.topbar,.bottom-nav){border-radius:0;background:linear-gradient(180deg,rgba(20,18,14,.98),rgba(8,8,6,.97));border-color:rgba(184,147,85,.38);box-shadow:0 12px 36px rgba(0,0,0,.48),inset 0 0 0 1px rgba(236,202,140,.025);backdrop-filter:blur(10px) saturate(.65)}
+html[data-era-theme="technological"] .bottom-nav.desktop-dock{border-radius:3px;background:linear-gradient(180deg,rgba(22,20,15,.98),rgba(8,8,6,.985))}
+
+html[data-era-theme="technological"] :is(.boot-card,.card,.hero-card,.thread-card,.article-card,.planet-card,.combat-card,.profile-card,.entity-card,.compact-card,.info-card,.details-card,.preview-card,.archive-tile,.stat,.chat-bubble,.market-pane-v1071,.market-selection-card-v1071,.market-selection-empty-v1071,.stock-selection-v1074,.portfolio-shell-v1074,.web-galaxy-stage,.web-galaxy-inspector,.web-galaxy-tooltip){
+  border-radius:3px;
+  border-color:rgba(183,146,84,.31);
+  background:linear-gradient(90deg,rgba(193,155,94,.75),rgba(193,155,94,0)) top left/30px 1px no-repeat,linear-gradient(180deg,rgba(193,155,94,.75),rgba(193,155,94,0)) top left/1px 30px no-repeat,linear-gradient(270deg,rgba(193,155,94,.75),rgba(193,155,94,0)) bottom right/30px 1px no-repeat,linear-gradient(0deg,rgba(193,155,94,.75),rgba(193,155,94,0)) bottom right/1px 30px no-repeat,repeating-linear-gradient(125deg,rgba(237,211,165,.01) 0 1px,transparent 1px 6px),linear-gradient(180deg,#181611,#090907);
+  box-shadow:var(--shadow);backdrop-filter:blur(10px) saturate(.65);
+}
+html[data-era-theme="technological"] :is(.primary,.secondary,.ghost-btn,.chip-btn,.nav-btn,.link-btn){min-height:34px;border-radius:2px;letter-spacing:.055em;text-transform:uppercase;box-shadow:none}
+html[data-era-theme="technological"] .primary{color:#17130d;border:1px solid #9a7743;background:linear-gradient(180deg,#c1a06b,#8b6b3d 54%,#74552c);box-shadow:inset 0 1px rgba(255,239,202,.32),0 7px 18px rgba(0,0,0,.28)}
+html[data-era-theme="technological"] .primary:hover:not(:disabled){filter:brightness(1.1)}
+html[data-era-theme="technological"] :is(.secondary,.ghost-btn,.chip-btn,.nav-btn,.link-btn){color:#c3ac83;border:1px solid rgba(177,140,81,.38);background:linear-gradient(180deg,rgba(54,44,29,.42),rgba(15,14,11,.72))}
+html[data-era-theme="technological"] :is(.secondary,.ghost-btn,.chip-btn,.nav-btn,.link-btn):hover:not(:disabled){color:#e0d0af;border-color:rgba(201,163,101,.7);background:rgba(101,76,39,.3)}
+html[data-era-theme="technological"] .nav-btn.active{color:#e0d0af;border-color:#b99358;background:rgba(128,94,47,.24);box-shadow:inset 0 -2px #ad844b}
+html[data-era-theme="technological"] button:disabled{filter:saturate(.35);opacity:.43}
+html[data-era-theme="technological"] :is(.input,.textarea,select.input,input,select,textarea){border-radius:2px;border-color:rgba(170,137,83,.38);color:#ddd4c1;background:rgba(5,5,4,.78);box-shadow:inset 0 1px 8px rgba(0,0,0,.4)}
+html[data-era-theme="technological"] :is(.input,.textarea,select.input,input,select,textarea):focus{border-color:#b89256;outline:1px solid rgba(184,146,86,.24);box-shadow:inset 0 1px 8px rgba(0,0,0,.4)}
+html[data-era-theme="technological"] select.input option{background:#0d0c09;color:#ddd5c4}
+html[data-era-theme="technological"] :focus-visible{outline:1px solid #c19a5c;outline-offset:2px}
+
+html[data-era-theme="technological"] :is(.info-chip,.pill,.tag){border-radius:2px;border-color:rgba(184,147,85,.34);background:rgba(126,95,50,.09);color:#c5b48f}
+html[data-era-theme="technological"] :is(.entity-card,.thread-card,.article-card,.planet-card,.combat-card,.profile-card,.archive-tile,.related-entity-card-v1100){border-radius:2px;border-color:rgba(176,140,81,.25);background:linear-gradient(180deg,rgba(26,23,17,.8),rgba(11,11,8,.84))}
+html[data-era-theme="technological"] :is(.entity-card,.thread-card,.article-card,.planet-card,.combat-card,.profile-card,.archive-tile,.related-entity-card-v1100):hover{border-color:rgba(198,158,94,.56);background:rgba(72,55,31,.3)}
+html[data-era-theme="technological"] :is(.market-access-banner-v1071,.market-shop-tile-v1071,.market-inventory-tile-v1071,.stock-quote-tile-v1074,.stock-holding-v1074,.portfolio-head-v1074,.portfolio-metrics-v1074>div,.portfolio-ledger-row-v1074,.stock-position-facts-v1074 span,.stock-chart-v1074 svg,.market-quantity-v139){border-radius:2px;border-color:rgba(176,140,81,.29);background:linear-gradient(180deg,rgba(24,22,17,.88),rgba(8,8,6,.92));box-shadow:inset 0 0 0 1px rgba(230,197,138,.018)}
+html[data-era-theme="technological"] :is(.market-shop-tile-v1071,.market-inventory-tile-v1071,.stock-quote-tile-v1074,.stock-holding-v1074):hover{border-color:rgba(200,160,94,.67);background-color:rgba(74,55,29,.32);transform:translateY(-1px)}
+html[data-era-theme="technological"] :is(.market-shop-tile-v1071,.market-inventory-tile-v1071,.stock-quote-tile-v1074,.stock-holding-v1074).selected{border-color:#b99358;box-shadow:inset 0 0 0 1px rgba(205,166,103,.35),0 0 18px rgba(137,100,48,.12)}
+html[data-era-theme="technological"] .stock-chart-v1074 svg{background:linear-gradient(180deg,rgba(141,106,55,.075),transparent)}
+html[data-era-theme="technological"] .market-inventory-grid-v1071{border-radius:2px;border-color:rgba(176,140,81,.3);background:#080806}
+html[data-era-theme="technological"] .market-inventory-cell-v1071{border-radius:2px;border-color:rgba(176,140,81,.18);background:rgba(145,109,58,.025)}
+html[data-era-theme="technological"] .portfolio-result-v1074{background:linear-gradient(90deg,rgba(139,103,52,.16),rgba(13,13,10,.88))!important}
+html[data-era-theme="technological"] .consent-line{border-color:rgba(176,140,81,.26);background:rgba(8,8,6,.56)}
+html[data-era-theme="technological"] :is(.up,.ok){color:#94a17b}html[data-era-theme="technological"] :is(.down,.err){color:#bd776d}
+html[data-era-theme="technological"] .market-access-banner-v1071.ok{border-color:rgba(137,153,105,.5)}html[data-era-theme="technological"] .market-access-banner-v1071.err{border-color:rgba(189,119,109,.52);color:#d69a92}
+html[data-era-theme="technological"] :is(img,.entity-thumb,.entity-item-media-v1060,.hero-cover){border-radius:2px}
+
+html[data-era-theme="technological"] ::-webkit-scrollbar{width:10px;height:10px}html[data-era-theme="technological"] ::-webkit-scrollbar-track{background:#080806;border-left:1px solid rgba(170,135,78,.12)}html[data-era-theme="technological"] ::-webkit-scrollbar-thumb{background:#5e4a2d;border:2px solid #0b0a08;border-radius:0}html[data-era-theme="technological"] ::-webkit-scrollbar-thumb:hover{background:#82633a}
+
+@media(max-width:600px){.market-selection-card-v1071>.market-quantity-v139,.stock-selection-v1074>.market-quantity-v139{grid-column:1/-1;grid-row:auto;width:100%;min-width:0}.market-quantity-v139{grid-template-columns:1fr auto}html[data-era-theme="technological"] .bottom-nav.desktop-dock{border-radius:0}}

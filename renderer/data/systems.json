@@ -1,18 +1,2920 @@
 {
   "SYSTEMS": [
     {
-      "id": "cassilia_binary",
-      "name": "Cassilia Binary",
+      "color": "#7df9ff",
+      "markerLabel": "K0V 14 Геркулеса",
+      "markerStyle": "orbital",
+      "routes": [],
+      "arm": "Персеев рукав",
+      "body": "",
+      "id": "system_380215",
+      "image": "https://tutwxwmfuclzqzhafyaa.supabase.co/storage/v1/object/public/campaign-assets/alpha/systems/system_380215/1773922528660_14_herculis.jpg",
+      "location": {
+        "arm": "Персеев рукав",
+        "node": "K0V 14 Геркулеса",
+        "system": "14 Herculis"
+      },
+      "name": "14 Herculis",
+      "planetIds": [
+        "planet_937995"
+      ],
       "pos": {
-        "x": 0.42,
+        "x": 0.703,
+        "y": 0.618
+      },
+      "relatedArticleIds": [],
+      "summary": "",
+      "visibility": {
+        "playerIds": [
+          "u1",
+          "player_185470",
+          "player_281529",
+          "player_582319",
+          "player_849364",
+          "player_202919",
+          "player_481909",
+          "player_486258"
+        ],
+        "campaignIds": [],
+        "eraIds": [
+          "technological"
+        ]
+      }
+    },
+    {
+      "color": "#FF4040",
+      "markerLabel": "G2V 18 Скорпиона",
+      "markerStyle": "orbital",
+      "routes": [
+        {
+          "color": "#FF4040",
+          "label": "",
+          "toId": "system_072463",
+          "width": 2
+        }
+      ],
+      "arm": "Орионский рукав",
+      "body": "",
+      "id": "system_029831",
+      "image": "https://tutwxwmfuclzqzhafyaa.supabase.co/storage/v1/object/public/campaign-assets/alpha/systems/system_029831/1773914055236_18_scorpii.webp",
+      "location": {
+        "arm": "Орионский рукав",
+        "node": "G2V 18 Скорпиона",
+        "system": "18_Scorpii"
+      },
+      "name": "18_Scorpii",
+      "planetIds": [
+        "planet_185508",
+        "planet_802080"
+      ],
+      "pos": {
+        "x": 0.655,
+        "y": 0.49
+      },
+      "relatedArticleIds": [],
+      "summary": "",
+      "visibility": {
+        "playerIds": [
+          "player_202919",
+          "player_281529",
+          "player_481909",
+          "player_486258",
+          "player_582319",
+          "player_849364",
+          "player_185470",
+          "u1"
+        ],
+        "campaignIds": [],
+        "eraIds": [
+          "technological"
+        ]
+      }
+    },
+    {
+      "color": "#238B49",
+      "markerLabel": "K1Ve 36 Змееносца A",
+      "markerStyle": "orbital",
+      "routes": [],
+      "arm": "Персеев рукав",
+      "body": "",
+      "id": "system_460846",
+      "image": "https://sync.grpg-sync.ru/api/files/campaign_assets/ub5oarw2mamis4t/a709f2d059f05ce17c570e3ec30a0044_entity_system_460846_36_ophiuchi_a_iuxfpszfmp.jpg",
+      "location": {
+        "arm": "Персеев рукав",
+        "node": "K1Ve 36 Змееносца A",
+        "system": "36_Ophiuchi_A"
+      },
+      "name": "36_Ophiuchi_A",
+      "planetIds": [],
+      "pos": {
+        "x": 0.756,
+        "y": 0.477
+      },
+      "relatedArticleIds": [],
+      "summary": "",
+      "visibility": {
+        "playerIds": [
+          "player_582319",
+          "player_849364",
+          "player_202919",
+          "player_481909",
+          "player_486258"
+        ],
+        "campaignIds": [
+          "campaign_453839"
+        ],
+        "eraIds": [
+          "technological"
+        ]
+      }
+    },
+    {
+      "color": "#238B49",
+      "markerLabel": "K1Ve 36 Змееносца B",
+      "markerStyle": "orbital",
+      "routes": [
+        {
+          "color": "#238B49",
+          "label": "",
+          "toId": "system_011102",
+          "width": 2
+        },
+        {
+          "color": "#238B49",
+          "label": "",
+          "toId": "system_284741",
+          "width": 2
+        }
+      ],
+      "arm": "Персеев рукав",
+      "body": "",
+      "id": "system_500023",
+      "image": "https://tutwxwmfuclzqzhafyaa.supabase.co/storage/v1/object/public/campaign-assets/alpha/systems/system_500023/1773880578836_36_ophiuchi_b.png",
+      "location": {
+        "arm": "Персеев рукав",
+        "node": "K1Ve 36 Змееносца B",
+        "system": "36_Ophiuchi_B"
+      },
+      "name": "36_Ophiuchi_B",
+      "planetIds": [
+        "planet_825026",
+        "planet_345552"
+      ],
+      "pos": {
+        "x": 0.771,
+        "y": 0.509
+      },
+      "relatedArticleIds": [],
+      "summary": "",
+      "visibility": {
+        "playerIds": [
+          "player_202919",
+          "player_281529",
+          "player_481909",
+          "player_486258",
+          "player_582319",
+          "player_849364",
+          "player_185470",
+          "u1"
+        ],
+        "campaignIds": [],
+        "eraIds": [
+          "technological"
+        ]
+      }
+    },
+    {
+      "color": "#FF4040",
+      "markerLabel": "G5V 39 Тельца",
+      "markerStyle": "orbital",
+      "routes": [
+        {
+          "color": "#FF4040",
+          "label": "",
+          "toId": "system_029831",
+          "width": 2
+        }
+      ],
+      "arm": "Персеев рукав",
+      "body": "",
+      "id": "system_722094",
+      "image": "https://tutwxwmfuclzqzhafyaa.supabase.co/storage/v1/object/public/campaign-assets/alpha/systems/system_722094/1773913770721_39_tauri.png",
+      "location": {
+        "arm": "Персеев рукав",
+        "node": "G5V 39 Тельца",
+        "system": "39_Tauri"
+      },
+      "name": "39_Tauri",
+      "planetIds": [
+        "planet_484208"
+      ],
+      "pos": {
+        "x": 0.699,
+        "y": 0.493
+      },
+      "relatedArticleIds": [],
+      "summary": "",
+      "visibility": {
+        "playerIds": [
+          "player_202919",
+          "player_281529",
+          "player_481909",
+          "player_486258",
+          "player_582319",
+          "player_849364",
+          "player_185470",
+          "u1"
+        ],
+        "campaignIds": [],
+        "eraIds": [
+          "technological"
+        ]
+      }
+    },
+    {
+      "color": "#FF9E00",
+      "markerLabel": "K0III 47 Тукана A",
+      "markerStyle": "orbital",
+      "routes": [
+        {
+          "color": "#FF9E00",
+          "label": "",
+          "toId": "system_550692",
+          "width": 2
+        }
+      ],
+      "arm": "Кентаврийский рукав",
+      "body": "",
+      "id": "system_916610",
+      "image": "https://tutwxwmfuclzqzhafyaa.supabase.co/storage/v1/object/public/campaign-assets/alpha/systems/system_916610/1773913944859_47_tucanae_a.jpg",
+      "location": {
+        "arm": "Кентаврийский рукав",
+        "node": "K0III 47 Тукана A",
+        "system": "47_Tucanae_A"
+      },
+      "name": "47_Tucanae_A",
+      "planetIds": [
+        "planet_061442"
+      ],
+      "pos": {
+        "x": 0.39,
+        "y": 0.33
+      },
+      "relatedArticleIds": [],
+      "summary": "",
+      "visibility": {
+        "playerIds": [
+          "player_202919",
+          "player_281529",
+          "player_481909",
+          "player_486258",
+          "player_582319",
+          "player_849364",
+          "player_185470",
+          "u1"
+        ],
+        "campaignIds": [],
+        "eraIds": [
+          "technological"
+        ]
+      }
+    },
+    {
+      "color": "#238B49",
+      "markerLabel": "K5V 61 Лебедя A",
+      "markerStyle": "orbital",
+      "routes": [
+        {
+          "color": "#238B49",
+          "label": "",
+          "toId": "system_304893",
+          "width": 2
+        }
+      ],
+      "arm": "Персеев рукав",
+      "body": "",
+      "id": "system_236450",
+      "image": "https://tutwxwmfuclzqzhafyaa.supabase.co/storage/v1/object/public/campaign-assets/alpha/systems/system_236450/1773404263091_a_sirius.jpg",
+      "location": {
+        "arm": "Персеев рукав",
+        "node": "K5V 61 Лебедя A",
+        "system": "61_Cygni_A"
+      },
+      "name": "61_Cygni_A",
+      "planetIds": [
+        "planet_478740"
+      ],
+      "pos": {
+        "x": 0.79,
+        "y": 0.5
+      },
+      "relatedArticleIds": [],
+      "summary": "",
+      "visibility": {
+        "playerIds": [
+          "player_202919",
+          "player_281529",
+          "player_481909",
+          "player_486258",
+          "player_582319",
+          "player_849364",
+          "player_185470",
+          "u1"
+        ],
+        "campaignIds": [],
+        "eraIds": [
+          "technological"
+        ]
+      }
+    },
+    {
+      "color": "#238B49",
+      "markerLabel": "K7V 61 Лебедя B",
+      "markerStyle": "orbital",
+      "routes": [],
+      "arm": "Персеев рукав",
+      "body": "",
+      "id": "system_284741",
+      "image": "https://tutwxwmfuclzqzhafyaa.supabase.co/storage/v1/object/public/campaign-assets/alpha/systems/system_284741/1773404301544_f_kanopus.jpg",
+      "location": {
+        "arm": "Персеев рукав",
+        "node": "K7V 61 Лебедя B",
+        "system": "61_Cygni_B"
+      },
+      "name": "61_Cygni_B",
+      "planetIds": [
+        "planet_315317"
+      ],
+      "pos": {
+        "x": 0.768,
+        "y": 0.508
+      },
+      "relatedArticleIds": [],
+      "summary": "",
+      "visibility": {
+        "playerIds": [
+          "player_202919",
+          "player_281529",
+          "player_481909",
+          "player_486258",
+          "player_582319",
+          "player_849364",
+          "player_185470",
+          "u1"
+        ],
+        "campaignIds": [],
+        "eraIds": [
+          "technological"
+        ]
+      }
+    },
+    {
+      "color": "#FF4040",
+      "markerLabel": "G5V 61 Девы",
+      "markerStyle": "orbital",
+      "routes": [
+        {
+          "color": "#FF4040",
+          "label": "",
+          "toId": "system_181069",
+          "width": 2
+        }
+      ],
+      "arm": "Центральный сектор",
+      "body": "",
+      "id": "system_137265",
+      "image": "https://tutwxwmfuclzqzhafyaa.supabase.co/storage/v1/object/public/campaign-assets/alpha/systems/system_137265/1773914175534_61_virginis.webp",
+      "location": {
+        "arm": "Центральный сектор",
+        "node": "G5V 61 Девы",
+        "system": "61_Virginis"
+      },
+      "name": "61_Virginis",
+      "planetIds": [
+        "planet_735347",
+        "planet_620879"
+      ],
+      "pos": {
+        "x": 0.599,
+        "y": 0.495
+      },
+      "relatedArticleIds": [],
+      "summary": "",
+      "visibility": {
+        "playerIds": [
+          "player_202919",
+          "player_281529",
+          "player_481909",
+          "player_486258",
+          "player_582319",
+          "player_849364",
+          "player_185470",
+          "u1"
+        ],
+        "campaignIds": [],
+        "eraIds": [
+          "technological"
+        ]
+      }
+    },
+    {
+      "color": "#238B49",
+      "markerLabel": "K1Ve 70 Змееносца A",
+      "markerStyle": "orbital",
+      "routes": [
+        {
+          "color": "#238B49",
+          "label": "",
+          "toId": "system_500023",
+          "width": 2
+        }
+      ],
+      "arm": "Персеев рукав",
+      "body": "",
+      "id": "system_304893",
+      "image": "https://tutwxwmfuclzqzhafyaa.supabase.co/storage/v1/object/public/campaign-assets/alpha/systems/system_304893/1773880342334_70_ophiuchi_a.jpg",
+      "location": {
+        "arm": "Персеев рукав",
+        "node": "K1Ve 70 Змееносца A",
+        "system": "70_Ophiuchi_A"
+      },
+      "name": "70_Ophiuchi_A",
+      "planetIds": [
+        "planet_139644"
+      ],
+      "pos": {
+        "x": 0.779,
+        "y": 0.507
+      },
+      "relatedArticleIds": [],
+      "summary": "",
+      "visibility": {
+        "playerIds": [
+          "player_202919",
+          "player_281529",
+          "player_481909",
+          "player_486258",
+          "player_582319",
+          "player_849364",
+          "player_185470",
+          "u1"
+        ],
+        "campaignIds": [],
+        "eraIds": [
+          "technological"
+        ]
+      }
+    },
+    {
+      "color": "#238B49",
+      "markerLabel": "K5Ve  70 Змееносца B",
+      "markerStyle": "orbital",
+      "routes": [
+        {
+          "color": "#238B49",
+          "label": "",
+          "toId": "system_581870",
+          "width": 2
+        },
+        {
+          "color": "#238B49",
+          "label": "",
+          "toId": "system_460846",
+          "width": 2
+        }
+      ],
+      "arm": "Персеев рукав",
+      "body": "",
+      "id": "system_345048",
+      "image": "https://tutwxwmfuclzqzhafyaa.supabase.co/storage/v1/object/public/campaign-assets/alpha/systems/system_345048/1773880381542_70_ophiuchi_b.jpg",
+      "location": {
+        "arm": "Персеев рукав",
+        "node": "K5Ve  70 Змееносца B",
+        "system": "70_Ophiuchi_B"
+      },
+      "name": "70_Ophiuchi_B",
+      "planetIds": [
+        "planet_477827"
+      ],
+      "pos": {
+        "x": 0.77,
+        "y": 0.488
+      },
+      "relatedArticleIds": [],
+      "summary": "",
+      "visibility": {
+        "playerIds": [
+          "player_202919",
+          "player_281529",
+          "player_481909",
+          "player_486258",
+          "player_582319",
+          "player_849364",
+          "player_185470",
+          "u1"
+        ],
+        "campaignIds": [],
+        "eraIds": [
+          "technological"
+        ]
+      }
+    },
+    {
+      "color": "#FF4040",
+      "markerLabel": "G8V  82 Эридана",
+      "markerStyle": "orbital",
+      "routes": [
+        {
+          "color": "#FF4040",
+          "label": "",
+          "toId": "system_424687",
+          "width": 2
+        },
+        {
+          "color": "#FF4040",
+          "label": "",
+          "toId": "system_557955",
+          "width": 2
+        }
+      ],
+      "arm": "Персеев рукав",
+      "body": "",
+      "id": "system_546033",
+      "image": "https://tutwxwmfuclzqzhafyaa.supabase.co/storage/v1/object/public/campaign-assets/alpha/systems/system_546033/1773880579353_82_eridani.jpg",
+      "location": {
+        "arm": "Персеев рукав",
+        "node": "G8V  82 Эридана",
+        "system": "82_Eridani"
+      },
+      "name": "82_Eridani",
+      "planetIds": [
+        "planet_774224",
+        "planet_754159"
+      ],
+      "pos": {
+        "x": 0.745,
+        "y": 0.488
+      },
+      "relatedArticleIds": [],
+      "summary": "",
+      "visibility": {
+        "playerIds": [
+          "player_202919",
+          "player_281529",
+          "player_481909",
+          "player_486258",
+          "player_582319",
+          "player_849364",
+          "player_185470",
+          "u1"
+        ],
+        "campaignIds": [],
+        "eraIds": [
+          "technological"
+        ]
+      }
+    },
+    {
+      "color": "#FF4040",
+      "markerLabel": "G8IV 94 Водолея A",
+      "markerStyle": "orbital",
+      "routes": [
+        {
+          "color": "#FF4040",
+          "label": "",
+          "toId": "system_457151",
+          "width": 2
+        },
+        {
+          "color": "#FF4040",
+          "label": "",
+          "toId": "system_661248",
+          "width": 2
+        }
+      ],
+      "arm": "Персеев рукав",
+      "body": "",
+      "id": "system_474071",
+      "image": "https://tutwxwmfuclzqzhafyaa.supabase.co/storage/v1/object/public/campaign-assets/alpha/systems/system_474071/1773913550481_94_aquarii_a.jpg",
+      "location": {
+        "arm": "Персеев рукав",
+        "node": "G8IV 94 Водолея A",
+        "system": "94_Aquarii_A"
+      },
+      "name": "94_Aquarii_A",
+      "planetIds": [
+        "planet_459822"
+      ],
+      "pos": {
+        "x": 0.728,
+        "y": 0.512
+      },
+      "relatedArticleIds": [],
+      "summary": "",
+      "visibility": {
+        "playerIds": [
+          "player_202919",
+          "player_281529",
+          "player_481909",
+          "player_486258",
+          "player_582319",
+          "player_849364",
+          "player_185470",
+          "u1"
+        ],
+        "campaignIds": [],
+        "eraIds": [
+          "technological"
+        ]
+      }
+    },
+    {
+      "color": "#7df9ff",
+      "markerLabel": "Акпитули",
+      "markerStyle": "diamond",
+      "routes": [],
+      "arm": "Персеев рукав",
+      "body": "",
+      "id": "system_221057",
+      "image": "https://sync.grpg-sync.ru/api/files/campaign_assets/bnvzsvc2ndrmebq/611136d6b0ff58d1248e9b8bab601c82_entity_system_221057_akpituli_qt3oj0mpaq.jpg",
+      "location": {
+        "arm": "Персеев рукав",
+        "node": "Акпитули",
+        "system": "Акпитули"
+      },
+      "name": "Акпитули",
+      "planetIds": [
+        "planet_977429"
+      ],
+      "pos": {
+        "x": 0.747,
+        "y": 0.583
+      },
+      "relatedArticleIds": [
+        "article_963818"
+      ],
+      "summary": "",
+      "visibility": {
+        "playerIds": [],
+        "campaignIds": [
+          "campaign_453839"
+        ],
+        "eraIds": []
+      }
+    },
+    {
+      "color": "#7df9ff",
+      "markerLabel": "Аль-Джарми",
+      "markerStyle": "orbital",
+      "routes": [],
+      "arm": "Кентаврийский рукав",
+      "body": "",
+      "id": "system_112552",
+      "image": "https://sync.grpg-sync.ru/api/files/campaign_assets/02a9arqkhlblb20/1781907817338_entity_system_112552_askera_n5dpi6q4q7.jpg",
+      "location": {
+        "arm": "Кентаврийский рукав",
+        "node": "Аль-Джарми",
+        "system": "Аль-Джарми"
+      },
+      "name": "Аль-Джарми",
+      "planetIds": [
+        "planet_155688"
+      ],
+      "pos": {
+        "x": 0.392,
+        "y": 0.345
+      },
+      "relatedArticleIds": [],
+      "summary": "",
+      "visibility": {
+        "playerIds": [],
+        "campaignIds": [
+          "main"
+        ],
+        "eraIds": []
+      }
+    },
+    {
+      "color": "#7df9ff",
+      "markerLabel": "Чёрная дыра «Лакуна»",
+      "markerStyle": "blackhole",
+      "routes": [],
+      "arm": "Центральный сектор",
+      "body": "",
+      "id": "system_043111",
+      "image": "",
+      "location": {
+        "arm": "Центральный сектор",
+        "node": "Чёрная дыра «Лакуна»",
+        "system": "Лакуна"
+      },
+      "name": "Лакуна",
+      "planetIds": [],
+      "pos": {
+        "x": 0.5,
+        "y": 0.499
+      },
+      "relatedArticleIds": [],
+      "summary": "",
+      "visibility": {
+        "playerIds": [],
+        "campaignIds": [],
+        "eraIds": [
+          "technological"
+        ]
+      }
+    },
+    {
+      "color": "#7df9ff",
+      "markerLabel": "Узел Гелиоса",
+      "markerStyle": "node",
+      "routes": [
+        {
+          "color": "#7df9ff",
+          "label": "",
+          "toId": "system_056581",
+          "width": 2
+        }
+      ],
+      "arm": "Персеев рукав",
+      "body": "",
+      "id": "system_430374",
+      "image": "https://tutwxwmfuclzqzhafyaa.supabase.co/storage/v1/object/public/campaign-assets/alpha/systems/system_430374/1774027133146_uzel_geliosa.png",
+      "imageLocal": "file:///C:/Users/%D0%95%D0%B3%D0%BE%D1%80/AppData/Roaming/galactic-rpg-interface/world-data/assets/1774017433797_entity_system_430374_novaya_sistema.png",
+      "imageStoragePath": "alpha/systems/system_430374/1774027133146_uzel_geliosa.png",
+      "location": {
+        "arm": "Персеев рукав",
+        "node": "Узел Гелиоса",
+        "system": "Узел Гелиоса"
+      },
+      "name": "Узел Гелиоса",
+      "planetIds": [],
+      "pos": {
+        "x": 0.75,
+        "y": 0.477
+      },
+      "relatedArticleIds": [],
+      "summary": "",
+      "visibility": {
+        "playerIds": [],
+        "campaignIds": [],
+        "eraIds": [
+          "technological"
+        ]
+      }
+    },
+    {
+      "color": "#7df9ff",
+      "markerLabel": "Узел Геркулеса",
+      "markerStyle": "node",
+      "routes": [
+        {
+          "color": "#7df9ff",
+          "label": "",
+          "toId": "system_430374",
+          "width": 2
+        },
+        {
+          "color": "#7df9ff",
+          "label": "",
+          "toId": "system_342815",
+          "width": 2
+        }
+      ],
+      "arm": "Персеев рукав",
+      "body": "",
+      "id": "system_186601",
+      "image": "https://tutwxwmfuclzqzhafyaa.supabase.co/storage/v1/object/public/campaign-assets/alpha/systems/system_186601/1774027134190_uzel_gerkulesa.png",
+      "imageLocal": "file:///C:/Users/%D0%95%D0%B3%D0%BE%D1%80/AppData/Roaming/galactic-rpg-interface/world-data/assets/1774020206307_entity_system_186601_uzel_gerkulesa.png",
+      "imageStoragePath": "alpha/systems/system_186601/1774027134190_uzel_gerkulesa.png",
+      "location": {
+        "arm": "Персеев рукав",
+        "node": "Узел Геркулеса",
+        "system": "Узел Геркулеса"
+      },
+      "name": "Узел Геркулеса",
+      "planetIds": [],
+      "pos": {
+        "x": 0.72,
+        "y": 0.6
+      },
+      "relatedArticleIds": [],
+      "summary": "",
+      "visibility": {
+        "playerIds": [],
+        "campaignIds": [],
+        "eraIds": [
+          "technological"
+        ]
+      }
+    },
+    {
+      "color": "#7df9ff",
+      "markerLabel": "Узел Ноэзиса I",
+      "markerStyle": "node",
+      "routes": [
+        {
+          "color": "#7df9ff",
+          "label": "",
+          "toId": "system_186601",
+          "width": 2
+        }
+      ],
+      "arm": "Лебединый рукав",
+      "body": "",
+      "id": "system_672605",
+      "image": "",
+      "location": {
+        "arm": "Лебединый рукав",
+        "node": "Узел Ноэзиса I",
+        "system": "Узел Ноэзиса I"
+      },
+      "name": "Узел Ноэзиса I",
+      "planetIds": [],
+      "pos": {
+        "x": 0.623,
+        "y": 0.683
+      },
+      "relatedArticleIds": [
+        "article_209696"
+      ],
+      "summary": "",
+      "visibility": {
+        "playerIds": [],
+        "campaignIds": [],
+        "eraIds": [
+          "technological"
+        ]
+      }
+    },
+    {
+      "color": "#7df9ff",
+      "markerLabel": "Узел Ноэзиса II",
+      "markerStyle": "node",
+      "routes": [
+        {
+          "color": "#7df9ff",
+          "label": "",
+          "toId": "system_672605",
+          "width": 2
+        }
+      ],
+      "arm": "Лебединый рукав",
+      "body": "",
+      "id": "system_711422",
+      "image": "",
+      "location": {
+        "arm": "Лебединый рукав",
+        "node": "Узел Ноэзиса II",
+        "system": "Узел Ноэзиса II"
+      },
+      "name": "Узел Ноэзиса II",
+      "planetIds": [],
+      "pos": {
+        "x": 0.504,
+        "y": 0.723
+      },
+      "relatedArticleIds": [
+        "article_209696"
+      ],
+      "summary": "",
+      "visibility": {
+        "playerIds": [],
+        "campaignIds": [],
+        "eraIds": [
+          "technological"
+        ]
+      }
+    },
+    {
+      "color": "#7df9ff",
+      "markerLabel": "Узел Павлина",
+      "markerStyle": "node",
+      "routes": [
+        {
+          "color": "#7df9ff",
+          "label": "",
+          "toId": "system_430374",
+          "width": 2
+        },
+        {
+          "color": "#679FD2",
+          "label": "",
+          "toId": "system_074447",
+          "width": 2
+        }
+      ],
+      "arm": "Персеев рукав",
+      "body": "",
+      "id": "system_492543",
+      "image": "https://tutwxwmfuclzqzhafyaa.supabase.co/storage/v1/object/public/campaign-assets/alpha/systems/system_492543/1774027135755_uzel_pavlina.png",
+      "imageLocal": "file:///C:/Users/%D0%95%D0%B3%D0%BE%D1%80/AppData/Roaming/galactic-rpg-interface/world-data/assets/1774017495681_entity_system_492543_novaya_sistema.png",
+      "imageStoragePath": "alpha/systems/system_492543/1774027135755_uzel_pavlina.png",
+      "location": {
+        "arm": "Персеев рукав",
+        "node": "Узел Павлина",
+        "system": "Узел Павлина"
+      },
+      "name": "Узел Павлина",
+      "planetIds": [],
+      "pos": {
+        "x": 0.82,
+        "y": 0.43
+      },
+      "relatedArticleIds": [],
+      "summary": "",
+      "visibility": {
+        "playerIds": [],
+        "campaignIds": [],
+        "eraIds": [
+          "technological"
+        ]
+      }
+    },
+    {
+      "color": "#7df9ff",
+      "markerLabel": "Узел \"Тукана\"",
+      "markerStyle": "node",
+      "routes": [],
+      "arm": "Кентаврийский рукав",
+      "body": "",
+      "id": "system_056581",
+      "image": "https://tutwxwmfuclzqzhafyaa.supabase.co/storage/v1/object/public/campaign-assets/alpha/systems/system_056581/1774027136412_uzel_tukana.png",
+      "imageLocal": "file:///C:/Users/%D0%95%D0%B3%D0%BE%D1%80/AppData/Roaming/galactic-rpg-interface/world-data/assets/1774017369945_entity_system_056581_uzel_tukana.png",
+      "imageStoragePath": "alpha/systems/system_056581/1774027136412_uzel_tukana.png",
+      "location": {
+        "arm": "Кентаврийский рукав",
+        "node": "Узел \"Тукана\"",
+        "system": "Узел Тукана"
+      },
+      "name": "Узел Тукана",
+      "planetIds": [],
+      "pos": {
+        "x": 0.38,
+        "y": 0.36
+      },
+      "relatedArticleIds": [],
+      "summary": "",
+      "visibility": {
+        "playerIds": [],
+        "campaignIds": [],
+        "eraIds": [
+          "technological"
+        ]
+      }
+    },
+    {
+      "color": "#7df9ff",
+      "markerLabel": "Узел Центавра",
+      "markerStyle": "node",
+      "routes": [
+        {
+          "color": "#7df9ff",
+          "label": "",
+          "toId": "system_430374",
+          "width": 2
+        }
+      ],
+      "arm": "Орионский рукав",
+      "body": "",
+      "id": "system_134741",
+      "image": "https://tutwxwmfuclzqzhafyaa.supabase.co/storage/v1/object/public/campaign-assets/alpha/systems/system_134741/1774027137126_uzel_tsentavra.png",
+      "imageLocal": "file:///C:/Users/%D0%95%D0%B3%D0%BE%D1%80/AppData/Roaming/galactic-rpg-interface/world-data/assets/1774020137747_entity_system_134741_novaya_sistema.png",
+      "imageStoragePath": "alpha/systems/system_134741/1774027137126_uzel_tsentavra.png",
+      "location": {
+        "arm": "Орионский рукав",
+        "node": "Узел Центавра",
+        "system": "Узел Центавра"
+      },
+      "name": "Узел Центавра",
+      "planetIds": [],
+      "pos": {
+        "x": 0.62,
+        "y": 0.22
+      },
+      "relatedArticleIds": [],
+      "summary": "",
+      "visibility": {
+        "playerIds": [],
+        "campaignIds": [],
+        "eraIds": [
+          "technological"
+        ]
+      }
+    },
+    {
+      "color": "#FF9E00",
+      "markerLabel": "K3III Альфа Тукана (α Tuc)",
+      "markerStyle": "orbital",
+      "routes": [
+        {
+          "color": "#FF9E00",
+          "label": "",
+          "toId": "system_056581",
+          "width": 2
+        }
+      ],
+      "arm": "Кентаврийский рукав",
+      "body": "",
+      "id": "system_428224",
+      "image": "https://tutwxwmfuclzqzhafyaa.supabase.co/storage/v1/object/public/campaign-assets/alpha/systems/system_428224/1773922529062_alpha_tucanae.jpg",
+      "location": {
+        "arm": "Кентаврийский рукав",
+        "node": "K3III Альфа Тукана (α Tuc)",
+        "system": "Alpha Tucanae"
+      },
+      "name": "Alpha Tucanae",
+      "planetIds": [
+        "planet_568225",
+        "planet_172140",
+        "planet_883097"
+      ],
+      "pos": {
+        "x": 0.375,
+        "y": 0.36
+      },
+      "relatedArticleIds": [],
+      "summary": "",
+      "visibility": {
+        "playerIds": [
+          "player_202919",
+          "player_281529",
+          "player_481909",
+          "player_486258",
+          "player_582319",
+          "player_849364",
+          "player_185470",
+          "u1"
+        ],
+        "campaignIds": [],
+        "eraIds": [
+          "technological"
+        ]
+      }
+    },
+    {
+      "color": "#7df9ff",
+      "markerLabel": "\"Астерион\"",
+      "markerStyle": "ship",
+      "routes": [],
+      "arm": "Персеев рукав",
+      "body": "",
+      "id": "system_796440",
+      "image": "https://sync.grpg-sync.ru/api/files/campaign_assets/3bgxze1s85eg762/7968eac89ed642188c64118c9fa2aa84_entity_system_796440_asterion_ship_world_k4nndg0hp6.png",
+      "location": {
+        "arm": "Персеев рукав",
+        "node": "\"Астерион\"",
+        "system": "Asterion_ship_world"
+      },
+      "name": "Asterion_ship_world",
+      "planetIds": [
+        "planet_767039"
+      ],
+      "pos": {
+        "x": 0.727,
+        "y": 0.539
+      },
+      "relatedArticleIds": [],
+      "summary": "",
+      "visibility": {
+        "playerIds": [],
+        "campaignIds": [
+          "campaign_453839"
+        ],
+        "eraIds": []
+      }
+    },
+    {
+      "color": "#FF9E00",
+      "markerLabel": "B9V  Бета Тукана (β Tuc)",
+      "markerStyle": "orbital",
+      "routes": [
+        {
+          "color": "#FF9E00",
+          "label": "",
+          "toId": "system_428224",
+          "width": 2
+        }
+      ],
+      "arm": "Кентаврийский рукав",
+      "body": "",
+      "id": "system_883855",
+      "image": "https://tutwxwmfuclzqzhafyaa.supabase.co/storage/v1/object/public/campaign-assets/alpha/systems/system_883855/1773922910544_beta_tucanae.webp",
+      "location": {
+        "arm": "Кентаврийский рукав",
+        "node": "B9V  Бета Тукана (β Tuc)",
+        "system": "Beta Tucanae"
+      },
+      "name": "Beta Tucanae",
+      "planetIds": [
+        "planet_197333"
+      ],
+      "pos": {
+        "x": 0.376,
+        "y": 0.348
+      },
+      "relatedArticleIds": [],
+      "summary": "",
+      "visibility": {
+        "playerIds": [
+          "player_202919",
+          "player_281529",
+          "player_481909",
+          "player_486258",
+          "player_582319",
+          "player_849364",
+          "player_185470",
+          "u1"
+        ],
+        "campaignIds": [],
+        "eraIds": [
+          "technological"
+        ]
+      }
+    },
+    {
+      "color": "#238B49",
+      "markerLabel": "K0IV Дельта Эридана",
+      "markerStyle": "orbital",
+      "routes": [
+        {
+          "color": "#238B49",
+          "label": "",
+          "toId": "system_921821",
+          "width": 2
+        }
+      ],
+      "arm": "Персеев рукав",
+      "body": "",
+      "id": "system_332019",
+      "image": "https://tutwxwmfuclzqzhafyaa.supabase.co/storage/v1/object/public/campaign-assets/alpha/systems/system_332019/1773404353631_g_kapella.jpg",
+      "location": {
+        "arm": "Персеев рукав",
+        "node": "K0IV Дельта Эридана",
+        "system": "Delta Eridani"
+      },
+      "name": "Delta Eridani",
+      "planetIds": [
+        "planet_472822",
+        "planet_294166"
+      ],
+      "pos": {
+        "x": 0.73,
+        "y": 0.528
+      },
+      "relatedArticleIds": [],
+      "summary": "",
+      "visibility": {
+        "playerIds": [
+          "player_202919",
+          "player_281529",
+          "player_481909",
+          "player_486258",
+          "player_582319",
+          "player_849364",
+          "player_185470",
+          "u1"
+        ],
+        "campaignIds": [],
+        "eraIds": [
+          "technological"
+        ]
+      }
+    },
+    {
+      "color": "#679FD2",
+      "markerLabel": "G7IV Дельта Павлина",
+      "markerStyle": "orbital",
+      "routes": [
+        {
+          "color": "#679FD2",
+          "label": "",
+          "toId": "system_074447",
+          "width": 2
+        }
+      ],
+      "arm": "Персеев рукав",
+      "body": "",
+      "id": "system_006875",
+      "image": "https://tutwxwmfuclzqzhafyaa.supabase.co/storage/v1/object/public/campaign-assets/alpha/systems/system_006875/1773923033102_delta_pavonis.jpg",
+      "location": {
+        "arm": "Персеев рукав",
+        "node": "G7IV Дельта Павлина",
+        "system": "Delta Pavonis"
+      },
+      "name": "Delta Pavonis",
+      "planetIds": [
+        "planet_134794"
+      ],
+      "pos": {
+        "x": 0.805,
+        "y": 0.425
+      },
+      "relatedArticleIds": [],
+      "summary": "",
+      "visibility": {
+        "playerIds": [
+          "player_202919",
+          "player_281529",
+          "player_481909",
+          "player_486258",
+          "player_582319",
+          "player_849364",
+          "player_185470",
+          "u1"
+        ],
+        "campaignIds": [],
+        "eraIds": [
+          "technological"
+        ]
+      }
+    },
+    {
+      "color": "#FF4040",
+      "markerLabel": "K2V Эпсилон Эридана",
+      "markerStyle": "orbital",
+      "routes": [],
+      "arm": "Персеев рукав",
+      "body": "",
+      "id": "system_457151",
+      "image": "https://tutwxwmfuclzqzhafyaa.supabase.co/storage/v1/object/public/campaign-assets/alpha/systems/system_457151/1773923483768_epsilon_eridani.jpg",
+      "location": {
+        "arm": "Персеев рукав",
+        "node": "K2V Эпсилон Эридана",
+        "system": "Epsilon Eridani"
+      },
+      "name": "Epsilon Eridani",
+      "planetIds": [
+        "planet_114112",
+        "planet_264977"
+      ],
+      "pos": {
+        "x": 0.72,
+        "y": 0.53
+      },
+      "relatedArticleIds": [],
+      "summary": "",
+      "visibility": {
+        "playerIds": [
+          "player_202919",
+          "player_281529",
+          "player_481909",
+          "player_486258",
+          "player_582319",
+          "player_849364",
+          "player_185470",
+          "u1"
+        ],
+        "campaignIds": [],
+        "eraIds": [
+          "technological"
+        ]
+      }
+    },
+    {
+      "color": "#238B49",
+      "markerLabel": "K5Ve Эпсилон Индейца A",
+      "markerStyle": "orbital",
+      "routes": [
+        {
+          "color": "#238B49",
+          "label": "",
+          "toId": "system_936995",
+          "width": 2
+        }
+      ],
+      "arm": "Персеев рукав",
+      "body": "",
+      "id": "system_158781",
+      "image": "https://tutwxwmfuclzqzhafyaa.supabase.co/storage/v1/object/public/campaign-assets/alpha/systems/system_158781/1773880218249_epsilon_indi_a.jpg",
+      "location": {
+        "arm": "Персеев рукав",
+        "node": "K5Ve Эпсилон Индейца A",
+        "system": "Epsilon_Indi_A"
+      },
+      "name": "Epsilon_Indi_A",
+      "planetIds": [
+        "planet_394796"
+      ],
+      "pos": {
+        "x": 0.774,
+        "y": 0.477
+      },
+      "relatedArticleIds": [],
+      "summary": "",
+      "visibility": {
+        "playerIds": [
+          "player_202919",
+          "player_281529",
+          "player_481909",
+          "player_486258",
+          "player_582319",
+          "player_849364",
+          "player_185470",
+          "u1"
+        ],
+        "campaignIds": [],
+        "eraIds": [
+          "technological"
+        ]
+      }
+    },
+    {
+      "color": "#7df9ff",
+      "markerLabel": "G8 III Эта Геркулеса",
+      "markerStyle": "orbital",
+      "routes": [
+        {
+          "color": "#7df9ff",
+          "label": "",
+          "toId": "system_254650",
+          "width": 2
+        }
+      ],
+      "arm": "Персеев рукав",
+      "body": "",
+      "id": "system_303927",
+      "image": "https://tutwxwmfuclzqzhafyaa.supabase.co/storage/v1/object/public/campaign-assets/alpha/systems/system_303927/1773922340391_eta_herculis.jpg",
+      "location": {
+        "arm": "Персеев рукав",
+        "node": "G8 III Эта Геркулеса",
+        "system": "Eta Herculis"
+      },
+      "name": "Eta Herculis",
+      "planetIds": [
+        "planet_242924"
+      ],
+      "pos": {
+        "x": 0.712,
+        "y": 0.608
+      },
+      "relatedArticleIds": [],
+      "summary": "",
+      "visibility": {
+        "playerIds": [
+          "player_202919",
+          "player_281529",
+          "player_481909",
+          "player_486258",
+          "player_582319",
+          "player_849364",
+          "player_185470",
+          "u1"
+        ],
+        "campaignIds": [],
+        "eraIds": [
+          "technological"
+        ]
+      }
+    },
+    {
+      "color": "#FF4040",
+      "markerLabel": "G3V  Эта Кассиопеи A",
+      "markerStyle": "orbital",
+      "routes": [
+        {
+          "color": "#FF4040",
+          "label": "",
+          "toId": "system_221496",
+          "width": 2
+        },
+        {
+          "color": "#FF4040",
+          "label": "",
+          "toId": "system_165902",
+          "width": 2
+        }
+      ],
+      "arm": "Персеев рукав",
+      "body": "",
+      "id": "system_424687",
+      "image": "https://tutwxwmfuclzqzhafyaa.supabase.co/storage/v1/object/public/campaign-assets/alpha/systems/system_424687/1773880459508_eta_cassiopeiae_a.jpg",
+      "location": {
+        "arm": "Персеев рукав",
+        "node": "G3V  Эта Кассиопеи A",
+        "system": "Eta_Cassiopeiae_A"
+      },
+      "name": "Eta_Cassiopeiae_A",
+      "planetIds": [
+        "planet_668947",
+        "planet_565651"
+      ],
+      "pos": {
+        "x": 0.75,
+        "y": 0.5
+      },
+      "relatedArticleIds": [],
+      "summary": "",
+      "visibility": {
+        "playerIds": [
+          "player_202919",
+          "player_281529",
+          "player_481909",
+          "player_486258",
+          "player_582319",
+          "player_849364",
+          "player_185470",
+          "u1"
+        ],
+        "campaignIds": [],
+        "eraIds": [
+          "technological"
+        ]
+      }
+    },
+    {
+      "color": "#7df9ff",
+      "markerLabel": "K0III η² Форнацис",
+      "markerStyle": "orbital",
+      "routes": [],
+      "arm": "Персеев рукав",
+      "body": "",
+      "id": "system_630368",
+      "image": "https://tutwxwmfuclzqzhafyaa.supabase.co/storage/v1/object/public/campaign-assets/alpha/systems/system_630368/1773923774371_eta2_fornacis.jpg",
+      "location": {
+        "arm": "Персеев рукав",
+        "node": "K0III η² Форнацис",
+        "system": "Eta2 Fornacis"
+      },
+      "name": "Eta2 Fornacis",
+      "planetIds": [
+        "planet_752696"
+      ],
+      "pos": {
+        "x": 0.735,
+        "y": 0.54
+      },
+      "relatedArticleIds": [],
+      "summary": "",
+      "visibility": {
+        "playerIds": [
+          "player_582319",
+          "player_849364",
+          "player_202919",
+          "player_481909",
+          "player_486258"
+        ],
+        "campaignIds": [
+          "campaign_453839"
+        ],
+        "eraIds": [
+          "technological"
+        ]
+      }
+    },
+    {
+      "color": "#679FD2",
+      "markerLabel": "F8V Гамма Павлина",
+      "markerStyle": "orbital",
+      "routes": [
+        {
+          "color": "#679FD2",
+          "label": "",
+          "toId": "system_963529",
+          "width": 2
+        }
+      ],
+      "arm": "Персеев рукав",
+      "body": "",
+      "id": "system_035957",
+      "image": "https://tutwxwmfuclzqzhafyaa.supabase.co/storage/v1/object/public/campaign-assets/alpha/systems/system_035957/1773923061938_gamma_pavonis.jpg",
+      "location": {
+        "arm": "Персеев рукав",
+        "node": "F8V Гамма Павлина",
+        "system": "Gamma Pavonis"
+      },
+      "name": "Gamma Pavonis",
+      "planetIds": [
+        "planet_190316"
+      ],
+      "pos": {
+        "x": 0.798,
+        "y": 0.415
+      },
+      "relatedArticleIds": [],
+      "summary": "",
+      "visibility": {
+        "playerIds": [
+          "player_202919",
+          "player_281529",
+          "player_481909",
+          "player_486258",
+          "player_582319",
+          "player_849364",
+          "player_185470",
+          "u1"
+        ],
+        "campaignIds": [],
+        "eraIds": [
+          "technological"
+        ]
+      }
+    },
+    {
+      "color": "#FF9E00",
+      "markerLabel": "F1III Гамма Тукана (γ Tuc)",
+      "markerStyle": "orbital",
+      "routes": [
+        {
+          "color": "#FF9E00",
+          "label": "",
+          "toId": "system_546993",
+          "width": 2
+        }
+      ],
+      "arm": "Кентаврийский рукав",
+      "body": "",
+      "id": "system_550692",
+      "image": "https://tutwxwmfuclzqzhafyaa.supabase.co/storage/v1/object/public/campaign-assets/alpha/systems/system_550692/1773922603654_gamma_tucanae.jpg",
+      "location": {
+        "arm": "Кентаврийский рукав",
+        "node": "F1III Гамма Тукана (γ Tuc)",
+        "system": "Gamma Tucanae"
+      },
+      "name": "Gamma Tucanae",
+      "planetIds": [
+        "planet_328652"
+      ],
+      "pos": {
+        "x": 0.388,
+        "y": 0.332
+      },
+      "relatedArticleIds": [],
+      "summary": "",
+      "visibility": {
+        "playerIds": [
+          "player_202919",
+          "player_281529",
+          "player_481909",
+          "player_486258",
+          "player_582319",
+          "player_849364",
+          "player_185470",
+          "u1"
+        ],
+        "campaignIds": [],
+        "eraIds": [
+          "technological"
+        ]
+      }
+    },
+    {
+      "color": "#7df9ff",
+      "markerLabel": "K3V Глизе 667 A",
+      "markerStyle": "orbital",
+      "routes": [
+        {
+          "color": "#7df9ff",
+          "label": "",
+          "toId": "system_630368",
+          "width": 2
+        }
+      ],
+      "arm": "Персеев рукав",
+      "body": "",
+      "id": "system_634567",
+      "image": "https://tutwxwmfuclzqzhafyaa.supabase.co/storage/v1/object/public/campaign-assets/alpha/systems/system_634567/1773880675855_gliese_667_a.webp",
+      "location": {
+        "arm": "Персеев рукав",
+        "node": "K3V Глизе 667 A",
+        "system": "Gliese_667_A"
+      },
+      "name": "Gliese_667_A",
+      "planetIds": [
+        "planet_999260",
+        "planet_406755"
+      ],
+      "pos": {
+        "x": 0.755,
+        "y": 0.528
+      },
+      "relatedArticleIds": [],
+      "summary": "",
+      "visibility": {
+        "playerIds": [
+          "player_202919",
+          "player_281529",
+          "player_481909",
+          "player_486258",
+          "player_582319",
+          "player_849364",
+          "player_185470",
+          "u1"
+        ],
+        "campaignIds": [],
+        "eraIds": [
+          "technological"
+        ]
+      }
+    },
+    {
+      "color": "#FF4040",
+      "markerLabel": "K5V Глизе 678",
+      "markerStyle": "orbital",
+      "routes": [
+        {
+          "color": "#FF4040",
+          "label": "",
+          "toId": "cassilia_binary",
+          "width": 2
+        }
+      ],
+      "arm": "Персеев рукав",
+      "body": "",
+      "id": "system_557955",
+      "image": "https://tutwxwmfuclzqzhafyaa.supabase.co/storage/v1/object/public/campaign-assets/alpha/systems/system_557955/1773913658597_gliese_678.jpg",
+      "location": {
+        "arm": "Персеев рукав",
+        "node": "K5V Глизе 678",
+        "system": "Gliese_678"
+      },
+      "name": "Gliese_678",
+      "planetIds": [
+        "planet_647286"
+      ],
+      "pos": {
+        "x": 0.74,
+        "y": 0.485
+      },
+      "relatedArticleIds": [],
+      "summary": "",
+      "visibility": {
+        "playerIds": [
+          "player_202919",
+          "player_281529",
+          "player_481909",
+          "player_486258",
+          "player_582319",
+          "player_849364",
+          "player_185470",
+          "u1"
+        ],
+        "campaignIds": [],
+        "eraIds": [
+          "technological"
+        ]
+      }
+    },
+    {
+      "color": "#FF4040",
+      "markerLabel": "K1.5V Глизе 832",
+      "markerStyle": "orbital",
+      "routes": [
+        {
+          "color": "#FF4040",
+          "label": "",
+          "toId": "system_137265",
+          "width": 2
+        }
+      ],
+      "arm": "Орионский рукав",
+      "body": "",
+      "id": "system_105593",
+      "image": "https://tutwxwmfuclzqzhafyaa.supabase.co/storage/v1/object/public/campaign-assets/alpha/systems/system_105593/1773914135492_gliese_832.jpg",
+      "imageLocal": "file:///C:/Users/%D0%95%D0%B3%D0%BE%D1%80/AppData/Roaming/galactic-rpg-interface/world-data/assets/1773914133536_entity_system_105593_gliese_832.jpg",
+      "imageStoragePath": "alpha/systems/system_105593/1773914135492_gliese_832.jpg",
+      "location": {
+        "arm": "Орионский рукав",
+        "node": "K1.5V Глизе 832",
+        "system": "Gliese_832"
+      },
+      "name": "Gliese_832",
+      "planetIds": [
+        "planet_908816"
+      ],
+      "pos": {
+        "x": 0.62,
+        "y": 0.515
+      },
+      "relatedArticleIds": [],
+      "summary": "",
+      "visibility": {
+        "playerIds": [],
+        "campaignIds": [],
+        "eraIds": [
+          "technological"
+        ]
+      }
+    },
+    {
+      "color": "#FF4040",
+      "markerLabel": "K7V Грумбридж 1618",
+      "markerStyle": "orbital",
+      "routes": [
+        {
+          "color": "#7df9ff",
+          "label": "",
+          "toId": "system_921821",
+          "width": 2
+        }
+      ],
+      "arm": "Персеев рукав",
+      "body": "",
+      "id": "system_221496",
+      "image": "https://tutwxwmfuclzqzhafyaa.supabase.co/storage/v1/object/public/campaign-assets/alpha/systems/system_221496/1773880262088_groombridge_1618.jpg",
+      "location": {
+        "arm": "Персеев рукав",
+        "node": "K7V Грумбридж 1618",
+        "system": "Groombridge_1618"
+      },
+      "name": "Groombridge_1618",
+      "planetIds": [
+        "planet_126571"
+      ],
+      "pos": {
+        "x": 0.754,
+        "y": 0.506
+      },
+      "relatedArticleIds": [],
+      "summary": "",
+      "visibility": {
+        "playerIds": [],
+        "campaignIds": [],
+        "eraIds": [
+          "technological"
+        ]
+      }
+    },
+    {
+      "color": "#238B49",
+      "markerLabel": "K1V Хадар (α Центавра B)",
+      "markerStyle": "orbital",
+      "routes": [
+        {
+          "color": "#238B49",
+          "label": "",
+          "toId": "system_284741",
+          "width": 2
+        }
+      ],
+      "arm": "Персеев рукав",
+      "body": "",
+      "id": "system_921821",
+      "image": "https://tutwxwmfuclzqzhafyaa.supabase.co/storage/v1/object/public/campaign-assets/alpha/systems/system_921821/1773404001209_alnitak.jpg",
+      "location": {
+        "arm": "Персеев рукав",
+        "node": "K1V Хадар (α Центавра B)",
+        "system": "Hadar"
+      },
+      "name": "Hadar",
+      "planetIds": [
+        "planet_607104",
+        "planet_751026"
+      ],
+      "pos": {
+        "x": 0.753,
+        "y": 0.513
+      },
+      "relatedArticleIds": [],
+      "summary": "",
+      "visibility": {
+        "playerIds": [],
+        "campaignIds": [],
+        "eraIds": [
+          "technological"
+        ]
+      }
+    },
+    {
+      "color": "#FF4040",
+      "markerLabel": "G2V HD 102365",
+      "markerStyle": "orbital",
+      "routes": [],
+      "arm": "Центральный сектор",
+      "body": "",
+      "id": "system_181069",
+      "image": "https://tutwxwmfuclzqzhafyaa.supabase.co/storage/v1/object/public/campaign-assets/alpha/systems/system_181069/1773914216360_hd_102365.jpg",
+      "imageLocal": "file:///C:/Users/%D0%95%D0%B3%D0%BE%D1%80/AppData/Roaming/galactic-rpg-interface/world-data/assets/1773914213527_entity_system_181069_hd_102365.jpg",
+      "imageStoragePath": "alpha/systems/system_181069/1773914216360_hd_102365.jpg",
+      "location": {
+        "arm": "Центральный сектор",
+        "node": "G2V HD 102365",
+        "system": "HD_102365"
+      },
+      "name": "HD_102365",
+      "planetIds": [
+        "planet_969449",
+        "planet_275133"
+      ],
+      "pos": {
+        "x": 0.58,
+        "y": 0.481
+      },
+      "relatedArticleIds": [],
+      "summary": "",
+      "visibility": {
+        "playerIds": [],
+        "campaignIds": [],
+        "eraIds": [
+          "technological"
+        ]
+      }
+    },
+    {
+      "color": "#FF4040",
+      "markerLabel": "G1.5V HD 10307",
+      "markerStyle": "orbital",
+      "routes": [
+        {
+          "color": "#FF4040",
+          "label": "",
+          "toId": "system_722094",
+          "width": 2
+        }
+      ],
+      "arm": "Персеев рукав",
+      "body": "",
+      "id": "system_661248",
+      "image": "https://tutwxwmfuclzqzhafyaa.supabase.co/storage/v1/object/public/campaign-assets/alpha/systems/system_661248/1773913710680_hd_10307.jpg",
+      "imageLocal": "file:///C:/Users/%D0%95%D0%B3%D0%BE%D1%80/AppData/Roaming/galactic-rpg-interface/world-data/assets/1773913706498_entity_system_661248_hd_10307.jpg",
+      "imageStoragePath": "alpha/systems/system_661248/1773913710680_hd_10307.jpg",
+      "location": {
+        "arm": "Персеев рукав",
+        "node": "G1.5V HD 10307",
+        "system": "HD_10307"
+      },
+      "name": "HD_10307",
+      "planetIds": [
+        "planet_220755"
+      ],
+      "pos": {
+        "x": 0.715,
+        "y": 0.506
+      },
+      "relatedArticleIds": [],
+      "summary": "",
+      "visibility": {
+        "playerIds": [],
+        "campaignIds": [],
+        "eraIds": [
+          "technological"
+        ]
+      }
+    },
+    {
+      "color": "#679FD2",
+      "markerLabel": "K2III HD 190422",
+      "markerStyle": "orbital",
+      "routes": [],
+      "arm": "Персеев рукав",
+      "body": "",
+      "id": "system_112550",
+      "image": "https://tutwxwmfuclzqzhafyaa.supabase.co/storage/v1/object/public/campaign-assets/alpha/systems/system_112550/1773923144927_hd_190422.jpg",
+      "imageLocal": "file:///C:/Users/%D0%95%D0%B3%D0%BE%D1%80/AppData/Roaming/galactic-rpg-interface/world-data/assets/1773923143485_entity_system_112550_hd_190422.jpg",
+      "imageStoragePath": "alpha/systems/system_112550/1773923144927_hd_190422.jpg",
+      "location": {
+        "arm": "Персеев рукав",
+        "node": "K2III HD 190422",
+        "system": "HD_190422"
+      },
+      "name": "HD_190422",
+      "planetIds": [
+        "planet_619452"
+      ],
+      "pos": {
+        "x": 0.808,
+        "y": 0.418
+      },
+      "relatedArticleIds": [],
+      "summary": "",
+      "visibility": {
+        "playerIds": [],
+        "campaignIds": [],
+        "eraIds": [
+          "technological"
+        ]
+      }
+    },
+    {
+      "color": "#FF4040",
+      "markerLabel": "K0V HD 69830",
+      "markerStyle": "orbital",
+      "routes": [
+        {
+          "color": "#FF4040",
+          "label": "",
+          "toId": "system_105593",
+          "width": 2
+        }
+      ],
+      "arm": "Орионский рукав",
+      "body": "",
+      "id": "system_072463",
+      "image": "https://tutwxwmfuclzqzhafyaa.supabase.co/storage/v1/object/public/campaign-assets/alpha/systems/system_072463/1773914103435_hd_69830.jpg",
+      "imageLocal": "file:///C:/Users/%D0%95%D0%B3%D0%BE%D1%80/AppData/Roaming/galactic-rpg-interface/world-data/assets/1773914101445_entity_system_072463_hd_69830.jpg",
+      "imageStoragePath": "alpha/systems/system_072463/1773914103435_hd_69830.jpg",
+      "location": {
+        "arm": "Орионский рукав",
+        "node": "K0V HD 69830",
+        "system": "HD_69830"
+      },
+      "name": "HD_69830",
+      "planetIds": [
+        "planet_177528",
+        "planet_883559"
+      ],
+      "pos": {
+        "x": 0.638,
+        "y": 0.507
+      },
+      "relatedArticleIds": [],
+      "summary": "",
+      "visibility": {
+        "playerIds": [],
+        "campaignIds": [],
+        "eraIds": [
+          "technological"
+        ]
+      }
+    },
+    {
+      "color": "#BF3030",
+      "markerLabel": "G2V  Солнце",
+      "markerStyle": "diamond",
+      "routes": [],
+      "arm": "Персеев рукав",
+      "body": "",
+      "id": "system_001908",
+      "image": "https://sync.grpg-sync.ru/api/files/campaign_assets/404la2hs0kbxxmf/ff87c4a757172a96be9e92054da11251_entity_system_001908_helios_bgd7re4gsm.jpg",
+      "location": {
+        "arm": "Персеев рукав",
+        "node": "G2V  Солнце",
+        "system": "Helios"
+      },
+      "name": "Helios",
+      "planetIds": [
+        "planet_280120"
+      ],
+      "pos": {
+        "x": 0.769,
+        "y": 0.505
+      },
+      "relatedArticleIds": [],
+      "summary": "",
+      "visibility": {
+        "playerIds": [],
+        "campaignIds": [],
+        "eraIds": [
+          "industrial",
+          "medieval",
+          "technological"
+        ]
+      }
+    },
+    {
+      "color": "#FF9E00",
+      "markerLabel": "F6IV Каппа Тукана (κ Tuc)",
+      "markerStyle": "orbital",
+      "routes": [
+        {
+          "color": "#FF9E00",
+          "label": "",
+          "toId": "system_883855",
+          "width": 2
+        }
+      ],
+      "arm": "Кентаврийский рукав",
+      "body": "",
+      "id": "system_629003",
+      "image": "https://tutwxwmfuclzqzhafyaa.supabase.co/storage/v1/object/public/campaign-assets/alpha/systems/system_629003/1773922735759_kappa_tucanae.jpg",
+      "imageLocal": "file:///C:/Users/%D0%95%D0%B3%D0%BE%D1%80/AppData/Roaming/galactic-rpg-interface/world-data/assets/1773922733975_entity_system_629003_kappa_tucanae.jpg",
+      "imageStoragePath": "alpha/systems/system_629003/1773922735759_kappa_tucanae.jpg",
+      "location": {
+        "arm": "Кентаврийский рукав",
+        "node": "F6IV Каппа Тукана (κ Tuc)",
+        "system": "Kappa Tucanae"
+      },
+      "name": "Kappa Tucanae",
+      "planetIds": [
+        "planet_178051",
+        "planet_709255"
+      ],
+      "pos": {
+        "x": 0.382,
+        "y": 0.338
+      },
+      "relatedArticleIds": [],
+      "summary": "",
+      "visibility": {
+        "playerIds": [],
+        "campaignIds": [],
+        "eraIds": [
+          "technological"
+        ]
+      }
+    },
+    {
+      "color": "#7df9ff",
+      "markerLabel": "G7III  Корнефорос (β Her)",
+      "markerStyle": "orbital",
+      "routes": [],
+      "arm": "Персеев рукав",
+      "body": "",
+      "id": "system_161772",
+      "image": "https://tutwxwmfuclzqzhafyaa.supabase.co/storage/v1/object/public/campaign-assets/alpha/systems/system_161772/1773922202581_kornephoros.jpg",
+      "location": {
+        "arm": "Персеев рукав",
+        "node": "G7III  Корнефорос (β Her)",
+        "system": "Kornephoros"
+      },
+      "name": "Kornephoros",
+      "planetIds": [
+        "planet_144951"
+      ],
+      "pos": {
+        "x": 0.705,
+        "y": 0.61
+      },
+      "relatedArticleIds": [],
+      "summary": "",
+      "visibility": {
+        "playerIds": [],
+        "campaignIds": [],
+        "eraIds": [
+          "technological"
+        ]
+      }
+    },
+    {
+      "color": "#7C45D6",
+      "markerLabel": "K4V M4 (NGC 6121) A",
+      "markerStyle": "orbital",
+      "routes": [],
+      "arm": "Лебединый рукав",
+      "body": "",
+      "id": "system_987735",
+      "image": "https://tutwxwmfuclzqzhafyaa.supabase.co/storage/v1/object/public/campaign-assets/alpha/systems/system_987735/1773914021393_m4_a.jpg",
+      "imageLocal": "file:///C:/Users/%D0%95%D0%B3%D0%BE%D1%80/AppData/Roaming/galactic-rpg-interface/world-data/assets/1773914019520_entity_system_987735_m4_a.jpg",
+      "imageStoragePath": "alpha/systems/system_987735/1773914021393_m4_a.jpg",
+      "location": {
+        "arm": "Лебединый рукав",
+        "node": "K4V M4 (NGC 6121) A",
+        "system": "M4_A"
+      },
+      "name": "M4_A",
+      "planetIds": [
+        "planet_208484",
+        "planet_251165"
+      ],
+      "pos": {
+        "x": 0.62,
+        "y": 0.68
+      },
+      "relatedArticleIds": [
+        "article_209696"
+      ],
+      "summary": "Административно-оборонная система Ноэзиса. Здесь расположены Ноэзис-I и Ковчег М4.",
+      "visibility": {
+        "playerIds": [],
+        "campaignIds": [],
+        "eraIds": [
+          "technological"
+        ]
+      }
+    },
+    {
+      "color": "#7C45D6",
+      "markerLabel": "K2V M4 (NGC 6121) B",
+      "markerStyle": "orbital",
+      "routes": [],
+      "arm": "Лебединый рукав",
+      "id": "system_noesis_m4_b",
+      "image": "",
+      "location": {
+        "arm": "Лебединый рукав",
+        "node": "K2V M4 (NGC 6121) B",
+        "system": "M4_B"
+      },
+      "name": "M4_B",
+      "planetIds": [
+        "planet_noesis_lemma",
+        "planet_noesis_tesseract"
+      ],
+      "pos": {
+        "x": 0.608,
+        "y": 0.695
+      },
+      "relatedArticleIds": [
+        "article_209696"
+      ],
+      "summary": "Расчётно-физический контур Ноэзиса: формальная верификация и пространственные исследования.",
+      "visibility": {
+        "playerIds": [],
+        "campaignIds": [],
+        "eraIds": [
+          "technological"
+        ]
+      }
+    },
+    {
+      "color": "#7C45D6",
+      "markerLabel": "G6V M4 (NGC 6121) C",
+      "markerStyle": "orbital",
+      "routes": [],
+      "arm": "Лебединый рукав",
+      "id": "system_noesis_m4_c",
+      "image": "",
+      "location": {
+        "arm": "Лебединый рукав",
+        "node": "G6V M4 (NGC 6121) C",
+        "system": "M4_C"
+      },
+      "name": "M4_C",
+      "planetIds": [
+        "planet_noesis_axioma",
+        "planet_noesis_praxis"
+      ],
+      "pos": {
+        "x": 0.636,
+        "y": 0.692
+      },
+      "relatedArticleIds": [
+        "article_209696"
+      ],
+      "summary": "Прикладной защитный контур Ноэзиса и межмандатная сертификация.",
+      "visibility": {
+        "playerIds": [],
+        "campaignIds": [],
+        "eraIds": [
+          "technological"
+        ]
+      }
+    },
+    {
+      "color": "#7df9ff",
+      "markerLabel": "G5 IV Мю Геркулеса",
+      "markerStyle": "orbital",
+      "routes": [
+        {
+          "color": "#7df9ff",
+          "label": "",
+          "toId": "system_303927",
+          "width": 2
+        }
+      ],
+      "arm": "Персеев рукав",
+      "body": "",
+      "id": "system_342815",
+      "image": "https://tutwxwmfuclzqzhafyaa.supabase.co/storage/v1/object/public/campaign-assets/alpha/systems/system_342815/1773922378456_mu_herculis.jpg",
+      "imageLocal": "file:///C:/Users/%D0%95%D0%B3%D0%BE%D1%80/AppData/Roaming/galactic-rpg-interface/world-data/assets/1773922375889_entity_system_342815_mu_herculis.jpg",
+      "imageStoragePath": "alpha/systems/system_342815/1773922378456_mu_herculis.jpg",
+      "location": {
+        "arm": "Персеев рукав",
+        "node": "G5 IV Мю Геркулеса",
+        "system": "Mu Herculis"
+      },
+      "name": "Mu Herculis",
+      "planetIds": [
+        "planet_395990",
+        "planet_242544",
+        "planet_291727"
+      ],
+      "pos": {
+        "x": 0.715,
+        "y": 0.605
+      },
+      "relatedArticleIds": [],
+      "summary": "",
+      "visibility": {
+        "playerIds": [],
+        "campaignIds": [],
+        "eraIds": [
+          "technological"
+        ]
+      }
+    },
+    {
+      "color": "#7C45D6",
+      "markerLabel": "K3V NGC 6397 A",
+      "markerStyle": "orbital",
+      "routes": [],
+      "arm": "Лебединый рукав",
+      "body": "",
+      "id": "system_946644",
+      "image": "https://tutwxwmfuclzqzhafyaa.supabase.co/storage/v1/object/public/campaign-assets/alpha/systems/system_946644/1773913985485_ngc_6397_a.jpg",
+      "imageLocal": "file:///C:/Users/%D0%95%D0%B3%D0%BE%D1%80/AppData/Roaming/galactic-rpg-interface/world-data/assets/1773913982077_entity_system_946644_ngc_6397_a.jpg",
+      "imageStoragePath": "alpha/systems/system_946644/1773913985485_ngc_6397_a.jpg",
+      "location": {
+        "arm": "Лебединый рукав",
+        "node": "K3V NGC 6397 A",
+        "system": "NGC_6397_A"
+      },
+      "name": "NGC_6397_A",
+      "planetIds": [
+        "planet_027720",
+        "planet_839354"
+      ],
+      "pos": {
+        "x": 0.5,
+        "y": 0.72
+      },
+      "relatedArticleIds": [
+        "article_209696"
+      ],
+      "summary": "Архивно-навигационная система Ноэзиса. Здесь расположены Мнема и Внешний Дозор.",
+      "visibility": {
+        "playerIds": [],
+        "campaignIds": [],
+        "eraIds": [
+          "technological"
+        ]
+      }
+    },
+    {
+      "color": "#7C45D6",
+      "markerLabel": "K5V NGC 6397 B",
+      "markerStyle": "orbital",
+      "routes": [],
+      "arm": "Лебединый рукав",
+      "id": "system_418717",
+      "image": "",
+      "location": {
+        "arm": "Лебединый рукав",
+        "node": "K5V NGC 6397 B",
+        "system": "NGC_6397_B"
+      },
+      "name": "NGC_6397_B",
+      "planetIds": [
+        "planet_192613",
+        "planet_noesis_eidolon"
+      ],
+      "pos": {
+        "x": 0.492,
+        "y": 0.752
+      },
+      "relatedArticleIds": [
+        "article_209696"
+      ],
+      "summary": "Изолированный исследовательский контур когнитивных технологий Ноэзиса.",
+      "visibility": {
+        "playerIds": [],
+        "campaignIds": [],
+        "eraIds": [
+          "technological"
+        ]
+      }
+    },
+    {
+      "color": "#7C45D6",
+      "markerLabel": "G8V NGC 6397 C",
+      "markerStyle": "orbital",
+      "routes": [],
+      "arm": "Лебединый рукав",
+      "id": "system_487631",
+      "image": "",
+      "location": {
+        "arm": "Лебединый рукав",
+        "node": "G8V NGC 6397 C",
+        "system": "NGC_6397_C"
+      },
+      "name": "NGC_6397_C",
+      "planetIds": [
+        "planet_noesis_synapsis",
+        "planet_noesis_soma"
+      ],
+      "pos": {
+        "x": 0.516,
+        "y": 0.737
+      },
+      "relatedArticleIds": [
+        "article_209696"
+      ],
+      "summary": "Биомедицинский и нейротехнологический контур Ноэзиса.",
+      "visibility": {
+        "playerIds": [],
+        "campaignIds": [],
+        "eraIds": [
+          "technological"
+        ]
+      }
+    },
+    {
+      "color": "#FF9E00",
+      "markerLabel": "K3III ω Центавра",
+      "markerStyle": "orbital",
+      "routes": [],
+      "arm": "Орионский рукав",
+      "body": "",
+      "id": "system_772299",
+      "image": "https://tutwxwmfuclzqzhafyaa.supabase.co/storage/v1/object/public/campaign-assets/alpha/systems/system_772299/1773913847160_omega_centauri_a.jpg",
+      "imageLocal": "file:///C:/Users/%D0%95%D0%B3%D0%BE%D1%80/AppData/Roaming/galactic-rpg-interface/world-data/assets/1773913843795_entity_system_772299_omega_centauri_a.jpg",
+      "imageStoragePath": "alpha/systems/system_772299/1773913847160_omega_centauri_a.jpg",
+      "location": {
+        "arm": "Орионский рукав",
+        "node": "K3III ω Центавра",
+        "system": "Omega_Centauri_A"
+      },
+      "name": "Omega_Centauri_A",
+      "planetIds": [
+        "planet_599777",
+        "planet_178812"
+      ],
+      "pos": {
+        "x": 0.61,
+        "y": 0.21
+      },
+      "relatedArticleIds": [],
+      "summary": "",
+      "visibility": {
+        "playerIds": [],
+        "campaignIds": [],
+        "eraIds": [
+          "technological"
+        ]
+      }
+    },
+    {
+      "color": "#FF9E00",
+      "markerLabel": "K5V ω Центавра",
+      "markerStyle": "orbital",
+      "routes": [],
+      "arm": "Орионский рукав",
+      "body": "",
+      "id": "system_859128",
+      "image": "https://tutwxwmfuclzqzhafyaa.supabase.co/storage/v1/object/public/campaign-assets/alpha/systems/system_859128/1773913904113_omega_centauri_b.jpg",
+      "imageLocal": "file:///C:/Users/%D0%95%D0%B3%D0%BE%D1%80/AppData/Roaming/galactic-rpg-interface/world-data/assets/1773913899309_entity_system_859128_omega_centauri_b.jpg",
+      "imageStoragePath": "alpha/systems/system_859128/1773913904113_omega_centauri_b.jpg",
+      "location": {
+        "arm": "Орионский рукав",
+        "node": "K5V ω Центавра",
+        "system": "Omega_Centauri_B"
+      },
+      "name": "Omega_Centauri_B",
+      "planetIds": [
+        "planet_001469",
+        "planet_773646"
+      ],
+      "pos": {
+        "x": 0.608,
+        "y": 0.215
+      },
+      "relatedArticleIds": [],
+      "summary": "",
+      "visibility": {
+        "playerIds": [],
+        "campaignIds": [],
+        "eraIds": [
+          "technological"
+        ]
+      }
+    },
+    {
+      "color": "#679FD2",
+      "markerLabel": "B2IV Пикок (α Pav)",
+      "markerStyle": "orbital",
+      "routes": [
+        {
+          "color": "#679FD2",
+          "label": "",
+          "toId": "system_006875",
+          "width": 2
+        }
+      ],
+      "arm": "Персеев рукав",
+      "body": "",
+      "id": "system_963529",
+      "image": "https://tutwxwmfuclzqzhafyaa.supabase.co/storage/v1/object/public/campaign-assets/alpha/systems/system_963529/1773923003136_peacock.jpg",
+      "imageLocal": "file:///C:/Users/%D0%95%D0%B3%D0%BE%D1%80/AppData/Roaming/galactic-rpg-interface/world-data/assets/1773922993188_entity_system_963529_peacock.jpg",
+      "imageStoragePath": "alpha/systems/system_963529/1773923003136_peacock.jpg",
+      "location": {
+        "arm": "Персеев рукав",
+        "node": "B2IV Пикок (α Pav)",
+        "system": "Peacock"
+      },
+      "name": "Peacock",
+      "planetIds": [
+        "planet_838754"
+      ],
+      "pos": {
+        "x": 0.8,
+        "y": 0.42
+      },
+      "relatedArticleIds": [],
+      "summary": "",
+      "visibility": {
+        "playerIds": [],
+        "campaignIds": [],
+        "eraIds": [
+          "technological"
+        ]
+      }
+    },
+    {
+      "color": "#679FD2",
+      "markerLabel": "F5V Фи Павлина",
+      "markerStyle": "orbital",
+      "routes": [
+        {
+          "color": "#679FD2",
+          "label": "",
+          "toId": "system_112550",
+          "width": 2
+        }
+      ],
+      "arm": "Персеев рукав",
+      "body": "",
+      "id": "system_074447",
+      "image": "https://tutwxwmfuclzqzhafyaa.supabase.co/storage/v1/object/public/campaign-assets/alpha/systems/system_074447/1773923110149_phi_pavonis.jpg",
+      "imageLocal": "file:///C:/Users/%D0%95%D0%B3%D0%BE%D1%80/AppData/Roaming/galactic-rpg-interface/world-data/assets/1773923107216_entity_system_074447_phi_pavonis.jpg",
+      "imageStoragePath": "alpha/systems/system_074447/1773923110149_phi_pavonis.jpg",
+      "location": {
+        "arm": "Персеев рукав",
+        "node": "F5V Фи Павлина",
+        "system": "Phi Pavonis"
+      },
+      "name": "Phi Pavonis",
+      "planetIds": [
+        "planet_412683",
+        "planet_686321"
+      ],
+      "pos": {
+        "x": 0.81,
+        "y": 0.422
+      },
+      "relatedArticleIds": [],
+      "summary": "",
+      "visibility": {
+        "playerIds": [],
+        "campaignIds": [],
+        "eraIds": [
+          "technological"
+        ]
+      }
+    },
+    {
+      "color": "#238B49",
+      "markerLabel": "F8V Пурпурный Рассвет",
+      "markerStyle": "orbital",
+      "routes": [
+        {
+          "color": "#238B49",
+          "label": "",
+          "toId": "system_284741",
+          "width": 2
+        }
+      ],
+      "arm": "Персеев рукав",
+      "body": "",
+      "id": "system_581870",
+      "image": "https://tutwxwmfuclzqzhafyaa.supabase.co/storage/v1/object/public/campaign-assets/alpha/systems/system_581870/1773880631304_delta_pavonis.jpg",
+      "location": {
+        "arm": "Персеев рукав",
+        "node": "F8V Пурпурный Рассвет",
+        "system": "Porfyra"
+      },
+      "name": "Porfyra",
+      "planetIds": [
+        "planet_197155",
+        "planet_089123"
+      ],
+      "pos": {
+        "x": 0.766,
+        "y": 0.499
+      },
+      "relatedArticleIds": [],
+      "summary": "",
+      "visibility": {
+        "playerIds": [],
+        "campaignIds": [],
+        "eraIds": [
+          "technological"
+        ]
+      }
+    },
+    {
+      "color": "#FF4040",
+      "markerLabel": "F5IV-V Процион A",
+      "markerStyle": "orbital",
+      "routes": [],
+      "arm": "Персеев рукав",
+      "body": "",
+      "id": "system_165902",
+      "image": "https://tutwxwmfuclzqzhafyaa.supabase.co/storage/v1/object/public/campaign-assets/alpha/systems/system_165902/1773404212103_b_rigel.jpg",
+      "location": {
+        "arm": "Персеев рукав",
+        "node": "F5IV-V Процион A",
+        "system": "Procyon"
+      },
+      "name": "Procyon",
+      "planetIds": [
+        "planet_335281",
+        "planet_803278"
+      ],
+      "pos": {
+        "x": 0.744,
+        "y": 0.509
+      },
+      "relatedArticleIds": [],
+      "summary": "",
+      "visibility": {
+        "playerIds": [
+          "player_036219"
+        ],
+        "campaignIds": [],
+        "eraIds": [
+          "technological"
+        ]
+      }
+    },
+    {
+      "color": "#7df9ff",
+      "markerLabel": "M5 Ib-II Рас Альгети (α Her A)",
+      "markerStyle": "orbital",
+      "routes": [
+        {
+          "color": "#7df9ff",
+          "label": "",
+          "toId": "system_161772",
+          "width": 2
+        },
+        {
+          "color": "#7df9ff",
+          "label": "",
+          "toId": "system_380215",
+          "width": 2
+        }
+      ],
+      "arm": "Персеев рукав",
+      "body": "",
+      "id": "system_208104",
+      "image": "https://tutwxwmfuclzqzhafyaa.supabase.co/storage/v1/object/public/campaign-assets/alpha/systems/system_208104/1773922241304_ras_algethi.jpg",
+      "imageLocal": "file:///C:/Users/%D0%95%D0%B3%D0%BE%D1%80/AppData/Roaming/galactic-rpg-interface/world-data/assets/1773922239067_entity_system_208104_ras_algethi.jpg",
+      "imageStoragePath": "alpha/systems/system_208104/1773922241304_ras_algethi.jpg",
+      "location": {
+        "arm": "Персеев рукав",
+        "node": "M5 Ib-II Рас Альгети (α Her A)",
+        "system": "Ras Algethi"
+      },
+      "name": "Ras Algethi",
+      "planetIds": [
+        "planet_230386"
+      ],
+      "pos": {
+        "x": 0.7,
+        "y": 0.615
+      },
+      "relatedArticleIds": [],
+      "summary": "",
+      "visibility": {
+        "playerIds": [],
+        "campaignIds": [],
+        "eraIds": [
+          "technological"
+        ]
+      }
+    },
+    {
+      "color": "#7df9ff",
+      "markerLabel": "G9V Сигма Дракона",
+      "markerStyle": "orbital",
+      "routes": [
+        {
+          "color": "#7df9ff",
+          "label": "",
+          "toId": "system_634567",
+          "width": 2
+        },
+        {
+          "color": "#7df9ff",
+          "label": "",
+          "toId": "system_011102",
+          "width": 2
+        },
+        {
+          "color": "#7df9ff",
+          "label": "",
+          "toId": "system_921821",
+          "width": 2
+        }
+      ],
+      "arm": "Персеев рукав",
+      "body": "",
+      "id": "system_385353",
+      "image": "https://tutwxwmfuclzqzhafyaa.supabase.co/storage/v1/object/public/campaign-assets/alpha/systems/system_385353/1773880443326_sigma_draconis.jpg",
+      "imageLocal": "file:///C:/Users/%D0%95%D0%B3%D0%BE%D1%80/AppData/Roaming/galactic-rpg-interface/world-data/assets/1773880420978_entity_system_385353_sigma_draconis.jpg",
+      "imageStoragePath": "alpha/systems/system_385353/1773880443326_sigma_draconis.jpg",
+      "location": {
+        "arm": "Персеев рукав",
+        "node": "G9V Сигма Дракона",
+        "system": "Sigma_Draconis"
+      },
+      "name": "Sigma_Draconis",
+      "planetIds": [
+        "planet_260593",
+        "cassilia",
+        "planet_789531"
+      ],
+      "pos": {
+        "x": 0.76,
         "y": 0.52
       },
-      "planetIds": [
-        "cassilia"
+      "relatedArticleIds": [],
+      "summary": "",
+      "visibility": {
+        "playerIds": [],
+        "campaignIds": [],
+        "eraIds": [
+          "technological"
+        ]
+      }
+    },
+    {
+      "color": "#FF4040",
+      "markerLabel": "A1V Сириус A",
+      "markerStyle": "orbital",
+      "routes": [
+        {
+          "color": "#FF4040",
+          "label": "",
+          "toId": "system_898392",
+          "width": 2
+        }
       ],
+      "arm": "Персеев рукав",
+      "body": "",
+      "id": "cassilia_binary",
+      "image": "https://tutwxwmfuclzqzhafyaa.supabase.co/storage/v1/object/public/campaign-assets/alpha/systems/cassilia_binary/1773403793075_g_kassiy.jpg",
+      "location": {
+        "arm": "Персеев рукав",
+        "node": "A1V Сириус A",
+        "system": "Sirius"
+      },
+      "name": "Sirius",
+      "planetIds": [
+        "planet_931761"
+      ],
+      "pos": {
+        "x": 0.737,
+        "y": 0.491
+      },
+      "relatedArticleIds": [],
+      "summary": "",
+      "visibility": {
+        "playerIds": [
+          "u1",
+          "player_281529",
+          "player_185470"
+        ],
+        "campaignIds": [],
+        "eraIds": [
+          "technological"
+        ]
+      }
+    },
+    {
+      "color": "#238B49",
+      "markerLabel": "K2.5V Изумрудный Мир",
+      "markerStyle": "orbital",
+      "routes": [
+        {
+          "color": "#238B49",
+          "label": "",
+          "toId": "system_345048",
+          "width": 2
+        }
+      ],
+      "arm": "Персеев рукав",
+      "body": "",
+      "id": "system_936995",
+      "image": "https://tutwxwmfuclzqzhafyaa.supabase.co/storage/v1/object/public/campaign-assets/alpha/systems/system_936995/1773922046980_smaragdos.jpg",
+      "location": {
+        "arm": "Персеев рукав",
+        "node": "K2.5V Изумрудный Мир",
+        "system": "Smaragdos"
+      },
+      "name": "Smaragdos",
+      "planetIds": [
+        "planet_323096"
+      ],
+      "pos": {
+        "x": 0.775,
+        "y": 0.485
+      },
+      "relatedArticleIds": [],
+      "summary": "",
+      "visibility": {
+        "playerIds": [],
+        "campaignIds": [],
+        "eraIds": [
+          "technological"
+        ]
+      }
+    },
+    {
+      "color": "#FF4040",
+      "markerLabel": "G8Vp  Тау Кита",
+      "markerStyle": "orbital",
+      "routes": [
+        {
+          "color": "#FF4040",
+          "label": "",
+          "toId": "system_546033",
+          "width": 2
+        },
+        {
+          "color": "#7df9ff",
+          "label": "",
+          "toId": "system_460846",
+          "width": 2
+        }
+      ],
+      "arm": "Персеев рукав",
+      "body": "",
+      "id": "system_426292",
+      "image": "https://tutwxwmfuclzqzhafyaa.supabase.co/storage/v1/object/public/campaign-assets/alpha/systems/system_426292/1773403830194_spayk.jpg",
+      "location": {
+        "arm": "Персеев рукав",
+        "node": "G8Vp  Тау Кита",
+        "system": "Tau_Ceti"
+      },
+      "name": "Tau_Ceti",
+      "planetIds": [
+        "planet_020603",
+        "planet_897139",
+        "planet_786119"
+      ],
+      "pos": {
+        "x": 0.752,
+        "y": 0.479
+      },
+      "relatedArticleIds": [],
+      "summary": "",
+      "visibility": {
+        "playerIds": [
+          "u1",
+          "player_281529",
+          "player_486258",
+          "player_185470"
+        ],
+        "campaignIds": [],
+        "eraIds": [
+          "technological"
+        ]
+      }
+    },
+    {
+      "color": "#238B49",
+      "markerLabel": "G2V Толиман (α Центавра A)",
+      "markerStyle": "orbital",
+      "routes": [],
+      "arm": "Персеев рукав",
+      "body": "",
+      "id": "system_011102",
+      "image": "https://tutwxwmfuclzqzhafyaa.supabase.co/storage/v1/object/public/campaign-assets/alpha/systems/system_011102/1773879957043_toliman.jpg",
+      "location": {
+        "arm": "Персеев рукав",
+        "node": "G2V Толиман (α Центавра A)",
+        "system": "Toliman"
+      },
+      "name": "Toliman",
+      "planetIds": [
+        "planet_186476"
+      ],
+      "pos": {
+        "x": 0.77,
+        "y": 0.517
+      },
+      "relatedArticleIds": [],
+      "summary": "",
+      "visibility": {
+        "playerIds": [
+          "player_036219"
+        ],
+        "campaignIds": [],
+        "eraIds": [
+          "technological"
+        ]
+      }
+    },
+    {
       "color": "#7df9ff",
-      "markerLabel": "Cassilia Binary",
-      "routes": []
+      "markerLabel": "F9 IV Дзета Геркулеса",
+      "markerStyle": "orbital",
+      "routes": [
+        {
+          "color": "#7df9ff",
+          "label": "",
+          "toId": "system_161772",
+          "width": 2
+        },
+        {
+          "color": "#7df9ff",
+          "label": "",
+          "toId": "system_380215",
+          "width": 2
+        }
+      ],
+      "arm": "Персеев рукав",
+      "body": "",
+      "id": "system_254650",
+      "image": "https://tutwxwmfuclzqzhafyaa.supabase.co/storage/v1/object/public/campaign-assets/alpha/systems/system_254650/1773922290757_zeta_herculis.jpg",
+      "imageLocal": "file:///C:/Users/%D0%95%D0%B3%D0%BE%D1%80/AppData/Roaming/galactic-rpg-interface/world-data/assets/1773922288401_entity_system_254650_zeta_herculis.jpg",
+      "imageStoragePath": "alpha/systems/system_254650/1773922290757_zeta_herculis.jpg",
+      "location": {
+        "arm": "Персеев рукав",
+        "node": "F9 IV Дзета Геркулеса",
+        "system": "Zeta Herculis"
+      },
+      "name": "Zeta Herculis",
+      "planetIds": [
+        "planet_687764"
+      ],
+      "pos": {
+        "x": 0.708,
+        "y": 0.612
+      },
+      "relatedArticleIds": [],
+      "summary": "",
+      "visibility": {
+        "playerIds": [],
+        "campaignIds": [],
+        "eraIds": [
+          "technological"
+        ]
+      }
+    },
+    {
+      "color": "#FF9E00",
+      "markerLabel": "F9V  Дзета Тукана (ζ Tuc)",
+      "markerStyle": "orbital",
+      "routes": [
+        {
+          "color": "#FF9E00",
+          "label": "",
+          "toId": "system_629003",
+          "width": 2
+        }
+      ],
+      "arm": "Кентаврийский рукав",
+      "body": "",
+      "id": "system_546993",
+      "image": "https://tutwxwmfuclzqzhafyaa.supabase.co/storage/v1/object/public/campaign-assets/alpha/systems/system_546993/1773922680531_zeta_tucanae.jpg",
+      "imageLocal": "file:///C:/Users/%D0%95%D0%B3%D0%BE%D1%80/AppData/Roaming/galactic-rpg-interface/world-data/assets/1773922678597_entity_system_546993_zeta_tucanae.jpg",
+      "imageStoragePath": "alpha/systems/system_546993/1773922680531_zeta_tucanae.jpg",
+      "location": {
+        "arm": "Кентаврийский рукав",
+        "node": "F9V  Дзета Тукана (ζ Tuc)",
+        "system": "Zeta Tucanae"
+      },
+      "name": "Zeta Tucanae",
+      "planetIds": [
+        "planet_575889"
+      ],
+      "pos": {
+        "x": 0.385,
+        "y": 0.335
+      },
+      "relatedArticleIds": [],
+      "summary": "",
+      "visibility": {
+        "playerIds": [],
+        "campaignIds": [],
+        "eraIds": [
+          "technological"
+        ]
+      }
+    },
+    {
+      "color": "#FF4040",
+      "markerLabel": "G2V Дзета Сетки",
+      "markerStyle": "orbital",
+      "routes": [
+        {
+          "color": "#FF4040",
+          "label": "",
+          "toId": "system_474071",
+          "width": 2
+        }
+      ],
+      "arm": "Персеев рукав",
+      "body": "",
+      "id": "system_898392",
+      "image": "https://tutwxwmfuclzqzhafyaa.supabase.co/storage/v1/object/public/campaign-assets/alpha/systems/system_898392/1773913506421_zeta_reticuli.webp",
+      "imageLocal": "file:///C:/Users/%D0%95%D0%B3%D0%BE%D1%80/AppData/Roaming/galactic-rpg-interface/world-data/assets/1773913503995_entity_system_898392_zeta_reticuli.webp",
+      "imageStoragePath": "alpha/systems/system_898392/1773913506421_zeta_reticuli.webp",
+      "location": {
+        "arm": "Персеев рукав",
+        "node": "G2V Дзета Сетки",
+        "system": "Zeta_Reticuli"
+      },
+      "name": "Zeta_Reticuli",
+      "planetIds": [
+        "planet_287328",
+        "planet_459317"
+      ],
+      "pos": {
+        "x": 0.735,
+        "y": 0.498
+      },
+      "relatedArticleIds": [],
+      "summary": "",
+      "visibility": {
+        "playerIds": [],
+        "campaignIds": [],
+        "eraIds": [
+          "technological"
+        ]
+      }
     }
   ]
 }

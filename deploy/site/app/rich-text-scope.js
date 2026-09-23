@@ -65,6 +65,13 @@
       document.dispatchEvent(new CustomEvent('grpgi:article-link-v1083', { detail: { articleId } }));
       return;
     }
+    if (message.type === `${INTERACTIVE_PROTOCOL}:entity-link`) {
+      const entityType = String(message.entityType || '').trim().toLowerCase();
+      const entityId = String(message.entityId || '').trim();
+      if (!['player', 'npc'].includes(entityType) || !entityId || typeof document === 'undefined') return;
+      document.dispatchEvent(new CustomEvent('grpgi:entity-link-v1085', { detail: { entityType, entityId } }));
+      return;
+    }
     if (message.type === `${INTERACTIVE_PROTOCOL}:error`) {
       frame.setAttribute('data-grpgi-rich-runtime-error', 'true');
       if (root?.console?.warn) root.console.warn('Interactive article script failed:', String(message.message || 'Unknown error'));
@@ -255,7 +262,7 @@
       const token = interactiveToken();
       rememberInteractivePayload(token, sourceHtml);
       const classes = ['grpgi-rich-scope-v1081', 'grpgi-rich-interactive-v1083', String(wrapperClass || '').trim()].filter(Boolean).join(' ');
-      return `<div class="${escapeAttribute(classes)}" data-grpgi-rich-scope="${escapeAttribute(token)}"><iframe class="grpgi-rich-interactive-frame-v1083" data-grpgi-rich-frame-v1083="${escapeAttribute(token)}" src="./article-sandbox.html?v=1.0.83" sandbox="allow-scripts" scrolling="no" loading="eager" referrerpolicy="no-referrer" title="Интерактивная статья"></iframe></div>`;
+      return `<div class="${escapeAttribute(classes)}" data-grpgi-rich-scope="${escapeAttribute(token)}"><iframe class="grpgi-rich-interactive-frame-v1083" data-grpgi-rich-frame-v1083="${escapeAttribute(token)}" src="./article-sandbox.html?v=1.0.86" sandbox="allow-scripts" scrolling="no" loading="eager" referrerpolicy="no-referrer" title="Интерактивная статья"></iframe></div>`;
     }
 
     scopeSequence += 1;

@@ -1,54 +1,118 @@
 {
   "FAUNA": {
-    "dust_manta": {
-      "id": "dust_manta",
-      "name": "Пылевой скат",
-      "habitat": "Верхние слои пустынных бурь",
-      "summary": "Планирующее существо, использующее электростатические потоки атмосферы.",
-      "danger": "Средняя",
-      "behavior": "Избегает крупных двигателей, но агрессивен к яркому свету."
-    },
-    "shard_hound": {
-      "id": "shard_hound",
-      "name": "Осколочный гончий",
+    "aciagrion_mortiferum": {
+      "behavior": "Молниеносная точечная атака в сердце, шею или глаз. Часто атакует из засады или при приближении к водоемам.",
+      "danger": "Низкая",
       "habitat": "Каменные пустоши",
-      "summary": "Хищник с минеральными пластинами на спине, охотится стаями.",
-      "danger": "Высокая",
-      "behavior": "Реагирует на вибрации техники и запах металла."
+      "id": "aciagrion_mortiferum",
+      "image": "https://tutwxwmfuclzqzhafyaa.supabase.co/storage/v1/object/public/campaign-assets/alpha/fauna/aciagrion_mortiferum/1773387195128_strekoza_igla_aciagrion_mortiferum.jpg",
+      "name": "Стрекоза-Игла (Aciagrion mortiferum)",
+      "relatedArticleIds": [],
+      "summary": "Крупная (размах крыльев до 25см), стремительная стрекоза. Тело тонкое, вытянутое, металлически-синего или черного цвета. Вместо обычного хоботка имеет длинный (до 9 см), жесткий и острый как шило стилет, способный пробить легкую броню.",
+      "visibility": {
+        "playerIds": [
+          "u1"
+        ],
+        "campaignIds": [],
+        "eraIds": []
+      }
     },
-    "cave_eel": {
-      "id": "cave_eel",
-      "name": "Пещерный угорь",
-      "habitat": "Подземные соляные каверны",
-      "summary": "Полуслепое существо с сильной биоэлектрической разрядкой.",
+    "cornuferox_horridus": {
+      "behavior": "Хоть и неповоротлив при попадании его атаки остаться в живых почти невозможно. Сила удара сравнивается с ударом разогнанного грузовика. При получении ранения источает секрет привлекающий хищников.",
       "danger": "Средняя",
-      "behavior": "Активен ночью и возле источников воды."
+      "habitat": "Водоёмы соляных болот",
+      "id": "cornuferox_horridus",
+      "image": "https://tutwxwmfuclzqzhafyaa.supabase.co/storage/v1/object/public/campaign-assets/alpha/fauna/cornuferox_horridus/1773387195903_rogonos_cornuferox_horridus.jpg",
+      "imageLocal": "file:///C:/Users/%D0%95%D0%B3%D0%BE%D1%80/AppData/Roaming/galactic-rpg-interface/world-data/assets/1773368449186_entity_cornuferox_horridus_%D1%80%D0%BE%D0%B3%D0%BE%D0%BD%D0%BE%D1%81_cornuferox_horridus.jpg",
+      "imageStoragePath": "alpha/fauna/cornuferox_horridus/1773387195903_rogonos_cornuferox_horridus.jpg",
+      "name": "Рогонос (Cornuferox horridus)",
+      "relatedArticleIds": [],
+      "summary": "Крупное рогатое травоядное весом около полутора тонн(при тяготении в 1G), судя по виду потомок обычной домашней коровы, попавший под влияние планеты и прошедший много стадий эволюции. Кожа грубая, твердая как камень достигает толщиной до 12 сантиметров. В обычных условиях медлителен, но в состоянии агрессии способен развивать скорость до 45 км/ч. Череп укреплённый, имеет пористую структуру для гашения последствий его собственных атак. \nПо какой-то причине приобрёл агрессивные черты характера, способен поднять вес втрое выше своего.",
+      "visibility": {
+        "playerIds": [
+          "u1",
+          "player_281529"
+        ],
+        "campaignIds": [],
+        "eraIds": []
+      }
+    },
+    "dorimus_packensis": {
+      "behavior": "Имеют очень мощные мышцы шеи, что позволяет им развивать огромную силу удара головой, даже при двойном G могут отправить человека в полёт на несколько метров над землей, или несколькими ударами пробить корпус бронетранспортёра.",
+      "danger": "Высокая",
+      "habitat": "Скалистая местность",
+      "id": "dorimus_packensis",
+      "image": "https://tutwxwmfuclzqzhafyaa.supabase.co/storage/v1/object/public/campaign-assets/alpha/fauna/dorimus_packensis/1773387196576_dorim_dorimus_packensis.jpg",
+      "name": "Дорим (Dorimus packensis)",
+      "relatedArticleIds": [],
+      "summary": "Животные с бронированной головой. Передвигается быстро на четырех ногах. Передвигаются стаями, по описаниям экзобиологов имеют некого рода иерархическую структуру и формируют своеобразные племена.",
+      "visibility": {
+        "playerIds": [
+          "u1",
+          "player_185470",
+          "player_281529"
+        ],
+        "campaignIds": [],
+        "eraIds": []
+      }
     }
   },
   "FAUNA_LIST": [
     {
-      "id": "dust_manta",
-      "name": "Пылевой скат",
-      "habitat": "Верхние слои пустынных бурь",
-      "summary": "Планирующее существо, использующее электростатические потоки атмосферы.",
-      "danger": "Средняя",
-      "behavior": "Избегает крупных двигателей, но агрессивен к яркому свету."
-    },
-    {
-      "id": "shard_hound",
-      "name": "Осколочный гончий",
-      "habitat": "Каменные пустоши",
-      "summary": "Хищник с минеральными пластинами на спине, охотится стаями.",
+      "behavior": "Имеют очень мощные мышцы шеи, что позволяет им развивать огромную силу удара головой, даже при двойном G могут отправить человека в полёт на несколько метров над землей, или несколькими ударами пробить корпус бронетранспортёра.",
       "danger": "Высокая",
-      "behavior": "Реагирует на вибрации техники и запах металла."
+      "habitat": "Скалистая местность",
+      "id": "dorimus_packensis",
+      "image": "https://tutwxwmfuclzqzhafyaa.supabase.co/storage/v1/object/public/campaign-assets/alpha/fauna/dorimus_packensis/1773387196576_dorim_dorimus_packensis.jpg",
+      "name": "Дорим (Dorimus packensis)",
+      "relatedArticleIds": [],
+      "summary": "Животные с бронированной головой. Передвигается быстро на четырех ногах. Передвигаются стаями, по описаниям экзобиологов имеют некого рода иерархическую структуру и формируют своеобразные племена.",
+      "visibility": {
+        "playerIds": [
+          "u1",
+          "player_185470",
+          "player_281529"
+        ],
+        "campaignIds": [],
+        "eraIds": []
+      }
     },
     {
-      "id": "cave_eel",
-      "name": "Пещерный угорь",
-      "habitat": "Подземные соляные каверны",
-      "summary": "Полуслепое существо с сильной биоэлектрической разрядкой.",
+      "behavior": "Хоть и неповоротлив при попадании его атаки остаться в живых почти невозможно. Сила удара сравнивается с ударом разогнанного грузовика. При получении ранения источает секрет привлекающий хищников.",
       "danger": "Средняя",
-      "behavior": "Активен ночью и возле источников воды."
+      "habitat": "Водоёмы соляных болот",
+      "id": "cornuferox_horridus",
+      "image": "https://tutwxwmfuclzqzhafyaa.supabase.co/storage/v1/object/public/campaign-assets/alpha/fauna/cornuferox_horridus/1773387195903_rogonos_cornuferox_horridus.jpg",
+      "imageLocal": "file:///C:/Users/%D0%95%D0%B3%D0%BE%D1%80/AppData/Roaming/galactic-rpg-interface/world-data/assets/1773368449186_entity_cornuferox_horridus_%D1%80%D0%BE%D0%B3%D0%BE%D0%BD%D0%BE%D1%81_cornuferox_horridus.jpg",
+      "imageStoragePath": "alpha/fauna/cornuferox_horridus/1773387195903_rogonos_cornuferox_horridus.jpg",
+      "name": "Рогонос (Cornuferox horridus)",
+      "relatedArticleIds": [],
+      "summary": "Крупное рогатое травоядное весом около полутора тонн(при тяготении в 1G), судя по виду потомок обычной домашней коровы, попавший под влияние планеты и прошедший много стадий эволюции. Кожа грубая, твердая как камень достигает толщиной до 12 сантиметров. В обычных условиях медлителен, но в состоянии агрессии способен развивать скорость до 45 км/ч. Череп укреплённый, имеет пористую структуру для гашения последствий его собственных атак. \nПо какой-то причине приобрёл агрессивные черты характера, способен поднять вес втрое выше своего.",
+      "visibility": {
+        "playerIds": [
+          "u1",
+          "player_281529"
+        ],
+        "campaignIds": [],
+        "eraIds": []
+      }
+    },
+    {
+      "behavior": "Молниеносная точечная атака в сердце, шею или глаз. Часто атакует из засады или при приближении к водоемам.",
+      "danger": "Низкая",
+      "habitat": "Каменные пустоши",
+      "id": "aciagrion_mortiferum",
+      "image": "https://tutwxwmfuclzqzhafyaa.supabase.co/storage/v1/object/public/campaign-assets/alpha/fauna/aciagrion_mortiferum/1773387195128_strekoza_igla_aciagrion_mortiferum.jpg",
+      "name": "Стрекоза-Игла (Aciagrion mortiferum)",
+      "relatedArticleIds": [],
+      "summary": "Крупная (размах крыльев до 25см), стремительная стрекоза. Тело тонкое, вытянутое, металлически-синего или черного цвета. Вместо обычного хоботка имеет длинный (до 9 см), жесткий и острый как шило стилет, способный пробить легкую броню.",
+      "visibility": {
+        "playerIds": [
+          "u1"
+        ],
+        "campaignIds": [],
+        "eraIds": []
+      }
     }
   ]
 }

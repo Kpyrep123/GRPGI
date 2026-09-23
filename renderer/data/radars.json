@@ -1,0 +1,38 @@
+{
+  "RADARS": {
+    "radar_i844gr": {
+      "id": "radar_i844gr",
+      "name": "ИК 500",
+      "kind": "radar",
+      "range": 500,
+      "power": 100,
+      "notes": ""
+    },
+    "radar_i84f03": {
+      "id": "radar_i84f03",
+      "name": "Джаммер",
+      "kind": "jammer",
+      "range": 200,
+      "power": 100,
+      "notes": ""
+    }
+  },
+  "RADAR_LIST": [
+    {
+      "id": "radar_i84f03",
+      "name": "Джаммер",
+      "kind": "jammer",
+      "range": 200,
+      "power": 100,
+      "notes": ""
+    },
+    {
+      "id": "radar_i844gr",
+      "name": "ИК 500",
+      "kind": "radar",
+      "range": 500,
+      "power": 100,
+      "notes": ""
+    }
+  ]
+}

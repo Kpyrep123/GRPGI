@@ -3,11 +3,12 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="theme-color" content="#05080d" />
+    <meta name="theme-color" content="#0d0c09" />
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://sync.grpg-sync.ru; img-src 'self' data: blob: https:; media-src 'self' data: blob: https:; font-src 'self' data:; frame-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests" />
     <meta name="referrer" content="same-origin" />
-    <title>GRPGI Web Client</title>
-    <link rel="stylesheet" href="./styles.css?v=1.0.84" />
+    <title>GRPGI · веб-клиент</title>
+    <link rel="stylesheet" href="./styles.css?v=1.0.140" />
+    <link rel="stylesheet" href="./technology-theme-v139.css?v=1.0.140" />
   </head>
   <body>
     <div class="web-galaxy-bg" aria-hidden="true">
@@ -17,7 +18,7 @@
 
     <div id="login-screen" class="boot-shell hidden">
       <div class="boot-card desktop-login-card">
-        <div class="eyebrow">CHARACTER_ACCESS</div>
+        <div class="eyebrow">ВХОД В ПРОФИЛЬ</div>
         <h1>Вход в профиль</h1>
         <p class="muted">Выберите персонажа и введите его пароль. Подключение к кампании выполняется автоматически.</p>
         <form id="login-form" class="form stack-lg">
@@ -58,13 +59,13 @@
     <div id="app-shell" class="app-shell hidden">
       <header class="topbar title-bar">
         <div class="title-main">
-          <div class="eyebrow" id="campaign-label">CAMPAIGN</div>
-          <h1 id="screen-title">WEB CLIENT</h1>
-          <div class="topbar-sub" id="screen-subtitle">PocketBase secure session</div>
+          <div class="eyebrow" id="campaign-label">КАМПАНИЯ</div>
+          <h1 id="screen-title">ВЕБ-КЛИЕНТ</h1>
+          <div class="topbar-sub" id="screen-subtitle">Защищённое подключение</div>
         </div>
         <div class="topbar-actions">
           <a class="secondary link-btn" href="../" title="Страница загрузки">ЗАГРУЗКИ</a>
-          <button class="secondary" type="button" id="web-reload-btn">RELOAD</button>
+          <button class="secondary" type="button" id="web-reload-btn">ОБНОВИТЬ</button>
         </div>
       </header>
 
@@ -86,9 +87,10 @@
     </div>
 
     <div id="toast-stack" class="toast-stack"></div>
-    <script src="./runtime-config.js?v=1.0.71"></script>
-    <script src="./rich-text-scope.js?v=1.0.84"></script>
-    <script src="./market-engine.js?v=1.0.84"></script>
-    <script src="./app.js?v=1.0.84"></script>
+    <script src="./runtime-config.js?v=1.0.140"></script>
+    <script src="./rich-text-scope.js?v=1.0.140"></script>
+    <script src="./market-engine.js?v=1.0.140"></script>
+    <script src="./player-sync-core.js?v=135"></script>
+    <script src="./app.js?v=1.0.140"></script>
   </body>
 </html>

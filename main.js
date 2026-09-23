@@ -1,10 +1,42 @@
-const { app, BrowserWindow, ipcMain, screen, shell, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, shell, dialog, nativeImage } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 const http = require('http');
 const https = require('https');
 const { pathToFileURL, fileURLToPath } = require('url');
+const { Worker } = require('worker_threads');
+
+const DESKTOP_UPDATE_FEED_URL = 'https://app.grpg-sync.ru/downloads';
+const DESKTOP_LATEST_INSTALLER_URL = `${DESKTOP_UPDATE_FEED_URL}/GRPGI-Setup-latest.exe`;
+const DESKTOP_RELEASE_METADATA_URL = `${DESKTOP_UPDATE_FEED_URL}/release.json`;
+
+async function resolveDesktopInstallerUrl() {
+  const fallbackVersion = encodeURIComponent(String(updaterLatestStatus?.version || app.getVersion() || Date.now()));
+  const fallback = `${DESKTOP_LATEST_INSTALLER_URL}?v=${fallbackVersion}`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 7000);
+  try {
+    const response = await fetch(`${DESKTOP_RELEASE_METADATA_URL}?v=${Date.now()}`, {
+      method: 'GET',
+      signal: controller.signal,
+      headers: { accept: 'application/json', 'cache-control': 'no-cache' }
+    });
+    if (!response.ok) return fallback;
+    const payload = await response.json();
+    const candidate = new URL(String(payload?.installerUrl || ''), DESKTOP_UPDATE_FEED_URL);
+    const feed = new URL(DESKTOP_UPDATE_FEED_URL);
+    if (candidate.origin !== feed.origin || !candidate.pathname.startsWith(`${feed.pathname}/`) || !candidate.pathname.toLowerCase().endsWith('.exe')) {
+      return fallback;
+    }
+    candidate.searchParams.set('v', String(payload?.version || fallbackVersion));
+    return candidate.toString();
+  } catch {
+    return fallback;
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 let autoUpdater = null;
 let updaterLoadError = null;
@@ -14,13 +46,99 @@ try {
   updaterLoadError = error;
 }
 
-const WORLD_FILE_NAMES = ['players','systems','planets','npcs','equipment','flora','fauna','articles','news','tasks','organizations','factions','skills','campaigns','socialOrigins','geographicOrigins','combatScenes','ui','regionMaps','ships','missiles','radars'];
+const WORLD_FILE_NAMES = ['players','systems','planets','npcs','equipment','flora','fauna','articles','news','tasks','organizations','factions','skills','campaigns','campaignStudio','socialOrigins','geographicOrigins','combatScenes','ui','regionMaps','ships','missiles','radars'];
 const DEFAULT_SYNC_TABLE = 'campaign_snapshots';
 const DEFAULT_CHAT_TABLE = 'campaign_messages';
 const DEFAULT_PLAYER_TABLE = 'campaign_players';
 const DEFAULT_COMBAT_RUNTIME_TABLE = 'campaign_combat_runtime';
 const DEFAULT_POCKETBASE_USERS_COLLECTION = 'app_users';
 const DEFAULT_POCKETBASE_ASSETS_COLLECTION = 'campaign_assets';
+const LOCKED_POCKETBASE_URL = 'https://sync.grpg-sync.ru';
+const LOCKED_CAMPAIGN_ID = 'main';
+const LOCKED_APP_USER_EMAIL = 'guest@guest.local';
+const LOCKED_APP_USER_PASSWORD = '12345678';
+
+// A snapshot write is allowed only after this exact app process has downloaded
+// and applied the current cloud revision. These tokens intentionally live only
+// in memory: an installer update or app restart cannot reuse stale local state
+// as authority to overwrite the campaign.
+const syncBaselineGuards = new Map();
+
+function syncConfigIdentity(config = {}) {
+  return [
+    'pocketbase',
+    String(config.url || '').trim().replace(/\/+$/, ''),
+    String(config.campaignId || '').trim(),
+    String(config.tableName || '').trim()
+  ].join('|');
+}
+
+function createSyncBaselineGuard(config = {}, revision = 0) {
+  const token = crypto.randomBytes(32).toString('hex');
+  syncBaselineGuards.clear();
+  syncBaselineGuards.set(token, {
+    identity: syncConfigIdentity(config),
+    revision: Number(revision || 0),
+    createdAt: Date.now()
+  });
+  return token;
+}
+
+function invalidateSyncBaselineGuards(reason = 'unspecified') {
+  if (syncBaselineGuards.size) debugLog('SYNC_BASELINE_INVALIDATED', { reason });
+  syncBaselineGuards.clear();
+}
+
+function validateSyncBaselineGuard(config = {}, token = '', baseRevision = 0) {
+  const normalizedToken = String(token || '').trim();
+  const guard = normalizedToken ? syncBaselineGuards.get(normalizedToken) : null;
+  if (!guard || guard.identity !== syncConfigIdentity(config)) {
+    return {
+      ok: false,
+      status: 'baseline-required',
+      message: 'Запись в облако заблокирована: сначала нужно полностью получить текущую кампанию из облака'
+    };
+  }
+  if (Number(baseRevision || 0) !== Number(guard.revision || 0)) {
+    return {
+      ok: false,
+      status: 'baseline-stale',
+      message: 'Запись в облако заблокирована: локальная базовая ревизия устарела'
+    };
+  }
+  return { ok: true, token: normalizedToken, guard };
+}
+
+function cloudSnapshotBackupsDir() {
+  return path.join(app.getPath('userData'), 'cloud-snapshot-backups');
+}
+
+async function backupRemoteSnapshotBeforeGmWrite(config = {}, remote = {}, reason = 'gm-write') {
+  const backupDir = cloudSnapshotBackupsDir();
+  await fs.promises.mkdir(backupDir, { recursive: true });
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const campaign = String(config.campaignId || 'campaign').replace(/[^a-z0-9_-]+/gi, '_').slice(0, 80) || 'campaign';
+  const revision = Number(remote?.revision || 0);
+  const fileName = `${campaign}-r${revision}-${stamp}.json`;
+  const file = path.join(backupDir, fileName);
+  await fs.promises.writeFile(file, JSON.stringify({
+    savedAt: new Date().toISOString(),
+    reason: String(reason || 'gm-write'),
+    campaignId: String(config.campaignId || ''),
+    revision,
+    remote
+  }, null, 2), 'utf8');
+
+  const entries = (await fs.promises.readdir(backupDir, { withFileTypes: true }))
+    .filter(entry => entry.isFile() && entry.name.startsWith(`${campaign}-r`) && entry.name.endsWith('.json'))
+    .map(entry => entry.name)
+    .sort()
+    .reverse();
+  for (const obsolete of entries.slice(20)) {
+    try { await fs.promises.unlink(path.join(backupDir, obsolete)); } catch {}
+  }
+  return file;
+}
 
 function debugLog(label, payload) {
   const stamp = new Date().toISOString();
@@ -33,6 +151,10 @@ function debugLog(label, payload) {
 
 function stateFilePath() {
   return path.join(app.getPath('userData'), 'galactic-state.json');
+}
+
+function stateBackupFilePath() {
+  return path.join(app.getPath('userData'), 'galactic-state.latest.json');
 }
 
 function syncConfigFilePath() {
@@ -55,10 +177,19 @@ function writableWorldAssetsDir() {
   return path.join(writableWorldDataDir(), 'assets');
 }
 
-function writableWorldAudioDir() {
-  // Combat sounds are local editor assets, intentionally not part of remote world-data sync.
-  return path.join(__dirname, 'renderer', 'assets', 'audio');
+function combatLocalMediaRoot() {
+  return path.join(app.getPath('userData'), 'scene-editor-media');
 }
+
+function writableWorldAudioDir() {
+  // Local combat audio must remain writable in both dev and packaged/asar builds.
+  return path.join(combatLocalMediaRoot(), 'audio');
+}
+
+function combatLocalAssetsDir() {
+  return path.join(combatLocalMediaRoot(), 'assets');
+}
+
 
 function backupExportDirName() {
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
@@ -168,6 +299,14 @@ function getWorldSectionItemCount(sectionName, payload) {
     if (payload.CAMPAIGNS && typeof payload.CAMPAIGNS === 'object') return Object.keys(payload.CAMPAIGNS).length;
     return Array.isArray(payload.CAMPAIGN_LIST) ? payload.CAMPAIGN_LIST.length : 0;
   }
+  if (sectionName === 'campaignStudio') {
+    return Object.values(payload.campaigns || {}).reduce((total, workspace) => total
+      + (Array.isArray(workspace?.knowledge?.nodes) ? workspace.knowledge.nodes.length : 0)
+      + (Array.isArray(workspace?.knowledge?.edges) ? workspace.knowledge.edges.length : 0)
+      + (Array.isArray(workspace?.plot?.nodes) ? workspace.plot.nodes.length : 0)
+      + (Array.isArray(workspace?.plot?.conditions) ? workspace.plot.conditions.length : 0)
+      + (Array.isArray(workspace?.plot?.edges) ? workspace.plot.edges.length : 0), 0);
+  }
   if (sectionName === 'socialOrigins') {
     if (payload.SOCIAL_ORIGINS && typeof payload.SOCIAL_ORIGINS === 'object') return Object.keys(payload.SOCIAL_ORIGINS).length;
     return Array.isArray(payload.SOCIAL_ORIGIN_LIST) ? payload.SOCIAL_ORIGIN_LIST.length : 0;
@@ -207,13 +346,14 @@ async function backupWorldSectionFile(sectionName, file) {
   try {
     if (!fs.existsSync(file)) return;
     const raw = await fs.promises.readFile(file, 'utf8');
+    JSON.parse(raw);
     const dir = worldBackupsDir();
     await fs.promises.mkdir(dir, { recursive: true });
     const latestFile = latestWorldSectionBackupPath(sectionName);
-    await fs.promises.writeFile(latestFile, raw, 'utf8');
+    await writeTextAtomic(latestFile, raw);
     const stamp = new Date().toISOString().replace(/[.:]/g, '-');
     const historyFile = path.join(dir, `${sectionName}.${stamp}.json`);
-    await fs.promises.writeFile(historyFile, raw, 'utf8');
+    await writeTextAtomic(historyFile, raw);
     const entries = (await fs.promises.readdir(dir))
       .filter(name => name.startsWith(`${sectionName}.`) && name.endsWith('.json') && !name.endsWith('.latest.json'))
       .sort();
@@ -229,16 +369,16 @@ async function backupWorldSectionFile(sectionName, file) {
 
 function defaultSyncConfig() {
   return {
-    enabled: false,
+    enabled: true,
     provider: 'pocketbase',
     serverUrl: '',
     accessToken: '',
-    pocketbaseEmail: '',
-    pocketbasePassword: '',
+    pocketbaseEmail: LOCKED_APP_USER_EMAIL,
+    pocketbasePassword: LOCKED_APP_USER_PASSWORD,
     pocketbaseUsersCollection: DEFAULT_POCKETBASE_USERS_COLLECTION,
     pocketbaseAssetsCollection: DEFAULT_POCKETBASE_ASSETS_COLLECTION,
-    url: '',
-    campaignId: '',
+    url: LOCKED_POCKETBASE_URL,
+    campaignId: LOCKED_CAMPAIGN_ID,
     deviceLabel: '',
     tableName: DEFAULT_SYNC_TABLE,
     chatTableName: DEFAULT_CHAT_TABLE,
@@ -251,27 +391,23 @@ function defaultSyncConfig() {
 
 function normalizeSyncConfig(payload = {}) {
   const base = defaultSyncConfig();
-  const providerRaw = String(payload?.provider || payload?.syncProvider || '').trim().toLowerCase();
-  const provider = providerRaw === 'selfhost' ? 'selfhost' : 'pocketbase';
-  const serverUrl = String(payload?.serverUrl || base.serverUrl).trim().replace(/\/+$/, '');
-  const url = String(provider === 'pocketbase' ? (payload?.url || base.url) : '').trim().replace(/\/+$/, '');
   return {
     ...base,
-    enabled: Boolean(payload?.enabled),
-    provider,
-    serverUrl,
-    accessToken: String(payload?.accessToken || base.accessToken).trim(),
-    pocketbaseEmail: String(payload?.pocketbaseEmail || payload?.pbEmail || '').trim(),
-    pocketbasePassword: String(payload?.pocketbasePassword || payload?.pbPassword || '').trim(),
-    pocketbaseUsersCollection: String(payload?.pocketbaseUsersCollection || DEFAULT_POCKETBASE_USERS_COLLECTION).trim() || DEFAULT_POCKETBASE_USERS_COLLECTION,
-    pocketbaseAssetsCollection: String(payload?.pocketbaseAssetsCollection || DEFAULT_POCKETBASE_ASSETS_COLLECTION).trim() || DEFAULT_POCKETBASE_ASSETS_COLLECTION,
-    url,
-    campaignId: String(payload?.campaignId || base.campaignId).trim(),
+    enabled: true,
+    provider: 'pocketbase',
+    serverUrl: '',
+    accessToken: '',
+    pocketbaseEmail: LOCKED_APP_USER_EMAIL,
+    pocketbasePassword: LOCKED_APP_USER_PASSWORD,
+    pocketbaseUsersCollection: DEFAULT_POCKETBASE_USERS_COLLECTION,
+    pocketbaseAssetsCollection: DEFAULT_POCKETBASE_ASSETS_COLLECTION,
+    url: LOCKED_POCKETBASE_URL,
+    campaignId: LOCKED_CAMPAIGN_ID,
     deviceLabel: String(payload?.deviceLabel || base.deviceLabel).trim(),
-    tableName: String(payload?.tableName || base.tableName || DEFAULT_SYNC_TABLE).trim() || DEFAULT_SYNC_TABLE,
-    chatTableName: String(payload?.chatTableName || base.chatTableName || DEFAULT_CHAT_TABLE).trim() || DEFAULT_CHAT_TABLE,
-    playerTableName: String(payload?.playerTableName || base.playerTableName || DEFAULT_PLAYER_TABLE).trim() || DEFAULT_PLAYER_TABLE,
-    combatRuntimeTableName: String(payload?.combatRuntimeTableName || base.combatRuntimeTableName || DEFAULT_COMBAT_RUNTIME_TABLE).trim() || DEFAULT_COMBAT_RUNTIME_TABLE,
+    tableName: DEFAULT_SYNC_TABLE,
+    chatTableName: DEFAULT_CHAT_TABLE,
+    playerTableName: DEFAULT_PLAYER_TABLE,
+    combatRuntimeTableName: DEFAULT_COMBAT_RUNTIME_TABLE,
     pollIntervalMs: Math.max(3000, Number(payload?.pollIntervalMs || base.pollIntervalMs || 45000)),
     connectTimeoutMs: Math.max(3000, Number(payload?.connectTimeoutMs || base.connectTimeoutMs || 8000))
   };
@@ -806,17 +942,265 @@ async function saveCombatSoundAsset(dataUrl, preferredStem = 'combat_sound') {
   const file = path.join(audioDir, filename);
   const base64 = String(dataUrl).split(',')[1] || '';
   await fs.promises.writeFile(file, Buffer.from(base64, 'base64'));
+  const fileUrl = pathToFileURL(file).href;
   return {
     ok: true,
     file,
-    url: `./assets/audio/${filename}`,
-    localUrl: `./assets/audio/${filename}`,
-    fileUrl: pathToFileURL(file).href,
+    url: fileUrl,
+    localUrl: fileUrl,
+    fileUrl,
     audioDir
   };
 }
 
-async function saveImageAsset(dataUrl, preferredStem = 'asset') {
+/* v1.0.104 local scene editor storage */
+function combatLocalStoreFile() {
+  return path.join(app.getPath('userData'), 'scene-editor-local-v2.json');
+}
+
+async function readCombatLocalStore() {
+  const file = combatLocalStoreFile();
+  try {
+    const raw = await fs.promises.readFile(file, 'utf8');
+    const payload = JSON.parse(raw || '{}');
+    return { ok: true, exists: true, file, payload: payload && typeof payload === 'object' ? payload : {} };
+  } catch (error) {
+    if (error?.code === 'ENOENT') return { ok: true, exists: false, file, payload: null };
+    throw error;
+  }
+}
+
+async function writeCombatLocalStore(payload = {}) {
+  const file = combatLocalStoreFile();
+  const dir = path.dirname(file);
+  await fs.promises.mkdir(dir, { recursive: true });
+  const tmp = `${file}.tmp`;
+  const bak = `${file}.bak`;
+  const clean = payload && typeof payload === 'object' ? payload : {};
+  try {
+    if (fs.existsSync(file)) await fs.promises.copyFile(file, bak);
+  } catch {}
+  await fs.promises.writeFile(tmp, JSON.stringify(clean, null, 2), 'utf8');
+  try {
+    await fs.promises.rename(tmp, file);
+  } catch (error) {
+    if (!['EEXIST','EPERM','EACCES'].includes(String(error?.code || ''))) throw error;
+    await fs.promises.rm(file, { force: true });
+    await fs.promises.rename(tmp, file);
+  }
+  return { ok: true, file, backupFile: bak };
+}
+
+async function saveCombatLocalImage(dataUrl, preferredStem = 'scene_asset') {
+  if (!String(dataUrl || '').startsWith('data:image/')) throw new Error('Unsupported image payload');
+  const dir = combatLocalAssetsDir();
+  await fs.promises.mkdir(dir, { recursive: true });
+  const ext = extensionFromDataUrl(dataUrl);
+  const filename = `${Date.now()}_${sanitizeFileStem(preferredStem || 'scene_asset')}.${ext}`;
+  const file = path.join(dir, filename);
+  const base64 = String(dataUrl).split(',')[1] || '';
+  await fs.promises.writeFile(file, Buffer.from(base64, 'base64'));
+  return { ok: true, file, url: pathToFileURL(file).href, localUrl: pathToFileURL(file).href, assetsDir: dir, imageMeta: computeImageAlphaMeta(file) };
+}
+
+async function saveCombatLocalImageFile(sourcePath, preferredStem = 'scene_asset') {
+  const source = path.resolve(String(sourcePath || ''));
+  const stat = await fs.promises.stat(source);
+  if (!stat.isFile()) throw new Error('Выбранный путь не является файлом');
+  const dir = combatLocalAssetsDir();
+  await fs.promises.mkdir(dir, { recursive: true });
+  const ext = extensionFromPathLike(source) || 'png';
+  const filename = `${Date.now()}_${sanitizeFileStem(preferredStem || path.basename(source, path.extname(source)) || 'scene_asset')}.${ext}`;
+  const file = path.join(dir, filename);
+  await fs.promises.copyFile(source, file);
+  const url = pathToFileURL(file).href;
+  return { ok: true, file, url, localUrl: url, assetsDir: dir, size: stat.size, imageMeta: computeImageAlphaMeta(file) };
+}
+
+function computeImageAlphaMeta(file) {
+  try {
+    const image = nativeImage.createFromPath(file);
+    if (!image || image.isEmpty()) return null;
+    const size = image.getSize();
+    if (!size.width || !size.height) return null;
+    const bitmap = image.toBitmap(); // Electron returns BGRA bytes.
+    const w = size.width, h = size.height;
+    let minX=w, minY=h, maxX=-1, maxY=-1;
+    const gridW = 32, gridH = 32;
+    const mask = Array.from({length:gridH},()=>Array(gridW).fill(0));
+    for (let y=0;y<h;y++) {
+      for (let x=0;x<w;x++) {
+        const a = bitmap[(y*w+x)*4+3] || 0;
+        if (a < 16) continue;
+        if (x<minX) minX=x; if (x>maxX) maxX=x; if (y<minY) minY=y; if (y>maxY) maxY=y;
+        const gx=Math.min(gridW-1,Math.floor(x/w*gridW));
+        const gy=Math.min(gridH-1,Math.floor(y/h*gridH));
+        mask[gy][gx]=1;
+      }
+    }
+    if (maxX<minX || maxY<minY) return { width:w,height:h,alphaBounds:{x:0,y:0,w:1,h:1},alphaMask:null };
+    const rows = mask.map(row=>{
+      const spans=[]; let start=-1;
+      for(let x=0;x<=gridW;x++){const on=x<gridW&&row[x];if(on&&start<0)start=x;if((!on||x===gridW)&&start>=0){spans.push([start,x-1]);start=-1;}}
+      return spans;
+    });
+    return {
+      width:w,height:h,
+      alphaBounds:{x:minX/w,y:minY/h,w:(maxX-minX+1)/w,h:(maxY-minY+1)/h},
+      alphaMask:{w:gridW,h:gridH,rows}
+    };
+  } catch { return null; }
+}
+
+async function saveCombatSoundFile(sourcePath, preferredStem = 'combat_sound') {
+  const source = path.resolve(String(sourcePath || ''));
+  const stat = await fs.promises.stat(source);
+  if (!stat.isFile()) throw new Error('Выбранный путь не является файлом');
+  const dir = writableWorldAudioDir();
+  await fs.promises.mkdir(dir,{recursive:true});
+  const ext = extensionFromPathLike(source) || 'mp3';
+  const filename = `${Date.now()}_${sanitizeFileStem(preferredStem || path.basename(source,path.extname(source)) || 'combat_sound')}.${ext}`;
+  const file = path.join(dir,filename);
+  await fs.promises.copyFile(source,file);
+  const fileUrl=pathToFileURL(file).href;
+  return {ok:true,file,url:fileUrl,localUrl:fileUrl,fileUrl,audioDir:dir,size:stat.size};
+}
+
+async function chooseCombatAssetFiles(kind='image') {
+  const isAudio = kind === 'audio';
+  const result = await dialog.showOpenDialog(mainWindow || undefined,{
+    title: isAudio ? 'Добавить звуки в библиотеку сцен' : 'Добавить ассет в библиотеку сцен',
+    properties: isAudio ? ['openFile','multiSelections'] : ['openFile'],
+    filters: isAudio
+      ? [{name:'Audio',extensions:['mp3','wav','ogg','flac','aac','m4a','webm']}]
+      : [{name:'Images',extensions:['png','jpg','jpeg','webp','gif','bmp','dds']}],
+  });
+  return {ok:true,canceled:result.canceled,filePaths:result.filePaths||[]};
+}
+
+function mimeForArchivePath(file = '') {
+  const ext = path.extname(String(file || '')).toLowerCase();
+  if (ext === '.png') return 'image/png';
+  if (ext === '.jpg' || ext === '.jpeg') return 'image/jpeg';
+  if (ext === '.webp') return 'image/webp';
+  if (ext === '.gif') return 'image/gif';
+  if (ext === '.svg') return 'image/svg+xml';
+  if (ext === '.mp3') return 'audio/mpeg';
+  if (ext === '.ogg') return 'audio/ogg';
+  if (ext === '.wav') return 'audio/wav';
+  if (ext === '.webm') return 'audio/webm';
+  if (ext === '.aac') return 'audio/aac';
+  if (ext === '.flac') return 'audio/flac';
+  if (ext === '.m4a' || ext === '.mp4') return 'audio/mp4';
+  return 'application/octet-stream';
+}
+
+async function embedCombatArchiveFileUrls(value, seen = new Map()) {
+  if (Array.isArray(value)) {
+    const out = [];
+    for (const item of value) out.push(await embedCombatArchiveFileUrls(item, seen));
+    return out;
+  }
+  if (value && typeof value === 'object') {
+    const out = {};
+    for (const [key, item] of Object.entries(value)) out[key] = await embedCombatArchiveFileUrls(item, seen);
+    return out;
+  }
+  if (typeof value !== 'string') return value;
+  const isFileUrl = value.startsWith('file://');
+  const isAbsolutePath = path.isAbsolute(value);
+  if (!isFileUrl && !isAbsolutePath) return value;
+  if (seen.has(value)) return seen.get(value);
+  try {
+    const file = isFileUrl ? fileURLToPath(value) : value;
+    const stat = await fs.promises.stat(file);
+    if (!stat.isFile() || stat.size > 128 * 1024 * 1024) return value;
+    const buf = await fs.promises.readFile(file);
+    const dataUrl = `data:${mimeForArchivePath(file)};base64,${buf.toString('base64')}`;
+    seen.set(value, dataUrl);
+    return dataUrl;
+  } catch {
+    return value;
+  }
+}
+
+async function exportCombatArchive(payload = {}) {
+  const result = await dialog.showSaveDialog(mainWindow || undefined, {
+    title: 'Экспорт сцен и ассетов',
+    defaultPath: `GRPGI-scenes-${new Date().toISOString().slice(0, 10)}.grpgscene`,
+    filters: [{ name: 'GRPGI Scene Archive', extensions: ['grpgscene', 'json'] }]
+  });
+  if (result.canceled || !result.filePath) return { ok: false, canceled: true };
+  const portable = await embedCombatArchiveFileUrls(payload && typeof payload === 'object' ? payload : {});
+  const envelope = {
+    format: 'GRPGI_SCENE_ARCHIVE',
+    version: 2,
+    exportedAt: new Date().toISOString(),
+    payload: portable
+  };
+  await fs.promises.writeFile(result.filePath, JSON.stringify(envelope, null, 2), 'utf8');
+  return { ok: true, file: result.filePath };
+}
+
+async function materializeCombatArchiveMedia(value, cache = new Map()) {
+  if (Array.isArray(value)) {
+    const out = [];
+    for (const item of value) out.push(await materializeCombatArchiveMedia(item, cache));
+    return out;
+  }
+  if (value && typeof value === 'object') {
+    const out = {};
+    for (const [key, item] of Object.entries(value)) out[key] = await materializeCombatArchiveMedia(item, cache);
+    return out;
+  }
+  if (typeof value !== 'string' || (!value.startsWith('data:image/') && !value.startsWith('data:audio/'))) return value;
+  if (cache.has(value)) return cache.get(value);
+  try {
+    if (value.startsWith('data:audio/')) {
+      const saved = await saveCombatSoundAsset(value, 'imported_scene_sound');
+      const url = saved?.fileUrl || (saved?.file ? pathToFileURL(saved.file).href : '') || saved?.url || value;
+      cache.set(value, url);
+      return url;
+    }
+    const saved = await saveCombatLocalImage(value, 'imported_scene_asset');
+    const url = saved?.url || value;
+    cache.set(value, url);
+    return url;
+  } catch {
+    return value;
+  }
+}
+
+async function importCombatArchive() {
+  const result = await dialog.showOpenDialog(mainWindow || undefined, {
+    title: 'Импорт сцен и ассетов',
+    properties: ['openFile'],
+    filters: [{ name: 'GRPGI Scene Archive', extensions: ['grpgscene', 'json'] }]
+  });
+  if (result.canceled || !result.filePaths?.[0]) return { ok: false, canceled: true };
+  const file = result.filePaths[0];
+  const raw = await fs.promises.readFile(file, 'utf8');
+  const parsed = JSON.parse(raw || '{}');
+  if (parsed?.format === 'GRPGI_SCENE_ARCHIVE') {
+    const payload = await materializeCombatArchiveMedia(parsed.payload || {});
+    return { ok: true, file, payload };
+  }
+  if (parsed && typeof parsed === 'object') {
+    const payload = await materializeCombatArchiveMedia(parsed);
+    return { ok: true, file, payload };
+  }
+  throw new Error('Некорректный архив сцен');
+}
+
+function normalizeImageUploadOptions(options = {}, preferredStem = 'asset') {
+  return {
+    section: sanitizeFileStem(options?.section || 'world-config'),
+    entityId: sanitizeFileStem(options?.entityId || preferredStem || 'asset'),
+    preferredStem
+  };
+}
+
+async function saveImageAsset(dataUrl, preferredStem = 'asset', uploadOptions = {}) {
   if (!String(dataUrl || '').startsWith('data:image/')) {
     throw new Error('Unsupported image payload');
   }
@@ -843,11 +1227,7 @@ async function saveImageAsset(dataUrl, preferredStem = 'asset') {
   try {
     const config = await loadSyncConfig();
     if (config.enabled) {
-      const upload = await uploadImageSourceToBackend(config, localUrl, {
-        section: 'world-config',
-        entityId: sanitizeFileStem(preferredStem || 'asset'),
-        preferredStem
-      });
+      const upload = await uploadImageSourceToBackend(config, localUrl, normalizeImageUploadOptions(uploadOptions, preferredStem));
       if (upload?.ok && (upload.publicUrl || upload.url)) {
         payload.cloudUrl = upload.publicUrl || upload.url;
         payload.storagePath = upload.storagePath || null;
@@ -863,7 +1243,7 @@ async function saveImageAsset(dataUrl, preferredStem = 'asset') {
 }
 
 
-async function saveImageFileAsset(sourcePath = '', preferredStem = 'asset') {
+async function saveImageFileAsset(sourcePath = '', preferredStem = 'asset', uploadOptions = {}) {
   const source = path.resolve(String(sourcePath || ''));
   const stat = await fs.promises.stat(source);
   if (!stat.isFile()) throw new Error('Выбранный путь не является файлом');
@@ -879,11 +1259,7 @@ async function saveImageFileAsset(sourcePath = '', preferredStem = 'asset') {
   try {
     const config = await loadSyncConfig();
     if (config.enabled) {
-      const upload = await uploadImageSourceToBackend(config, localUrl, {
-        section: 'world-config',
-        entityId: sanitizeFileStem(preferredStem || 'asset'),
-        preferredStem
-      });
+      const upload = await uploadImageSourceToBackend(config, localUrl, normalizeImageUploadOptions(uploadOptions, preferredStem));
       if (upload?.ok && (upload.publicUrl || upload.url)) {
         payload.cloudUrl = upload.publicUrl || upload.url;
         payload.storagePath = upload.storagePath || null;
@@ -957,19 +1333,31 @@ async function localizeLegacyImageDataUrls(root, label = 'world') {
   return { changed, bytesRemoved };
 }
 
+async function writeTextAtomic(file, content) {
+  const dir = path.dirname(file);
+  await fs.promises.mkdir(dir, { recursive: true });
+  const tempFile = path.join(dir, `.${path.basename(file)}.${process.pid}.${crypto.randomBytes(8).toString('hex')}.tmp`);
+  let handle = null;
+  try {
+    handle = await fs.promises.open(tempFile, 'wx', 0o600);
+    await handle.writeFile(String(content), 'utf8');
+    await handle.sync();
+    await handle.close();
+    handle = null;
+    await fs.promises.rename(tempFile, file);
+  } finally {
+    if (handle) await handle.close().catch(() => {});
+    await fs.promises.rm(tempFile, { force: true }).catch(() => {});
+  }
+}
+
+async function writeJsonAtomic(file, payload) {
+  await writeTextAtomic(file, JSON.stringify(payload ?? {}, null, 2));
+}
+
 async function ensureWorldDataDir() {
   const targetDir = writableWorldDataDir();
-  const sourceDir = defaultWorldDataDir();
   await fs.promises.mkdir(targetDir, { recursive: true });
-
-  for (const name of WORLD_FILE_NAMES) {
-    const sourceFile = path.join(sourceDir, `${name}.json`);
-    const targetFile = path.join(targetDir, `${name}.json`);
-    if (!fs.existsSync(targetFile)) {
-      if (fs.existsSync(sourceFile)) await fs.promises.copyFile(sourceFile, targetFile);
-      else await fs.promises.writeFile(targetFile, JSON.stringify((name === 'combatScenes' || name === 'ui') ? {} : {}, null, 2), 'utf8');
-    }
-  }
   return targetDir;
 }
 
@@ -987,9 +1375,10 @@ async function readWorldDataFile(primaryFile, fallbackFile = null) {
 function isWorldSectionUsable(name, payload) {
   if (!payload || typeof payload !== 'object') return false;
   if (name === 'players') return Boolean(payload.PLAYER_TEMPLATES && Object.keys(payload.PLAYER_TEMPLATES).length);
-  if (name === 'systems') return Array.isArray(payload.SYSTEMS) && payload.SYSTEMS.length > 0;
-  if (name === 'planets') return Boolean(payload.PLANETS && Object.keys(payload.PLANETS).length);
-  if (name === 'npcs') return Boolean(payload.NPCS && Object.keys(payload.NPCS).length);
+  if (name === 'equipment') return Boolean(payload.EQUIPMENT && typeof payload.EQUIPMENT === 'object' && !Array.isArray(payload.EQUIPMENT));
+  if (name === 'systems') return Array.isArray(payload.SYSTEMS);
+  if (name === 'planets') return Boolean(payload.PLANETS && typeof payload.PLANETS === 'object' && !Array.isArray(payload.PLANETS));
+  if (name === 'npcs') return Boolean(payload.NPCS && typeof payload.NPCS === 'object' && !Array.isArray(payload.NPCS));
   if (name === 'organizations') {
     return Boolean(
       (payload.ORGANIZATIONS && typeof payload.ORGANIZATIONS === 'object') ||
@@ -1013,6 +1402,9 @@ function isWorldSectionUsable(name, payload) {
       (payload.CAMPAIGNS && typeof payload.CAMPAIGNS === 'object') ||
       Array.isArray(payload.CAMPAIGN_LIST)
     );
+  }
+  if (name === 'campaignStudio') {
+    return Boolean(payload.campaigns && typeof payload.campaigns === 'object' && !Array.isArray(payload.campaigns));
   }
   if (name === 'socialOrigins') {
     return Boolean((payload.SOCIAL_ORIGINS && typeof payload.SOCIAL_ORIGINS === 'object') || Array.isArray(payload.SOCIAL_ORIGIN_LIST));
@@ -1070,7 +1462,7 @@ async function readWorldData() {
     const currentPayload = await readJsonIfExists(file);
     const fallbackPayload = fs.existsSync(fallbackFile) ? await readJsonIfExists(fallbackFile) : null;
     const backupPayload = fs.existsSync(backupFile) ? await readJsonIfExists(backupFile) : null;
-    const best = chooseWorldSectionPayload(name, currentPayload ?? payload, backupPayload, fallbackPayload);
+    const best = chooseWorldSectionPayload(name, currentPayload, backupPayload, fallbackPayload);
 
     payload = best.payload || payload;
 
@@ -1078,7 +1470,7 @@ async function readWorldData() {
     if (legacyMigration.changed > 0) {
       try {
         await backupWorldSectionFile(name, file);
-        await fs.promises.writeFile(file, JSON.stringify(payload, null, 2), 'utf8');
+        await writeJsonAtomic(file, payload);
         debugLog('WORLD_LEGACY_IMAGE_DATA_LOCALIZED', {
           section: name,
           changed: legacyMigration.changed,
@@ -1091,7 +1483,7 @@ async function readWorldData() {
 
     if (best.source !== 'current' && scoreWorldSectionPayload(name, best.payload, best.source) >= 0) {
       try {
-        await fs.promises.writeFile(file, JSON.stringify(best.payload, null, 2), 'utf8');
+        await writeJsonAtomic(file, best.payload);
       } catch {}
       debugLog('WORLD_SECTION_RECOVERED', {
         section: name,
@@ -1117,7 +1509,7 @@ async function writeWorldSection(sectionName, payload) {
   const file = path.join(dataDir, `${sectionName}.json`);
   await localizeLegacyImageDataUrls(payload, sectionName);
   await backupWorldSectionFile(sectionName, file);
-  await fs.promises.writeFile(file, JSON.stringify(payload, null, 2), 'utf8');
+  await writeJsonAtomic(file, payload);
   return { file, dataDir };
 }
 
@@ -1133,13 +1525,83 @@ async function writeWorldData(worldPayload = {}) {
       const currentPayload = await readJsonIfExists(file);
       const fallbackFile = path.join(sourceDir, `${name}.json`);
       const fallbackPayload = fs.existsSync(fallbackFile) ? await readJsonIfExists(fallbackFile) : null;
-      payload = currentPayload ?? fallbackPayload ?? {};
+      const backupPayload = await readJsonIfExists(latestWorldSectionBackupPath(name));
+      payload = chooseWorldSectionPayload(name, currentPayload, backupPayload, fallbackPayload).payload ?? {};
     }
     await localizeLegacyImageDataUrls(payload, name);
     await backupWorldSectionFile(name, file);
-    await fs.promises.writeFile(file, JSON.stringify(payload ?? {}, null, 2), 'utf8');
+    await writeJsonAtomic(file, payload ?? {});
   }
   return { dataDir };
+}
+
+const WORLD_JSON_IMPORT_MAX_BYTES = 64 * 1024 * 1024;
+
+function assertWorldJsonSection(sectionName) {
+  const section = String(sectionName || '').trim();
+  if (!WORLD_FILE_NAMES.includes(section)) {
+    throw new Error(`Unsupported world section: ${section || '<empty>'}`);
+  }
+  return section;
+}
+
+async function exportWorldSectionJson(options = {}) {
+  const section = assertWorldJsonSection(options.section);
+  const payload = options.payload;
+  if (!payload || typeof payload !== 'object') {
+    throw new Error('JSON export payload must be an object or array');
+  }
+  const json = `${JSON.stringify(payload, null, 2)}\n`;
+  const bytes = Buffer.byteLength(json, 'utf8');
+  if (bytes > WORLD_JSON_IMPORT_MAX_BYTES) {
+    throw new Error(`Раздел превышает допустимый размер JSON ${WORLD_JSON_IMPORT_MAX_BYTES / 1024 / 1024} МБ`);
+  }
+  const result = await dialog.showSaveDialog(mainWindow || undefined, {
+    title: `Экспорт раздела World Config: ${section}`,
+    defaultPath: `${section}.json`,
+    filters: [{ name: 'JSON', extensions: ['json'] }]
+  });
+  if (result.canceled || !result.filePath) return { ok: true, canceled: true };
+  await fs.promises.writeFile(result.filePath, json, 'utf8');
+  return {
+    ok: true,
+    canceled: false,
+    fileName: path.basename(result.filePath),
+    bytes
+  };
+}
+
+async function importWorldSectionJson(options = {}) {
+  const section = assertWorldJsonSection(options.section);
+  const result = await dialog.showOpenDialog(mainWindow || undefined, {
+    title: `Импорт раздела World Config: ${section}`,
+    properties: ['openFile'],
+    filters: [{ name: 'JSON', extensions: ['json'] }]
+  });
+  if (result.canceled || !result.filePaths?.[0]) return { ok: true, canceled: true };
+  const filePath = result.filePaths[0];
+  const stat = await fs.promises.stat(filePath);
+  if (!stat.isFile()) throw new Error('Выбранный путь не является файлом');
+  if (stat.size > WORLD_JSON_IMPORT_MAX_BYTES) {
+    throw new Error(`JSON-файл превышает допустимый размер ${WORLD_JSON_IMPORT_MAX_BYTES / 1024 / 1024} МБ`);
+  }
+  const source = (await fs.promises.readFile(filePath, 'utf8')).replace(/^\uFEFF/, '');
+  let payload;
+  try {
+    payload = JSON.parse(source);
+  } catch (error) {
+    throw new Error(`Некорректный JSON: ${error.message}`);
+  }
+  if (!payload || typeof payload !== 'object') {
+    throw new Error('Корнем JSON должен быть объект или массив');
+  }
+  return {
+    ok: true,
+    canceled: false,
+    fileName: path.basename(filePath),
+    bytes: stat.size,
+    payload
+  };
 }
 
 async function resetWorldDataDir() {
@@ -1245,10 +1707,6 @@ function selfhostChatPath(config = {}, suffix = '') {
 
 function selfhostCombatPath(config = {}) {
   return `/api/combat/${encodePathPart(config.campaignId)}`;
-}
-
-function selfhostMarketPath(config = {}) {
-  return `/api/market/${encodePathPart(config.campaignId)}`;
 }
 
 function selfhostAssetPath(config = {}) {
@@ -1598,7 +2056,7 @@ async function pocketbaseFetch(config = {}, pathname = '/', options = {}) {
       }
       if (!res.ok) {
         const detail = payload?.data && typeof payload.data === 'object' ? ` // ${JSON.stringify(payload.data)}` : '';
-        throw new Error(`${payload?.message || 'PocketBase request failed'}: HTTP ${res.status}${detail}`);
+        const error=new Error(`${payload?.message || 'PocketBase request failed'}: HTTP ${res.status}${detail}`); error.status=res.status; throw error;
       }
       return payload;
     } catch (error) {
@@ -1660,21 +2118,11 @@ async function pushPocketBaseSnapshot(config = {}, payload = {}) {
   const remoteInfo = await fetchPocketBaseSnapshot(config, { includePayload: false });
   const collection = encodePathPart(pocketbaseCollection(config, 'snapshot'));
   if (!remoteInfo.exists) {
-    // A clean PocketBase backend is a valid migration target.
-    // Local metadata may still contain a remote revision from the previous backend,
-    // so an empty PocketBase snapshot must be seeded instead of treated as a conflict.
-    const record = await pocketbaseFetch(config, `/api/collections/${collection}/records`, {
-      method: 'POST',
-      json: {
-        campaignId: config.campaignId,
-        revision: 1,
-        updatedBy: actor,
-        clientUpdatedAt: payload.clientUpdatedAt || now,
-        worldJson: payload.world || {},
-        stateJson: payload.state || {}
-      }
-    });
-    return { ok: true, status: expectedRevision > 0 ? 'seeded' : 'inserted', remote: normalizePocketBaseSnapshotRecord(record) };
+    return {
+      ok: false,
+      status: 'remote-empty-protected',
+      message: 'Облачный снимок кампании отсутствует. Автоматическая загрузка данных из установщика запрещена'
+    };
   }
   if (Number(remoteInfo.remote?.revision || 0) !== expectedRevision) {
     return { ok: false, status: 'conflict', message: 'В PocketBase есть более новая ревизия данных', remote: remoteInfo.remote };
@@ -1728,6 +2176,55 @@ async function fetchPocketBasePlayerRow(config = {}, playerId = '') {
   return rows[0] || null;
 }
 
+async function fetchPocketBaseCharacterApplications(config = {}) {
+  const payload = await pocketbaseFetch(config, '/api/grpgi/character-applications', {
+    query: { campaignId: config.campaignId }
+  });
+  if (!payload?.ok || !Array.isArray(payload.rows)) throw new Error(payload?.message || 'Серверный журнал анкет недоступен');
+  return payload.rows.map(normalizePocketBasePlayerRecord).filter(row => row?.player_id && String(row?.profile_json?.approvalStatus || '').toLowerCase() === 'pending');
+}
+
+async function submitPocketBaseCharacterApplication(config = {}, payload = {}) {
+  const row = normalizePlayerRowPayload(payload);
+  const response = await pocketbaseFetch(config, '/api/grpgi/character-applications/submit', {
+    method: 'POST',
+    json: {
+      campaignId: config.campaignId,
+      playerId: row.player_id,
+      version: 1,
+      updatedBy: row.updatedBy || config.deviceLabel || 'desktop-registration',
+      clientUpdatedAt: row.clientUpdatedAt || new Date().toISOString(),
+      playerJson: row.player
+    }
+  });
+  if (!response?.ok || !response?.row) throw new Error(response?.message || 'Сервер не подтвердил сохранение анкеты');
+  const accepted = normalizePocketBasePlayerRecord(response.row);
+  const acceptedPlayerId = String(accepted?.player_id || '').trim();
+  if (!acceptedPlayerId || accepted?.deletedAt || accepted?.player?.__deleted) throw new Error('Сервер вернул скрытую или некорректную анкету');
+  const confirmedRows = await fetchPocketBaseCharacterApplications(config);
+  const confirmed = confirmedRows.find(item => String(item.player_id || '') === acceptedPlayerId);
+  if (!confirmed) throw new Error('Анкета создана, но не появилась в серверном журнале ДМа');
+  return confirmed;
+}
+
+async function reviewPocketBaseCharacterApplication(config = {}, payload = {}) {
+  const playerId = String(payload.playerId || payload.player_id || '').trim();
+  const status = String(payload.status || '').trim().toLowerCase();
+  if (!playerId || !['approved', 'rejected'].includes(status)) throw new Error('Некорректное решение по анкете');
+  const response = await pocketbaseFetch(config, '/api/grpgi/character-applications/review', {
+    method: 'POST',
+    json: {
+      campaignId: config.campaignId,
+      playerId,
+      status,
+      reviewedBy: String(payload.reviewedBy || 'gm'),
+      updatedBy: String(payload.updatedBy || config.deviceLabel || 'desktop-gm')
+    }
+  });
+  if (!response?.ok || !response?.row) throw new Error(response?.message || 'Сервер не подтвердил решение по анкете');
+  return normalizePocketBasePlayerRecord(response.row);
+}
+
 function mergePocketBasePlayerPatch(remotePlayer = {}, patchPlayer = {}) {
   const remote = sanitizePlayerObject(remotePlayer);
   const patch = sanitizePlayerObject(patchPlayer);
@@ -1737,29 +2234,29 @@ function mergePocketBasePlayerPatch(remotePlayer = {}, patchPlayer = {}) {
 }
 
 async function writePocketBasePlayerRow(config = {}, payload = {}, options = {}) {
-  const row = normalizePlayerRowPayload(payload);
-  const now = new Date().toISOString();
-  const actor = String(row.updatedBy || config.deviceLabel || 'unknown-device').trim() || 'unknown-device';
-  const expectedVersion = Number.isFinite(Number(row.baseVersion)) ? Number(row.baseVersion) : 0;
-  const remote = await fetchPocketBasePlayerRow(config, row.player_id);
-  const collection = encodePathPart(pocketbaseCollection(config, 'players'));
-  if (!remote) {
-    if (expectedVersion !== 0) return { ok: false, status: 'conflict', message: 'Игрок уже изменён другим клиентом', remote: null };
-    const player = options.deleted ? { ...row.player, __deleted: true } : row.player;
-    const record = await pocketbaseFetch(config, `/api/collections/${collection}/records`, {
-      method: 'POST',
-      json: { campaignId: config.campaignId, playerId: row.player_id, version: 1, updatedBy: actor, clientUpdatedAt: row.clientUpdatedAt || now, deletedAt: options.deleted ? now : null, playerJson: player }
-    });
-    return { ok: true, status: options.deleted ? 'deleted' : 'inserted', row: normalizePocketBasePlayerRecord(record) };
-  }
-  if (Number(remote.version || 0) !== expectedVersion) return { ok: false, status: 'conflict', message: 'У игрока уже есть более новая версия в PocketBase', remote };
-  let nextPlayer = options.patchOnly ? mergePocketBasePlayerPatch(remote.player || {}, row.player || {}) : row.player;
-  if (options.deleted) nextPlayer = { ...(remote.player || {}), ...nextPlayer, __deleted: true };
-  const record = await pocketbaseFetch(config, `/api/collections/${collection}/records/${encodePathPart(remote._id)}`, {
-    method: 'PATCH',
-    json: { version: expectedVersion + 1, updatedBy: actor, clientUpdatedAt: row.clientUpdatedAt || now, deletedAt: options.deleted ? now : (row.deletedAt || remote.deletedAt || null), playerJson: nextPlayer }
+  if(payload.lootTransferV137&&String(payload.lootTransferV137.campaignId||'')!==String(config.campaignId||''))return{ok:false,status:'error',message:'Кампания изменилась. Восстановите подключение, с которым начата передача добычи.'};
+  if(payload.creditGrantV138&&String(payload.creditGrantV138.campaignId||'')!==String(config.campaignId||''))return{ok:false,status:'error',message:'Кампания изменилась. Восстановите подключение, с которым начата выдача денег.'};
+  const playerId = String(payload.player_id || payload.playerId || payload.id || '').trim();
+  if (!playerId) throw new Error('player_id is required');
+  // Do not normalize a patch into a full player: omitted inventory must stay omitted.
+  const player = sanitizePlayerObject(payload.player_json || payload.player || payload.data || payload.entity || {});
+  const route=payload.creditGrantV138?'/api/grpgi/credits/grant':payload.lootTransferV137?'/api/grpgi/loot/transfer':'/api/grpgi/players/mutate';
+  const result = await pocketbaseFetch(config, route, {
+    method: 'POST',
+    json: {
+      campaignId: config.campaignId, playerId,
+      player, basePlayer: payload.basePlayer,
+      ...(payload.lootTransferV137 ? {lootTransferV137:payload.lootTransferV137} : {}),
+      ...(payload.creditGrantV138 ? {creditGrantV138:payload.creditGrantV138} : {}),
+      baseVersion: Number(payload.baseVersion ?? payload.version ?? 0),
+      operationId: payload.operationId || require('./renderer/player-sync-core.js').operationId(),
+      create: !options.patchOnly, deleted: Boolean(options.deleted),
+      updatedBy: payload.updatedBy || payload.updated_by || config.deviceLabel || 'desktop',
+      clientUpdatedAt: payload.clientUpdatedAt || new Date().toISOString()
+    }
   });
-  return { ok: true, status: options.deleted ? 'deleted' : 'updated', row: normalizePocketBasePlayerRecord(record) };
+  return { ...result, row: result?.row ? normalizePocketBasePlayerRecord(result.row) : null,
+    remote: result?.remote ? normalizePocketBasePlayerRecord(result.remote) : null };
 }
 
 function pocketBaseMessageFromChatRow(row = {}, config = {}) {
@@ -1978,6 +2475,7 @@ function broadcastUpdaterStatus(patch = {}) {
     ...patch,
     packaged: app.isPackaged,
     available: Boolean(autoUpdater),
+    currentVersion: app.getVersion(),
     updatedAt: new Date().toISOString()
   };
   for (const win of BrowserWindow.getAllWindows()) {
@@ -1999,13 +2497,25 @@ function setupAutoUpdater() {
     return;
   }
 
-  autoUpdater.autoDownload = false;
-  autoUpdater.autoInstallOnAppQuit = false;
+  try {
+    autoUpdater.setFeedURL({ provider: 'generic', url: DESKTOP_UPDATE_FEED_URL, channel: 'latest' });
+  } catch (error) {
+    updaterConfigurationError = error;
+    broadcastUpdaterStatus({
+      status: 'error',
+      mandatory: app.isPackaged,
+      verified: !app.isPackaged,
+      message: `Не удалось настроить сервер обновлений: ${error?.message || String(error)}`
+    });
+    return;
+  }
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
   autoUpdater.allowPrerelease = false;
   autoUpdater.logger = console;
 
   autoUpdater.on('checking-for-update', () => {
-    broadcastUpdaterStatus({ status: 'checking', message: 'Проверка обновлений...' });
+    broadcastUpdaterStatus({ status: 'checking', mandatory: true, verified: false, message: 'Проверка обязательного обновления...' });
   });
   autoUpdater.on('update-available', info => {
     broadcastUpdaterStatus({
@@ -2013,6 +2523,8 @@ function setupAutoUpdater() {
       version: info?.version || '',
       releaseName: info?.releaseName || '',
       releaseDate: info?.releaseDate || '',
+      mandatory: true,
+      verified: false,
       message: `Доступна версия ${info?.version || ''}`.trim()
     });
   });
@@ -2020,7 +2532,12 @@ function setupAutoUpdater() {
     broadcastUpdaterStatus({
       status: 'none',
       version: info?.version || app.getVersion(),
+      mandatory: true,
+      verified: true,
       message: 'Обновлений нет'
+    });
+    void setupStartupNetworkRealtime().catch(error => {
+      debugLog('NETWORK_REALTIME_AFTER_UPDATE_CHECK_FAILED', { message: error?.message || String(error) });
     });
   });
   autoUpdater.on('download-progress', progress => {
@@ -2030,6 +2547,8 @@ function setupAutoUpdater() {
       transferred: Number(progress?.transferred || 0),
       total: Number(progress?.total || 0),
       bytesPerSecond: Number(progress?.bytesPerSecond || 0),
+      mandatory: true,
+      verified: false,
       message: `Скачивание обновления: ${Math.round(Number(progress?.percent || 0))}%`
     });
   });
@@ -2037,27 +2556,44 @@ function setupAutoUpdater() {
     broadcastUpdaterStatus({
       status: 'downloaded',
       version: info?.version || '',
-      message: 'Обновление загружено. Можно перезапустить приложение.'
+      mandatory: true,
+      verified: false,
+      message: 'Обновление загружено. Для продолжения требуется установка.'
     });
   });
   autoUpdater.on('error', error => {
     broadcastUpdaterStatus({
       status: 'error',
+      mandatory: true,
+      verified: false,
       message: error?.message || String(error)
     });
   });
 
-  broadcastUpdaterStatus({ status: 'ready', message: app.isPackaged ? 'Updater готов' : 'Updater доступен только в packaged build' });
+  broadcastUpdaterStatus({
+    status: app.isPackaged ? 'ready' : 'dev',
+    mandatory: app.isPackaged,
+    verified: !app.isPackaged,
+    message: app.isPackaged ? 'Подготовка обязательной проверки версии...' : 'Проверка версии отключена в режиме разработки'
+  });
 }
 
 async function checkForUpdatesSafe(manual = false) {
   setupAutoUpdater();
   if (!autoUpdater) return broadcastUpdaterStatus({ status: 'unavailable', message: 'electron-updater не установлен' });
+  if (updaterConfigurationError) {
+    return broadcastUpdaterStatus({ status: 'error', mandatory: app.isPackaged, verified: !app.isPackaged, message: updaterConfigurationError.message });
+  }
   if (!app.isPackaged) {
-    return broadcastUpdaterStatus({ status: 'dev', message: '' });
+    return broadcastUpdaterStatus({ status: 'dev', mandatory: false, verified: true, message: '' });
   }
   try {
-    broadcastUpdaterStatus({ status: 'checking', message: manual ? 'Ручная проверка обновлений...' : 'Проверка обновлений при запуске...' });
+    broadcastUpdaterStatus({
+      status: 'checking',
+      mandatory: true,
+      verified: false,
+      message: manual ? 'Повторная проверка версии на сайте...' : 'Проверка версии на сайте при запуске...'
+    });
     await autoUpdater.checkForUpdates();
     return updaterLatestStatus;
   } catch (error) {
@@ -2068,6 +2604,9 @@ async function checkForUpdatesSafe(manual = false) {
 async function downloadUpdateSafe() {
   setupAutoUpdater();
   if (!autoUpdater) return broadcastUpdaterStatus({ status: 'unavailable', message: 'electron-updater не установлен' });
+  if (updaterConfigurationError) {
+    return broadcastUpdaterStatus({ status: 'error', mandatory: app.isPackaged, verified: !app.isPackaged, message: updaterConfigurationError.message });
+  }
   if (!app.isPackaged) return broadcastUpdaterStatus({ status: 'dev', message: 'Скачивание работает только в собранном приложении' });
   try {
     broadcastUpdaterStatus({ status: 'downloading', percent: 0, message: 'Запуск скачивания обновления...' });
@@ -2079,9 +2618,17 @@ async function downloadUpdateSafe() {
 }
 let mainWindow = null;
 let playerDisplayWindow = null;
-let playerDisplayMirrorState = { mode: '', eraTheme: 'technological', activeSceneId: '', activeRegionMapId: '', cameraByScene: {}, regionCamera: null, regionDisplay: null, regionRuntime: null, selectedRegionTokenId: '', updatedAt: null };
+let playerDisplayMirrorState = { mode: '', eraTheme: 'technological', graphicsMode: 'full', activeSceneId: '', activeRegionMapId: '', cameraByScene: {}, combatSnapshot: null, regionCamera: null, regionDisplay: null, regionRuntime: null, selectedRegionTokenId: '', updatedAt: null };
 let updaterConfigured = false;
-let updaterLatestStatus = { status: 'idle', packaged: false, available: Boolean(autoUpdater), message: '' };
+let updaterConfigurationError = null;
+let updaterLatestStatus = {
+  status: 'idle',
+  packaged: app.isPackaged,
+  available: Boolean(autoUpdater),
+  mandatory: app.isPackaged,
+  verified: !app.isPackaged,
+  message: ''
+};
 
 function broadcastCombatRuntimeEvent(payload = {}) {
   for (const win of BrowserWindow.getAllWindows()) {
@@ -2119,6 +2666,19 @@ async function setupNetworkRealtime(config = {}) {
     return;
   }
   throw new Error('Неподдерживаемый провайдер синхронизации');
+}
+
+let startupNetworkRealtimeStarted = false;
+async function setupStartupNetworkRealtime() {
+  if (startupNetworkRealtimeStarted) return;
+  startupNetworkRealtimeStarted = true;
+  try {
+    const syncConfig = await loadSyncConfig();
+    await setupNetworkRealtime(syncConfig);
+  } catch (error) {
+    startupNetworkRealtimeStarted = false;
+    throw error;
+  }
 }
 
 async function teardownNetworkRealtime() {
@@ -2224,6 +2784,8 @@ async function pushRemotePlayerRow(config = {}, payload = {}) {
 }
 
 async function patchRemotePlayerRow(config = {}, payload = {}) {
+  if(payload.lootTransferV137&&!isPocketBaseSyncConfig(config))return {ok:false,status:"unsupported",message:"Для передачи добычи требуется сервер PocketBase с модулем 1.0.137."};
+  if(payload.creditGrantV138&&!isPocketBaseSyncConfig(config))return {ok:false,status:"unsupported",message:"Для безопасной выдачи денег требуется сервер PocketBase с модулем 1.0.138."};
   if (isPocketBaseSyncConfig(config)) return writePocketBasePlayerRow(config, payload, { patchOnly: true, deleted: false });
   if (isSelfhostSyncConfig(config)) {
     const playerId = String(payload.player_id || payload.playerId || payload.id || '').trim();
@@ -2378,22 +2940,6 @@ async function pushRemoteCombatRuntime(config = {}, payload = {}) {
   throw new Error('Неподдерживаемый провайдер синхронизации');
 }
 
-async function transactRemoteMarket(config = {}, payload = {}) {
-  const body = {
-    ...payload,
-    campaignId: config.campaignId,
-    updatedBy: payload?.updatedBy || config.deviceLabel || `market:${payload?.playerId || 'player'}`,
-    clientUpdatedAt: payload?.clientUpdatedAt || new Date().toISOString()
-  };
-  if (isPocketBaseSyncConfig(config)) {
-    return pocketbaseFetch(config, '/api/grpgi/market/transaction', { method: 'POST', json: body });
-  }
-  if (isSelfhostSyncConfig(config)) {
-    return selfhostFetch(config, selfhostMarketPath(config), { method: 'POST', json: body });
-  }
-  throw new Error('Неподдерживаемый провайдер синхронизации');
-}
-
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -2413,7 +2959,10 @@ function createWindow() {
   });
 
   mainWindow = win;
-  win.on('closed', () => { if (mainWindow === win) mainWindow = null; });
+  win.on('closed', () => {
+    try { closePlayerDisplayWindow(); } catch {}
+    if (mainWindow === win) mainWindow = null;
+  });
   win.webContents.on('did-finish-load', () => {
     try { win.webContents.send('updater:status', updaterLatestStatus); } catch {}
   });
@@ -2496,20 +3045,78 @@ function closePlayerDisplayWindow() {
   return false;
 }
 
+function runCombatLuaWorker(payload = {}, timeoutMs = 750) {
+  let serialized = '';
+  try { serialized = JSON.stringify(payload || {}); } catch { throw new Error('Контекст Lua не сериализуется'); }
+  if (serialized.length > 1500000) throw new Error('Контекст Lua превышает лимит 1,5 МБ');
+  return new Promise((resolve, reject) => {
+    const bundledWorkerPath = path.join(__dirname, 'lua-sandbox-worker.cjs');
+    const unpackedWorkerPath = bundledWorkerPath.replace(`${path.sep}app.asar${path.sep}`, `${path.sep}app.asar.unpacked${path.sep}`);
+    const workerPath = app.isPackaged && unpackedWorkerPath !== bundledWorkerPath && fs.existsSync(unpackedWorkerPath) ? unpackedWorkerPath : bundledWorkerPath;
+    const worker = new Worker(workerPath);
+    let settled = false;
+    const finish = (error, value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      worker.removeAllListeners();
+      void worker.terminate();
+      if (error) reject(error); else resolve(value);
+    };
+    const timer = setTimeout(() => finish(new Error(`Lua-скрипт остановлен: превышен лимит ${timeoutMs} мс`)), timeoutMs);
+    worker.once('message', message => {
+      if (message?.ok) finish(null, message.result || { ok: true, hooks: [], commands: [] });
+      else finish(new Error(String(message?.message || 'Неизвестная ошибка Lua')));
+    });
+    worker.once('error', error => finish(error));
+    worker.once('exit', code => { if (!settled && code !== 0) finish(new Error(`Lua worker завершился с кодом ${code}`)); });
+    worker.postMessage(payload || {});
+  });
+}
+
+ipcMain.handle('combat:lua:validate', async (_event, payload = {}) => {
+  try {
+    const result = await runCombatLuaWorker({ ...payload, mode: 'validate', input: payload.input || {} }, 1200);
+    return { ok: true, ...result };
+  } catch (error) {
+    return { ok: false, message: String(error?.message || error) };
+  }
+});
+
+ipcMain.handle('combat:lua:runHook', async (_event, payload = {}) => {
+  try {
+    const result = await runCombatLuaWorker(payload, 750);
+    return { ok: true, ...result };
+  } catch (error) {
+    return { ok: false, message: String(error?.message || error) };
+  }
+});
+
 ipcMain.handle('state:load', async () => {
   const file = stateFilePath();
+  const backupFile = stateBackupFilePath();
   try {
-    if (!fs.existsSync(file)) return null;
-    const raw = await fs.promises.readFile(file, 'utf8');
-    const payload = JSON.parse(raw);
+    if (!fs.existsSync(file) && !fs.existsSync(backupFile)) return null;
+    let payload;
+    let recovered = false;
+    try {
+      payload = JSON.parse(await fs.promises.readFile(file, 'utf8'));
+    } catch (primaryError) {
+      if (!fs.existsSync(backupFile)) throw primaryError;
+      payload = JSON.parse(await fs.promises.readFile(backupFile, 'utf8'));
+      await writeJsonAtomic(file, payload);
+      recovered = true;
+      debugLog('STATE_RECOVERED_FROM_BACKUP', { file, backupFile, primaryError: primaryError.message });
+    }
     const migration = await localizeLegacyImageDataUrls(payload, 'state');
     if (migration.changed > 0) {
-      await fs.promises.writeFile(file, JSON.stringify(payload, null, 2), 'utf8');
+      await writeJsonAtomic(file, payload);
       debugLog('STATE_LEGACY_IMAGE_DATA_LOCALIZED', {
         changed: migration.changed,
         removedMb: Math.round(migration.bytesRemoved / 1024 / 1024)
       });
     }
+    if (!recovered) await writeJsonAtomic(backupFile, payload);
     return payload;
   } catch (error) {
     return { __error: true, message: error.message };
@@ -2518,10 +3125,19 @@ ipcMain.handle('state:load', async () => {
 
 ipcMain.handle('state:save', async (_event, payload) => {
   const file = stateFilePath();
+  const backupFile = stateBackupFilePath();
   try {
     await fs.promises.mkdir(path.dirname(file), { recursive: true });
     await localizeLegacyImageDataUrls(payload, 'state');
-    await fs.promises.writeFile(file, JSON.stringify(payload, null, 2), 'utf8');
+    if (fs.existsSync(file)) {
+      try {
+        const previous = JSON.parse(await fs.promises.readFile(file, 'utf8'));
+        await writeJsonAtomic(backupFile, previous);
+      } catch (error) {
+        debugLog('STATE_BACKUP_SKIPPED', { file, message: error.message });
+      }
+    }
+    await writeJsonAtomic(file, payload);
     notifyPlayerDisplayDataChanged('state');
     return { ok: true, file };
   } catch (error) {
@@ -2609,8 +3225,27 @@ ipcMain.handle('world:saveAll', async (_event, payload) => {
   }
 });
 
+ipcMain.handle('world:section:exportJson', async (_event, options) => {
+  try {
+    return await exportWorldSectionJson(options || {});
+  } catch (error) {
+    debugLog('WORLD_SECTION_JSON_EXPORT_FAILED', { section: options?.section || null, message: error.message });
+    return { ok: false, message: error.message };
+  }
+});
+
+ipcMain.handle('world:section:importJson', async (_event, options) => {
+  try {
+    return await importWorldSectionJson(options || {});
+  } catch (error) {
+    debugLog('WORLD_SECTION_JSON_IMPORT_FAILED', { section: options?.section || null, message: error.message });
+    return { ok: false, message: error.message };
+  }
+});
+
 ipcMain.handle('world:reset', async () => {
   try {
+    invalidateSyncBaselineGuards('world-reset');
     const dataDir = await resetWorldDataDir();
     return { ok: true, dataDir };
   } catch (error) {
@@ -2660,6 +3295,14 @@ function validateDevOpsRequest(event, payload = {}) {
   return __dirname;
 }
 
+ipcMain.on('app:isPackaged', event => {
+  event.returnValue = app.isPackaged;
+});
+
+ipcMain.on('app:getVersion', event => {
+  event.returnValue = app.getVersion();
+});
+
 ipcMain.handle('devops:status', async (event, payload) => {
   if (app.isPackaged || !isDevOpsDmRole(payload?.role)) {
     return {
@@ -2677,12 +3320,18 @@ ipcMain.handle('devops:status', async (event, payload) => {
   }
 });
 
-ipcMain.handle('devops:publishPatch', async (event, payload) => {
+ipcMain.handle('devops:publishInstaller', async (event, payload) => {
   try {
     const rootDir = validateDevOpsRequest(event, payload);
-    return await getDevOpsModule().publishPatch(rootDir);
+    return await getDevOpsModule().publishDesktopRelease(rootDir, {
+      onProgress: progress => {
+        try {
+          if (!event.sender.isDestroyed()) event.sender.send('devops:releaseProgress', progress);
+        } catch {}
+      }
+    });
   } catch (error) {
-    debugLog('DEVOPS_PUBLISH_FAILED', { message: error?.message, command: error?.command, stderr: error?.stderr });
+    debugLog('DEVOPS_INSTALLER_PUBLISH_FAILED', { message: error?.message, command: error?.command, stderr: error?.stderr });
     return serializeDevOpsError(error);
   }
 });
@@ -2756,6 +3405,16 @@ ipcMain.handle('updater:install', async () => {
   return { ok: true, status: 'installing' };
 });
 
+ipcMain.handle('updater:openInstaller', async () => {
+  try {
+    const url = await resolveDesktopInstallerUrl();
+    await shell.openExternal(url);
+    return { ok: true, url };
+  } catch (error) {
+    return { ok: false, message: error?.message || String(error) };
+  }
+});
+
 ipcMain.handle('app:openWorldDataDir', async () => {
   const target = writableWorldDataDir();
   try {
@@ -2779,7 +3438,10 @@ ipcMain.handle('world:saveImage', async (_event, payload) => {
   try {
     const dataUrl = payload?.dataUrl || '';
     const preferredStem = payload?.preferredStem || 'asset';
-    const result = await saveImageAsset(dataUrl, preferredStem);
+    const result = await saveImageAsset(dataUrl, preferredStem, {
+      section: payload?.section,
+      entityId: payload?.entityId
+    });
     debugLog('WORLD_SAVE_IMAGE', { ok: result.ok, file: result.file, url: result.url });
     return result;
   } catch (error) {
@@ -2793,7 +3455,10 @@ ipcMain.handle('world:saveImageFile', async (_event, payload) => {
   try {
     const filePath = payload?.filePath || '';
     const preferredStem = payload?.preferredStem || path.basename(filePath || 'asset');
-    const result = await saveImageFileAsset(filePath, preferredStem);
+    const result = await saveImageFileAsset(filePath, preferredStem, {
+      section: payload?.section,
+      entityId: payload?.entityId
+    });
     debugLog('WORLD_SAVE_IMAGE_FILE', { ok: result.ok, file: result.file, size: result.size, url: result.url });
     return result;
   } catch (error) {
@@ -2868,6 +3533,7 @@ ipcMain.handle('sync:pull', async (_event, payload) => {
     }
     const remoteRevision = Number(remote.remote?.revision || 0);
     const newer = force || remoteRevision > localRevision;
+    const baselineToken = newer ? createSyncBaselineGuard(config, remoteRevision) : null;
     return {
       ok: true,
       enabled: true,
@@ -2875,6 +3541,7 @@ ipcMain.handle('sync:pull', async (_event, payload) => {
       status: newer ? 'newer' : 'up-to-date',
       newer,
       config,
+      baselineToken,
       remote: remote.remote,
       payload: newer ? { world: remote.remote.world, state: remote.remote.state } : null
     };
@@ -2884,20 +3551,209 @@ ipcMain.handle('sync:pull', async (_event, payload) => {
   }
 });
 
+const WORLD_WRITE_REASON_SCOPES_V140 = Object.freeze({
+  'world-config-player-save': ['players'],
+  'world-map-editor-save': ['systems', 'planets', 'ui'],
+  'combat-update': ['combatScenes'],
+  'region-rts-edit': ['regionMaps', 'ships', 'missiles', 'radars']
+});
+
+function canonicalJsonV140(value) {
+  if (Array.isArray(value)) return `[${value.map(canonicalJsonV140).join(',')}]`;
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${canonicalJsonV140(value[key])}`).join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function worldSectionHashV140(value) {
+  return crypto.createHash('sha256').update(canonicalJsonV140(value ?? {})).digest('hex');
+}
+
+function equipmentIdHashV140(section = {}) {
+  const equipment = section?.EQUIPMENT && typeof section.EQUIPMENT === 'object' ? section.EQUIPMENT : {};
+  return crypto.createHash('sha256').update(Object.keys(equipment).sort().join('\n')).digest('hex');
+}
+
+function requestedWorldSectionsV140(payload = {}) {
+  const explicit = Array.isArray(payload.worldSections) ? payload.worldSections : [];
+  const reason = String(payload.reason || '');
+  const fallback = WORLD_WRITE_REASON_SCOPES_V140[reason] || [];
+  const source = explicit.length ? explicit : fallback;
+  return Array.from(new Set(source.map(String).filter(name => WORLD_FILE_NAMES.includes(name))));
+}
+
+async function bundledWorldSectionV140(sectionName) {
+  const file = path.join(defaultWorldDataDir(), `${sectionName}.json`);
+  return fs.existsSync(file) ? readJsonIfExists(file) : null;
+}
+
+async function protectRemoteWorldV140(remoteWorld = {}, submittedWorld = {}, sections = [], context = {}) {
+  const merged = JSON.parse(JSON.stringify(remoteWorld && typeof remoteWorld === 'object' ? remoteWorld : {}));
+  for (const section of sections) {
+    if (Object.prototype.hasOwnProperty.call(submittedWorld || {}, section)) merged[section] = submittedWorld[section];
+  }
+  if (sections.includes('equipment')) {
+    const previous = remoteWorld?.equipment || {};
+    const next = merged.equipment || {};
+    const bundled = await bundledWorldSectionV140('equipment');
+    const previousHash = worldSectionHashV140(previous);
+    const nextHash = worldSectionHashV140(next);
+    const previousIdsHash = equipmentIdHashV140(previous);
+    const nextIdsHash = equipmentIdHashV140(next);
+    const bundledIdsHash = equipmentIdHashV140(bundled || {});
+    if (previousHash !== nextHash && previousIdsHash !== bundledIdsHash && nextIdsHash === bundledIdsHash && context.allowBundledReset !== true) {
+      return {
+        ok: false,
+        status: 'world-section-reset-protected',
+        message: 'Сохранение остановлено: каталог снаряжения совпал со встроенным шаблоном и мог удалить серверные предметы.',
+        section: 'equipment',
+        previousHash,
+        nextHash,
+        previousIdsHash,
+        nextIdsHash
+      };
+    }
+  }
+  return { ok: true, world: merged };
+}
+
 ipcMain.handle('sync:push', async (_event, payload) => {
   try {
     const config = await loadSyncConfig();
     if (!config.enabled) return { ok: true, enabled: false, status: 'disabled', message: 'Синхронизация выключена', config };
+    const manual = payload?.manual === true;
+    const gmWrite = payload?.gmWrite === true || manual;
+    const currentRemote = await fetchRemoteSnapshot(config, { includePayload: true });
+    if (!currentRemote.exists) {
+      invalidateSyncBaselineGuards('remote-snapshot-missing');
+      return {
+        ok: false,
+        enabled: true,
+        connected: true,
+        status: 'remote-empty-protected',
+        message: 'Облачный снимок кампании отсутствует. Данные установщика не были загружены',
+        config
+      };
+    }
+    const actorId = String(payload?.actorId || '').trim();
+    if (gmWrite) {
+      const remoteStateUsers = currentRemote.remote?.state?.users || {};
+      const remoteWorldPlayers = currentRemote.remote?.world?.players?.PLAYER_TEMPLATES || {};
+      const authoritativeActor = remoteStateUsers?.[actorId] || remoteWorldPlayers?.[actorId] || null;
+      if (!actorId || String(authoritativeActor?.role || '').trim().toLowerCase() !== 'gm') {
+        return {
+          ok: false,
+          enabled: true,
+          connected: true,
+          status: 'gm-required',
+          message: 'Ручная отправка доступна только профилю ДМа',
+          config
+        };
+      }
+    }
+    const remoteRevision = Number(currentRemote.remote?.revision || 0);
+    const currentRemoteMeta = currentRemote.remote ? {
+      ...currentRemote.remote,
+      world: null,
+      state: null
+    } : null;
+    let baseline = validateSyncBaselineGuard(config, payload?.baselineToken, payload?.baseRevision);
+    const baselineRevision = baseline.ok ? Number(baseline.guard.revision || 0) : Number(payload?.baseRevision || 0);
+    const revisionChanged = remoteRevision !== baselineRevision;
+    let gmReauthorized = false;
+    let backupFile = null;
+
+    if (!baseline.ok || revisionChanged) {
+      if (!gmWrite) {
+        if (revisionChanged) invalidateSyncBaselineGuards('remote-revision-changed');
+        return {
+          ...(baseline.ok ? {
+            ok: false,
+            status: 'baseline-stale',
+            message: 'Облачная ревизия изменилась. Сначала получите актуальную кампанию'
+          } : baseline),
+          enabled: true,
+          connected: true,
+          remote: currentRemoteMeta,
+          config
+        };
+      }
+
+      const history = payload?.cloudHistory && typeof payload.cloudHistory === 'object' ? payload.cloudHistory : {};
+      const hasCloudHistory = Boolean(history.lastPulledAt || history.lastPushedAt);
+      if (!hasCloudHistory) {
+        return {
+          ok: false,
+          enabled: true,
+          connected: true,
+          status: 'cloud-history-required',
+          message: 'Первичное подключение к облачной кампании не завершено. Данные установщика не были отправлены',
+          remote: currentRemoteMeta,
+          config
+        };
+      }
+
+      if (revisionChanged) {
+        backupFile = await backupRemoteSnapshotBeforeGmWrite(config, currentRemote.remote, payload?.reason || (manual ? 'manual-gm-push' : 'automatic-gm-push'));
+      }
+      const renewedToken = createSyncBaselineGuard(config, remoteRevision);
+      baseline = validateSyncBaselineGuard(config, renewedToken, remoteRevision);
+      if (!baseline.ok) throw new Error('Не удалось переавторизовать мастерскую запись');
+      gmReauthorized = true;
+      debugLog('SYNC_GM_WRITE_REAUTHORIZED', {
+        campaignId: config.campaignId,
+        actorId,
+        remoteRevision,
+        localRevision: Number(payload?.baseRevision || 0),
+        backupCreated: Boolean(backupFile),
+        reason: payload?.reason || null
+      });
+    }
     const snapshot = payload?.snapshot && typeof payload.snapshot === 'object' ? payload.snapshot : {};
     const normalizedSnapshot = await normalizeSnapshotImagesForCloud(config, snapshot);
+    const worldSections = gmWrite
+      ? (manual && !Array.isArray(payload?.worldSections) ? [...WORLD_FILE_NAMES] : requestedWorldSectionsV140(payload))
+      : [];
+    const protectedWorld = await protectRemoteWorldV140(
+      currentRemote.remote?.world || {},
+      normalizedSnapshot.world || {},
+      worldSections,
+      { allowBundledReset: payload?.allowBundledWorldReset === true }
+    );
+    if (!protectedWorld.ok) {
+      debugLog('SYNC_WORLD_SECTION_RESET_BLOCKED', {
+        campaignId: config.campaignId,
+        actorId,
+        reason: payload?.reason || null,
+        section: protectedWorld.section,
+        previousHash: protectedWorld.previousHash,
+        nextHash: protectedWorld.nextHash
+      });
+      return { ...protectedWorld, enabled: true, connected: true, remote: currentRemoteMeta, config };
+    }
+    normalizedSnapshot.world = protectedWorld.world;
+    normalizedSnapshot.state = normalizedSnapshot.state && typeof normalizedSnapshot.state === 'object' ? normalizedSnapshot.state : {};
+    normalizedSnapshot.state.__worldWriteV140 = {
+      schema: 1,
+      campaignId: String(config.campaignId || ''),
+      actorId,
+      reason: String(payload?.reason || ''),
+      sections: worldSections,
+      allowBundledReset: payload?.allowBundledWorldReset === true,
+      equipmentBefore: worldSectionHashV140(currentRemote.remote?.world?.equipment || {}),
+      equipmentAfter: worldSectionHashV140(normalizedSnapshot.world?.equipment || {}),
+      createdAt: new Date().toISOString()
+    };
     debugLog('SYNC_IMAGE_NORMALIZE_DONE', { campaignId: config.campaignId, heapMb: Math.round(process.memoryUsage().heapUsed / 1024 / 1024) });
     const result = await pushRemoteSnapshot(config, {
       world: normalizedSnapshot.world || {},
       state: normalizedSnapshot.state || {},
-      baseRevision: payload?.baseRevision,
+      baseRevision: Number(baseline.guard.revision || remoteRevision),
       updatedBy: payload?.updatedBy || config.deviceLabel || 'unknown-device',
       clientUpdatedAt: payload?.clientUpdatedAt || new Date().toISOString()
     });
+    if (result?.ok && result?.remote) baseline.guard.revision = Number(result.remote.revision || baseline.guard.revision || 0);
     let worldPersisted = false;
     if (result?.ok && normalizedSnapshot.world) {
       await writeWorldData(normalizedSnapshot.world);
@@ -2919,7 +3775,11 @@ ipcMain.handle('sync:push', async (_event, payload) => {
       connected: true,
       config,
       worldPersisted,
-      normalizedUsers: normalizedSnapshot?.state?.users || null
+      normalizedUsers: normalizedSnapshot?.state?.users || null,
+      baselineToken: baseline.token || String(payload?.baselineToken || ''),
+      gmReauthorized,
+      cloudBackupCreated: Boolean(backupFile),
+      cloudBackupFile: backupFile
     };
   } catch (error) {
     debugLog('SYNC_PUSH_FAILED', { message: error.message, stack: error.stack });
@@ -2971,6 +3831,21 @@ ipcMain.handle('chat:pushBatch', async (_event, payload) => {
   } catch (error) {
     debugLog('CHAT_BATCH_PUSH_FAILED', { message: error.message, stack: error.stack });
     return { ok: false, enabled: true, connected: false, status: 'error', message: error.message, rows: [] };
+  }
+});
+
+ipcMain.handle('market:transaction', async (_event, payload = {}) => {
+  try {
+    const config = await loadSyncConfig();
+    if (!config.enabled || !isPocketBaseSyncConfig(config)) {
+      return { ok: false, status: 'unavailable', message: 'Для торговли требуется транзакционный сервер PocketBase' };
+    }
+    const result = await pocketbaseFetch(config, '/api/grpgi/market/transaction-v139', {
+      method: 'POST', json: { ...payload, campaignId: config.campaignId, updatedBy: config.deviceLabel || 'desktop-market' }
+    });
+    return result;
+  } catch (error) {
+    return { ok: false, status: 'error', httpStatus: Number(error.status||0), message: error.message };
   }
 });
 
@@ -3034,22 +3909,42 @@ ipcMain.handle('players:delete', async (_event, payload) => {
   }
 });
 
-ipcMain.handle('market:transaction', async (_event, payload) => {
+ipcMain.handle('applications:pull', async () => {
   try {
     const config = await loadSyncConfig();
-    if (!config.enabled) return { ok: true, enabled: false, status: 'disabled', message: 'Синхронизация выключена' };
-    const result = await transactRemoteMarket(config, payload || {});
-    return { ...result, enabled: true, connected: true };
+    if (!config.enabled) return { ok: false, enabled: false, rows: [], message: 'Синхронизация выключена', config };
+    if (!isPocketBaseSyncConfig(config)) return { ok: false, enabled: true, rows: [], message: 'Серверный журнал анкет поддерживается только PocketBase', config };
+    const rows = await fetchPocketBaseCharacterApplications(config);
+    return { ok: true, enabled: true, connected: true, status: 'ok', rows, config };
   } catch (error) {
-    debugLog('MARKET_TRANSACTION_FAILED', { message: error.message, stack: error.stack, payload });
-    const hookMissing = /404|not found/i.test(String(error?.message || ''));
-    return {
-      ok: false,
-      enabled: true,
-      connected: false,
-      status: hookMissing ? 'hook-missing' : 'error',
-      message: hookMissing ? 'На сервере PocketBase не установлен pb_hooks/grpgi_market.pb.js' : error.message
-    };
+    debugLog('APPLICATION_PULL_FAILED', { message: error.message, stack: error.stack });
+    return { ok: false, enabled: true, connected: false, status: 'error', rows: [], message: error.message };
+  }
+});
+
+ipcMain.handle('applications:submit', async (_event, payload) => {
+  try {
+    const config = await loadSyncConfig();
+    if (!config.enabled) return { ok: false, enabled: false, message: 'Синхронизация выключена', config };
+    if (!isPocketBaseSyncConfig(config)) return { ok: false, enabled: true, message: 'Отправка анкет поддерживается только PocketBase', config };
+    const row = await submitPocketBaseCharacterApplication(config, payload || {});
+    return { ok: true, enabled: true, connected: true, status: 'pending', row, config };
+  } catch (error) {
+    debugLog('APPLICATION_SUBMIT_FAILED', { message: error.message, stack: error.stack });
+    return { ok: false, enabled: true, connected: false, status: 'error', message: error.message };
+  }
+});
+
+ipcMain.handle('applications:review', async (_event, payload) => {
+  try {
+    const config = await loadSyncConfig();
+    if (!config.enabled) return { ok: false, enabled: false, message: 'Синхронизация выключена', config };
+    if (!isPocketBaseSyncConfig(config)) return { ok: false, enabled: true, message: 'Рассмотрение анкет поддерживается только PocketBase', config };
+    const row = await reviewPocketBaseCharacterApplication(config, payload || {});
+    return { ok: true, enabled: true, connected: true, status: String(payload?.status || ''), row, config };
+  } catch (error) {
+    debugLog('APPLICATION_REVIEW_FAILED', { message: error.message, stack: error.stack });
+    return { ok: false, enabled: true, connected: false, status: 'error', message: error.message };
   }
 });
 
@@ -3087,6 +3982,46 @@ ipcMain.handle('combat:push', async (_event, payload) => {
 
 
 
+ipcMain.handle('combat:local:load', async () => {
+  try { return await readCombatLocalStore(); }
+  catch (error) { return { ok: false, exists: false, payload: null, message: error.message }; }
+});
+
+ipcMain.handle('combat:local:save', async (_event, payload) => {
+  try { return await writeCombatLocalStore(payload || {}); }
+  catch (error) { return { ok: false, message: error.message }; }
+});
+
+ipcMain.handle('combat:asset:save', async (_event, payload) => {
+  try { return await saveCombatLocalImage(payload?.dataUrl || '', payload?.preferredStem || 'scene_asset'); }
+  catch (error) { return { ok: false, message: error.message }; }
+});
+
+ipcMain.handle('combat:asset:saveFile', async (_event, payload) => {
+  try { return await saveCombatLocalImageFile(payload?.filePath || '', payload?.preferredStem || 'scene_asset'); }
+  catch (error) { return { ok: false, message: error.message }; }
+});
+
+ipcMain.handle('combat:media:choose', async (_event, payload) => {
+  try { return await chooseCombatAssetFiles(payload?.kind === 'audio' ? 'audio' : 'image'); }
+  catch (error) { return { ok: false, message: error?.message || String(error), filePaths: [] }; }
+});
+
+ipcMain.handle('combat:sound:saveFile', async (_event, payload) => {
+  try { return await saveCombatSoundFile(payload?.filePath || '', payload?.preferredStem || 'combat_sound'); }
+  catch (error) { return { ok: false, message: error?.message || String(error) }; }
+});
+
+ipcMain.handle('combat:archive:export', async (_event, payload) => {
+  try { return await exportCombatArchive(payload || {}); }
+  catch (error) { return { ok: false, message: error.message }; }
+});
+
+ipcMain.handle('combat:archive:import', async () => {
+  try { return await importCombatArchive(); }
+  catch (error) { return { ok: false, message: error.message }; }
+});
+
 ipcMain.handle('display:player:open', async () => {
   try {
     const win = openPlayerDisplayWindow();
@@ -3122,14 +4057,18 @@ ipcMain.handle('display:player:view:update', async (_event, payload) => {
   try {
     const next = payload && typeof payload === 'object' ? payload : {};
     const hasMode = Object.prototype.hasOwnProperty.call(next, 'mode');
+    const hasGraphicsMode = Object.prototype.hasOwnProperty.call(next, 'graphicsMode');
     const hasRegionMap = Object.prototype.hasOwnProperty.call(next, 'activeRegionMapId');
     const hasRegionCamera = Object.prototype.hasOwnProperty.call(next, 'regionCamera');
+    const hasCombatSnapshot = Object.prototype.hasOwnProperty.call(next, 'combatSnapshot');
     playerDisplayMirrorState = {
       mode: hasMode ? String(next.mode || '').trim() : (playerDisplayMirrorState.mode || ''),
       eraTheme: ['medieval','industrial','technological'].includes(String(next.eraTheme || '').trim()) ? String(next.eraTheme).trim() : (playerDisplayMirrorState.eraTheme || 'technological'),
+      graphicsMode: hasGraphicsMode && ['full','lite'].includes(String(next.graphicsMode || '').trim()) ? String(next.graphicsMode).trim() : (playerDisplayMirrorState.graphicsMode || 'full'),
       activeSceneId: String(next.activeSceneId || playerDisplayMirrorState.activeSceneId || '').trim(),
       activeRegionMapId: hasRegionMap ? String(next.activeRegionMapId || '').trim() : (playerDisplayMirrorState.activeRegionMapId || ''),
       cameraByScene: next.cameraByScene && typeof next.cameraByScene === 'object' ? next.cameraByScene : (playerDisplayMirrorState.cameraByScene || {}),
+      combatSnapshot: hasCombatSnapshot ? (next.combatSnapshot && typeof next.combatSnapshot === 'object' ? next.combatSnapshot : null) : (playerDisplayMirrorState.combatSnapshot || null),
       regionCamera: hasRegionCamera ? (next.regionCamera && typeof next.regionCamera === 'object' ? next.regionCamera : null) : (playerDisplayMirrorState.regionCamera || null),
       regionDisplay: next.regionDisplay && typeof next.regionDisplay === 'object' ? next.regionDisplay : (playerDisplayMirrorState.regionDisplay || null),
       regionRuntime: next.regionRuntime && typeof next.regionRuntime === 'object' ? next.regionRuntime : (playerDisplayMirrorState.regionRuntime || null),
@@ -3148,17 +4087,16 @@ ipcMain.handle('display:player:view:update', async (_event, payload) => {
 app.whenReady().then(async () => {
 
   await ensureWorldDataDir();
-  try {
-    const syncConfig = await loadSyncConfig();
-    await setupNetworkRealtime(syncConfig);
-  } catch (error) {
-    debugLog('COMBAT_RUNTIME_REALTIME_BOOT_FAILED', { message: error.message, stack: error.stack });
-  }
-  createWindow();
   setupAutoUpdater();
-  setTimeout(() => {
-    void checkForUpdatesSafe(false);
-  }, 2500);
+  createWindow();
+  const startupUpdateStatus = await checkForUpdatesSafe(false);
+  if (startupUpdateStatus?.verified === true) {
+    try {
+      await setupStartupNetworkRealtime();
+    } catch (error) {
+      debugLog('COMBAT_RUNTIME_REALTIME_BOOT_FAILED', { message: error.message, stack: error.stack });
+    }
+  }
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });

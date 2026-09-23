@@ -24,3 +24,6 @@ GRPGI-source-*.zip
 *.aab
 mobile/android/.gradle/
 mobile/android/**/build/
+
+# Local source backup for the synchronization fix
+.sync-fix-backups/

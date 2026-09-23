@@ -1,0 +1,13 @@
+/* GRPGI v1.0.117 — active single implant editor + save state */
+#config-editor-form[data-entity-type="players"] .legacy-implant-editor-hidden-v1067,
+#config-editor-form[data-entity-type="players"] .wc-inventory-legacy-hidden-v1068{
+  display:none !important;
+}
+#config-editor-form[data-entity-type="players"][data-saving-v116="1"]{
+  pointer-events:none;
+  opacity:.88;
+}
+#config-editor-form[data-entity-type="players"] [data-wc-inventory-editor-v1068]{
+  min-width:0;
+  max-width:100%;
+}

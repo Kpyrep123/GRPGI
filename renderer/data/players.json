@@ -1,528 +1,3868 @@
 {
   "PLAYER_TEMPLATES": {
-    "u1": {
-      "id": "u1",
-      "role": "player",
-      "pass": "1234",
-      "shortName": "Shepard",
-      "displayName": "Коммандер Шепард",
-      "rank": "Spectre",
-      "avatarGlyph": "NS",
-      "credits": 25000,
-      "lore": "Оперативник особого допуска. Специализация: штурм, тактика и дипломатическое давление.",
-      "notes": "Репутация: высокий риск, высокий результат.",
-      "stats": {
-        "hpCurrent": 94,
-        "hpMax": 94,
-        "shieldCurrent": 120,
-        "shieldMax": 120,
-        "energyCurrent": 1,
-        "energyMax": 1
-      },
-      "abilities": {
-        "strength": 14,
-        "dexterity": 13,
-        "intelligence": 12,
-        "endurance": 15,
-        "will": 11,
-        "glory": 16
-      },
-      "equipmentSlots": {
-        "primaryWeapon": "m97_viper",
-        "secondaryWeapon": "",
-        "armor": "n7_defender"
-      },
-      "inventory": [
-        {
-          "itemId": "med_pack",
-          "qty": 5
-        },
-        {
-          "itemId": "credit_chip",
-          "qty": 1
-        },
-        {
-          "itemId": "omni_gel",
-          "qty": 3
-        }
-      ],
-      "implants": [
-        {
-          "name": "Кибер-глаз Mk.II",
-          "energyCost": 0,
-          "desc": "Active"
-        },
-        {
-          "name": "Биотический усилитель L3",
-          "energyCost": 0,
-          "desc": "Stable"
-        },
-        {
-          "name": "Синтетические кости",
-          "energyCost": 0,
-          "desc": "98%"
-        }
-      ],
-      "social": {
-        "npcIds": [
-          "garrus",
-          "liara",
-          "hacket"
-        ],
-        "orgs": [
-          "Альянс Систем",
-          "Цитадель",
-          "Цербер (враждебно)"
-        ],
-        "reputation": [
-          {
-            "orgId": "",
-            "name": "Альянс Систем",
-            "value": 0,
-            "status": "Альянс Систем",
-            "note": ""
-          },
-          {
-            "orgId": "",
-            "name": "Цитадель",
-            "value": 0,
-            "status": "Цитадель",
-            "note": ""
-          },
-          {
-            "orgId": "",
-            "name": "Цербер (враждебно)",
-            "value": 0,
-            "status": "Цербер (враждебно)",
-            "note": ""
-          }
-        ]
-      },
-      "currentPlanetId": "cassilia",
-      "skillPoints": 0,
-      "skills": []
-    },
-    "u2": {
-      "id": "u2",
-      "role": "player",
-      "pass": "0000",
-      "shortName": "V",
-      "displayName": "Нетрaннер V",
-      "rank": "Mercenary",
-      "avatarGlyph": "VX",
-      "credits": 4200,
-      "lore": "Фрилансер с сильным уклоном в инфильтрацию, взлом и быстрые ударные операции.",
-      "notes": "Подозрительно быстро адаптируется к неизвестным сетям.",
-      "stats": {
-        "hpCurrent": 82,
-        "hpMax": 82,
-        "shieldCurrent": 18,
-        "shieldMax": 18,
-        "energyCurrent": 1,
-        "energyMax": 1
-      },
-      "abilities": {
-        "strength": 10,
-        "dexterity": 17,
-        "intelligence": 16,
-        "endurance": 12,
-        "will": 12,
-        "glory": 11
-      },
-      "equipmentSlots": {
-        "primaryWeapon": "malorian_3516",
-        "secondaryWeapon": "malorian_3516",
-        "armor": "arasaka_vest"
-      },
-      "inventory": [
-        {
-          "itemId": "med_pack",
-          "qty": 2
-        },
-        {
-          "itemId": "virus_chip",
-          "qty": 1
-        }
-      ],
-      "implants": [
-        {
-          "name": "Kiroshi Optics",
-          "energyCost": 0,
-          "desc": "Active"
-        },
-        {
-          "name": "Sandevistan",
-          "energyCost": 0,
-          "desc": "Ready"
-        },
-        {
-          "name": "Mantis Blades",
-          "energyCost": 0,
-          "desc": "Online"
-        }
-      ],
-      "social": {
-        "npcIds": [
-          "jackie",
-          "viktor",
-          "judy"
-        ],
-        "orgs": [
-          "Afterlife",
-          "Moxes",
-          "Arasaka (в розыске)"
-        ],
-        "reputation": [
-          {
-            "orgId": "",
-            "name": "Afterlife",
-            "value": 0,
-            "status": "Afterlife",
-            "note": ""
-          },
-          {
-            "orgId": "",
-            "name": "Moxes",
-            "value": 0,
-            "status": "Moxes",
-            "note": ""
-          },
-          {
-            "orgId": "",
-            "name": "Arasaka (в розыске)",
-            "value": 0,
-            "status": "Arasaka (в розыске)",
-            "note": ""
-          }
-        ]
-      },
-      "currentPlanetId": "cassilia",
-      "skillPoints": 0,
-      "skills": []
-    },
     "gm": {
-      "id": "gm",
-      "role": "gm",
-      "pass": "admin",
-      "shortName": "Master Node",
-      "displayName": "Ведущий",
-      "rank": "Game Master",
+      "abilities": {
+        "strength": 2,
+        "dexterity": 5,
+        "intelligence": 2,
+        "endurance": 2,
+        "will": 1,
+        "glory": 1
+      },
+      "abilityBase": {
+        "strength": 2,
+        "dexterity": 5,
+        "intelligence": 2,
+        "endurance": 2,
+        "will": 1,
+        "glory": 1
+      },
+      "allowCrossCampaignDirectMessages": false,
+      "approvalStatus": "approved",
       "avatarGlyph": "GM",
-      "credits": 0,
+      "campaignIds": [
+        "campaign_887856",
+        "main",
+        "guest",
+        "campaign_919916",
+        "campaign_860231",
+        "campaign_798228"
+      ],
+      "carryWeightMax": 9999,
+      "citizenship": "",
+      "citizenshipLabels": [],
+      "citizenshipPlanetIds": [],
+      "creationPointsSpent": 0,
+      "credits": 59419,
+      "currentPlanetId": "planet_767039",
+      "currentRegionId": "",
+      "currentShipId": "",
+      "displayName": "Теодор Солвиц",
+      "equipmentSlots": {
+        "primaryWeapon": "",
+        "secondaryWeapon": "",
+        "armor": ""
+      },
+      "geographicOriginId": "",
+      "id": "gm",
+      "ideal": "",
+      "image": "https://sync.grpg-sync.ru/api/files/campaign_assets/8dxrk8msr071hh3/b1c304eb267d8ad5ffd7a9faf8ae5692_entity_gm_teodor_solvits_i1azirvx7s.png",
+      "implantSlotCount": 6,
+      "implantSlots": [
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      "implants": [],
+      "installedImplantIds": [],
+      "inventory": [
+        {
+          "itemId": "item_1786655348513",
+          "positions": [
+            {
+              "x": 0,
+              "y": 0
+            }
+          ],
+          "qty": 1
+        }
+      ],
+      "inventorySize": 40,
       "lore": "Администратор локального узла. Управляет данными игроков и состоянием мира.",
       "notes": "Права изменять ресурсы, статистику, инвентарь и лор.",
-      "stats": {
-        "hpCurrent": 999,
-        "hpMax": 999,
-        "shieldCurrent": 999,
-        "shieldMax": 999,
-        "energyCurrent": 1,
-        "energyMax": 1
-      },
-      "abilities": {
-        "strength": 20,
-        "dexterity": 20,
-        "intelligence": 20,
-        "endurance": 20,
-        "will": 20,
-        "glory": 20
-      },
-      "equipmentSlots": {
-        "primaryWeapon": "m97_viper",
-        "secondaryWeapon": "",
-        "armor": "n7_defender"
-      },
-      "inventory": [],
-      "implants": [
-        {
-          "name": "Master Override",
-          "energyCost": 0,
-          "desc": "Enabled"
-        }
-      ],
+      "pass": "1613",
+      "personalityTrait": "",
+      "rank": "Doctor",
+      "relatedArticleIds": [],
+      "role": "gm",
+      "shortName": "Teodor",
+      "skillPoints": 0,
+      "skills": [],
       "social": {
-        "npcIds": [
-          "mirabel"
-        ],
-        "orgs": [
-          "Control Node"
-        ],
+        "npcIds": [],
+        "orgs": [],
         "reputation": [
           {
-            "orgId": "",
-            "name": "Control Node",
-            "value": 0,
-            "status": "Control Node",
+            "orgId": "org_644557",
+            "name": "",
+            "value": 100,
+            "status": "Основополагатель",
+            "note": ""
+          },
+          {
+            "orgId": "org_590472",
+            "name": "",
+            "value": 100,
+            "status": "Соруководитель проекта",
             "note": ""
           }
         ]
       },
-      "currentPlanetId": "",
+      "socialOriginId": "",
+      "specializations": {},
+      "startingEquipmentIds": [],
+      "stats": {
+        "hpCurrent": 100,
+        "hpMax": 100,
+        "shieldCurrent": 100,
+        "shieldMax": 100,
+        "energyCurrent": 1,
+        "energyMax": 1,
+        "baseArmorClass": 10,
+        "armorClass": 10
+      },
+      "stockPortfolio": {
+        "positions": {},
+        "ledger": [
+          {
+            "createdAt": "2026-08-18T21:00:10.147Z",
+            "id": "mtIRNuOMHPDmrjiZ8mnzq2Mv",
+            "itemId": "stock_fsd",
+            "marketDay": "2026-08-18",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "total": 442,
+            "type": "buy",
+            "unitPrice": 442
+          },
+          {
+            "createdAt": "2026-08-18T21:00:21.772Z",
+            "id": "TnDMFtuKPxN9aq9IgRNtmd0I",
+            "itemId": "stock_crs",
+            "marketDay": "2026-08-18",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "total": 796,
+            "type": "buy",
+            "unitPrice": 796
+          },
+          {
+            "createdAt": "2026-08-18T21:00:25.153Z",
+            "id": "5HEIyfdF68E0ppejFaj8ol7I",
+            "itemId": "stock_crs",
+            "marketDay": "2026-08-18",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "total": 796,
+            "type": "buy",
+            "unitPrice": 796
+          },
+          {
+            "costRemoved": 796,
+            "createdAt": "2026-08-19T05:47:40.206Z",
+            "id": "KELfRa9AO1Ad70fuAVYdY8Zf",
+            "itemId": "stock_crs",
+            "marketDay": "2026-08-19",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "realizedPnl": -308,
+            "total": 488,
+            "type": "sell",
+            "unitPrice": 488
+          },
+          {
+            "costRemoved": 796,
+            "createdAt": "2026-08-19T10:02:02.293Z",
+            "id": "eO3apJhVj8HdRC5ERFP25f80",
+            "itemId": "stock_crs",
+            "marketDay": "2026-08-19",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "realizedPnl": -308,
+            "total": 488,
+            "type": "sell",
+            "unitPrice": 488
+          },
+          {
+            "costRemoved": null,
+            "createdAt": "2026-08-19T10:02:37.095Z",
+            "id": "UoRyUZh1wJPgSdStB0jNLGfn",
+            "itemId": "item_1786909747761",
+            "marketDay": "2026-08-19",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "realizedPnl": null,
+            "total": 195,
+            "type": "sell",
+            "unitPrice": 195
+          },
+          {
+            "createdAt": "2026-08-19T16:42:58.323Z",
+            "id": "ali0DYmNaelYxPcmNWfy0fIi",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-19",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "total": 79,
+            "type": "buy",
+            "unitPrice": 79
+          },
+          {
+            "createdAt": "2026-08-19T16:42:58.567Z",
+            "id": "kWgwnbT8PFYbqMOT0mpCIrco",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-19",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "total": 79,
+            "type": "buy",
+            "unitPrice": 79
+          },
+          {
+            "createdAt": "2026-08-19T16:42:58.763Z",
+            "id": "Jmt2F5qMrXGaYxJpX0AaLn3z",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-19",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "total": 79,
+            "type": "buy",
+            "unitPrice": 79
+          },
+          {
+            "createdAt": "2026-08-19T16:42:58.984Z",
+            "id": "bREULqD03eyp3vcyCUz440KV",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-19",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "total": 79,
+            "type": "buy",
+            "unitPrice": 79
+          },
+          {
+            "createdAt": "2026-08-19T16:42:59.188Z",
+            "id": "i7IRJJVW28Hrwf6hHAowGau9",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-19",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "total": 79,
+            "type": "buy",
+            "unitPrice": 79
+          },
+          {
+            "createdAt": "2026-08-19T16:42:59.481Z",
+            "id": "5b7vkC7M7mxYBAQeRZSGDRHA",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-19",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "total": 79,
+            "type": "buy",
+            "unitPrice": 79
+          },
+          {
+            "createdAt": "2026-08-19T16:42:59.695Z",
+            "id": "bZdncgioQE6z8v59eIjV8YkY",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-19",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "total": 79,
+            "type": "buy",
+            "unitPrice": 79
+          },
+          {
+            "createdAt": "2026-08-19T16:42:59.955Z",
+            "id": "5NMuUeTiLh3ouhlV4dp4K79v",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-19",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "total": 79,
+            "type": "buy",
+            "unitPrice": 79
+          },
+          {
+            "createdAt": "2026-08-19T16:43:10.805Z",
+            "id": "UFIm6iwRvPZ1a21XWUdqJYfw",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-19",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "total": 79,
+            "type": "buy",
+            "unitPrice": 79
+          },
+          {
+            "createdAt": "2026-08-19T16:43:11.039Z",
+            "id": "VrqX8JXDkrqGI0Mk6RgOE7p2",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-19",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "total": 79,
+            "type": "buy",
+            "unitPrice": 79
+          },
+          {
+            "createdAt": "2026-08-19T16:43:11.258Z",
+            "id": "zPBQ2ogqawAqQr3WeR0PwCPN",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-19",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "total": 79,
+            "type": "buy",
+            "unitPrice": 79
+          },
+          {
+            "createdAt": "2026-08-19T16:43:11.504Z",
+            "id": "jDUu0FNx2unoXV0iGuIqp8GI",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-19",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "total": 79,
+            "type": "buy",
+            "unitPrice": 79
+          },
+          {
+            "createdAt": "2026-08-19T16:43:11.792Z",
+            "id": "9DSAaTW60Zngi7JsSidpCras",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-19",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "total": 79,
+            "type": "buy",
+            "unitPrice": 79
+          },
+          {
+            "createdAt": "2026-08-19T16:43:12.015Z",
+            "id": "bZHXzWfPwIBAInRZU7jAN8OU",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-19",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "total": 79,
+            "type": "buy",
+            "unitPrice": 79
+          },
+          {
+            "createdAt": "2026-08-19T16:43:12.315Z",
+            "id": "HyTPDYwm9YldYGxm6I8wRwbH",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-19",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "total": 79,
+            "type": "buy",
+            "unitPrice": 79
+          },
+          {
+            "createdAt": "2026-08-19T16:43:12.529Z",
+            "id": "rYpw0XEVbtxQlbZpcJaIcpVJ",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-19",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "total": 79,
+            "type": "buy",
+            "unitPrice": 79
+          },
+          {
+            "createdAt": "2026-08-19T16:43:12.737Z",
+            "id": "NEpX1eV0SWueqiEP8wPymVbY",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-19",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "total": 79,
+            "type": "buy",
+            "unitPrice": 79
+          },
+          {
+            "createdAt": "2026-08-19T16:43:12.993Z",
+            "id": "CTUJY0m3Fy9Defe5T9cHWA1o",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-19",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "total": 79,
+            "type": "buy",
+            "unitPrice": 79
+          },
+          {
+            "createdAt": "2026-08-19T16:43:13.251Z",
+            "id": "Lsw4TghOCvxFCaIQ2dmRCsWX",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-19",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "total": 79,
+            "type": "buy",
+            "unitPrice": 79
+          },
+          {
+            "createdAt": "2026-08-19T16:43:13.480Z",
+            "id": "uOMCy7umXhcFmhAkwngSNeZw",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-19",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "total": 79,
+            "type": "buy",
+            "unitPrice": 79
+          },
+          {
+            "createdAt": "2026-08-19T16:43:13.673Z",
+            "id": "UcPnBErWjSjSM3u5PT3LoiIR",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-19",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "total": 79,
+            "type": "buy",
+            "unitPrice": 79
+          },
+          {
+            "createdAt": "2026-08-19T16:43:13.930Z",
+            "id": "MzS3PMArCNEI01WI8KIL9uwS",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-19",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "total": 79,
+            "type": "buy",
+            "unitPrice": 79
+          },
+          {
+            "createdAt": "2026-08-19T16:43:14.169Z",
+            "id": "E6fCGJPgiHiwTGIgfXkJpkOx",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-19",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "total": 79,
+            "type": "buy",
+            "unitPrice": 79
+          },
+          {
+            "createdAt": "2026-08-19T16:43:14.380Z",
+            "id": "eu6fSZIdSZu8Y8EJv6Ddrh0n",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-19",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "total": 79,
+            "type": "buy",
+            "unitPrice": 79
+          },
+          {
+            "createdAt": "2026-08-19T16:43:14.595Z",
+            "id": "rFB01GyAtq9DEHBxg3zVznCS",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-19",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "total": 79,
+            "type": "buy",
+            "unitPrice": 79
+          },
+          {
+            "createdAt": "2026-08-19T16:43:14.815Z",
+            "id": "iNWrL3vT6R5HLomXOPiR18zg",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-19",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "total": 79,
+            "type": "buy",
+            "unitPrice": 79
+          },
+          {
+            "costRemoved": 442,
+            "createdAt": "2026-08-20T13:14:23.704Z",
+            "id": "od1pcIvEt2u61n6wxnJ58SsO",
+            "itemId": "stock_fsd",
+            "marketDay": "2026-08-20",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "realizedPnl": 1,
+            "total": 443,
+            "type": "sell",
+            "unitPrice": 443
+          },
+          {
+            "costRemoved": 79,
+            "createdAt": "2026-08-21T03:52:18.338Z",
+            "id": "c1R6FgvtrfWFsj8hAl4GYs27",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-21",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "realizedPnl": -1,
+            "total": 78,
+            "type": "sell",
+            "unitPrice": 78
+          },
+          {
+            "costRemoved": 79,
+            "createdAt": "2026-08-21T03:52:18.589Z",
+            "id": "Kxv4l5Qqb8YXe7thh4BBANNw",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-21",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "realizedPnl": -1,
+            "total": 78,
+            "type": "sell",
+            "unitPrice": 78
+          },
+          {
+            "costRemoved": 79,
+            "createdAt": "2026-08-21T03:52:18.897Z",
+            "id": "21qKtp9BaYxHWuaUw4HsrzY6",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-21",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "realizedPnl": -1,
+            "total": 78,
+            "type": "sell",
+            "unitPrice": 78
+          },
+          {
+            "costRemoved": 79,
+            "createdAt": "2026-08-21T03:52:19.225Z",
+            "id": "SJMHMFV7k8aTkRFLGRdwOlKc",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-21",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "realizedPnl": -1,
+            "total": 78,
+            "type": "sell",
+            "unitPrice": 78
+          },
+          {
+            "costRemoved": 79,
+            "createdAt": "2026-08-21T03:52:19.474Z",
+            "id": "yj8UiCaxHlEHsGiAuIrIRpSW",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-21",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "realizedPnl": -1,
+            "total": 78,
+            "type": "sell",
+            "unitPrice": 78
+          },
+          {
+            "costRemoved": 79,
+            "createdAt": "2026-08-21T03:52:19.714Z",
+            "id": "6vEwPnL1kq0F9bQE5ZJC21FR",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-21",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "realizedPnl": -1,
+            "total": 78,
+            "type": "sell",
+            "unitPrice": 78
+          },
+          {
+            "costRemoved": 79,
+            "createdAt": "2026-08-21T03:52:19.958Z",
+            "id": "golFcceOV5ywKASL4tOxVZ1Y",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-21",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "realizedPnl": -1,
+            "total": 78,
+            "type": "sell",
+            "unitPrice": 78
+          },
+          {
+            "costRemoved": 79,
+            "createdAt": "2026-08-21T03:52:20.294Z",
+            "id": "xFS6ib7YYmkyNFOzVqYKacU0",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-21",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "realizedPnl": -1,
+            "total": 78,
+            "type": "sell",
+            "unitPrice": 78
+          },
+          {
+            "costRemoved": 79,
+            "createdAt": "2026-08-21T03:52:20.541Z",
+            "id": "WZ9CFsNMqegfmlLFWtJGmdy3",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-21",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "realizedPnl": -1,
+            "total": 78,
+            "type": "sell",
+            "unitPrice": 78
+          },
+          {
+            "costRemoved": 79,
+            "createdAt": "2026-08-21T03:52:20.786Z",
+            "id": "zJSza7XDn4Ix5HFXwXKdk00R",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-21",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "realizedPnl": -1,
+            "total": 78,
+            "type": "sell",
+            "unitPrice": 78
+          },
+          {
+            "costRemoved": 79,
+            "createdAt": "2026-08-21T03:52:21.052Z",
+            "id": "KaJOhigOIb1bWNRWCQKEdC5T",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-21",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "realizedPnl": -1,
+            "total": 78,
+            "type": "sell",
+            "unitPrice": 78
+          },
+          {
+            "costRemoved": 79,
+            "createdAt": "2026-08-21T03:52:21.387Z",
+            "id": "GGalz7ykIcNFgwaX3wKJqS6Q",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-21",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "realizedPnl": -1,
+            "total": 78,
+            "type": "sell",
+            "unitPrice": 78
+          },
+          {
+            "costRemoved": 79,
+            "createdAt": "2026-08-21T03:52:21.635Z",
+            "id": "ZqBI2jnP4qERN0aTU6Ma2GYy",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-21",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "realizedPnl": -1,
+            "total": 78,
+            "type": "sell",
+            "unitPrice": 78
+          },
+          {
+            "costRemoved": 79,
+            "createdAt": "2026-08-21T03:52:21.955Z",
+            "id": "7Fnm3fPtKBhB5t7MRhqdj6Zw",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-21",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "realizedPnl": -1,
+            "total": 78,
+            "type": "sell",
+            "unitPrice": 78
+          },
+          {
+            "costRemoved": 79,
+            "createdAt": "2026-08-21T03:52:22.205Z",
+            "id": "EvP9ctoGaDKsOBSyMmLzxiS8",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-21",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "realizedPnl": -1,
+            "total": 78,
+            "type": "sell",
+            "unitPrice": 78
+          },
+          {
+            "costRemoved": 79,
+            "createdAt": "2026-08-21T03:52:22.448Z",
+            "id": "UliUxioatgxVolMPL6KpzBf4",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-21",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "realizedPnl": -1,
+            "total": 78,
+            "type": "sell",
+            "unitPrice": 78
+          },
+          {
+            "costRemoved": 79,
+            "createdAt": "2026-08-21T03:52:22.699Z",
+            "id": "2dtamPOI3XulmlvHdypH0ehy",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-21",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "realizedPnl": -1,
+            "total": 78,
+            "type": "sell",
+            "unitPrice": 78
+          },
+          {
+            "costRemoved": 79,
+            "createdAt": "2026-08-21T03:52:23.002Z",
+            "id": "AFwx7ohamTKgFSKevgUWAexP",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-21",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "realizedPnl": -1,
+            "total": 78,
+            "type": "sell",
+            "unitPrice": 78
+          },
+          {
+            "costRemoved": 79,
+            "createdAt": "2026-08-21T03:52:37.460Z",
+            "id": "QHc00NamKLmZv5OJqHz90mkV",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-21",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "realizedPnl": -1,
+            "total": 78,
+            "type": "sell",
+            "unitPrice": 78
+          },
+          {
+            "costRemoved": 79,
+            "createdAt": "2026-08-21T03:52:37.714Z",
+            "id": "lrKdJc07uZFWvY7puRnIi5A1",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-21",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "realizedPnl": -1,
+            "total": 78,
+            "type": "sell",
+            "unitPrice": 78
+          },
+          {
+            "costRemoved": 79,
+            "createdAt": "2026-08-21T03:52:38.055Z",
+            "id": "PBEdmKICaJhCzcdLfcyJ51B7",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-21",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "realizedPnl": -1,
+            "total": 78,
+            "type": "sell",
+            "unitPrice": 78
+          },
+          {
+            "costRemoved": 79,
+            "createdAt": "2026-08-21T03:52:38.342Z",
+            "id": "UKlqRNtFC9bv3DLP0jHKkykl",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-21",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "realizedPnl": -1,
+            "total": 78,
+            "type": "sell",
+            "unitPrice": 78
+          },
+          {
+            "costRemoved": 79,
+            "createdAt": "2026-08-21T03:52:38.623Z",
+            "id": "dEdwAZjoLlz3nDSg6ywE6aDX",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-21",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "realizedPnl": -1,
+            "total": 78,
+            "type": "sell",
+            "unitPrice": 78
+          },
+          {
+            "costRemoved": 79,
+            "createdAt": "2026-08-21T03:52:38.883Z",
+            "id": "luOLi1XdNivvuWj1YqiSYwqS",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-21",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "realizedPnl": -1,
+            "total": 78,
+            "type": "sell",
+            "unitPrice": 78
+          },
+          {
+            "costRemoved": 79,
+            "createdAt": "2026-08-21T03:52:39.183Z",
+            "id": "845VNInpwe1CM9wvmic0iFa6",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-21",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "realizedPnl": -1,
+            "total": 78,
+            "type": "sell",
+            "unitPrice": 78
+          },
+          {
+            "costRemoved": 79,
+            "createdAt": "2026-08-21T03:52:39.440Z",
+            "id": "j8vTLRrSfPwxhKg5SzYb7T2C",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-21",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "realizedPnl": -1,
+            "total": 78,
+            "type": "sell",
+            "unitPrice": 78
+          }
+        ],
+        "legacyInventoryMigrated": {
+          "item_1786909747761": 1
+        }
+      },
+      "weakness": ""
+    },
+    "player_202919": {
+      "abilities": {
+        "strength": 5,
+        "dexterity": 5,
+        "intelligence": 5,
+        "endurance": 5,
+        "will": 5,
+        "glory": 5
+      },
+      "abilityBase": {
+        "strength": 5,
+        "dexterity": 5,
+        "intelligence": 5,
+        "endurance": 5,
+        "will": 5,
+        "glory": 5
+      },
+      "approvalStatus": "approved",
+      "avatarGlyph": "OF",
+      "campaignIds": [
+        "campaign_919916"
+      ],
+      "carryWeightMax": 12,
+      "citizenship": "",
+      "citizenshipLabels": [],
+      "citizenshipPlanetIds": [],
+      "creationPointsSpent": 0,
+      "credits": 16548,
+      "currentPlanetId": "planet_155688",
+      "currentRegionId": "",
+      "currentShipId": "",
+      "displayName": "Сцилла",
+      "equipmentSlots": {
+        "primaryWeapon": "m97_viper",
+        "secondaryWeapon": "malorian_3516",
+        "armor": "dust_cloak"
+      },
+      "geographicOriginId": "",
+      "id": "player_202919",
+      "ideal": "",
+      "image": "https://sync.grpg-sync.ru/api/files/campaign_assets/e67rseosoncro30/e415dca99e60ae5f6774ee807a9b926d_entity_player_202919_stsilla_ryx6scunt1.gif",
+      "implantSlotCount": 0,
+      "implantSlots": [],
+      "implants": [],
+      "installedImplantIds": [],
+      "inventory": [
+        {
+          "itemId": "omni_gel",
+          "qty": 6
+        }
+      ],
+      "inventorySize": 12,
+      "lore": "",
+      "notes": "",
+      "pass": "Mayhem",
+      "personalityTrait": "",
+      "rank": "Artist",
+      "relatedArticleIds": [],
+      "role": "player",
+      "shortName": "Scilla",
       "skillPoints": 0,
-      "skills": []
+      "skills": [],
+      "social": {
+        "npcIds": [
+          "vicard",
+          "fetch"
+        ],
+        "orgs": [],
+        "reputation": []
+      },
+      "socialOriginId": "",
+      "specializations": {
+        "skill_015530": 0,
+        "skill_397435": 0,
+        "skill_455994": 0,
+        "skill_884013": 0
+      },
+      "startingEquipmentIds": [],
+      "stats": {
+        "hpCurrent": 12,
+        "hpMax": 12,
+        "shieldCurrent": 0,
+        "shieldMax": 0,
+        "energyCurrent": 1,
+        "energyMax": 1,
+        "baseArmorClass": 10,
+        "armorClass": 10
+      },
+      "stockPortfolio": {
+        "positions": {},
+        "ledger": [],
+        "legacyInventoryMigrated": {}
+      },
+      "weakness": ""
+    },
+    "player_481909": {
+      "abilities": {
+        "strength": 5,
+        "dexterity": 5,
+        "intelligence": 5,
+        "endurance": 5,
+        "will": 5,
+        "glory": 5
+      },
+      "abilityBase": {
+        "strength": 5,
+        "dexterity": 5,
+        "intelligence": 5,
+        "endurance": 5,
+        "will": 5,
+        "glory": 5
+      },
+      "approvalStatus": "approved",
+      "avatarGlyph": "PX",
+      "campaignIds": [
+        "campaign_919916"
+      ],
+      "carryWeightMax": 12,
+      "citizenship": "",
+      "citizenshipLabels": [],
+      "citizenshipPlanetIds": [],
+      "creationPointsSpent": 0,
+      "credits": 72600,
+      "currentPlanetId": "planet_607104",
+      "currentRegionId": "",
+      "currentShipId": "",
+      "displayName": "Франко",
+      "equipmentSlots": {
+        "primaryWeapon": "m97_viper",
+        "secondaryWeapon": "",
+        "armor": "dust_cloak"
+      },
+      "geographicOriginId": "",
+      "id": "player_481909",
+      "ideal": "",
+      "image": "https://sync.grpg-sync.ru/api/files/campaign_assets/2isdks7opag9ez6/aebdbd5ffcd2f0558a573d4465c1a449_entity_player_481909_franko_t5y22buzu3.gif",
+      "implantSlotCount": 0,
+      "implantSlots": [],
+      "implants": [],
+      "installedImplantIds": [],
+      "inventory": [],
+      "inventorySize": 12,
+      "lore": "",
+      "notes": "",
+      "pass": "0000",
+      "personalityTrait": "",
+      "rank": "Artist",
+      "relatedArticleIds": [],
+      "role": "player",
+      "shortName": "Franko",
+      "skillPoints": 0,
+      "skills": [],
+      "social": {
+        "npcIds": [
+          "vicard",
+          "fetch"
+        ],
+        "orgs": [],
+        "reputation": []
+      },
+      "socialOriginId": "",
+      "specializations": {
+        "skill_015530": 0,
+        "skill_397435": 0,
+        "skill_455994": 0,
+        "skill_884013": 0
+      },
+      "startingEquipmentIds": [],
+      "stats": {
+        "hpCurrent": 12,
+        "hpMax": 12,
+        "shieldCurrent": 0,
+        "shieldMax": 0,
+        "energyCurrent": 1,
+        "energyMax": 1,
+        "baseArmorClass": 10,
+        "armorClass": 10
+      },
+      "stockPortfolio": {
+        "positions": {},
+        "ledger": [],
+        "legacyInventoryMigrated": {}
+      },
+      "weakness": ""
+    },
+    "player_486258": {
+      "abilities": {
+        "strength": 5,
+        "dexterity": 5,
+        "intelligence": 5,
+        "endurance": 5,
+        "will": 5,
+        "glory": 5
+      },
+      "abilityBase": {
+        "strength": 5,
+        "dexterity": 5,
+        "intelligence": 5,
+        "endurance": 5,
+        "will": 5,
+        "glory": 5
+      },
+      "approvalStatus": "approved",
+      "avatarGlyph": "PH",
+      "campaignIds": [
+        "campaign_919916"
+      ],
+      "carryWeightMax": 12,
+      "citizenship": "",
+      "citizenshipLabels": [],
+      "citizenshipPlanetIds": [],
+      "creationPointsSpent": 0,
+      "credits": 26333,
+      "currentPlanetId": "planet_607104",
+      "currentRegionId": "",
+      "currentShipId": "",
+      "displayName": "Харибда",
+      "equipmentSlots": {
+        "primaryWeapon": "m97_viper",
+        "secondaryWeapon": "",
+        "armor": "item_011453"
+      },
+      "geographicOriginId": "",
+      "id": "player_486258",
+      "ideal": "",
+      "image": "https://sync.grpg-sync.ru/api/files/campaign_assets/su00yucpa5gw9uk/30dbbfc9f216d33df9c2e8d93fa35755_entity_player_486258_haribda_ke31vte9ye.gif",
+      "implantSlotCount": 0,
+      "implantSlots": [],
+      "implants": [],
+      "installedImplantIds": [],
+      "inventory": [
+        {
+          "itemId": "docking_clearance",
+          "qty": 1
+        }
+      ],
+      "inventorySize": 12,
+      "lore": "",
+      "notes": "",
+      "pass": "Riot",
+      "personalityTrait": "",
+      "rank": "Artist",
+      "relatedArticleIds": [],
+      "role": "player",
+      "shortName": "Charibda",
+      "skillPoints": 0,
+      "skills": [],
+      "social": {
+        "npcIds": [
+          "vicard",
+          "fetch"
+        ],
+        "orgs": [],
+        "reputation": []
+      },
+      "socialOriginId": "",
+      "specializations": {
+        "skill_015530": 0,
+        "skill_397435": 0,
+        "skill_455994": 0,
+        "skill_884013": 0
+      },
+      "startingEquipmentIds": [],
+      "stats": {
+        "hpCurrent": 12,
+        "hpMax": 12,
+        "shieldCurrent": 0,
+        "shieldMax": 0,
+        "energyCurrent": 1,
+        "energyMax": 1,
+        "baseArmorClass": 10,
+        "armorClass": 12
+      },
+      "stockPortfolio": {
+        "positions": {},
+        "ledger": [],
+        "legacyInventoryMigrated": {}
+      },
+      "weakness": ""
+    },
+    "player_582319": {
+      "abilities": {
+        "strength": 5,
+        "dexterity": 5,
+        "intelligence": 5,
+        "endurance": 5,
+        "will": 5,
+        "glory": 5
+      },
+      "abilityBase": {
+        "strength": 5,
+        "dexterity": 5,
+        "intelligence": 5,
+        "endurance": 5,
+        "will": 5,
+        "glory": 5
+      },
+      "allowCrossCampaignDirectMessages": false,
+      "approvalStatus": "approved",
+      "avatarGlyph": "VS",
+      "campaignIds": [
+        "campaign_919916"
+      ],
+      "carryWeightMax": 12,
+      "citizenship": "",
+      "citizenshipLabels": [],
+      "citizenshipPlanetIds": [],
+      "creationPointsSpent": 0,
+      "credits": 9000,
+      "currentPlanetId": "planet_155688",
+      "currentRegionId": "",
+      "currentShipId": "",
+      "displayName": "Вереск",
+      "equipmentSlots": {
+        "primaryWeapon": "",
+        "secondaryWeapon": "",
+        "armor": "n7_defender"
+      },
+      "geographicOriginId": "",
+      "id": "player_582319",
+      "ideal": "",
+      "image": "https://sync.grpg-sync.ru/api/files/campaign_assets/xwxhjq6qe7hsf5g/e871a7acb17bda0aa90260021f2f0e6a_entity_player_582319_veresk_i0qr1ckwsb.gif",
+      "implantSlotCount": 0,
+      "implantSlots": [],
+      "implants": [],
+      "installedImplantIds": [],
+      "inventory": [
+        {
+          "itemId": "item_1786655348513",
+          "positions": [
+            {
+              "x": 2,
+              "y": 0
+            }
+          ],
+          "qty": 1
+        },
+        {
+          "itemId": "n7_defender",
+          "positions": [
+            null
+          ],
+          "qty": 1
+        }
+      ],
+      "inventorySize": 12,
+      "lore": "",
+      "notes": "",
+      "pass": "OD",
+      "personalityTrait": "",
+      "rank": "Punk",
+      "relatedArticleIds": [],
+      "role": "player",
+      "shortName": "Veresk",
+      "skillPoints": 0,
+      "skills": [],
+      "social": {
+        "npcIds": [
+          "vicard",
+          "fetch"
+        ],
+        "orgs": [],
+        "reputation": []
+      },
+      "socialOriginId": "",
+      "specializations": {
+        "skill_015530": 0,
+        "skill_397435": 0,
+        "skill_455994": 0,
+        "skill_884013": 0
+      },
+      "startingEquipmentIds": [],
+      "stats": {
+        "hpCurrent": 12,
+        "hpMax": 12,
+        "shieldCurrent": 0,
+        "shieldMax": 0,
+        "energyCurrent": 1,
+        "energyMax": 1,
+        "baseArmorClass": 10,
+        "armorClass": 1
+      },
+      "stockPortfolio": {
+        "positions": {},
+        "ledger": [],
+        "legacyInventoryMigrated": {}
+      },
+      "weakness": ""
+    },
+    "player_849364": {
+      "abilities": {
+        "strength": 5,
+        "dexterity": 5,
+        "intelligence": 5,
+        "endurance": 5,
+        "will": 5,
+        "glory": 5
+      },
+      "abilityBase": {
+        "strength": 5,
+        "dexterity": 5,
+        "intelligence": 5,
+        "endurance": 5,
+        "will": 5,
+        "glory": 5
+      },
+      "approvalStatus": "approved",
+      "avatarGlyph": "NM",
+      "campaignIds": [
+        "campaign_919916"
+      ],
+      "carryWeightMax": 12,
+      "citizenship": "",
+      "citizenshipLabels": [],
+      "citizenshipPlanetIds": [],
+      "creationPointsSpent": 0,
+      "credits": 65887,
+      "currentPlanetId": "planet_607104",
+      "currentRegionId": "",
+      "currentShipId": "",
+      "displayName": "Зеро",
+      "equipmentSlots": {
+        "primaryWeapon": "m97_viper",
+        "secondaryWeapon": "",
+        "armor": "dust_cloak"
+      },
+      "geographicOriginId": "",
+      "id": "player_849364",
+      "ideal": "",
+      "image": "https://sync.grpg-sync.ru/api/files/campaign_assets/tdf32mdsx21s88m/1784487946830_entity_player_849364_zero_15zkf2u8o5.gif",
+      "implantSlotCount": 0,
+      "implantSlots": [],
+      "implants": [],
+      "installedImplantIds": [],
+      "inventory": [],
+      "inventorySize": 12,
+      "lore": "",
+      "notes": "",
+      "pass": "One",
+      "personalityTrait": "",
+      "rank": "Artist",
+      "relatedArticleIds": [],
+      "role": "player",
+      "shortName": "Zi",
+      "skillPoints": 0,
+      "skills": [],
+      "social": {
+        "npcIds": [
+          "fetch",
+          "vicard"
+        ],
+        "orgs": [],
+        "reputation": []
+      },
+      "socialOriginId": "",
+      "specializations": {
+        "skill_015530": 0,
+        "skill_397435": 0,
+        "skill_455994": 0,
+        "skill_884013": 0
+      },
+      "startingEquipmentIds": [],
+      "stats": {
+        "hpCurrent": 12,
+        "hpMax": 12,
+        "shieldCurrent": 0,
+        "shieldMax": 0,
+        "energyCurrent": 1,
+        "energyMax": 1,
+        "baseArmorClass": 10,
+        "armorClass": 10
+      },
+      "stockPortfolio": {
+        "positions": {},
+        "ledger": [],
+        "legacyInventoryMigrated": {}
+      },
+      "weakness": ""
+    },
+    "алисия_эванс": {
+      "abilities": {
+        "strength": 0,
+        "dexterity": 0,
+        "intelligence": 0,
+        "endurance": 0,
+        "will": 0,
+        "glory": 0
+      },
+      "abilityBase": {
+        "strength": 0,
+        "dexterity": 0,
+        "intelligence": 0,
+        "endurance": 0,
+        "will": 0,
+        "glory": 0
+      },
+      "allowCrossCampaignDirectMessages": false,
+      "approvalStatus": "approved",
+      "avatarGlyph": "АЛ",
+      "campaignIds": [
+        "campaign_453839"
+      ],
+      "carryWeightMax": 12,
+      "citizenship": "Стратархия Асписа",
+      "citizenshipLabels": [
+        "Стратархия Асписа"
+      ],
+      "citizenshipPlanetIds": [
+        "planet_459822"
+      ],
+      "creationPointsSpent": 0,
+      "credits": 25000,
+      "currentPlanetId": "planet_767039",
+      "currentRegionId": "",
+      "currentShipId": "",
+      "displayName": "Алисия Эванс",
+      "equipmentSlots": {
+        "primaryWeapon": "",
+        "secondaryWeapon": "item_1786655348513",
+        "armor": "n7_defender"
+      },
+      "geographicOriginId": "geo_origin_1786547834688",
+      "id": "алисия_эванс",
+      "ideal": "Изучить всю галактику",
+      "image": "https://sync.grpg-sync.ru/api/files/campaign_assets/mk92ihgcvz9bdy0/2f21dc8eb538eaef822341903f870700_entity_alisiya_evans_alisiya_evans_mnol093198.png",
+      "implantSlotCount": 0,
+      "implantSlots": [],
+      "implants": [],
+      "installedImplantIds": [],
+      "inventory": [
+        {
+          "itemId": "omni_gel",
+          "positions": [],
+          "qty": 1
+        },
+        {
+          "itemId": "item_1786752612100",
+          "positions": [],
+          "qty": 1
+        },
+        {
+          "itemId": "item_1786655348513",
+          "positions": [],
+          "qty": 1
+        },
+        {
+          "itemId": "n7_defender",
+          "positions": [],
+          "qty": 1
+        },
+        {
+          "itemId": "profession_item_environment_analyzer",
+          "positions": [
+            {
+              "x": 2,
+              "y": 0
+            }
+          ],
+          "qty": 1
+        },
+        {
+          "itemId": "origin_item_floating_municipality_beacon",
+          "positions": [
+            {
+              "x": 3,
+              "y": 0
+            }
+          ],
+          "qty": 1
+        }
+      ],
+      "inventorySize": 12,
+      "lore": "## Основные данные\n\n**Возраст:** 25 лет\n**Рост:** 171 см\n**Вес:** 55 кг\n**Телосложение:** стройное, подтянутое\n**Волосы:** каштановые\n**Глаза:** тёмно-серые\n**Внешность:** красивая, ухоженная. В движениях заметна привычка к тесным помещениям кораблей и постоянным перелётам.\n\n## Происхождение\n\nОна родилась среди **плавучих муниципалитетов** — небольших мобильных сообществ, для которых корабль одновременно является домом, городом и границей собственного мира.\n\nЕё детство прошло не на одной планете и даже не в одной системе. Родители были опытными **разведчиками внешних миров** и значительную часть жизни проводили в экспедициях. Когда условия позволяли, они брали дочь с собой.\n\nПоэтому ещё ребёнком она привыкла к тому, что за иллюминатором постоянно меняются звёзды.\n\nОна видела орбитальные станции, маленькие колонии на краю освоенного пространства, заброшенные поселения, промышленные системы и миры, где появление чужого корабля само по себе становилось событием.\n\nДля её родителей это была работа.\n\nДля неё — обычная жизнь.\n\n## Детство среди разведчиков\n\nРодители редко пытались целенаправленно обучать дочь своему ремеслу. В этом почти не было необходимости.\n\nОна просто смотрела.\n\nЗапоминала, как они готовят маршрут перед входом в неизвестную систему. Как изучают старые карты. Как проверяют атмосферу, рельеф и признаки присутствия людей. Как разговаривают с местными жителями и по мелочам определяют, когда собеседник что-то скрывает.\n\nСо временем простое любопытство превратилось в навык.\n\nОна научилась ориентироваться в незнакомых местах, внимательно относиться к деталям и быстро запоминать новую информацию. Родители всё чаще позволяли ей помогать с простыми задачами, а затем начали относиться к ней почти как к младшему члену экспедиционной команды.\n\nЧем старше она становилась, тем сильнее нравилась ей сама работа.\n\nНо кое-что нравилось значительно меньше.\n\nОплата.\n\nРазведка внешних миров могла приносить хорошие деньги, но между удачными контрактами проходили месяцы. Исследовательские организации торговались за каждый расходник, заказчики задерживали выплаты, а действительно ценные находки случались слишком редко.\n\nЕй хотелось большего.\n\nНе когда-нибудь после десятилетий экспедиций.\n\nСейчас.\n\n## Решение стать наёмником\n\nК двадцати пяти годам она уже достаточно хорошо представляла, какую жизнь могла бы получить, если пойдёт по пути родителей.\n\nНовые системы. Неизвестные планеты. Экспедиции. Опасность.\n\nИ постоянный поиск следующего заказчика.\n\nОна выбрала другой путь.\n\nКорпус наёмников **«Акариус»** предлагал именно то, чего ей не хватало: риск оставался прежним, зато за него платили значительно больше.\n\nЕё опыт оказался полезен Корпусу. Человек, привыкший работать на незнакомой территории, замечать детали, искать маршруты и быстро осваиваться в новых условиях, нужен далеко не только научным экспедициям.\n\nТак потомственная путешественница и дочь разведчиков внешних миров стала **новобранцем «Акариуса»**.\n\nРодители её решение не одобрили.\n\nОни исследовали неизвестное, чтобы расширять границы человеческого знания.\n\nИх дочь решила использовать те же навыки, чтобы зарабатывать деньги.\n\nОна не считает, что между этими занятиями существует настолько большая разница.\n\nВ обоих случаях тебя отправляют туда, куда нормальные люди предпочитают не ходить.\n\nПросто Корпус платит лучше.\n\n## Характер\n\nЛюбознательна и наблюдательна. Плохо переносит однообразие и слишком долгое пребывание на одном месте. Новые города, корабли, люди и планеты вызывают у неё почти профессиональный интерес.\n\nПривычка постоянно путешествовать сделала её самостоятельной и достаточно спокойно относящейся к бытовым неудобствам.\n\nОна ценит деньги и совершенно этого не скрывает. Не потому, что мечтает просто накопить огромную сумму, а потому, что с детства видела простую закономерность: хорошие корабли, оборудование, информация и свобода передвижения всегда имеют цену.\n\nОна любит исследовать неизвестное.\n\nНо в отличие от родителей предпочитает получать за это достойную оплату.",
+      "notes": "",
+      "pass": "od8989",
+      "personalityTrait": "Доброжелательная .гибкая. Зоркой глаз. Бдительная",
+      "rank": "Шкеллер",
+      "relatedArticleIds": [],
+      "role": "player",
+      "shortName": "Алисия Эванс",
+      "skillPoints": 0,
+      "skills": [],
+      "social": {
+        "npcIds": [],
+        "orgs": [],
+        "reputation": []
+      },
+      "socialOriginId": "profession_origin_1786727191019",
+      "specializations": {},
+      "startingEquipmentIds": [],
+      "stats": {
+        "hpCurrent": 6,
+        "hpMax": 6,
+        "shieldCurrent": 0,
+        "shieldMax": 0,
+        "energyCurrent": 0,
+        "energyMax": 1,
+        "baseArmorClass": 10,
+        "armorClass": 1
+      },
+      "stockPortfolio": {
+        "positions": {},
+        "ledger": [],
+        "legacyInventoryMigrated": {}
+      },
+      "weakness": "синдром Плюшкина"
+    },
+    "валериан_вартиган": {
+      "abilities": {
+        "strength": 0,
+        "dexterity": 0,
+        "intelligence": 0,
+        "endurance": 0,
+        "will": 0,
+        "glory": 0
+      },
+      "abilityBase": {
+        "strength": 0,
+        "dexterity": 0,
+        "intelligence": 0,
+        "endurance": 0,
+        "will": 0,
+        "glory": 0
+      },
+      "allowCrossCampaignDirectMessages": false,
+      "approvalStatus": "approved",
+      "avatarGlyph": "ВА",
+      "campaignIds": [
+        "campaign_453839"
+      ],
+      "carryWeightMax": 12,
+      "citizenship": "Ноэзис",
+      "citizenshipLabels": [
+        "Ноэзис"
+      ],
+      "citizenshipPlanetIds": [
+        "planet_839354"
+      ],
+      "creationPointsSpent": 0,
+      "credits": 25000,
+      "currentPlanetId": "planet_767039",
+      "currentRegionId": "",
+      "currentShipId": "",
+      "displayName": "Валериан Вартиган",
+      "equipmentSlots": {
+        "primaryWeapon": "",
+        "secondaryWeapon": "item_1786655348513",
+        "armor": "n7_defender"
+      },
+      "geographicOriginId": "geo_origin_1786656532886",
+      "id": "валериан_вартиган",
+      "ideal": "Дослужиться до высшего состава",
+      "image": "https://sync.grpg-sync.ru/api/files/campaign_assets/ul2p8hmkm28j5ku/68fb535b632eceab1a15d1ee4f25f217_entity_valerian_vartigan_valerian_vartigan_vbci250d6m.png",
+      "implantSlotCount": 0,
+      "implantSlots": [],
+      "implants": [],
+      "installedImplantIds": [],
+      "inventory": [
+        {
+          "itemId": "item_1786752612100",
+          "positions": [],
+          "qty": 1
+        },
+        {
+          "itemId": "item_1786655348513",
+          "positions": [],
+          "qty": 1
+        },
+        {
+          "itemId": "n7_defender",
+          "positions": [],
+          "qty": 1
+        },
+        {
+          "itemId": "origin_item_palatin_archive_key",
+          "positions": [
+            {
+              "x": 0,
+              "y": 1
+            }
+          ],
+          "qty": 1
+        },
+        {
+          "itemId": "profession_item_navigation_tablet",
+          "positions": [
+            {
+              "x": 1,
+              "y": 0
+            }
+          ],
+          "qty": 1
+        }
+      ],
+      "inventorySize": 12,
+      "lore": "## Основные данные\n\n**Возраст:** 25 лет\n**Рост:** 186 см\n**Вес:** 80 кг\n**Телосложение:** атлетическое\n**Волосы:** белые\n**Глаза:** красные\n**Внешность:** яркая, почти модельная. Ухожен и прекрасно знает, какое впечатление производит на окружающих. Самоуверен, особенно в общении с женщинами, и совершенно не страдает от недостатка внимания.\n\n## Прошлое\n\nРодился и вырос на **Палатине**. В восемнадцать лет поступил на военную службу и следующие семь лет провёл в вооружённых силах планеты.\n\nОсновной специальностью стала авиация. Начинал с пилотирования лёгких атмосферных машин и транспортных катеров, позднее получил допуск к боевым истребителям и малым космическим судам. Благодаря отличным результатам подготовки быстро закрепил за собой репутацию талантливого пилота. Особенно хорошо показывал себя там, где требовались скорость реакции, точность и способность принимать решение без долгого ожидания приказов.\n\nПоследнее качество в итоге и уничтожило его военную карьеру.\n\nВо время одной из боевых операций его подразделению поступил приказ об отступлении. Союзные силы на другом участке фронта в этот момент оставались практически без прикрытия. Выполнение приказа означало бросить их под удар.\n\nОн отказался.\n\nНесмотря на прямую команду, развернул машину и остался прикрывать отход союзников. В его распоряжении находился новый **экспериментальный истребитель** — дорогая машина, существовавшая всего в нескольких экземплярах и проходившая войсковые испытания.\n\nНесколько минут он фактически удерживал противника один, выиграв достаточно времени, чтобы значительная часть союзного подразделения смогла выйти из зоны поражения.\n\nСам истребитель был уничтожен.\n\nПилота официально посчитали пропавшим без вести.\n\nОн выжил.\n\nИ возвращаться не собирался.\n\nСпасённые солдаты могли считать его героем, но военное командование смотрело на ситуацию иначе. Он нарушил прямой приказ, самовольно продолжил бой и уничтожил экспериментальную машину, стоимость которой значительно превышала всё жалованье, которое он мог бы получить за несколько жизней службы.\n\nЕсли бы стало известно, что пилот жив, его ожидал бы не орден.\n\nПоэтому для армии Палатина он так и остался одним из погибших или пропавших во время той операции.\n\n## Наёмник\n\nПосле нескольких месяцев под чужими именами и случайных перелётов он окончательно понял, что прежней жизни больше нет.\n\nТогда появилась информация о **Корпусе наёмников «Акариус»**.\n\nОрганизация принимала тех, кому было всё равно, насколько чистым выглядит их прошлое, пока человек способен выполнять контракт. Для бывшего военного пилота с семилетним опытом это оказалось одним из немногих мест, где его навыки представляли большую ценность, чем вопросы о происхождении.\n\nТак бывший пилот Палатина оказался среди **новобранцев Корпуса**.\n\nТеперь его интересует возможность снова оказаться за штурвалом. Желательно — машины быстрее, опаснее и дороже той, которую он уже однажды превратил в горящий металлолом.\n\nПри этом причина, по которой он нарушил последний приказ, никуда не исчезла.\n\nОн способен выполнять грязную работу. Может убивать за деньги. Может служить людям, которых совершенно не уважает.\n\nНо приказ бросить своих он уже однажды не выполнил.\n\nИ едва ли выполнит во второй раз.\n\n## Характер\n\nСамоуверенный, дерзкий и прекрасно осознающий собственные способности. Любит внимание и привык рассчитывать на внешность и обаяние почти так же часто, как на профессиональные навыки.\n\nЛегко производит впечатление человека, для которого всё происходящее — очередное развлечение. Флиртует, рискует, любит красивые машины и не упускает возможности напомнить окружающим, насколько хорошо умеет летать.\n\nПри этом за показной беспечностью скрывается очень конкретный принцип: **своих не бросают**.\n\nИменно этот принцип уже стоил ему карьеры, имени и почти жизни.",
+      "notes": "",
+      "pass": "od8989",
+      "personalityTrait": "Перфекционист . Отважный . Быстро обучается",
+      "rank": "Шкеллер",
+      "relatedArticleIds": [],
+      "role": "player",
+      "shortName": "Валериан Вартиган",
+      "skillPoints": 0,
+      "skills": [],
+      "social": {
+        "npcIds": [
+          "npc_499859"
+        ],
+        "orgs": [],
+        "reputation": []
+      },
+      "socialOriginId": "profession_origin_1786656114950",
+      "specializations": {},
+      "startingEquipmentIds": [],
+      "stats": {
+        "hpCurrent": 6,
+        "hpMax": 6,
+        "shieldCurrent": 0,
+        "shieldMax": 0,
+        "energyCurrent": 0,
+        "energyMax": 1,
+        "baseArmorClass": 10,
+        "armorClass": 1
+      },
+      "stockPortfolio": {
+        "positions": {},
+        "ledger": [],
+        "legacyInventoryMigrated": {}
+      },
+      "weakness": "Не переношу алкоголь"
+    },
+    "иоган_мэррил": {
+      "abilities": {
+        "strength": 0,
+        "dexterity": 0,
+        "intelligence": 0,
+        "endurance": 0,
+        "will": 0,
+        "glory": 0
+      },
+      "abilityBase": {
+        "strength": 0,
+        "dexterity": 0,
+        "intelligence": 0,
+        "endurance": 0,
+        "will": 0,
+        "glory": 0
+      },
+      "allowCrossCampaignDirectMessages": false,
+      "approvalStatus": "approved",
+      "avatarGlyph": "ИМ",
+      "campaignIds": [
+        "campaign_453839"
+      ],
+      "carryWeightMax": 12,
+      "citizenship": "Свободные миры",
+      "citizenshipLabels": [
+        "Свободные миры"
+      ],
+      "citizenshipPlanetIds": [
+        "cassilia"
+      ],
+      "creationPointsSpent": 0,
+      "credits": 65000,
+      "currentPlanetId": "planet_767039",
+      "currentRegionId": "",
+      "currentShipId": "",
+      "displayName": "Иоган Мэррил",
+      "equipmentSlots": {
+        "primaryWeapon": "",
+        "secondaryWeapon": "item_1786655348513",
+        "armor": "n7_defender"
+      },
+      "geographicOriginId": "geo_origin_1786656404965",
+      "id": "иоган_мэррил",
+      "ideal": "",
+      "image": "https://sync.grpg-sync.ru/api/files/campaign_assets/wq6tap8ncb49kgo/51aef4ae38ffde29fe62c3fa69015d63_entity_iogan_merril_iogan_merril_ssni5au3j1.jpg",
+      "implantSlotCount": 0,
+      "implantSlots": [],
+      "implants": [],
+      "installedImplantIds": [],
+      "inventory": [
+        {
+          "itemId": "item_1786655348513",
+          "qty": 1
+        },
+        {
+          "itemId": "n7_defender",
+          "qty": 1
+        },
+        {
+          "itemId": "origin_item_ladys_cricket",
+          "positions": [
+            {
+              "x": 0,
+              "y": 0
+            }
+          ],
+          "qty": 1
+        },
+        {
+          "itemId": "profession_item_broker_credentials",
+          "positions": [
+            {
+              "x": 1,
+              "y": 0
+            }
+          ],
+          "qty": 1
+        }
+      ],
+      "inventorySize": 12,
+      "lore": "",
+      "notes": "",
+      "pass": "ezIO_1459b",
+      "personalityTrait": "",
+      "rank": "Новый персонаж",
+      "relatedArticleIds": [],
+      "role": "player",
+      "shortName": "Иоган Мэррил",
+      "skillPoints": 0,
+      "skills": [],
+      "social": {
+        "npcIds": [],
+        "orgs": [],
+        "reputation": []
+      },
+      "socialOriginId": "profession_origin_1786726927106",
+      "specializations": {},
+      "startingEquipmentIds": [],
+      "stats": {
+        "hpCurrent": 6,
+        "hpMax": 6,
+        "shieldCurrent": 0,
+        "shieldMax": 0,
+        "energyCurrent": 0,
+        "energyMax": 0,
+        "baseArmorClass": 10,
+        "armorClass": 1
+      },
+      "stockPortfolio": {
+        "positions": {},
+        "ledger": [],
+        "legacyInventoryMigrated": {}
+      },
+      "weakness": ""
+    },
+    "эи_прил_маклахлен": {
+      "abilities": {
+        "strength": 0,
+        "dexterity": 0,
+        "intelligence": 0,
+        "endurance": 0,
+        "will": 0,
+        "glory": 0
+      },
+      "abilityBase": {
+        "strength": 0,
+        "dexterity": 0,
+        "intelligence": 0,
+        "endurance": 0,
+        "will": 0,
+        "glory": 0
+      },
+      "allowCrossCampaignDirectMessages": false,
+      "approvalStatus": "approved",
+      "avatarGlyph": "ЭЙ",
+      "campaignIds": [
+        "campaign_453839"
+      ],
+      "carryWeightMax": 21,
+      "citizenship": "Дараль-Фалак",
+      "citizenshipLabels": [
+        "Дараль-Фалак"
+      ],
+      "citizenshipPlanetIds": [
+        "planet_328652"
+      ],
+      "creationPointsSpent": 0,
+      "credits": 25000,
+      "currentPlanetId": "planet_767039",
+      "currentRegionId": "",
+      "currentShipId": "",
+      "displayName": "Эйприл Маклахлен",
+      "equipmentSlots": {
+        "primaryWeapon": "",
+        "secondaryWeapon": "item_1786655348513",
+        "armor": "item_1786752582242"
+      },
+      "geographicOriginId": "geo_origin_1786732596337",
+      "id": "эи_прил_маклахлен",
+      "ideal": "Достижение цели (почти) любой ценой. Мораль, безусловно, присутствует, но не отменяет возможность угрожать броском с крыши небоскреба или избиением.\nИстина. Даже если она неудобна, она должна быть раскрыта.",
+      "image": "https://sync.grpg-sync.ru/api/files/campaign_assets/thhyq24mpfxjqnv/a5b67783d96b8c4fcff9881003e9f382_entity_eypril_maklahlen_eypril_maklahlen_7ezu4qxzyb.jpg",
+      "implantSlotCount": 0,
+      "implantSlots": [],
+      "implants": [],
+      "installedImplantIds": [],
+      "inventory": [
+        {
+          "itemId": "item_1786752582242",
+          "positions": [],
+          "qty": 1
+        },
+        {
+          "itemId": "item_1786655348513",
+          "positions": [],
+          "qty": 1
+        },
+        {
+          "itemId": "origin_item_lumena_dosimeter",
+          "positions": [
+            {
+              "x": 0,
+              "y": 0
+            }
+          ],
+          "qty": 1
+        },
+        {
+          "itemId": "profession_item_spectral_em_analyzer",
+          "positions": [
+            {
+              "x": 1,
+              "y": 0
+            }
+          ],
+          "qty": 1
+        }
+      ],
+      "inventorySize": 18,
+      "lore": "Для выходца из семьи военных служба в армии должна стать чем-то само собой разумеющимся. Прошло несколько лет добровольной службы, и Эйприл вернулась на гражданку и заключила долгосрочный контракт с филиалом межпланетной корпорации «Борей», специализирующейся в основном на логистике и пассажирских грузоперевозках. После порядка двенадцати лет службы, она была уволена, несмотря на обещание бросить пить и «вновь стать хорошим копом». Ввиду необходимости на что-то жить, Эйприл вступила в «Акариус». Однако не только из-за нужды: последним (и незавершенным) делом во время ее службы была крупная мошенническая схема, в которой также фигурировало и несколько убийств не самых высокопоставленных, но важных в узлах принятия решений менеджеров «Борея». Ниточки привели следователя к «Акариусу», и, хотя доказательств вины или причастности последних к делу не было, мисс Маклахлан не отступилась от своего чутья. К тому же, расследование уже стало личным из-за того, что жертвой стал бывший сослуживец.",
+      "notes": "",
+      "pass": "BananaBomb",
+      "personalityTrait": "Характер скверный, в разводе. Любит животных. С трудом признает свои ошибки и делает то, что считает правильным.",
+      "rank": "Шкеллер",
+      "relatedArticleIds": [],
+      "role": "player",
+      "shortName": "Эйприл Маклахлен",
+      "skillPoints": 0,
+      "skills": [],
+      "social": {
+        "npcIds": [],
+        "orgs": [],
+        "reputation": []
+      },
+      "socialOriginId": "profession_origin_1786727031560",
+      "specializations": {},
+      "startingEquipmentIds": [],
+      "stats": {
+        "hpCurrent": 6,
+        "hpMax": 6,
+        "shieldCurrent": 0,
+        "shieldMax": 0,
+        "energyCurrent": 0,
+        "energyMax": 1,
+        "baseArmorClass": 10,
+        "armorClass": 2
+      },
+      "stockPortfolio": {
+        "positions": {},
+        "ledger": [],
+        "legacyInventoryMigrated": {}
+      },
+      "weakness": "Склонность к алкоголизму. Вспыльчивость. Ну и та самая всплывающая жестокость из-за желания достичь цели - пускай и не всегда осознанная."
+    },
+    "арчи_вэнс": {
+      "id": "арчи_вэнс",
+      "role": "player",
+      "pass": "GScE2009",
+      "shortName": "Арчи Вэнс",
+      "displayName": "Арчи Вэнс",
+      "rank": "Шкеллер",
+      "avatarGlyph": "АР",
+      "credits": 25000,
+      "lore": "Арчи вырос на Альтаире-7 – планете, где традиции сковывают не только тело, но и разум. В детстве он зачитывался историями о героях Лиги, мечтал о процветании, но реальность Альтаира быстро остудила его пыл. Он видел, как бюрократия душит бизнес, как предрассудки калечат судьбы, как власть имущие наживаются на простых людях. Это заронило в нем семя цинизма, которое проросло со временем, он был вынужден принять царящие в окружающем его мире законы.\nОтец Арчи был потомственным ремесленником, и Арчи должен был унаследовать его дело. Он неплохо справлялся с изготовлением сложных механизмов и декоративных изделий. Семья Вэнс всегда жила по строгим правилам. Главным было не личное счастье, а благополучие всего семейства. Из-за больших финансовых трудностей, настигших его семью, Арчи пришлось заняться нелегальной торговлей, хоть это и был путь в один конец. Он быстро понял, что в криминальном мире действуют свои законы. Арчи научился выживать, обманывать, манипулировать. Он стал циничнее, жестче. Арчи ступил на скользкую дорожку контрабанды, преследуя лишь одну цель – личное обогащение. Он был готов перевозить все, что приносит прибыль – от оружия и наркотиков до краденых артефактов и запрещенных технологий.\nОн отличный пилот и механик, разбирается в оружии и знает, как взломать любую систему безопасности. Но главное его оружие – это умение находить общий язык с людьми, читать их мысли и предугадывать их действия. Он – прирожденный переговорщик, способный убедить кого угодно в чем угодно.\nАрчи обладает острым умом, хитростью и невероятной способностью манипулировать людьми. Он умеет читать чужие мысли, находить слабые места и использовать их в своих интересах. Он мастерски врет, притворяется и разыгрывает любые роли. Арчи – прирожденный актер, способный обвести вокруг пальца даже самого опытного мошенника, но он не испытывает удовольствия от насилия, готов применить его, если это необходимо для защиты своих интересов. Он считает, что жестокость – это всего лишь инструмент, который нужно использовать умело и расчетливо.\nС самого детства в нём пытались воспитать добродетельность и сострадание, поэтому он считал, что тот путь, по которому ему пришлось ступить, на самом деле мерзок. В зеркале он видел худшую версию себя, которая, к сожалению, была реальностью.",
+      "notes": "",
+      "stats": {
+        "hpCurrent": 6,
+        "hpMax": 6,
+        "shieldCurrent": 0,
+        "shieldMax": 0,
+        "energyCurrent": 0,
+        "energyMax": 1,
+        "baseArmorClass": 10,
+        "armorClass": 2
+      },
+      "abilities": {
+        "strength": 0,
+        "dexterity": 0,
+        "intelligence": 0,
+        "endurance": 0,
+        "will": 0,
+        "glory": 0
+      },
+      "specializations": {},
+      "equipmentSlots": {
+        "primaryWeapon": "",
+        "secondaryWeapon": "item_1786655348513",
+        "armor": "item_1786752582242"
+      },
+      "inventory": [
+        {
+          "itemId": "origin_item_iridia_anonymous_payment_token",
+          "positions": [
+            {
+              "x": 0,
+              "y": 1
+            }
+          ],
+          "qty": 1
+        },
+        {
+          "itemId": "profession_item_navigation_tablet",
+          "positions": [
+            {
+              "x": 0,
+              "y": 0
+            }
+          ],
+          "qty": 1
+        },
+        {
+          "itemId": "item_1786752582242",
+          "positions": [
+            null
+          ],
+          "qty": 1
+        },
+        {
+          "itemId": "item_1786655348513",
+          "positions": [
+            null
+          ],
+          "qty": 1
+        },
+        {
+          "itemId": "rule_gear_climbing_kit",
+          "positions": [
+            {
+              "x": 1,
+              "y": 0
+            }
+          ],
+          "qty": 1
+        }
+      ],
+      "implants": [],
+      "social": {
+        "npcIds": [],
+        "orgs": [],
+        "reputation": []
+      },
+      "skillPoints": 0,
+      "skills": [],
+      "currentPlanetId": "planet_767039",
+      "relatedArticleIds": [],
+      "image": "file:///C:/Users/Coba/AppData/Roaming/galactic-rpg-interface/world-data/assets/legacy_players_image_d4d205423a8849f9c4ea.png",
+      "approvalStatus": "approved",
+      "socialOriginId": "profession_origin_1786656114950",
+      "geographicOriginId": "geo_origin_1786733283191",
+      "personalityTrait": "Хитёр, остроумен. Идет к своей цели несмотря ни на что. Убеждения ведут его к целям своим путём, индивидуальность его фишка",
+      "ideal": "Быть самым лучшим в нише-идеал его жизни. Практиковаться в любимом деле, стремиться к лучшему результату идя по головам.",
+      "weakness": "Ради семьи,пойдет на всё. Алочность.Деньги важнее человеческой жизни. Бесплатно, за дело не берётся",
+      "startingEquipmentIds": [],
+      "creationPointsSpent": 0,
+      "abilityBase": {
+        "strength": 0,
+        "dexterity": 0,
+        "intelligence": 0,
+        "endurance": 0,
+        "will": 0,
+        "glory": 0
+      },
+      "installedImplantIds": [],
+      "inventorySize": 18,
+      "carryWeightMax": 21,
+      "implantSlotCount": 0,
+      "implantSlots": [],
+      "stockPortfolio": {
+        "positions": {},
+        "ledger": [],
+        "legacyInventoryMigrated": {}
+      },
+      "citizenship": "Гелионная Директория",
+      "citizenshipLabels": [
+        "Гелионная Директория"
+      ],
+      "citizenshipPlanetIds": [
+        "planet_751026"
+      ],
+      "campaignIds": [
+        "campaign_453839"
+      ],
+      "currentRegionId": "",
+      "currentShipId": "",
+      "allowCrossCampaignDirectMessages": false
     }
   },
   "PLAYER_LIST": [
     {
-      "id": "gm",
-      "role": "gm",
-      "pass": "admin",
-      "shortName": "Master Node",
-      "displayName": "Ведущий",
-      "rank": "Game Master",
-      "avatarGlyph": "GM",
-      "credits": 0,
-      "lore": "Администратор локального узла. Управляет данными игроков и состоянием мира.",
-      "notes": "Права изменять ресурсы, статистику, инвентарь и лор.",
-      "stats": {
-        "hpCurrent": 999,
-        "hpMax": 999,
-        "shieldCurrent": 999,
-        "shieldMax": 999,
-        "energyCurrent": 1,
-        "energyMax": 1
-      },
       "abilities": {
-        "strength": 20,
-        "dexterity": 20,
-        "intelligence": 20,
-        "endurance": 20,
-        "will": 20,
-        "glory": 20
+        "strength": 0,
+        "dexterity": 0,
+        "intelligence": 0,
+        "endurance": 0,
+        "will": 0,
+        "glory": 0
       },
-      "equipmentSlots": {
-        "primaryWeapon": "m97_viper",
-        "secondaryWeapon": "",
-        "armor": "n7_defender"
+      "abilityBase": {
+        "strength": 0,
+        "dexterity": 0,
+        "intelligence": 0,
+        "endurance": 0,
+        "will": 0,
+        "glory": 0
       },
-      "inventory": [],
-      "implants": [
-        {
-          "name": "Master Override",
-          "energyCost": 0,
-          "desc": "Enabled"
-        }
+      "allowCrossCampaignDirectMessages": false,
+      "approvalStatus": "approved",
+      "avatarGlyph": "АЛ",
+      "campaignIds": [
+        "campaign_453839"
       ],
-      "social": {
-        "npcIds": [
-          "mirabel"
-        ],
-        "orgs": [
-          "Control Node"
-        ],
-        "reputation": [
-          {
-            "orgId": "",
-            "name": "Control Node",
-            "value": 0,
-            "status": "Control Node",
-            "note": ""
-          }
-        ]
-      },
-      "currentPlanetId": "",
-      "skillPoints": 0,
-      "skills": []
-    },
-    {
-      "id": "u1",
-      "role": "player",
-      "pass": "1234",
-      "shortName": "Shepard",
-      "displayName": "Коммандер Шепард",
-      "rank": "Spectre",
-      "avatarGlyph": "NS",
+      "carryWeightMax": 12,
+      "citizenship": "Стратархия Асписа",
+      "citizenshipLabels": [
+        "Стратархия Асписа"
+      ],
+      "citizenshipPlanetIds": [
+        "planet_459822"
+      ],
+      "creationPointsSpent": 0,
       "credits": 25000,
-      "lore": "Оперативник особого допуска. Специализация: штурм, тактика и дипломатическое давление.",
-      "notes": "Репутация: высокий риск, высокий результат.",
-      "stats": {
-        "hpCurrent": 94,
-        "hpMax": 94,
-        "shieldCurrent": 120,
-        "shieldMax": 120,
-        "energyCurrent": 1,
-        "energyMax": 1
-      },
-      "abilities": {
-        "strength": 14,
-        "dexterity": 13,
-        "intelligence": 12,
-        "endurance": 15,
-        "will": 11,
-        "glory": 16
-      },
+      "currentPlanetId": "planet_767039",
+      "currentRegionId": "",
+      "currentShipId": "",
+      "displayName": "Алисия Эванс",
       "equipmentSlots": {
-        "primaryWeapon": "m97_viper",
-        "secondaryWeapon": "",
+        "primaryWeapon": "",
+        "secondaryWeapon": "item_1786655348513",
         "armor": "n7_defender"
       },
+      "geographicOriginId": "geo_origin_1786547834688",
+      "id": "алисия_эванс",
+      "ideal": "Изучить всю галактику",
+      "image": "https://sync.grpg-sync.ru/api/files/campaign_assets/mk92ihgcvz9bdy0/2f21dc8eb538eaef822341903f870700_entity_alisiya_evans_alisiya_evans_mnol093198.png",
+      "implantSlotCount": 0,
+      "implantSlots": [],
+      "implants": [],
+      "installedImplantIds": [],
       "inventory": [
-        {
-          "itemId": "med_pack",
-          "qty": 5
-        },
-        {
-          "itemId": "credit_chip",
-          "qty": 1
-        },
         {
           "itemId": "omni_gel",
-          "qty": 3
-        }
-      ],
-      "implants": [
-        {
-          "name": "Кибер-глаз Mk.II",
-          "energyCost": 0,
-          "desc": "Active"
+          "positions": [],
+          "qty": 1
         },
         {
-          "name": "Биотический усилитель L3",
-          "energyCost": 0,
-          "desc": "Stable"
+          "itemId": "item_1786752612100",
+          "positions": [],
+          "qty": 1
         },
         {
-          "name": "Синтетические кости",
-          "energyCost": 0,
-          "desc": "98%"
-        }
-      ],
-      "social": {
-        "npcIds": [
-          "garrus",
-          "liara",
-          "hacket"
-        ],
-        "orgs": [
-          "Альянс Систем",
-          "Цитадель",
-          "Цербер (враждебно)"
-        ],
-        "reputation": [
-          {
-            "orgId": "",
-            "name": "Альянс Систем",
-            "value": 0,
-            "status": "Альянс Систем",
-            "note": ""
-          },
-          {
-            "orgId": "",
-            "name": "Цитадель",
-            "value": 0,
-            "status": "Цитадель",
-            "note": ""
-          },
-          {
-            "orgId": "",
-            "name": "Цербер (враждебно)",
-            "value": 0,
-            "status": "Цербер (враждебно)",
-            "note": ""
-          }
-        ]
-      },
-      "currentPlanetId": "cassilia",
-      "skillPoints": 0,
-      "skills": []
-    },
-    {
-      "id": "u2",
-      "role": "player",
-      "pass": "0000",
-      "shortName": "V",
-      "displayName": "Нетрaннер V",
-      "rank": "Mercenary",
-      "avatarGlyph": "VX",
-      "credits": 4200,
-      "lore": "Фрилансер с сильным уклоном в инфильтрацию, взлом и быстрые ударные операции.",
-      "notes": "Подозрительно быстро адаптируется к неизвестным сетям.",
-      "stats": {
-        "hpCurrent": 82,
-        "hpMax": 82,
-        "shieldCurrent": 18,
-        "shieldMax": 18,
-        "energyCurrent": 1,
-        "energyMax": 1
-      },
-      "abilities": {
-        "strength": 10,
-        "dexterity": 17,
-        "intelligence": 16,
-        "endurance": 12,
-        "will": 12,
-        "glory": 11
-      },
-      "equipmentSlots": {
-        "primaryWeapon": "malorian_3516",
-        "secondaryWeapon": "malorian_3516",
-        "armor": "arasaka_vest"
-      },
-      "inventory": [
-        {
-          "itemId": "med_pack",
-          "qty": 2
+          "itemId": "item_1786655348513",
+          "positions": [],
+          "qty": 1
         },
         {
-          "itemId": "virus_chip",
+          "itemId": "n7_defender",
+          "positions": [],
+          "qty": 1
+        },
+        {
+          "itemId": "profession_item_environment_analyzer",
+          "positions": [
+            {
+              "x": 2,
+              "y": 0
+            }
+          ],
+          "qty": 1
+        },
+        {
+          "itemId": "origin_item_floating_municipality_beacon",
+          "positions": [
+            {
+              "x": 3,
+              "y": 0
+            }
+          ],
           "qty": 1
         }
       ],
-      "implants": [
+      "inventorySize": 12,
+      "lore": "## Основные данные\n\n**Возраст:** 25 лет\n**Рост:** 171 см\n**Вес:** 55 кг\n**Телосложение:** стройное, подтянутое\n**Волосы:** каштановые\n**Глаза:** тёмно-серые\n**Внешность:** красивая, ухоженная. В движениях заметна привычка к тесным помещениям кораблей и постоянным перелётам.\n\n## Происхождение\n\nОна родилась среди **плавучих муниципалитетов** — небольших мобильных сообществ, для которых корабль одновременно является домом, городом и границей собственного мира.\n\nЕё детство прошло не на одной планете и даже не в одной системе. Родители были опытными **разведчиками внешних миров** и значительную часть жизни проводили в экспедициях. Когда условия позволяли, они брали дочь с собой.\n\nПоэтому ещё ребёнком она привыкла к тому, что за иллюминатором постоянно меняются звёзды.\n\nОна видела орбитальные станции, маленькие колонии на краю освоенного пространства, заброшенные поселения, промышленные системы и миры, где появление чужого корабля само по себе становилось событием.\n\nДля её родителей это была работа.\n\nДля неё — обычная жизнь.\n\n## Детство среди разведчиков\n\nРодители редко пытались целенаправленно обучать дочь своему ремеслу. В этом почти не было необходимости.\n\nОна просто смотрела.\n\nЗапоминала, как они готовят маршрут перед входом в неизвестную систему. Как изучают старые карты. Как проверяют атмосферу, рельеф и признаки присутствия людей. Как разговаривают с местными жителями и по мелочам определяют, когда собеседник что-то скрывает.\n\nСо временем простое любопытство превратилось в навык.\n\nОна научилась ориентироваться в незнакомых местах, внимательно относиться к деталям и быстро запоминать новую информацию. Родители всё чаще позволяли ей помогать с простыми задачами, а затем начали относиться к ней почти как к младшему члену экспедиционной команды.\n\nЧем старше она становилась, тем сильнее нравилась ей сама работа.\n\nНо кое-что нравилось значительно меньше.\n\nОплата.\n\nРазведка внешних миров могла приносить хорошие деньги, но между удачными контрактами проходили месяцы. Исследовательские организации торговались за каждый расходник, заказчики задерживали выплаты, а действительно ценные находки случались слишком редко.\n\nЕй хотелось большего.\n\nНе когда-нибудь после десятилетий экспедиций.\n\nСейчас.\n\n## Решение стать наёмником\n\nК двадцати пяти годам она уже достаточно хорошо представляла, какую жизнь могла бы получить, если пойдёт по пути родителей.\n\nНовые системы. Неизвестные планеты. Экспедиции. Опасность.\n\nИ постоянный поиск следующего заказчика.\n\nОна выбрала другой путь.\n\nКорпус наёмников **«Акариус»** предлагал именно то, чего ей не хватало: риск оставался прежним, зато за него платили значительно больше.\n\nЕё опыт оказался полезен Корпусу. Человек, привыкший работать на незнакомой территории, замечать детали, искать маршруты и быстро осваиваться в новых условиях, нужен далеко не только научным экспедициям.\n\nТак потомственная путешественница и дочь разведчиков внешних миров стала **новобранцем «Акариуса»**.\n\nРодители её решение не одобрили.\n\nОни исследовали неизвестное, чтобы расширять границы человеческого знания.\n\nИх дочь решила использовать те же навыки, чтобы зарабатывать деньги.\n\nОна не считает, что между этими занятиями существует настолько большая разница.\n\nВ обоих случаях тебя отправляют туда, куда нормальные люди предпочитают не ходить.\n\nПросто Корпус платит лучше.\n\n## Характер\n\nЛюбознательна и наблюдательна. Плохо переносит однообразие и слишком долгое пребывание на одном месте. Новые города, корабли, люди и планеты вызывают у неё почти профессиональный интерес.\n\nПривычка постоянно путешествовать сделала её самостоятельной и достаточно спокойно относящейся к бытовым неудобствам.\n\nОна ценит деньги и совершенно этого не скрывает. Не потому, что мечтает просто накопить огромную сумму, а потому, что с детства видела простую закономерность: хорошие корабли, оборудование, информация и свобода передвижения всегда имеют цену.\n\nОна любит исследовать неизвестное.\n\nНо в отличие от родителей предпочитает получать за это достойную оплату.",
+      "notes": "",
+      "pass": "od8989",
+      "personalityTrait": "Доброжелательная .гибкая. Зоркой глаз. Бдительная",
+      "rank": "Шкеллер",
+      "relatedArticleIds": [],
+      "role": "player",
+      "shortName": "Алисия Эванс",
+      "skillPoints": 0,
+      "skills": [],
+      "social": {
+        "npcIds": [],
+        "orgs": [],
+        "reputation": []
+      },
+      "socialOriginId": "profession_origin_1786727191019",
+      "specializations": {},
+      "startingEquipmentIds": [],
+      "stats": {
+        "hpCurrent": 6,
+        "hpMax": 6,
+        "shieldCurrent": 0,
+        "shieldMax": 0,
+        "energyCurrent": 0,
+        "energyMax": 1,
+        "baseArmorClass": 10,
+        "armorClass": 1
+      },
+      "stockPortfolio": {
+        "positions": {},
+        "ledger": [],
+        "legacyInventoryMigrated": {}
+      },
+      "weakness": "синдром Плюшкина"
+    },
+    {
+      "id": "арчи_вэнс",
+      "role": "player",
+      "pass": "GScE2009",
+      "shortName": "Арчи Вэнс",
+      "displayName": "Арчи Вэнс",
+      "rank": "Шкеллер",
+      "avatarGlyph": "АР",
+      "credits": 25000,
+      "lore": "Арчи вырос на Альтаире-7 – планете, где традиции сковывают не только тело, но и разум. В детстве он зачитывался историями о героях Лиги, мечтал о процветании, но реальность Альтаира быстро остудила его пыл. Он видел, как бюрократия душит бизнес, как предрассудки калечат судьбы, как власть имущие наживаются на простых людях. Это заронило в нем семя цинизма, которое проросло со временем, он был вынужден принять царящие в окружающем его мире законы.\nОтец Арчи был потомственным ремесленником, и Арчи должен был унаследовать его дело. Он неплохо справлялся с изготовлением сложных механизмов и декоративных изделий. Семья Вэнс всегда жила по строгим правилам. Главным было не личное счастье, а благополучие всего семейства. Из-за больших финансовых трудностей, настигших его семью, Арчи пришлось заняться нелегальной торговлей, хоть это и был путь в один конец. Он быстро понял, что в криминальном мире действуют свои законы. Арчи научился выживать, обманывать, манипулировать. Он стал циничнее, жестче. Арчи ступил на скользкую дорожку контрабанды, преследуя лишь одну цель – личное обогащение. Он был готов перевозить все, что приносит прибыль – от оружия и наркотиков до краденых артефактов и запрещенных технологий.\nОн отличный пилот и механик, разбирается в оружии и знает, как взломать любую систему безопасности. Но главное его оружие – это умение находить общий язык с людьми, читать их мысли и предугадывать их действия. Он – прирожденный переговорщик, способный убедить кого угодно в чем угодно.\nАрчи обладает острым умом, хитростью и невероятной способностью манипулировать людьми. Он умеет читать чужие мысли, находить слабые места и использовать их в своих интересах. Он мастерски врет, притворяется и разыгрывает любые роли. Арчи – прирожденный актер, способный обвести вокруг пальца даже самого опытного мошенника, но он не испытывает удовольствия от насилия, готов применить его, если это необходимо для защиты своих интересов. Он считает, что жестокость – это всего лишь инструмент, который нужно использовать умело и расчетливо.\nС самого детства в нём пытались воспитать добродетельность и сострадание, поэтому он считал, что тот путь, по которому ему пришлось ступить, на самом деле мерзок. В зеркале он видел худшую версию себя, которая, к сожалению, была реальностью.",
+      "notes": "",
+      "stats": {
+        "hpCurrent": 6,
+        "hpMax": 6,
+        "shieldCurrent": 0,
+        "shieldMax": 0,
+        "energyCurrent": 0,
+        "energyMax": 1,
+        "baseArmorClass": 10,
+        "armorClass": 2
+      },
+      "abilities": {
+        "strength": 0,
+        "dexterity": 0,
+        "intelligence": 0,
+        "endurance": 0,
+        "will": 0,
+        "glory": 0
+      },
+      "specializations": {},
+      "equipmentSlots": {
+        "primaryWeapon": "",
+        "secondaryWeapon": "item_1786655348513",
+        "armor": "item_1786752582242"
+      },
+      "inventory": [
         {
-          "name": "Kiroshi Optics",
-          "energyCost": 0,
-          "desc": "Active"
+          "itemId": "origin_item_iridia_anonymous_payment_token",
+          "positions": [
+            {
+              "x": 0,
+              "y": 1
+            }
+          ],
+          "qty": 1
         },
         {
-          "name": "Sandevistan",
-          "energyCost": 0,
-          "desc": "Ready"
+          "itemId": "profession_item_navigation_tablet",
+          "positions": [
+            {
+              "x": 0,
+              "y": 0
+            }
+          ],
+          "qty": 1
         },
         {
-          "name": "Mantis Blades",
-          "energyCost": 0,
-          "desc": "Online"
+          "itemId": "item_1786752582242",
+          "positions": [
+            null
+          ],
+          "qty": 1
+        },
+        {
+          "itemId": "item_1786655348513",
+          "positions": [
+            null
+          ],
+          "qty": 1
+        },
+        {
+          "itemId": "rule_gear_climbing_kit",
+          "positions": [
+            {
+              "x": 1,
+              "y": 0
+            }
+          ],
+          "qty": 1
         }
       ],
+      "implants": [],
+      "social": {
+        "npcIds": [],
+        "orgs": [],
+        "reputation": []
+      },
+      "skillPoints": 0,
+      "skills": [],
+      "currentPlanetId": "planet_767039",
+      "relatedArticleIds": [],
+      "image": "file:///C:/Users/Coba/AppData/Roaming/galactic-rpg-interface/world-data/assets/legacy_players_image_d4d205423a8849f9c4ea.png",
+      "approvalStatus": "approved",
+      "socialOriginId": "profession_origin_1786656114950",
+      "geographicOriginId": "geo_origin_1786733283191",
+      "personalityTrait": "Хитёр, остроумен. Идет к своей цели несмотря ни на что. Убеждения ведут его к целям своим путём, индивидуальность его фишка",
+      "ideal": "Быть самым лучшим в нише-идеал его жизни. Практиковаться в любимом деле, стремиться к лучшему результату идя по головам.",
+      "weakness": "Ради семьи,пойдет на всё. Алочность.Деньги важнее человеческой жизни. Бесплатно, за дело не берётся",
+      "startingEquipmentIds": [],
+      "creationPointsSpent": 0,
+      "abilityBase": {
+        "strength": 0,
+        "dexterity": 0,
+        "intelligence": 0,
+        "endurance": 0,
+        "will": 0,
+        "glory": 0
+      },
+      "installedImplantIds": [],
+      "inventorySize": 18,
+      "carryWeightMax": 21,
+      "implantSlotCount": 0,
+      "implantSlots": [],
+      "stockPortfolio": {
+        "positions": {},
+        "ledger": [],
+        "legacyInventoryMigrated": {}
+      },
+      "citizenship": "Гелионная Директория",
+      "citizenshipLabels": [
+        "Гелионная Директория"
+      ],
+      "citizenshipPlanetIds": [
+        "planet_751026"
+      ],
+      "campaignIds": [
+        "campaign_453839"
+      ],
+      "currentRegionId": "",
+      "currentShipId": "",
+      "allowCrossCampaignDirectMessages": false
+    },
+    {
+      "abilities": {
+        "strength": 0,
+        "dexterity": 0,
+        "intelligence": 0,
+        "endurance": 0,
+        "will": 0,
+        "glory": 0
+      },
+      "abilityBase": {
+        "strength": 0,
+        "dexterity": 0,
+        "intelligence": 0,
+        "endurance": 0,
+        "will": 0,
+        "glory": 0
+      },
+      "allowCrossCampaignDirectMessages": false,
+      "approvalStatus": "approved",
+      "avatarGlyph": "ВА",
+      "campaignIds": [
+        "campaign_453839"
+      ],
+      "carryWeightMax": 12,
+      "citizenship": "Ноэзис",
+      "citizenshipLabels": [
+        "Ноэзис"
+      ],
+      "citizenshipPlanetIds": [
+        "planet_839354"
+      ],
+      "creationPointsSpent": 0,
+      "credits": 25000,
+      "currentPlanetId": "planet_767039",
+      "currentRegionId": "",
+      "currentShipId": "",
+      "displayName": "Валериан Вартиган",
+      "equipmentSlots": {
+        "primaryWeapon": "",
+        "secondaryWeapon": "item_1786655348513",
+        "armor": "n7_defender"
+      },
+      "geographicOriginId": "geo_origin_1786656532886",
+      "id": "валериан_вартиган",
+      "ideal": "Дослужиться до высшего состава",
+      "image": "https://sync.grpg-sync.ru/api/files/campaign_assets/ul2p8hmkm28j5ku/68fb535b632eceab1a15d1ee4f25f217_entity_valerian_vartigan_valerian_vartigan_vbci250d6m.png",
+      "implantSlotCount": 0,
+      "implantSlots": [],
+      "implants": [],
+      "installedImplantIds": [],
+      "inventory": [
+        {
+          "itemId": "item_1786752612100",
+          "positions": [],
+          "qty": 1
+        },
+        {
+          "itemId": "item_1786655348513",
+          "positions": [],
+          "qty": 1
+        },
+        {
+          "itemId": "n7_defender",
+          "positions": [],
+          "qty": 1
+        },
+        {
+          "itemId": "origin_item_palatin_archive_key",
+          "positions": [
+            {
+              "x": 0,
+              "y": 1
+            }
+          ],
+          "qty": 1
+        },
+        {
+          "itemId": "profession_item_navigation_tablet",
+          "positions": [
+            {
+              "x": 1,
+              "y": 0
+            }
+          ],
+          "qty": 1
+        }
+      ],
+      "inventorySize": 12,
+      "lore": "## Основные данные\n\n**Возраст:** 25 лет\n**Рост:** 186 см\n**Вес:** 80 кг\n**Телосложение:** атлетическое\n**Волосы:** белые\n**Глаза:** красные\n**Внешность:** яркая, почти модельная. Ухожен и прекрасно знает, какое впечатление производит на окружающих. Самоуверен, особенно в общении с женщинами, и совершенно не страдает от недостатка внимания.\n\n## Прошлое\n\nРодился и вырос на **Палатине**. В восемнадцать лет поступил на военную службу и следующие семь лет провёл в вооружённых силах планеты.\n\nОсновной специальностью стала авиация. Начинал с пилотирования лёгких атмосферных машин и транспортных катеров, позднее получил допуск к боевым истребителям и малым космическим судам. Благодаря отличным результатам подготовки быстро закрепил за собой репутацию талантливого пилота. Особенно хорошо показывал себя там, где требовались скорость реакции, точность и способность принимать решение без долгого ожидания приказов.\n\nПоследнее качество в итоге и уничтожило его военную карьеру.\n\nВо время одной из боевых операций его подразделению поступил приказ об отступлении. Союзные силы на другом участке фронта в этот момент оставались практически без прикрытия. Выполнение приказа означало бросить их под удар.\n\nОн отказался.\n\nНесмотря на прямую команду, развернул машину и остался прикрывать отход союзников. В его распоряжении находился новый **экспериментальный истребитель** — дорогая машина, существовавшая всего в нескольких экземплярах и проходившая войсковые испытания.\n\nНесколько минут он фактически удерживал противника один, выиграв достаточно времени, чтобы значительная часть союзного подразделения смогла выйти из зоны поражения.\n\nСам истребитель был уничтожен.\n\nПилота официально посчитали пропавшим без вести.\n\nОн выжил.\n\nИ возвращаться не собирался.\n\nСпасённые солдаты могли считать его героем, но военное командование смотрело на ситуацию иначе. Он нарушил прямой приказ, самовольно продолжил бой и уничтожил экспериментальную машину, стоимость которой значительно превышала всё жалованье, которое он мог бы получить за несколько жизней службы.\n\nЕсли бы стало известно, что пилот жив, его ожидал бы не орден.\n\nПоэтому для армии Палатина он так и остался одним из погибших или пропавших во время той операции.\n\n## Наёмник\n\nПосле нескольких месяцев под чужими именами и случайных перелётов он окончательно понял, что прежней жизни больше нет.\n\nТогда появилась информация о **Корпусе наёмников «Акариус»**.\n\nОрганизация принимала тех, кому было всё равно, насколько чистым выглядит их прошлое, пока человек способен выполнять контракт. Для бывшего военного пилота с семилетним опытом это оказалось одним из немногих мест, где его навыки представляли большую ценность, чем вопросы о происхождении.\n\nТак бывший пилот Палатина оказался среди **новобранцев Корпуса**.\n\nТеперь его интересует возможность снова оказаться за штурвалом. Желательно — машины быстрее, опаснее и дороже той, которую он уже однажды превратил в горящий металлолом.\n\nПри этом причина, по которой он нарушил последний приказ, никуда не исчезла.\n\nОн способен выполнять грязную работу. Может убивать за деньги. Может служить людям, которых совершенно не уважает.\n\nНо приказ бросить своих он уже однажды не выполнил.\n\nИ едва ли выполнит во второй раз.\n\n## Характер\n\nСамоуверенный, дерзкий и прекрасно осознающий собственные способности. Любит внимание и привык рассчитывать на внешность и обаяние почти так же часто, как на профессиональные навыки.\n\nЛегко производит впечатление человека, для которого всё происходящее — очередное развлечение. Флиртует, рискует, любит красивые машины и не упускает возможности напомнить окружающим, насколько хорошо умеет летать.\n\nПри этом за показной беспечностью скрывается очень конкретный принцип: **своих не бросают**.\n\nИменно этот принцип уже стоил ему карьеры, имени и почти жизни.",
+      "notes": "",
+      "pass": "od8989",
+      "personalityTrait": "Перфекционист . Отважный . Быстро обучается",
+      "rank": "Шкеллер",
+      "relatedArticleIds": [],
+      "role": "player",
+      "shortName": "Валериан Вартиган",
+      "skillPoints": 0,
+      "skills": [],
       "social": {
         "npcIds": [
-          "jackie",
-          "viktor",
-          "judy"
+          "npc_499859"
         ],
-        "orgs": [
-          "Afterlife",
-          "Moxes",
-          "Arasaka (в розыске)"
+        "orgs": [],
+        "reputation": []
+      },
+      "socialOriginId": "profession_origin_1786656114950",
+      "specializations": {},
+      "startingEquipmentIds": [],
+      "stats": {
+        "hpCurrent": 6,
+        "hpMax": 6,
+        "shieldCurrent": 0,
+        "shieldMax": 0,
+        "energyCurrent": 0,
+        "energyMax": 1,
+        "baseArmorClass": 10,
+        "armorClass": 1
+      },
+      "stockPortfolio": {
+        "positions": {},
+        "ledger": [],
+        "legacyInventoryMigrated": {}
+      },
+      "weakness": "Не переношу алкоголь"
+    },
+    {
+      "abilities": {
+        "strength": 5,
+        "dexterity": 5,
+        "intelligence": 5,
+        "endurance": 5,
+        "will": 5,
+        "glory": 5
+      },
+      "abilityBase": {
+        "strength": 5,
+        "dexterity": 5,
+        "intelligence": 5,
+        "endurance": 5,
+        "will": 5,
+        "glory": 5
+      },
+      "allowCrossCampaignDirectMessages": false,
+      "approvalStatus": "approved",
+      "avatarGlyph": "VS",
+      "campaignIds": [
+        "campaign_919916"
+      ],
+      "carryWeightMax": 12,
+      "citizenship": "",
+      "citizenshipLabels": [],
+      "citizenshipPlanetIds": [],
+      "creationPointsSpent": 0,
+      "credits": 9000,
+      "currentPlanetId": "planet_155688",
+      "currentRegionId": "",
+      "currentShipId": "",
+      "displayName": "Вереск",
+      "equipmentSlots": {
+        "primaryWeapon": "",
+        "secondaryWeapon": "",
+        "armor": "n7_defender"
+      },
+      "geographicOriginId": "",
+      "id": "player_582319",
+      "ideal": "",
+      "image": "https://sync.grpg-sync.ru/api/files/campaign_assets/xwxhjq6qe7hsf5g/e871a7acb17bda0aa90260021f2f0e6a_entity_player_582319_veresk_i0qr1ckwsb.gif",
+      "implantSlotCount": 0,
+      "implantSlots": [],
+      "implants": [],
+      "installedImplantIds": [],
+      "inventory": [
+        {
+          "itemId": "item_1786655348513",
+          "positions": [
+            {
+              "x": 2,
+              "y": 0
+            }
+          ],
+          "qty": 1
+        },
+        {
+          "itemId": "n7_defender",
+          "positions": [
+            null
+          ],
+          "qty": 1
+        }
+      ],
+      "inventorySize": 12,
+      "lore": "",
+      "notes": "",
+      "pass": "OD",
+      "personalityTrait": "",
+      "rank": "Punk",
+      "relatedArticleIds": [],
+      "role": "player",
+      "shortName": "Veresk",
+      "skillPoints": 0,
+      "skills": [],
+      "social": {
+        "npcIds": [
+          "vicard",
+          "fetch"
         ],
+        "orgs": [],
+        "reputation": []
+      },
+      "socialOriginId": "",
+      "specializations": {
+        "skill_015530": 0,
+        "skill_397435": 0,
+        "skill_455994": 0,
+        "skill_884013": 0
+      },
+      "startingEquipmentIds": [],
+      "stats": {
+        "hpCurrent": 12,
+        "hpMax": 12,
+        "shieldCurrent": 0,
+        "shieldMax": 0,
+        "energyCurrent": 1,
+        "energyMax": 1,
+        "baseArmorClass": 10,
+        "armorClass": 1
+      },
+      "stockPortfolio": {
+        "positions": {},
+        "ledger": [],
+        "legacyInventoryMigrated": {}
+      },
+      "weakness": ""
+    },
+    {
+      "abilities": {
+        "strength": 5,
+        "dexterity": 5,
+        "intelligence": 5,
+        "endurance": 5,
+        "will": 5,
+        "glory": 5
+      },
+      "abilityBase": {
+        "strength": 5,
+        "dexterity": 5,
+        "intelligence": 5,
+        "endurance": 5,
+        "will": 5,
+        "glory": 5
+      },
+      "approvalStatus": "approved",
+      "avatarGlyph": "NM",
+      "campaignIds": [
+        "campaign_919916"
+      ],
+      "carryWeightMax": 12,
+      "citizenship": "",
+      "citizenshipLabels": [],
+      "citizenshipPlanetIds": [],
+      "creationPointsSpent": 0,
+      "credits": 65887,
+      "currentPlanetId": "planet_607104",
+      "currentRegionId": "",
+      "currentShipId": "",
+      "displayName": "Зеро",
+      "equipmentSlots": {
+        "primaryWeapon": "m97_viper",
+        "secondaryWeapon": "",
+        "armor": "dust_cloak"
+      },
+      "geographicOriginId": "",
+      "id": "player_849364",
+      "ideal": "",
+      "image": "https://sync.grpg-sync.ru/api/files/campaign_assets/tdf32mdsx21s88m/1784487946830_entity_player_849364_zero_15zkf2u8o5.gif",
+      "implantSlotCount": 0,
+      "implantSlots": [],
+      "implants": [],
+      "installedImplantIds": [],
+      "inventory": [],
+      "inventorySize": 12,
+      "lore": "",
+      "notes": "",
+      "pass": "One",
+      "personalityTrait": "",
+      "rank": "Artist",
+      "relatedArticleIds": [],
+      "role": "player",
+      "shortName": "Zi",
+      "skillPoints": 0,
+      "skills": [],
+      "social": {
+        "npcIds": [
+          "fetch",
+          "vicard"
+        ],
+        "orgs": [],
+        "reputation": []
+      },
+      "socialOriginId": "",
+      "specializations": {
+        "skill_015530": 0,
+        "skill_397435": 0,
+        "skill_455994": 0,
+        "skill_884013": 0
+      },
+      "startingEquipmentIds": [],
+      "stats": {
+        "hpCurrent": 12,
+        "hpMax": 12,
+        "shieldCurrent": 0,
+        "shieldMax": 0,
+        "energyCurrent": 1,
+        "energyMax": 1,
+        "baseArmorClass": 10,
+        "armorClass": 10
+      },
+      "stockPortfolio": {
+        "positions": {},
+        "ledger": [],
+        "legacyInventoryMigrated": {}
+      },
+      "weakness": ""
+    },
+    {
+      "abilities": {
+        "strength": 0,
+        "dexterity": 0,
+        "intelligence": 0,
+        "endurance": 0,
+        "will": 0,
+        "glory": 0
+      },
+      "abilityBase": {
+        "strength": 0,
+        "dexterity": 0,
+        "intelligence": 0,
+        "endurance": 0,
+        "will": 0,
+        "glory": 0
+      },
+      "allowCrossCampaignDirectMessages": false,
+      "approvalStatus": "approved",
+      "avatarGlyph": "ИМ",
+      "campaignIds": [
+        "campaign_453839"
+      ],
+      "carryWeightMax": 12,
+      "citizenship": "Свободные миры",
+      "citizenshipLabels": [
+        "Свободные миры"
+      ],
+      "citizenshipPlanetIds": [
+        "cassilia"
+      ],
+      "creationPointsSpent": 0,
+      "credits": 65000,
+      "currentPlanetId": "planet_767039",
+      "currentRegionId": "",
+      "currentShipId": "",
+      "displayName": "Иоган Мэррил",
+      "equipmentSlots": {
+        "primaryWeapon": "",
+        "secondaryWeapon": "item_1786655348513",
+        "armor": "n7_defender"
+      },
+      "geographicOriginId": "geo_origin_1786656404965",
+      "id": "иоган_мэррил",
+      "ideal": "",
+      "image": "https://sync.grpg-sync.ru/api/files/campaign_assets/wq6tap8ncb49kgo/51aef4ae38ffde29fe62c3fa69015d63_entity_iogan_merril_iogan_merril_ssni5au3j1.jpg",
+      "implantSlotCount": 0,
+      "implantSlots": [],
+      "implants": [],
+      "installedImplantIds": [],
+      "inventory": [
+        {
+          "itemId": "item_1786655348513",
+          "qty": 1
+        },
+        {
+          "itemId": "n7_defender",
+          "qty": 1
+        },
+        {
+          "itemId": "origin_item_ladys_cricket",
+          "positions": [
+            {
+              "x": 0,
+              "y": 0
+            }
+          ],
+          "qty": 1
+        },
+        {
+          "itemId": "profession_item_broker_credentials",
+          "positions": [
+            {
+              "x": 1,
+              "y": 0
+            }
+          ],
+          "qty": 1
+        }
+      ],
+      "inventorySize": 12,
+      "lore": "",
+      "notes": "",
+      "pass": "ezIO_1459b",
+      "personalityTrait": "",
+      "rank": "Новый персонаж",
+      "relatedArticleIds": [],
+      "role": "player",
+      "shortName": "Иоган Мэррил",
+      "skillPoints": 0,
+      "skills": [],
+      "social": {
+        "npcIds": [],
+        "orgs": [],
+        "reputation": []
+      },
+      "socialOriginId": "profession_origin_1786726927106",
+      "specializations": {},
+      "startingEquipmentIds": [],
+      "stats": {
+        "hpCurrent": 6,
+        "hpMax": 6,
+        "shieldCurrent": 0,
+        "shieldMax": 0,
+        "energyCurrent": 0,
+        "energyMax": 0,
+        "baseArmorClass": 10,
+        "armorClass": 1
+      },
+      "stockPortfolio": {
+        "positions": {},
+        "ledger": [],
+        "legacyInventoryMigrated": {}
+      },
+      "weakness": ""
+    },
+    {
+      "abilities": {
+        "strength": 5,
+        "dexterity": 5,
+        "intelligence": 5,
+        "endurance": 5,
+        "will": 5,
+        "glory": 5
+      },
+      "abilityBase": {
+        "strength": 5,
+        "dexterity": 5,
+        "intelligence": 5,
+        "endurance": 5,
+        "will": 5,
+        "glory": 5
+      },
+      "approvalStatus": "approved",
+      "avatarGlyph": "OF",
+      "campaignIds": [
+        "campaign_919916"
+      ],
+      "carryWeightMax": 12,
+      "citizenship": "",
+      "citizenshipLabels": [],
+      "citizenshipPlanetIds": [],
+      "creationPointsSpent": 0,
+      "credits": 16548,
+      "currentPlanetId": "planet_155688",
+      "currentRegionId": "",
+      "currentShipId": "",
+      "displayName": "Сцилла",
+      "equipmentSlots": {
+        "primaryWeapon": "m97_viper",
+        "secondaryWeapon": "malorian_3516",
+        "armor": "dust_cloak"
+      },
+      "geographicOriginId": "",
+      "id": "player_202919",
+      "ideal": "",
+      "image": "https://sync.grpg-sync.ru/api/files/campaign_assets/e67rseosoncro30/e415dca99e60ae5f6774ee807a9b926d_entity_player_202919_stsilla_ryx6scunt1.gif",
+      "implantSlotCount": 0,
+      "implantSlots": [],
+      "implants": [],
+      "installedImplantIds": [],
+      "inventory": [
+        {
+          "itemId": "omni_gel",
+          "qty": 6
+        }
+      ],
+      "inventorySize": 12,
+      "lore": "",
+      "notes": "",
+      "pass": "Mayhem",
+      "personalityTrait": "",
+      "rank": "Artist",
+      "relatedArticleIds": [],
+      "role": "player",
+      "shortName": "Scilla",
+      "skillPoints": 0,
+      "skills": [],
+      "social": {
+        "npcIds": [
+          "vicard",
+          "fetch"
+        ],
+        "orgs": [],
+        "reputation": []
+      },
+      "socialOriginId": "",
+      "specializations": {
+        "skill_015530": 0,
+        "skill_397435": 0,
+        "skill_455994": 0,
+        "skill_884013": 0
+      },
+      "startingEquipmentIds": [],
+      "stats": {
+        "hpCurrent": 12,
+        "hpMax": 12,
+        "shieldCurrent": 0,
+        "shieldMax": 0,
+        "energyCurrent": 1,
+        "energyMax": 1,
+        "baseArmorClass": 10,
+        "armorClass": 10
+      },
+      "stockPortfolio": {
+        "positions": {},
+        "ledger": [],
+        "legacyInventoryMigrated": {}
+      },
+      "weakness": ""
+    },
+    {
+      "abilities": {
+        "strength": 2,
+        "dexterity": 5,
+        "intelligence": 2,
+        "endurance": 2,
+        "will": 1,
+        "glory": 1
+      },
+      "abilityBase": {
+        "strength": 2,
+        "dexterity": 5,
+        "intelligence": 2,
+        "endurance": 2,
+        "will": 1,
+        "glory": 1
+      },
+      "allowCrossCampaignDirectMessages": false,
+      "approvalStatus": "approved",
+      "avatarGlyph": "GM",
+      "campaignIds": [
+        "campaign_887856",
+        "main",
+        "guest",
+        "campaign_919916",
+        "campaign_860231",
+        "campaign_798228"
+      ],
+      "carryWeightMax": 9999,
+      "citizenship": "",
+      "citizenshipLabels": [],
+      "citizenshipPlanetIds": [],
+      "creationPointsSpent": 0,
+      "credits": 59419,
+      "currentPlanetId": "planet_767039",
+      "currentRegionId": "",
+      "currentShipId": "",
+      "displayName": "Теодор Солвиц",
+      "equipmentSlots": {
+        "primaryWeapon": "",
+        "secondaryWeapon": "",
+        "armor": ""
+      },
+      "geographicOriginId": "",
+      "id": "gm",
+      "ideal": "",
+      "image": "https://sync.grpg-sync.ru/api/files/campaign_assets/8dxrk8msr071hh3/b1c304eb267d8ad5ffd7a9faf8ae5692_entity_gm_teodor_solvits_i1azirvx7s.png",
+      "implantSlotCount": 6,
+      "implantSlots": [
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      "implants": [],
+      "installedImplantIds": [],
+      "inventory": [
+        {
+          "itemId": "item_1786655348513",
+          "positions": [
+            {
+              "x": 0,
+              "y": 0
+            }
+          ],
+          "qty": 1
+        }
+      ],
+      "inventorySize": 40,
+      "lore": "Администратор локального узла. Управляет данными игроков и состоянием мира.",
+      "notes": "Права изменять ресурсы, статистику, инвентарь и лор.",
+      "pass": "1613",
+      "personalityTrait": "",
+      "rank": "Doctor",
+      "relatedArticleIds": [],
+      "role": "gm",
+      "shortName": "Teodor",
+      "skillPoints": 0,
+      "skills": [],
+      "social": {
+        "npcIds": [],
+        "orgs": [],
         "reputation": [
           {
-            "orgId": "",
-            "name": "Afterlife",
-            "value": 0,
-            "status": "Afterlife",
+            "orgId": "org_644557",
+            "name": "",
+            "value": 100,
+            "status": "Основополагатель",
             "note": ""
           },
           {
-            "orgId": "",
-            "name": "Moxes",
-            "value": 0,
-            "status": "Moxes",
-            "note": ""
-          },
-          {
-            "orgId": "",
-            "name": "Arasaka (в розыске)",
-            "value": 0,
-            "status": "Arasaka (в розыске)",
+            "orgId": "org_590472",
+            "name": "",
+            "value": 100,
+            "status": "Соруководитель проекта",
             "note": ""
           }
         ]
       },
-      "currentPlanetId": "cassilia",
+      "socialOriginId": "",
+      "specializations": {},
+      "startingEquipmentIds": [],
+      "stats": {
+        "hpCurrent": 100,
+        "hpMax": 100,
+        "shieldCurrent": 100,
+        "shieldMax": 100,
+        "energyCurrent": 1,
+        "energyMax": 1,
+        "baseArmorClass": 10,
+        "armorClass": 10
+      },
+      "stockPortfolio": {
+        "positions": {},
+        "ledger": [
+          {
+            "createdAt": "2026-08-18T21:00:10.147Z",
+            "id": "mtIRNuOMHPDmrjiZ8mnzq2Mv",
+            "itemId": "stock_fsd",
+            "marketDay": "2026-08-18",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "total": 442,
+            "type": "buy",
+            "unitPrice": 442
+          },
+          {
+            "createdAt": "2026-08-18T21:00:21.772Z",
+            "id": "TnDMFtuKPxN9aq9IgRNtmd0I",
+            "itemId": "stock_crs",
+            "marketDay": "2026-08-18",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "total": 796,
+            "type": "buy",
+            "unitPrice": 796
+          },
+          {
+            "createdAt": "2026-08-18T21:00:25.153Z",
+            "id": "5HEIyfdF68E0ppejFaj8ol7I",
+            "itemId": "stock_crs",
+            "marketDay": "2026-08-18",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "total": 796,
+            "type": "buy",
+            "unitPrice": 796
+          },
+          {
+            "costRemoved": 796,
+            "createdAt": "2026-08-19T05:47:40.206Z",
+            "id": "KELfRa9AO1Ad70fuAVYdY8Zf",
+            "itemId": "stock_crs",
+            "marketDay": "2026-08-19",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "realizedPnl": -308,
+            "total": 488,
+            "type": "sell",
+            "unitPrice": 488
+          },
+          {
+            "costRemoved": 796,
+            "createdAt": "2026-08-19T10:02:02.293Z",
+            "id": "eO3apJhVj8HdRC5ERFP25f80",
+            "itemId": "stock_crs",
+            "marketDay": "2026-08-19",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "realizedPnl": -308,
+            "total": 488,
+            "type": "sell",
+            "unitPrice": 488
+          },
+          {
+            "costRemoved": null,
+            "createdAt": "2026-08-19T10:02:37.095Z",
+            "id": "UoRyUZh1wJPgSdStB0jNLGfn",
+            "itemId": "item_1786909747761",
+            "marketDay": "2026-08-19",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "realizedPnl": null,
+            "total": 195,
+            "type": "sell",
+            "unitPrice": 195
+          },
+          {
+            "createdAt": "2026-08-19T16:42:58.323Z",
+            "id": "ali0DYmNaelYxPcmNWfy0fIi",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-19",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "total": 79,
+            "type": "buy",
+            "unitPrice": 79
+          },
+          {
+            "createdAt": "2026-08-19T16:42:58.567Z",
+            "id": "kWgwnbT8PFYbqMOT0mpCIrco",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-19",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "total": 79,
+            "type": "buy",
+            "unitPrice": 79
+          },
+          {
+            "createdAt": "2026-08-19T16:42:58.763Z",
+            "id": "Jmt2F5qMrXGaYxJpX0AaLn3z",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-19",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "total": 79,
+            "type": "buy",
+            "unitPrice": 79
+          },
+          {
+            "createdAt": "2026-08-19T16:42:58.984Z",
+            "id": "bREULqD03eyp3vcyCUz440KV",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-19",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "total": 79,
+            "type": "buy",
+            "unitPrice": 79
+          },
+          {
+            "createdAt": "2026-08-19T16:42:59.188Z",
+            "id": "i7IRJJVW28Hrwf6hHAowGau9",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-19",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "total": 79,
+            "type": "buy",
+            "unitPrice": 79
+          },
+          {
+            "createdAt": "2026-08-19T16:42:59.481Z",
+            "id": "5b7vkC7M7mxYBAQeRZSGDRHA",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-19",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "total": 79,
+            "type": "buy",
+            "unitPrice": 79
+          },
+          {
+            "createdAt": "2026-08-19T16:42:59.695Z",
+            "id": "bZdncgioQE6z8v59eIjV8YkY",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-19",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "total": 79,
+            "type": "buy",
+            "unitPrice": 79
+          },
+          {
+            "createdAt": "2026-08-19T16:42:59.955Z",
+            "id": "5NMuUeTiLh3ouhlV4dp4K79v",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-19",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "total": 79,
+            "type": "buy",
+            "unitPrice": 79
+          },
+          {
+            "createdAt": "2026-08-19T16:43:10.805Z",
+            "id": "UFIm6iwRvPZ1a21XWUdqJYfw",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-19",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "total": 79,
+            "type": "buy",
+            "unitPrice": 79
+          },
+          {
+            "createdAt": "2026-08-19T16:43:11.039Z",
+            "id": "VrqX8JXDkrqGI0Mk6RgOE7p2",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-19",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "total": 79,
+            "type": "buy",
+            "unitPrice": 79
+          },
+          {
+            "createdAt": "2026-08-19T16:43:11.258Z",
+            "id": "zPBQ2ogqawAqQr3WeR0PwCPN",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-19",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "total": 79,
+            "type": "buy",
+            "unitPrice": 79
+          },
+          {
+            "createdAt": "2026-08-19T16:43:11.504Z",
+            "id": "jDUu0FNx2unoXV0iGuIqp8GI",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-19",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "total": 79,
+            "type": "buy",
+            "unitPrice": 79
+          },
+          {
+            "createdAt": "2026-08-19T16:43:11.792Z",
+            "id": "9DSAaTW60Zngi7JsSidpCras",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-19",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "total": 79,
+            "type": "buy",
+            "unitPrice": 79
+          },
+          {
+            "createdAt": "2026-08-19T16:43:12.015Z",
+            "id": "bZHXzWfPwIBAInRZU7jAN8OU",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-19",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "total": 79,
+            "type": "buy",
+            "unitPrice": 79
+          },
+          {
+            "createdAt": "2026-08-19T16:43:12.315Z",
+            "id": "HyTPDYwm9YldYGxm6I8wRwbH",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-19",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "total": 79,
+            "type": "buy",
+            "unitPrice": 79
+          },
+          {
+            "createdAt": "2026-08-19T16:43:12.529Z",
+            "id": "rYpw0XEVbtxQlbZpcJaIcpVJ",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-19",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "total": 79,
+            "type": "buy",
+            "unitPrice": 79
+          },
+          {
+            "createdAt": "2026-08-19T16:43:12.737Z",
+            "id": "NEpX1eV0SWueqiEP8wPymVbY",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-19",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "total": 79,
+            "type": "buy",
+            "unitPrice": 79
+          },
+          {
+            "createdAt": "2026-08-19T16:43:12.993Z",
+            "id": "CTUJY0m3Fy9Defe5T9cHWA1o",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-19",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "total": 79,
+            "type": "buy",
+            "unitPrice": 79
+          },
+          {
+            "createdAt": "2026-08-19T16:43:13.251Z",
+            "id": "Lsw4TghOCvxFCaIQ2dmRCsWX",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-19",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "total": 79,
+            "type": "buy",
+            "unitPrice": 79
+          },
+          {
+            "createdAt": "2026-08-19T16:43:13.480Z",
+            "id": "uOMCy7umXhcFmhAkwngSNeZw",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-19",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "total": 79,
+            "type": "buy",
+            "unitPrice": 79
+          },
+          {
+            "createdAt": "2026-08-19T16:43:13.673Z",
+            "id": "UcPnBErWjSjSM3u5PT3LoiIR",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-19",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "total": 79,
+            "type": "buy",
+            "unitPrice": 79
+          },
+          {
+            "createdAt": "2026-08-19T16:43:13.930Z",
+            "id": "MzS3PMArCNEI01WI8KIL9uwS",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-19",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "total": 79,
+            "type": "buy",
+            "unitPrice": 79
+          },
+          {
+            "createdAt": "2026-08-19T16:43:14.169Z",
+            "id": "E6fCGJPgiHiwTGIgfXkJpkOx",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-19",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "total": 79,
+            "type": "buy",
+            "unitPrice": 79
+          },
+          {
+            "createdAt": "2026-08-19T16:43:14.380Z",
+            "id": "eu6fSZIdSZu8Y8EJv6Ddrh0n",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-19",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "total": 79,
+            "type": "buy",
+            "unitPrice": 79
+          },
+          {
+            "createdAt": "2026-08-19T16:43:14.595Z",
+            "id": "rFB01GyAtq9DEHBxg3zVznCS",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-19",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "total": 79,
+            "type": "buy",
+            "unitPrice": 79
+          },
+          {
+            "createdAt": "2026-08-19T16:43:14.815Z",
+            "id": "iNWrL3vT6R5HLomXOPiR18zg",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-19",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "total": 79,
+            "type": "buy",
+            "unitPrice": 79
+          },
+          {
+            "costRemoved": 442,
+            "createdAt": "2026-08-20T13:14:23.704Z",
+            "id": "od1pcIvEt2u61n6wxnJ58SsO",
+            "itemId": "stock_fsd",
+            "marketDay": "2026-08-20",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "realizedPnl": 1,
+            "total": 443,
+            "type": "sell",
+            "unitPrice": 443
+          },
+          {
+            "costRemoved": 79,
+            "createdAt": "2026-08-21T03:52:18.338Z",
+            "id": "c1R6FgvtrfWFsj8hAl4GYs27",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-21",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "realizedPnl": -1,
+            "total": 78,
+            "type": "sell",
+            "unitPrice": 78
+          },
+          {
+            "costRemoved": 79,
+            "createdAt": "2026-08-21T03:52:18.589Z",
+            "id": "Kxv4l5Qqb8YXe7thh4BBANNw",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-21",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "realizedPnl": -1,
+            "total": 78,
+            "type": "sell",
+            "unitPrice": 78
+          },
+          {
+            "costRemoved": 79,
+            "createdAt": "2026-08-21T03:52:18.897Z",
+            "id": "21qKtp9BaYxHWuaUw4HsrzY6",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-21",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "realizedPnl": -1,
+            "total": 78,
+            "type": "sell",
+            "unitPrice": 78
+          },
+          {
+            "costRemoved": 79,
+            "createdAt": "2026-08-21T03:52:19.225Z",
+            "id": "SJMHMFV7k8aTkRFLGRdwOlKc",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-21",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "realizedPnl": -1,
+            "total": 78,
+            "type": "sell",
+            "unitPrice": 78
+          },
+          {
+            "costRemoved": 79,
+            "createdAt": "2026-08-21T03:52:19.474Z",
+            "id": "yj8UiCaxHlEHsGiAuIrIRpSW",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-21",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "realizedPnl": -1,
+            "total": 78,
+            "type": "sell",
+            "unitPrice": 78
+          },
+          {
+            "costRemoved": 79,
+            "createdAt": "2026-08-21T03:52:19.714Z",
+            "id": "6vEwPnL1kq0F9bQE5ZJC21FR",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-21",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "realizedPnl": -1,
+            "total": 78,
+            "type": "sell",
+            "unitPrice": 78
+          },
+          {
+            "costRemoved": 79,
+            "createdAt": "2026-08-21T03:52:19.958Z",
+            "id": "golFcceOV5ywKASL4tOxVZ1Y",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-21",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "realizedPnl": -1,
+            "total": 78,
+            "type": "sell",
+            "unitPrice": 78
+          },
+          {
+            "costRemoved": 79,
+            "createdAt": "2026-08-21T03:52:20.294Z",
+            "id": "xFS6ib7YYmkyNFOzVqYKacU0",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-21",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "realizedPnl": -1,
+            "total": 78,
+            "type": "sell",
+            "unitPrice": 78
+          },
+          {
+            "costRemoved": 79,
+            "createdAt": "2026-08-21T03:52:20.541Z",
+            "id": "WZ9CFsNMqegfmlLFWtJGmdy3",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-21",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "realizedPnl": -1,
+            "total": 78,
+            "type": "sell",
+            "unitPrice": 78
+          },
+          {
+            "costRemoved": 79,
+            "createdAt": "2026-08-21T03:52:20.786Z",
+            "id": "zJSza7XDn4Ix5HFXwXKdk00R",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-21",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "realizedPnl": -1,
+            "total": 78,
+            "type": "sell",
+            "unitPrice": 78
+          },
+          {
+            "costRemoved": 79,
+            "createdAt": "2026-08-21T03:52:21.052Z",
+            "id": "KaJOhigOIb1bWNRWCQKEdC5T",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-21",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "realizedPnl": -1,
+            "total": 78,
+            "type": "sell",
+            "unitPrice": 78
+          },
+          {
+            "costRemoved": 79,
+            "createdAt": "2026-08-21T03:52:21.387Z",
+            "id": "GGalz7ykIcNFgwaX3wKJqS6Q",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-21",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "realizedPnl": -1,
+            "total": 78,
+            "type": "sell",
+            "unitPrice": 78
+          },
+          {
+            "costRemoved": 79,
+            "createdAt": "2026-08-21T03:52:21.635Z",
+            "id": "ZqBI2jnP4qERN0aTU6Ma2GYy",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-21",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "realizedPnl": -1,
+            "total": 78,
+            "type": "sell",
+            "unitPrice": 78
+          },
+          {
+            "costRemoved": 79,
+            "createdAt": "2026-08-21T03:52:21.955Z",
+            "id": "7Fnm3fPtKBhB5t7MRhqdj6Zw",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-21",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "realizedPnl": -1,
+            "total": 78,
+            "type": "sell",
+            "unitPrice": 78
+          },
+          {
+            "costRemoved": 79,
+            "createdAt": "2026-08-21T03:52:22.205Z",
+            "id": "EvP9ctoGaDKsOBSyMmLzxiS8",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-21",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "realizedPnl": -1,
+            "total": 78,
+            "type": "sell",
+            "unitPrice": 78
+          },
+          {
+            "costRemoved": 79,
+            "createdAt": "2026-08-21T03:52:22.448Z",
+            "id": "UliUxioatgxVolMPL6KpzBf4",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-21",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "realizedPnl": -1,
+            "total": 78,
+            "type": "sell",
+            "unitPrice": 78
+          },
+          {
+            "costRemoved": 79,
+            "createdAt": "2026-08-21T03:52:22.699Z",
+            "id": "2dtamPOI3XulmlvHdypH0ehy",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-21",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "realizedPnl": -1,
+            "total": 78,
+            "type": "sell",
+            "unitPrice": 78
+          },
+          {
+            "costRemoved": 79,
+            "createdAt": "2026-08-21T03:52:23.002Z",
+            "id": "AFwx7ohamTKgFSKevgUWAexP",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-21",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "realizedPnl": -1,
+            "total": 78,
+            "type": "sell",
+            "unitPrice": 78
+          },
+          {
+            "costRemoved": 79,
+            "createdAt": "2026-08-21T03:52:37.460Z",
+            "id": "QHc00NamKLmZv5OJqHz90mkV",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-21",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "realizedPnl": -1,
+            "total": 78,
+            "type": "sell",
+            "unitPrice": 78
+          },
+          {
+            "costRemoved": 79,
+            "createdAt": "2026-08-21T03:52:37.714Z",
+            "id": "lrKdJc07uZFWvY7puRnIi5A1",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-21",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "realizedPnl": -1,
+            "total": 78,
+            "type": "sell",
+            "unitPrice": 78
+          },
+          {
+            "costRemoved": 79,
+            "createdAt": "2026-08-21T03:52:38.055Z",
+            "id": "PBEdmKICaJhCzcdLfcyJ51B7",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-21",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "realizedPnl": -1,
+            "total": 78,
+            "type": "sell",
+            "unitPrice": 78
+          },
+          {
+            "costRemoved": 79,
+            "createdAt": "2026-08-21T03:52:38.342Z",
+            "id": "UKlqRNtFC9bv3DLP0jHKkykl",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-21",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "realizedPnl": -1,
+            "total": 78,
+            "type": "sell",
+            "unitPrice": 78
+          },
+          {
+            "costRemoved": 79,
+            "createdAt": "2026-08-21T03:52:38.623Z",
+            "id": "dEdwAZjoLlz3nDSg6ywE6aDX",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-21",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "realizedPnl": -1,
+            "total": 78,
+            "type": "sell",
+            "unitPrice": 78
+          },
+          {
+            "costRemoved": 79,
+            "createdAt": "2026-08-21T03:52:38.883Z",
+            "id": "luOLi1XdNivvuWj1YqiSYwqS",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-21",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "realizedPnl": -1,
+            "total": 78,
+            "type": "sell",
+            "unitPrice": 78
+          },
+          {
+            "costRemoved": 79,
+            "createdAt": "2026-08-21T03:52:39.183Z",
+            "id": "845VNInpwe1CM9wvmic0iFa6",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-21",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "realizedPnl": -1,
+            "total": 78,
+            "type": "sell",
+            "unitPrice": 78
+          },
+          {
+            "costRemoved": 79,
+            "createdAt": "2026-08-21T03:52:39.440Z",
+            "id": "j8vTLRrSfPwxhKg5SzYb7T2C",
+            "itemId": "stock_pbe",
+            "marketDay": "2026-08-21",
+            "planetId": "planet_767039",
+            "quantity": 1,
+            "realizedPnl": -1,
+            "total": 78,
+            "type": "sell",
+            "unitPrice": 78
+          }
+        ],
+        "legacyInventoryMigrated": {
+          "item_1786909747761": 1
+        }
+      },
+      "weakness": ""
+    },
+    {
+      "abilities": {
+        "strength": 5,
+        "dexterity": 5,
+        "intelligence": 5,
+        "endurance": 5,
+        "will": 5,
+        "glory": 5
+      },
+      "abilityBase": {
+        "strength": 5,
+        "dexterity": 5,
+        "intelligence": 5,
+        "endurance": 5,
+        "will": 5,
+        "glory": 5
+      },
+      "approvalStatus": "approved",
+      "avatarGlyph": "PX",
+      "campaignIds": [
+        "campaign_919916"
+      ],
+      "carryWeightMax": 12,
+      "citizenship": "",
+      "citizenshipLabels": [],
+      "citizenshipPlanetIds": [],
+      "creationPointsSpent": 0,
+      "credits": 72600,
+      "currentPlanetId": "planet_607104",
+      "currentRegionId": "",
+      "currentShipId": "",
+      "displayName": "Франко",
+      "equipmentSlots": {
+        "primaryWeapon": "m97_viper",
+        "secondaryWeapon": "",
+        "armor": "dust_cloak"
+      },
+      "geographicOriginId": "",
+      "id": "player_481909",
+      "ideal": "",
+      "image": "https://sync.grpg-sync.ru/api/files/campaign_assets/2isdks7opag9ez6/aebdbd5ffcd2f0558a573d4465c1a449_entity_player_481909_franko_t5y22buzu3.gif",
+      "implantSlotCount": 0,
+      "implantSlots": [],
+      "implants": [],
+      "installedImplantIds": [],
+      "inventory": [],
+      "inventorySize": 12,
+      "lore": "",
+      "notes": "",
+      "pass": "0000",
+      "personalityTrait": "",
+      "rank": "Artist",
+      "relatedArticleIds": [],
+      "role": "player",
+      "shortName": "Franko",
       "skillPoints": 0,
-      "skills": []
+      "skills": [],
+      "social": {
+        "npcIds": [
+          "vicard",
+          "fetch"
+        ],
+        "orgs": [],
+        "reputation": []
+      },
+      "socialOriginId": "",
+      "specializations": {
+        "skill_015530": 0,
+        "skill_397435": 0,
+        "skill_455994": 0,
+        "skill_884013": 0
+      },
+      "startingEquipmentIds": [],
+      "stats": {
+        "hpCurrent": 12,
+        "hpMax": 12,
+        "shieldCurrent": 0,
+        "shieldMax": 0,
+        "energyCurrent": 1,
+        "energyMax": 1,
+        "baseArmorClass": 10,
+        "armorClass": 10
+      },
+      "stockPortfolio": {
+        "positions": {},
+        "ledger": [],
+        "legacyInventoryMigrated": {}
+      },
+      "weakness": ""
+    },
+    {
+      "abilities": {
+        "strength": 5,
+        "dexterity": 5,
+        "intelligence": 5,
+        "endurance": 5,
+        "will": 5,
+        "glory": 5
+      },
+      "abilityBase": {
+        "strength": 5,
+        "dexterity": 5,
+        "intelligence": 5,
+        "endurance": 5,
+        "will": 5,
+        "glory": 5
+      },
+      "approvalStatus": "approved",
+      "avatarGlyph": "PH",
+      "campaignIds": [
+        "campaign_919916"
+      ],
+      "carryWeightMax": 12,
+      "citizenship": "",
+      "citizenshipLabels": [],
+      "citizenshipPlanetIds": [],
+      "creationPointsSpent": 0,
+      "credits": 26333,
+      "currentPlanetId": "planet_607104",
+      "currentRegionId": "",
+      "currentShipId": "",
+      "displayName": "Харибда",
+      "equipmentSlots": {
+        "primaryWeapon": "m97_viper",
+        "secondaryWeapon": "",
+        "armor": "item_011453"
+      },
+      "geographicOriginId": "",
+      "id": "player_486258",
+      "ideal": "",
+      "image": "https://sync.grpg-sync.ru/api/files/campaign_assets/su00yucpa5gw9uk/30dbbfc9f216d33df9c2e8d93fa35755_entity_player_486258_haribda_ke31vte9ye.gif",
+      "implantSlotCount": 0,
+      "implantSlots": [],
+      "implants": [],
+      "installedImplantIds": [],
+      "inventory": [
+        {
+          "itemId": "docking_clearance",
+          "qty": 1
+        }
+      ],
+      "inventorySize": 12,
+      "lore": "",
+      "notes": "",
+      "pass": "Riot",
+      "personalityTrait": "",
+      "rank": "Artist",
+      "relatedArticleIds": [],
+      "role": "player",
+      "shortName": "Charibda",
+      "skillPoints": 0,
+      "skills": [],
+      "social": {
+        "npcIds": [
+          "vicard",
+          "fetch"
+        ],
+        "orgs": [],
+        "reputation": []
+      },
+      "socialOriginId": "",
+      "specializations": {
+        "skill_015530": 0,
+        "skill_397435": 0,
+        "skill_455994": 0,
+        "skill_884013": 0
+      },
+      "startingEquipmentIds": [],
+      "stats": {
+        "hpCurrent": 12,
+        "hpMax": 12,
+        "shieldCurrent": 0,
+        "shieldMax": 0,
+        "energyCurrent": 1,
+        "energyMax": 1,
+        "baseArmorClass": 10,
+        "armorClass": 12
+      },
+      "stockPortfolio": {
+        "positions": {},
+        "ledger": [],
+        "legacyInventoryMigrated": {}
+      },
+      "weakness": ""
+    },
+    {
+      "abilities": {
+        "strength": 0,
+        "dexterity": 0,
+        "intelligence": 0,
+        "endurance": 0,
+        "will": 0,
+        "glory": 0
+      },
+      "abilityBase": {
+        "strength": 0,
+        "dexterity": 0,
+        "intelligence": 0,
+        "endurance": 0,
+        "will": 0,
+        "glory": 0
+      },
+      "allowCrossCampaignDirectMessages": false,
+      "approvalStatus": "approved",
+      "avatarGlyph": "ЭЙ",
+      "campaignIds": [
+        "campaign_453839"
+      ],
+      "carryWeightMax": 21,
+      "citizenship": "Дараль-Фалак",
+      "citizenshipLabels": [
+        "Дараль-Фалак"
+      ],
+      "citizenshipPlanetIds": [
+        "planet_328652"
+      ],
+      "creationPointsSpent": 0,
+      "credits": 25000,
+      "currentPlanetId": "planet_767039",
+      "currentRegionId": "",
+      "currentShipId": "",
+      "displayName": "Эйприл Маклахлен",
+      "equipmentSlots": {
+        "primaryWeapon": "",
+        "secondaryWeapon": "item_1786655348513",
+        "armor": "item_1786752582242"
+      },
+      "geographicOriginId": "geo_origin_1786732596337",
+      "id": "эи_прил_маклахлен",
+      "ideal": "Достижение цели (почти) любой ценой. Мораль, безусловно, присутствует, но не отменяет возможность угрожать броском с крыши небоскреба или избиением.\nИстина. Даже если она неудобна, она должна быть раскрыта.",
+      "image": "https://sync.grpg-sync.ru/api/files/campaign_assets/thhyq24mpfxjqnv/a5b67783d96b8c4fcff9881003e9f382_entity_eypril_maklahlen_eypril_maklahlen_7ezu4qxzyb.jpg",
+      "implantSlotCount": 0,
+      "implantSlots": [],
+      "implants": [],
+      "installedImplantIds": [],
+      "inventory": [
+        {
+          "itemId": "item_1786752582242",
+          "positions": [],
+          "qty": 1
+        },
+        {
+          "itemId": "item_1786655348513",
+          "positions": [],
+          "qty": 1
+        },
+        {
+          "itemId": "origin_item_lumena_dosimeter",
+          "positions": [
+            {
+              "x": 0,
+              "y": 0
+            }
+          ],
+          "qty": 1
+        },
+        {
+          "itemId": "profession_item_spectral_em_analyzer",
+          "positions": [
+            {
+              "x": 1,
+              "y": 0
+            }
+          ],
+          "qty": 1
+        }
+      ],
+      "inventorySize": 18,
+      "lore": "Для выходца из семьи военных служба в армии должна стать чем-то само собой разумеющимся. Прошло несколько лет добровольной службы, и Эйприл вернулась на гражданку и заключила долгосрочный контракт с филиалом межпланетной корпорации «Борей», специализирующейся в основном на логистике и пассажирских грузоперевозках. После порядка двенадцати лет службы, она была уволена, несмотря на обещание бросить пить и «вновь стать хорошим копом». Ввиду необходимости на что-то жить, Эйприл вступила в «Акариус». Однако не только из-за нужды: последним (и незавершенным) делом во время ее службы была крупная мошенническая схема, в которой также фигурировало и несколько убийств не самых высокопоставленных, но важных в узлах принятия решений менеджеров «Борея». Ниточки привели следователя к «Акариусу», и, хотя доказательств вины или причастности последних к делу не было, мисс Маклахлан не отступилась от своего чутья. К тому же, расследование уже стало личным из-за того, что жертвой стал бывший сослуживец.",
+      "notes": "",
+      "pass": "BananaBomb",
+      "personalityTrait": "Характер скверный, в разводе. Любит животных. С трудом признает свои ошибки и делает то, что считает правильным.",
+      "rank": "Шкеллер",
+      "relatedArticleIds": [],
+      "role": "player",
+      "shortName": "Эйприл Маклахлен",
+      "skillPoints": 0,
+      "skills": [],
+      "social": {
+        "npcIds": [],
+        "orgs": [],
+        "reputation": []
+      },
+      "socialOriginId": "profession_origin_1786727031560",
+      "specializations": {},
+      "startingEquipmentIds": [],
+      "stats": {
+        "hpCurrent": 6,
+        "hpMax": 6,
+        "shieldCurrent": 0,
+        "shieldMax": 0,
+        "energyCurrent": 0,
+        "energyMax": 1,
+        "baseArmorClass": 10,
+        "armorClass": 2
+      },
+      "stockPortfolio": {
+        "positions": {},
+        "ledger": [],
+        "legacyInventoryMigrated": {}
+      },
+      "weakness": "Склонность к алкоголизму. Вспыльчивость. Ну и та самая всплывающая жестокость из-за желания достичь цели - пускай и не всегда осознанная."
     }
   ]
 }

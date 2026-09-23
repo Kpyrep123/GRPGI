@@ -1,0 +1,70 @@
+/* GRPGI v1.0.118 — readable inventory cards, ammunition and loot editors */
+.canonical-vision-v118{position:relative;border-color:color-mix(in srgb,var(--accent) 24%,transparent)}
+.canonical-vision-v118::after{content:"ЕДИНЫЙ ИСТОЧНИК";display:inline-block;margin-top:5px;color:var(--accent);font:700 9px/1 var(--mono);letter-spacing:.08em}
+
+.item-card-v118{align-content:center!important;grid-template-rows:auto auto!important;overflow:visible!important}
+.inventory-slot-item-v1067.item-card-v118{grid-template-columns:48px minmax(0,1fr);grid-template-rows:auto auto!important}
+.inventory-slot-item-v1067.item-card-v118>.entity-thumb{grid-row:1/span 2}
+.inventory-slot-item-v1067.item-card-v118>span{white-space:normal!important;overflow:visible!important;text-overflow:clip!important;line-height:1.25;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2}
+.wc-inventory-slot-v1068.filled{min-height:142px}
+.wc-inventory-slot-item-v1068.item-card-v118{display:grid!important;grid-template-columns:48px minmax(0,1fr);grid-template-rows:auto auto!important;align-items:center}
+.wc-inventory-slot-item-v1068.item-card-v118>.entity-thumb{grid-row:1/span 2}
+.wc-inventory-slot-item-v1068.item-card-v118>span{white-space:normal!important;overflow:visible!important;text-overflow:clip!important;line-height:1.25;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2}
+.item-card-info-v118{grid-column:2;display:grid;gap:5px;min-width:0}
+.item-card-info-v118.compact{grid-column:1/-1;align-self:end;pointer-events:none}
+.item-stat-strip-v118{display:flex;flex-wrap:wrap;gap:3px}
+.item-stat-strip-v118>span{display:inline-flex;align-items:center;gap:3px;padding:2px 5px;border:1px solid color-mix(in srgb,var(--accent) 22%,transparent);border-radius:999px;background:color-mix(in srgb,var(--accent) 5%,rgba(0,0,0,.24));font:700 8px/1.2 var(--mono);white-space:nowrap}
+.item-stat-strip-v118 i{font-style:normal;color:var(--muted);font-weight:500}.item-stat-strip-v118 b{color:var(--text)}
+.item-modifiers-v118{display:grid;gap:2px;min-width:0;color:var(--muted);font-size:9px;line-height:1.25}
+.item-modifiers-v118>span{white-space:normal;overflow:visible;text-overflow:clip}.item-modifiers-v118 em{font-style:normal;color:var(--accent)}
+.inventory-tile-v1067.item-card-v118{grid-template-columns:minmax(30px,42px) minmax(0,1fr);grid-template-rows:auto auto auto!important;padding:6px;min-height:76px}
+.inventory-tile-v1067.item-card-v118>.entity-thumb{grid-row:1/span 2}
+.inventory-tile-v1067.item-card-v118>span{white-space:normal!important;overflow:visible!important;text-overflow:clip!important;line-height:1.15;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2}
+.inventory-tile-v1067.item-card-v118>.item-card-info-v118{grid-row:3;max-height:28px;overflow:hidden}
+.inventory-tile-v1067.item-card-v118 .item-modifiers-v118{display:none}
+.inventory-grid-v1067{grid-template-columns:repeat(var(--inv-cols),94px)!important}
+.inventory-equip-slot-v1067{min-height:132px}
+
+.item-specific-v118{margin:12px 0;padding:14px;border:1px solid color-mix(in srgb,var(--accent) 16%,transparent);border-radius:12px;background:rgba(255,255,255,.018)}
+.item-specific-v118.hidden{display:none!important}
+.npc-loot-editor-v118{margin:18px 0;padding:16px;border:1px solid color-mix(in srgb,var(--accent) 18%,transparent);border-radius:14px;background:rgba(255,255,255,.02)}
+.npc-loot-list-v118{display:grid;gap:8px;margin:12px 0}
+.npc-loot-row-v118{display:grid;grid-template-columns:minmax(210px,1fr) minmax(88px,.25fr) 72px 72px 38px;gap:8px;align-items:end;padding:9px;border:1px solid rgba(255,255,255,.07);border-radius:10px;background:rgba(0,0,0,.16)}
+.npc-loot-row-v118 label{display:grid;gap:5px}.npc-loot-row-v118 label>span{color:var(--muted);font:9px var(--mono);letter-spacing:.05em;text-transform:uppercase}
+.skill-activation-field-v118{padding:10px;border:1px solid color-mix(in srgb,var(--accent) 16%,transparent);border-radius:10px}
+
+/* Combat command deck */
+.scene-command-deck-v118{display:grid;gap:0;border-top:1px solid var(--border,rgba(255,255,255,.12));background:color-mix(in srgb,var(--panel,#08111b) 96%,black 4%)}
+.scene-measurebar-v118,.scene-character-actions-v118{min-width:0;display:flex;align-items:center;gap:5px;overflow-x:auto;scrollbar-width:thin}
+.scene-measurebar-v118{padding:4px 7px;min-height:34px;border-bottom:1px solid rgba(255,255,255,.055);background:rgba(255,255,255,.018)}
+.scene-character-actions-v118{padding:8px 7px;min-height:50px;border-top:0!important}
+.scene-measurebar-v118 button{min-height:25px;padding:4px 8px;font-size:9px;white-space:nowrap}
+.scene-character-actions-v118 button{white-space:nowrap}
+.scene-bar-label-v118{flex:0 0 auto;color:var(--muted);font:700 8px/1 var(--mono);letter-spacing:.1em;margin-right:3px}
+.scene-skill-actions-v118{display:flex;align-items:center;gap:4px;padding-left:7px;border-left:1px solid rgba(255,255,255,.09)}
+.scene-skill-actions-v118>span{color:var(--muted);font:700 8px var(--mono);letter-spacing:.08em}
+.scene-skill-action-v118{border-color:color-mix(in srgb,#bd9cff 45%,transparent)!important;color:#d6c5ff!important}
+.scene-search-action-v118{border-color:color-mix(in srgb,#ffd078 50%,transparent)!important;color:#ffd078!important}
+.scene-magazine-v118{display:grid;gap:1px;min-width:94px;padding:5px 8px;border:1px solid color-mix(in srgb,var(--accent) 22%,transparent);border-radius:7px;background:rgba(0,0,0,.18)}
+.scene-magazine-v118 b{font:700 12px var(--mono)}.scene-magazine-v118 small{color:var(--muted);font-size:8px;white-space:nowrap}
+.scene-token-loot-v118{position:absolute;right:-5px;top:-5px;z-index:5;display:grid;place-items:center;width:20px;height:20px;border:1px solid #ffd078;border-radius:50%;background:#10141a;color:#ffd078;font:800 12px var(--mono);box-shadow:0 3px 12px rgba(0,0,0,.45)}
+.scene-token-v104.is-searchable-v118{box-shadow:0 0 0 2px rgba(255,208,120,.28),0 0 18px rgba(255,208,120,.18)}
+.scene-token-v104.is-searched-v118{filter:saturate(.7)}
+
+.scene-loot-overlay-v118{position:absolute;inset:0;z-index:900;display:grid;place-items:center;padding:24px;background:rgba(2,6,10,.58);backdrop-filter:blur(4px)}
+.scene-loot-window-v118{position:relative;width:min(520px,calc(100% - 24px));min-height:270px;padding:22px;border:1px solid color-mix(in srgb,#ffd078 42%,transparent);border-radius:18px;background:linear-gradient(180deg,rgba(13,22,31,.98),rgba(5,10,16,.99));box-shadow:0 28px 80px rgba(0,0,0,.65);overflow:hidden}
+.scene-loot-scan-v118{position:absolute;inset:0;display:grid;place-items:center;align-content:center;gap:18px;transition:opacity .25s ease}.scene-loot-scan-v118 span{color:#ffd078;font:800 14px var(--mono);letter-spacing:.16em}
+.scene-loot-scan-v118 i{position:relative;width:138px;height:138px;border:1px solid rgba(255,208,120,.32);border-radius:50%;background:repeating-radial-gradient(circle,transparent 0 18px,rgba(255,208,120,.08) 19px 20px)}
+.scene-loot-scan-v118 i::after{content:"";position:absolute;left:50%;top:50%;width:50%;height:2px;transform-origin:left center;background:linear-gradient(90deg,#ffd078,transparent);animation:loot-radar-v118 .7s linear infinite}
+@keyframes loot-radar-v118{to{transform:rotate(360deg)}}
+.scene-loot-results-v118{display:grid;gap:10px;opacity:0;transform:translateY(8px);transition:.28s ease}.scene-loot-overlay-v118.complete .scene-loot-scan-v118{opacity:0;pointer-events:none}.scene-loot-overlay-v118.complete .scene-loot-results-v118{opacity:1;transform:none}
+.scene-loot-results-v118 h3{margin:4px 0 8px}.scene-loot-result-row-v118{display:grid;grid-template-columns:42px minmax(0,1fr) auto;gap:10px;align-items:center;padding:8px;border:1px solid rgba(255,255,255,.08);border-radius:10px;background:rgba(255,255,255,.025)}
+.scene-loot-result-row-v118 img,.scene-loot-result-row-v118>span{width:42px;height:42px;border-radius:8px;object-fit:cover;display:grid;place-items:center;background:rgba(255,255,255,.05)}.scene-loot-result-row-v118 strong{color:#ffd078;font:800 13px var(--mono)}
+.scene-loot-empty-v118{padding:26px;text-align:center;color:var(--muted);border:1px dashed rgba(255,255,255,.1)}
+
+@media(max-width:760px){
+  .inventory-grid-v1067{grid-template-columns:repeat(var(--inv-cols),78px)!important}
+  .npc-loot-row-v118{grid-template-columns:1fr 1fr}.npc-loot-row-v118>button{grid-column:2;justify-self:end}
+  .item-card-info-v118{grid-column:1/-1}.inventory-slot-item-v1067.item-card-v118>.entity-thumb{grid-row:auto}
+  .scene-bar-label-v118{display:none}.scene-measurebar-v118{padding:3px 5px}.scene-character-actions-v118{padding:6px 5px}
+}

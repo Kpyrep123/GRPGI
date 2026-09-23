@@ -1,0 +1,38 @@
+{
+  "COMBAT_SCENES": {
+    "battle_883832": {
+      "assets": [],
+      "backgroundColor": "#0d1724",
+      "backgroundImage": "https://ylpzantlgskbjctxoxzl.supabase.co/storage/v1/object/public/campaign-assets/alpha/combat_scenes/battle_883832/1780334089826_scene_bg_battle_883832.png",
+      "fogEnabled": true,
+      "gridColor": "rgba(125,249,255,0.12)",
+      "height": 16,
+      "id": "battle_883832",
+      "mode": "combat",
+      "name": "Новая сцена",
+      "notes": "",
+      "quickSyncRevision": 18,
+      "templates": [],
+      "visionRadius": 6,
+      "width": 24
+    }
+  },
+  "COMBAT_SCENE_LIST": [
+    {
+      "assets": [],
+      "backgroundColor": "#0d1724",
+      "backgroundImage": "https://ylpzantlgskbjctxoxzl.supabase.co/storage/v1/object/public/campaign-assets/alpha/combat_scenes/battle_883832/1780334089826_scene_bg_battle_883832.png",
+      "fogEnabled": true,
+      "gridColor": "rgba(125,249,255,0.12)",
+      "height": 16,
+      "id": "battle_883832",
+      "mode": "combat",
+      "name": "Новая сцена",
+      "notes": "",
+      "quickSyncRevision": 18,
+      "templates": [],
+      "visionRadius": 6,
+      "width": 24
+    }
+  ]
+}

@@ -7,34 +7,31 @@
 
 В установленной Electron-сборке панель отсутствует.
 
-## Кнопка `PATCH → GITHUB MAIN`
+## Кнопка `СОБРАТЬ И ОПУБЛИКОВАТЬ ПК`
 
 Кнопка:
 
-1. проверяет Git, remote и репозиторий `Kpyrep123/GRPGI`;
-2. проверяет, что `origin/main` является предком текущего `HEAD`;
-3. блокирует секреты, пользовательские данные, файлы от 95 МБ и неожиданные удаления;
-4. увеличивает только patch-часть версии;
-5. обновляет `package.json`, `package-lock.json` и `build.buildVersion`;
-6. выполняет `git add -A`, commit и push `HEAD:main`.
+1. проверяет `npm`, `ssh` и `scp`;
+2. сравнивает версию с сервером и увеличивает patch только если текущая версия уже опубликована;
+3. обновляет `package.json`, `package-lock.json` и `build.buildVersion`;
+4. собирает Windows NSIS-установщик;
+5. загружает установщик и updater-файлы в `/var/www/grpg-app/downloads`;
+6. проверяет SHA-256 на сервере;
+7. последним публикует `latest.yml`, после чего версия становится видна игрокам.
 
-По умолчанию Git tag не создаётся и Electron/Android build не запускается. Это задаётся полем:
+Адреса задаются в `devops.config.json`:
 
 ```json
 {
-  "github": {
-    "createTag": false
+  "desktopRelease": {
+    "target": "/var/www/grpg-app/downloads",
+    "publicUrl": "https://app.grpg-sync.ru/downloads",
+    "installerAlias": "GRPGI-Setup-latest.exe"
   }
 }
 ```
 
-GitHub CLI не требуется. Используется обычный `git push` и авторизация Git for Windows/Git Credential Manager.
-
-### Защита от случайного удаления
-
-Публикация блокирует удаления критических путей из `github.protectedDeletionPrefixes` и `github.protectedDeletionPaths`. Также ограничено количество остальных удалений.
-
-Это важно для папок, которые могли отсутствовать в переданном patch-архиве. Например, массовое удаление `mobile/**` остановит публикацию.
+Git и GitHub не участвуют в сборке, загрузке или проверке обновлений. Репозиторий можно оставить только как резервную историю исходников.
 
 ## Кнопка `ДЕПЛОЙ WEB`
 

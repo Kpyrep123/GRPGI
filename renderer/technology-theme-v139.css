@@ -1,0 +1,216 @@
+/* v1.0.139 — market quantity controls and restrained technological era */
+.market-quantity-v139{
+  align-self:stretch;
+  min-width:220px;
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto;
+  align-content:center;
+  gap:8px 12px;
+  padding:10px 12px;
+  border:1px solid var(--stroke2,var(--line));
+  border-radius:10px;
+  background:rgba(0,0,0,.16);
+}
+.market-quantity-v139>label{
+  align-self:center;
+  color:var(--muted);
+  font-size:10px;
+  font-weight:700;
+  letter-spacing:.1em;
+  text-transform:uppercase;
+}
+.market-quantity-input-v139{display:grid;grid-template-columns:34px minmax(64px,86px) 34px;gap:5px}
+.market-quantity-input-v139 .secondary{min-width:0;padding:0;display:grid;place-items:center;font-size:18px}
+.market-quantity-input-v139 .input{width:100%;min-width:0;padding:7px 5px;text-align:center;font-weight:800;font-variant-numeric:tabular-nums}
+.market-quantity-total-v139{grid-column:1/-1;display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding-top:7px;border-top:1px solid var(--stroke,var(--line));color:var(--muted);font-size:11px}
+.market-quantity-total-v139 b{color:var(--text);font-size:16px;font-variant-numeric:tabular-nums}
+.market-quantity-error-v139{grid-column:1/-1;display:none;color:var(--danger,#ff8d94);line-height:1.35}
+.market-quantity-error-v139.visible{display:block}
+.market-quantity-v139>.primary{grid-column:1/-1;width:100%;min-height:40px}
+.stock-selection-v1074>.market-quantity-v139{grid-column:2;grid-row:2/5;align-self:stretch}
+
+html[data-era-theme="technological"]{
+  color-scheme:dark;
+  --bg:#080806;
+  --bg2:#11100d;
+  --panel:rgba(15,14,11,.965);
+  --stroke:rgba(179,145,88,.22);
+  --stroke2:rgba(190,153,91,.42);
+  --accent:#b99358;
+  --text:#ddd5c4;
+  --muted:#968d79;
+  --danger:#c7796f;
+  --ok:#86966e;
+  --warn:#c4a267;
+  --mono:"Bahnschrift Condensed","Arial Narrow","Roboto Condensed",Consolas,monospace;
+  --shadow:0 24px 72px rgba(0,0,0,.68),inset 0 0 0 1px rgba(232,199,137,.025);
+  --tr:all .2s ease;
+}
+html[data-era-theme="technological"] body{
+  color:var(--text);
+  font-family:"Bahnschrift","Arial Narrow","Segoe UI",sans-serif;
+  background:
+    radial-gradient(circle at 18% 12%,rgba(139,104,54,.09),transparent 30%),
+    radial-gradient(circle at 82% 8%,rgba(100,80,48,.05),transparent 25%),
+    repeating-linear-gradient(117deg,rgba(255,241,211,.009) 0 1px,transparent 1px 5px),
+    linear-gradient(180deg,#0d0c09,#070705 58%,#030302);
+}
+html[data-era-theme="technological"] body::after{
+  background:
+    radial-gradient(circle at center,transparent 38%,rgba(0,0,0,.56) 100%),
+    repeating-linear-gradient(0deg,transparent 0 3px,rgba(205,180,132,.012) 3px 4px),
+    repeating-linear-gradient(91deg,transparent 0 19px,rgba(255,255,255,.006) 19px 20px);
+  mix-blend-mode:normal;
+}
+html[data-era-theme="technological"] :is(h1,h2,h3,h4,.mono,.eyebrow,.section-title,.fs-header,.dock-item,.primary,.secondary,.ghost,.tiny-btn,.tab,.pill){
+  font-family:"Bahnschrift Condensed","Arial Narrow","Roboto Condensed","Segoe UI",sans-serif;
+}
+html[data-era-theme="technological"] :is(h1,h2,h3,h4,.eyebrow,.section-title,.fs-header .accent){letter-spacing:.075em}
+html[data-era-theme="technological"] :is(.accent,.eyebrow,.section-title,.stock-symbol-v1074,#obj-name){color:var(--accent)}
+html[data-era-theme="technological"] a{color:#c2a36f}
+
+html[data-era-theme="technological"] #galaxy-backdrop{
+  background:
+    radial-gradient(circle at 22% 40%,rgba(133,95,48,.15),transparent 42%),
+    radial-gradient(circle at 76% 40%,rgba(70,74,68,.12),transparent 44%),
+    linear-gradient(180deg,#090906,#070705 48%,#020202);
+}
+html[data-era-theme="technological"] .galaxy-backdrop-main{filter:sepia(.35) saturate(.58) brightness(.68) contrast(1.14)}
+html[data-era-theme="technological"] .galaxy-backdrop-big{opacity:.25;filter:sepia(.45) saturate(.45) blur(6px) brightness(.72)}
+
+html[data-era-theme="technological"] :is(.title-bar,.topbar){
+  background:linear-gradient(180deg,rgba(17,16,12,.98),rgba(7,7,5,.94));
+  border-color:rgba(183,146,84,.34);
+  box-shadow:0 10px 30px rgba(0,0,0,.34),inset 0 -1px rgba(235,202,142,.035);
+  backdrop-filter:blur(10px) saturate(.7);
+}
+html[data-era-theme="technological"] :is(.chip,.data-update-indicator,.pill,.tag,.link-pill){
+  border-radius:2px;
+  border-color:rgba(184,147,85,.34);
+  background:rgba(126,95,50,.09);
+  color:#c5b48f;
+  box-shadow:none;
+}
+html[data-era-theme="technological"] #dock{
+  gap:8px;
+  padding:8px;
+  border-radius:4px;
+  border-color:rgba(184,147,85,.42);
+  background:linear-gradient(180deg,rgba(20,18,14,.96),rgba(8,8,6,.98));
+  box-shadow:0 18px 52px rgba(0,0,0,.7),inset 0 0 0 1px rgba(236,202,140,.04);
+  backdrop-filter:blur(12px) saturate(.6);
+}
+html[data-era-theme="technological"] .dock-item{
+  width:54px;height:54px;border-radius:2px;color:#b8965e;
+  border-color:rgba(190,153,91,.34);
+  background:linear-gradient(145deg,rgba(72,58,36,.44),rgba(16,15,12,.94) 58%);
+  box-shadow:inset 0 0 0 1px rgba(238,203,143,.025);
+}
+html[data-era-theme="technological"] .dock-item:hover{
+  transform:translateY(-4px);color:#e3d4b5;border-color:#c29b5e;
+  background:linear-gradient(180deg,rgba(128,97,51,.46),rgba(34,29,20,.96));
+  box-shadow:0 12px 30px rgba(0,0,0,.44),inset 0 0 0 1px rgba(232,197,135,.08);
+}
+html[data-era-theme="technological"] .dock-item::after{border-radius:2px;background:#100f0c;border-color:rgba(190,153,91,.42);color:#d6c8ab}
+
+html[data-era-theme="technological"] :is(.card,.fs-module,.modal .card,.login-box,.config-sidebar,.config-main,.combat-popover-v37,.combat-stage-shell,.market-pane-v1071,.market-selection-card-v1071,.market-selection-empty-v1071,.stock-selection-v1074,.portfolio-shell-v1074,.rich-link-picker-shell-v1086,.rich-context-menu-v1086){
+  border-radius:3px;
+  border-color:rgba(183,146,84,.31);
+  background:
+    linear-gradient(90deg,rgba(193,155,94,.75),rgba(193,155,94,0)) top left/30px 1px no-repeat,
+    linear-gradient(180deg,rgba(193,155,94,.75),rgba(193,155,94,0)) top left/1px 30px no-repeat,
+    linear-gradient(270deg,rgba(193,155,94,.75),rgba(193,155,94,0)) bottom right/30px 1px no-repeat,
+    linear-gradient(0deg,rgba(193,155,94,.75),rgba(193,155,94,0)) bottom right/1px 30px no-repeat,
+    repeating-linear-gradient(125deg,rgba(237,211,165,.01) 0 1px,transparent 1px 6px),
+    linear-gradient(180deg,#181611,#090907);
+  box-shadow:var(--shadow);
+  backdrop-filter:blur(10px) saturate(.65);
+}
+html[data-era-theme="technological"] .fs-module{
+  background-image:
+    radial-gradient(circle at 50% 0,rgba(138,103,53,.07),transparent 36%),
+    repeating-linear-gradient(117deg,rgba(234,204,151,.008) 0 1px,transparent 1px 6px),
+    linear-gradient(180deg,rgba(10,10,8,.92),rgba(5,5,4,.985));
+}
+html[data-era-theme="technological"] .fs-header{
+  border-radius:3px;
+  border-color:rgba(183,146,84,.4);
+  background:linear-gradient(180deg,rgba(28,25,19,.96),rgba(11,11,8,.98));
+  box-shadow:inset 0 -1px rgba(224,190,128,.035),0 10px 28px rgba(0,0,0,.26);
+}
+html[data-era-theme="technological"] :is(.primary,.secondary,.ghost,.tiny-btn,button.input-like){
+  min-height:34px;
+  border-radius:2px;
+  letter-spacing:.06em;
+  text-transform:uppercase;
+  box-shadow:none;
+}
+html[data-era-theme="technological"] .primary{
+  color:#17130d;
+  border:1px solid #9a7743;
+  background:linear-gradient(180deg,#c1a06b,#8b6b3d 54%,#74552c);
+  box-shadow:inset 0 1px rgba(255,239,202,.32),0 7px 18px rgba(0,0,0,.28);
+}
+html[data-era-theme="technological"] .primary:hover:not(:disabled){filter:brightness(1.1);box-shadow:inset 0 1px rgba(255,244,210,.42),0 9px 22px rgba(0,0,0,.35)}
+html[data-era-theme="technological"] :is(.secondary,.ghost,.tiny-btn){
+  color:#c3ac83;
+  border:1px solid rgba(177,140,81,.38);
+  background:linear-gradient(180deg,rgba(54,44,29,.42),rgba(15,14,11,.72));
+}
+html[data-era-theme="technological"] :is(.secondary,.ghost,.tiny-btn):hover:not(:disabled){color:#e0d0af;border-color:rgba(201,163,101,.7);background:rgba(101,76,39,.3)}
+html[data-era-theme="technological"] button:disabled{filter:saturate(.35);opacity:.43}
+html[data-era-theme="technological"] :is(input,select,textarea,.input,.select){
+  border-radius:2px;
+  border-color:rgba(170,137,83,.38);
+  color:#ddd4c1;
+  background:rgba(5,5,4,.78);
+  box-shadow:inset 0 1px 8px rgba(0,0,0,.4);
+}
+html[data-era-theme="technological"] :is(input,select,textarea,.input,.select):focus{border-color:#b89256;outline:1px solid rgba(184,146,86,.24);box-shadow:inset 0 1px 8px rgba(0,0,0,.4)}
+html[data-era-theme="technological"] :focus-visible{outline:1px solid #c19a5c;outline-offset:2px}
+
+html[data-era-theme="technological"] :is(.market-access-banner-v1071,.market-shop-tile-v1071,.market-inventory-tile-v1071,.stock-quote-tile-v1074,.stock-holding-v1074,.portfolio-head-v1074,.portfolio-metrics-v1074>div,.portfolio-ledger-row-v1074,.stock-position-facts-v1074 span,.stock-chart-v1074 svg,.market-quantity-v139){
+  border-radius:2px;
+  border-color:rgba(176,140,81,.29);
+  background:linear-gradient(180deg,rgba(24,22,17,.88),rgba(8,8,6,.92));
+  box-shadow:inset 0 0 0 1px rgba(230,197,138,.018);
+}
+html[data-era-theme="technological"] :is(.market-shop-tile-v1071,.market-inventory-tile-v1071,.stock-quote-tile-v1074,.stock-holding-v1074):hover{border-color:rgba(200,160,94,.67);background-color:rgba(74,55,29,.32);transform:translateY(-1px)}
+html[data-era-theme="technological"] :is(.market-shop-tile-v1071,.market-inventory-tile-v1071,.stock-quote-tile-v1074,.stock-holding-v1074).selected{border-color:#b99358;box-shadow:inset 0 0 0 1px rgba(205,166,103,.35),0 0 18px rgba(137,100,48,.12)}
+html[data-era-theme="technological"] .stock-chart-v1074 svg{background:linear-gradient(180deg,rgba(141,106,55,.075),transparent)}
+html[data-era-theme="technological"] .stock-chart-v1074 polyline{stroke-width:2}
+html[data-era-theme="technological"] .market-inventory-grid-v1071{border-radius:2px;border-color:rgba(176,140,81,.3);background:#080806}
+html[data-era-theme="technological"] .market-inventory-cell-v1071{border-radius:2px;border-color:rgba(176,140,81,.18);background:rgba(145,109,58,.025)}
+html[data-era-theme="technological"] .portfolio-result-v1074{background:linear-gradient(90deg,rgba(139,103,52,.16),rgba(13,13,10,.88))!important}
+html[data-era-theme="technological"] :is(.up,.ok){color:#94a17b}
+html[data-era-theme="technological"] :is(.down,.err){color:#bd776d}
+html[data-era-theme="technological"] .market-access-banner-v1071.ok{border-color:rgba(137,153,105,.5)}
+html[data-era-theme="technological"] .market-access-banner-v1071.err{border-color:rgba(189,119,109,.52);color:#d69a92}
+
+html[data-era-theme="technological"] :is(.config-list-item,.result-item,.thread-card,.article-card,.planet-card,.profile-card,.combat-card,.registration-player-card-v1052,.rich-link-picker-list-v1086>button){
+  border-radius:2px;
+  border-color:rgba(176,140,81,.25);
+  background:linear-gradient(180deg,rgba(26,23,17,.8),rgba(11,11,8,.84));
+}
+html[data-era-theme="technological"] :is(.config-list-item,.result-item,.thread-card,.article-card,.planet-card,.profile-card,.combat-card,.rich-link-picker-list-v1086>button):hover{border-color:rgba(198,158,94,.56);background:rgba(72,55,31,.3)}
+html[data-era-theme="technological"] :is(.tabs,.market-tabs-v1073,.profile-section-tabs-v1103){border-color:rgba(181,144,84,.28)}
+html[data-era-theme="technological"] :is(.tabs,.market-tabs-v1073,.profile-section-tabs-v1103) .active{color:#dac8a7;border-color:#b99358;background:rgba(128,94,47,.24);box-shadow:inset 0 -2px #ad844b}
+html[data-era-theme="technological"] :is(.entity-thumb,.entity-item-media-v1060,img){border-radius:2px}
+html[data-era-theme="technological"] :is(hr,.divider){border-color:rgba(180,143,82,.24)}
+
+html[data-era-theme="technological"] ::-webkit-scrollbar{width:10px;height:10px}
+html[data-era-theme="technological"] ::-webkit-scrollbar-track{background:#080806;border-left:1px solid rgba(170,135,78,.12)}
+html[data-era-theme="technological"] ::-webkit-scrollbar-thumb{background:#5e4a2d;border:2px solid #0b0a08;border-radius:0}
+html[data-era-theme="technological"] ::-webkit-scrollbar-thumb:hover{background:#82633a}
+
+@media(max-width:700px){
+  .market-selection-card-v1071>.market-quantity-v139,.stock-selection-v1074>.market-quantity-v139{grid-column:1/-1;grid-row:auto;width:100%;min-width:0}
+  .market-quantity-v139{grid-template-columns:1fr auto}
+  html[data-era-theme="technological"] #dock{border-radius:2px}
+}
+
+html[data-era-theme="technological"][data-graphics-mode="lite"] :is(.card,.fs-module,.modal .card,.market-pane-v1071,.market-selection-card-v1071,.stock-selection-v1074){
+  backdrop-filter:none;
+  background-image:linear-gradient(180deg,#17150f,#090907);
+  box-shadow:0 12px 32px rgba(0,0,0,.48);
+}

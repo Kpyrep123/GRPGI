@@ -1,0 +1,78 @@
+{
+  "MISSILES": {
+    "missile_i84pxt": {
+      "id": "missile_i84pxt",
+      "name": "ИКН 600",
+      "guidance": "heat",
+      "range": 600,
+      "seek": 110,
+      "speed": 300,
+      "damage": "",
+      "blastRadius": 0,
+      "ammoLabel": "",
+      "notes": ""
+    },
+    "missile_i855ce": {
+      "id": "missile_i855ce",
+      "name": "АН-100",
+      "guidance": "anti",
+      "range": 200,
+      "seek": 110,
+      "speed": 300,
+      "damage": "",
+      "blastRadius": 0,
+      "ammoLabel": "",
+      "notes": ""
+    },
+    "missile_i85kq6": {
+      "id": "missile_i85kq6",
+      "name": "Орешник",
+      "guidance": "radar",
+      "range": 2000,
+      "seek": 110,
+      "speed": 300,
+      "damage": "",
+      "blastRadius": 0,
+      "ammoLabel": "",
+      "notes": ""
+    }
+  },
+  "MISSILE_LIST": [
+    {
+      "id": "missile_i855ce",
+      "name": "АН-100",
+      "guidance": "anti",
+      "range": 200,
+      "seek": 110,
+      "speed": 300,
+      "damage": "",
+      "blastRadius": 0,
+      "ammoLabel": "",
+      "notes": ""
+    },
+    {
+      "id": "missile_i84pxt",
+      "name": "ИКН 600",
+      "guidance": "heat",
+      "range": 600,
+      "seek": 110,
+      "speed": 300,
+      "damage": "",
+      "blastRadius": 0,
+      "ammoLabel": "",
+      "notes": ""
+    },
+    {
+      "id": "missile_i85kq6",
+      "name": "Орешник",
+      "guidance": "radar",
+      "range": 2000,
+      "seek": 110,
+      "speed": 300,
+      "damage": "",
+      "blastRadius": 0,
+      "ammoLabel": "",
+      "notes": ""
+    }
+  ]
+}
