@@ -398,6 +398,7 @@
     return facts;
   }
   function equipmentFactsMarkupV131(item={}){
+    if(window.GRPGItemFactsV141)return window.GRPGItemFactsV141.table(item);
     const facts=equipmentFactsV131(item);
     return facts.length?`<div class="archive-equipment-facts-v131">${facts.map(([label,value])=>`<div><span>${safe(label)}</span><b>${safe(value)}</b></div>`).join('')}</div>`:'';
   }

@@ -1651,7 +1651,7 @@
     return {
       era: 'technological',
       marker: css('--map-marker', '#60c9ff'), route: css('--map-route', '#328dff'), text: css('--map-text', '#e8f8ff'),
-      bg0: '#102b49', bg1: '#071526', bg2: '#020610', stars: '#dff7ff', orbit: 'rgba(96,201,255,.16)'
+      bg0: '#1c1912', bg1: '#0e0d0a', bg2: '#040403', stars: '#d2bb90', orbit: 'rgba(185,147,88,.18)'
     };
   }
 
@@ -2031,7 +2031,7 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
       const medievalBackdrop = String(document.documentElement?.dataset?.eraTheme || '') === 'medieval';
       ctx.globalCompositeOperation = 'screen';
       ctx.globalAlpha = medievalBackdrop ? alpha * .78 : alpha;
-      ctx.filter = medievalBackdrop ? 'sepia(.88) saturate(.48) brightness(.78) contrast(.92)' : 'none';
+      ctx.filter = medievalBackdrop ? 'sepia(.88) saturate(.48) brightness(.78) contrast(.92)' : String(document.documentElement?.dataset?.eraTheme || '') === 'technological' ? 'sepia(.78) saturate(.50) brightness(.66) contrast(1.10)' : 'none';
       ctx.drawImage(img, cx - dw / 2, cy - dh / 2, dw, dh);
       ctx.restore();
     },
@@ -2528,6 +2528,7 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
   }
 
   function archiveEquipmentFactsWebV131(item = {}) {
+    if(window.GRPGItemFactsV141)return window.GRPGItemFactsV141.pills(item);
     item=normalizeItemWeb118(item);
     const type = String(item.type || 'gear').toLowerCase();
     const mods=(item.modifiers||[]).filter(mod=>mod.enabled!==false);
@@ -5341,7 +5342,7 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
   function marketTypeLabelWebV1071(item={}){const type=normalizedItemTypeV1052(item);return({weapon:'Оружие',grenade:'Граната',turret:'Турель',drone:'Дрон',armor:'Броня',implant:'Имплант',stock:'Акции'})[type]||'Снаряжение';}
   function marketWeaponSlotLabelWebV1071(value){return({primary:'Основное',secondary:'Вторичное',versatile:'Универсальное'})[String(value||'primary')]||String(value||'Основное');}
   function marketRequirementTextWebV1071(item={}){const req=item.requirements&&typeof item.requirements==='object'?item.requirements:{};const rows=ABILITIES_V1052.filter(row=>Number(req[row.key]||0)>0).map(row=>`${row.short} ${Number(req[row.key])}`);return rows.length?rows.join(' · '):'нет';}
-  function marketItemDetailsWebV1071(item,offer){const type=normalizedItemTypeV1052(item),size=marketSizeWebV1071(item),mass=Number(item.mass??item.weight??1),facts=[`Тип: ${marketTypeLabelWebV1071(item)}`,item.rarity?`Редкость: ${item.rarity}`:'',`Размер: ${size.w}×${size.h}`,`Масса: ${Number.isFinite(mass)?mass:1}`,offer?.unique?'Уникальный предмет':''];if(type==='weapon'){if(item.damage)facts.push(`Урон: ${item.damage}`);if(Number(item.range||0)>0)facts.push(`Дальность: ${Number(item.range)}`);facts.push(`Попадание: ${Number(item.hitBonus||0)>=0?'+':''}${Number(item.hitBonus||0)}`);facts.push(`Слот: ${marketWeaponSlotLabelWebV1071(item.weaponSlot)}`);}if(type==='grenade'){if(item.damage)facts.push(`Урон: ${item.damage}`);facts.push(`Бросок: ${Number(item.grenadeRange||0)}`,`Радиус: ${Number(item.grenadeRadius||0)}`);}if(['turret','drone'].includes(type)){if(item.damage)facts.push(`Урон: ${item.damage}`);facts.push(`Дальность: ${Number(item.range||0)}`,`HP: ${Number(item.unitHp||10)}`,`КБ: ${Number(item.unitArmorClass||10)}`);if(type==='drone')facts.push(`Движение: ${Number(item.unitMoveRange||0)}`);}if(type==='armor'&&Number(item.armorClass||0)>0)facts.push(`Класс брони: ${Number(item.armorClass)}`);if(type==='implant')facts.push(`Требуемая энергия: ${Number(item.energyRequired??item.requiredEnergy??0)}`);const tags=Array.isArray(item.tags)?item.tags.map(tag=>String(tag||'').trim()).filter(Boolean):[];return`<div class="market-selection-facts-v1071">${facts.filter(Boolean).map(fact=>`<span class="pill">${esc(fact)}</span>`).join('')}</div><p class="market-selection-description-v1071">${esc(item.desc||item.description||item.summary||'Описание предмета не задано.')}</p><div class="market-selection-requirements-v1071"><b>Требования:</b> ${esc(marketRequirementTextWebV1071(item))}</div>${tags.length?`<div class="market-selection-tags-v1071"><b>Категории:</b> ${esc(tags.join(' · '))}</div>`:''}`;}
+  function marketItemDetailsWebV1071(item,offer){const type=normalizedItemTypeV1052(item),size=marketSizeWebV1071(item),mass=Number(item.mass??item.weight??1),facts=[`Тип: ${marketTypeLabelWebV1071(item)}`,item.rarity?`Редкость: ${item.rarity}`:'',`Размер: ${size.w}×${size.h}`,`Масса: ${Number.isFinite(mass)?mass:1}`,offer?.unique?'Уникальный предмет':''];if(type==='weapon'){if(item.damage)facts.push(`Урон: ${item.damage}`);if(Number(item.range||0)>0)facts.push(`Дальность: ${Number(item.range)}`);facts.push(`Попадание: ${Number(item.hitBonus||0)>=0?'+':''}${Number(item.hitBonus||0)}`);facts.push(`Слот: ${marketWeaponSlotLabelWebV1071(item.weaponSlot)}`);}if(type==='grenade'){if(item.damage)facts.push(`Урон: ${item.damage}`);facts.push(`Бросок: ${Number(item.grenadeRange||0)}`,`Радиус: ${Number(item.grenadeRadius||0)}`);}if(['turret','drone'].includes(type)){if(item.damage)facts.push(`Урон: ${item.damage}`);facts.push(`Дальность: ${Number(item.range||0)}`,`HP: ${Number(item.unitHp||10)}`,`КБ: ${Number(item.unitArmorClass||10)}`);if(type==='drone')facts.push(`Движение: ${Number(item.unitMoveRange||0)}`);}if(type==='armor'&&Number(item.armorClass||0)>0)facts.push(`Класс брони: ${Number(item.armorClass)}`);if(type==='implant')facts.push(`Требуемая энергия: ${Number(item.energyRequired??item.requiredEnergy??0)}`);const tags=Array.isArray(item.tags)?item.tags.map(tag=>String(tag||'').trim()).filter(Boolean):[];return`<div class="market-selection-facts-v1071">${facts.filter(Boolean).map(fact=>`<span class="pill">${esc(fact)}</span>`).join('')}${window.GRPGItemFactsV141?.pills(item,{excludeLabels:facts})||''}</div><p class="market-selection-description-v1071">${esc(item.desc||item.description||item.summary||'Описание предмета не задано.')}</p><div class="market-selection-requirements-v1071"><b>Требования:</b> ${esc(marketRequirementTextWebV1071(item))}</div>${tags.length?`<div class="market-selection-tags-v1071"><b>Категории:</b> ${esc(tags.join(' · '))}</div>`:''}`;}
   function quantityControlsWebV139({player,item,offer,buy,stock,owned=0,disabled=false,capacity={ok:true}}){
     if(!buy&&!stock)return`<button class="primary" type="button" data-web-market-action-v1071="sell" ${disabled?'disabled':''}>ПРОДАТЬ</button>`;
     const unitPrice=Math.max(0,Number(buy?offer?.price:offer?.sellPrice)||0),credits=Math.max(0,Number(player?.credits)||0),affordable=buy?(unitPrice>0?Math.floor(credits/unitPrice):10000):Math.max(0,Math.trunc(Number(owned)||0)),limit=Math.max(0,Math.min(10000,offer?.unique?1:affordable)),action=buy?'buy':'sell',actionAttr=stock?'data-web-stock-action-v1074':'data-web-market-action-v1071';
@@ -5754,10 +5755,7 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
     item.textOnlyInventory=false;
     item.inventoryWidth=Math.max(1,Math.trunc(Number(source.inventoryWidth??item.inventoryWidth??1)||1));
     item.inventoryHeight=Math.max(1,Math.trunc(Number(source.inventoryHeight??item.inventoryHeight??1)||1));
-    item.modifiers=(Array.isArray(item.modifiers)?item.modifiers:[]).filter(mod=>{
-      if(!mod?.target)return false;
-      return !(String(mod.op||'add')==='add'&&Number(mod.value||0)===0&&!mod.statRef);
-    });
+    item.modifiers=(Array.isArray(item.modifiers)?item.modifiers:[]).filter(mod=>mod?.target);
     return item;
   };
 
