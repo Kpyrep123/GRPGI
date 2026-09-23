@@ -5864,6 +5864,13 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
     if (status) status.textContent = 'Выберите персонажа и введите его пароль.';
   }
 
+  const renderProfileBeforeSheetV142 = renderProfile;
+  renderProfile = function() {
+    const result = renderProfileBeforeSheetV142();
+    if (App.ui.profileTab !== 'skills') window.GRPGProfileSheetV142?.layoutWeb($('#screen-profile'));
+    return result;
+  };
+
   init().catch(error => {
     openBoot('login');
     renderLogin();
