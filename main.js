@@ -55,8 +55,6 @@ const DEFAULT_POCKETBASE_USERS_COLLECTION = 'app_users';
 const DEFAULT_POCKETBASE_ASSETS_COLLECTION = 'campaign_assets';
 const LOCKED_POCKETBASE_URL = 'https://sync.grpg-sync.ru';
 const LOCKED_CAMPAIGN_ID = 'main';
-const LOCKED_APP_USER_EMAIL = 'guest@guest.local';
-const LOCKED_APP_USER_PASSWORD = '12345678';
 
 // A snapshot write is allowed only after this exact app process has downloaded
 // and applied the current cloud revision. These tokens intentionally live only
@@ -373,8 +371,6 @@ function defaultSyncConfig() {
     provider: 'pocketbase',
     serverUrl: '',
     accessToken: '',
-    pocketbaseEmail: LOCKED_APP_USER_EMAIL,
-    pocketbasePassword: LOCKED_APP_USER_PASSWORD,
     pocketbaseUsersCollection: DEFAULT_POCKETBASE_USERS_COLLECTION,
     pocketbaseAssetsCollection: DEFAULT_POCKETBASE_ASSETS_COLLECTION,
     url: LOCKED_POCKETBASE_URL,
@@ -397,8 +393,6 @@ function normalizeSyncConfig(payload = {}) {
     provider: 'pocketbase',
     serverUrl: '',
     accessToken: '',
-    pocketbaseEmail: LOCKED_APP_USER_EMAIL,
-    pocketbasePassword: LOCKED_APP_USER_PASSWORD,
     pocketbaseUsersCollection: DEFAULT_POCKETBASE_USERS_COLLECTION,
     pocketbaseAssetsCollection: DEFAULT_POCKETBASE_ASSETS_COLLECTION,
     url: LOCKED_POCKETBASE_URL,
@@ -582,14 +576,12 @@ async function pocketbaseStreamMultipart(config = {}, pathname = '/', fields = {
   const contentLength = fieldBuffers.reduce((sum, part) => sum + part.length, 0) + fileHeader.length + Number(file.size || 0) + suffix.length;
   const timeoutMs = Math.max(60000, Number(config.uploadTimeoutMs || 10 * 60 * 1000));
 
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    const token = await pocketbaseAuthToken(config, { forceRefresh: attempt > 0 });
+  for (let attempt = 0; attempt < 1; attempt += 1) {
     const result = await new Promise((resolve, reject) => {
       const transport = url.protocol === 'http:' ? http : https;
       const req = transport.request(url, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${token}`,
           'Content-Type': `multipart/form-data; boundary=${boundary}`,
           'Content-Length': String(contentLength)
         }
@@ -616,10 +608,6 @@ async function pocketbaseStreamMultipart(config = {}, pathname = '/', fields = {
       input.on('end', () => req.end(suffix));
       input.pipe(req, { end: false });
     });
-    if (result.status === 401 && attempt === 0) {
-      pocketbaseAuthCache.delete(pocketbaseAuthCacheKey(config));
-      continue;
-    }
     if (result.status < 200 || result.status >= 300) {
       const detail = result.payload?.data && typeof result.payload.data === 'object' ? ` // ${JSON.stringify(result.payload.data)}` : '';
       throw new Error(`${result.payload?.message || 'PocketBase request failed'}: HTTP ${result.status}${detail}`);
@@ -1628,8 +1616,6 @@ function validateSyncConfig(config = {}) {
   }
   if (isPocketBaseSyncConfig(config)) {
     if (!config.url) issues.push('POCKETBASE_URL пустой');
-    if (!config.pocketbaseEmail) issues.push('POCKETBASE_EMAIL пустой');
-    if (!config.pocketbasePassword) issues.push('POCKETBASE_PASSWORD пустой');
     if (!config.campaignId) issues.push('CAMPAIGN_ID пустой');
     return issues;
   }
@@ -1962,7 +1948,6 @@ async function setupPocketBaseRealtime(config = {}) {
 }
 
 
-const pocketbaseAuthCache = new Map();
 
 function getPocketBaseBaseUrl(config = {}) {
   return String(config.url || config.serverUrl || '').trim().replace(/\/+$/, '');
@@ -1978,10 +1963,6 @@ function pocketbaseCollection(config = {}, key = 'snapshot') {
   return String(key || '').trim();
 }
 
-function pocketbaseAuthCacheKey(config = {}) {
-  return [getPocketBaseBaseUrl(config), pocketbaseCollection(config, 'users'), config.pocketbaseEmail || ''].join('|');
-}
-
 function pocketbaseFilterValue(value = '') {
   return String(value ?? '').replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 }
@@ -1994,36 +1975,6 @@ function pocketbaseAnd(...parts) {
   return parts.filter(Boolean).join(' && ');
 }
 
-async function pocketbaseAuthToken(config = {}, options = {}) {
-  const issues = validateSyncConfig(config);
-  if (issues.length) throw new Error(issues.join('; '));
-  const cacheKey = pocketbaseAuthCacheKey(config);
-  if (!options.forceRefresh && pocketbaseAuthCache.has(cacheKey)) return pocketbaseAuthCache.get(cacheKey);
-  const base = getPocketBaseBaseUrl(config);
-  const collection = encodePathPart(pocketbaseCollection(config, 'users'));
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), Math.max(3000, Number(config.connectTimeoutMs || 8000)));
-  try {
-    const res = await fetch(`${base}/api/collections/${collection}/auth-with-password`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ identity: String(config.pocketbaseEmail || ''), password: String(config.pocketbasePassword || '') }),
-      signal: controller.signal
-    });
-    const payload = await res.json().catch(() => ({}));
-    if (!res.ok || !payload?.token) {
-      throw new Error(payload?.message || `PocketBase auth failed: HTTP ${res.status}`);
-    }
-    pocketbaseAuthCache.set(cacheKey, payload.token);
-    return payload.token;
-  } catch (error) {
-    if (error?.name === 'AbortError') throw new Error(`PocketBase auth timeout: ${base}`);
-    throw error;
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
 async function pocketbaseFetch(config = {}, pathname = '/', options = {}) {
   const base = getPocketBaseBaseUrl(config);
   if (!base) throw new Error('POCKETBASE_URL пустой');
@@ -2034,9 +1985,8 @@ async function pocketbaseFetch(config = {}, pathname = '/', options = {}) {
     url.searchParams.set(key, String(value));
   }
   let lastPayload = null;
-  for (let attempt = 0; attempt < 2; attempt += 1) {
+  for (let attempt = 0; attempt < 1; attempt += 1) {
     const headers = { ...(options.headers || {}) };
-    if (options.auth !== false) headers.Authorization = `Bearer ${await pocketbaseAuthToken(config, { forceRefresh: attempt > 0 })}`;
     let body = options.body;
     if (options.json !== undefined) {
       headers['content-type'] = 'application/json';
@@ -2050,10 +2000,6 @@ async function pocketbaseFetch(config = {}, pathname = '/', options = {}) {
       const contentType = String(res.headers.get('content-type') || '').toLowerCase();
       const payload = contentType.includes('application/json') ? await res.json().catch(() => ({})) : { text: await res.text().catch(() => '') };
       lastPayload = payload;
-      if (res.status === 401 && attempt === 0) {
-        pocketbaseAuthCache.delete(pocketbaseAuthCacheKey(config));
-        continue;
-      }
       if (!res.ok) {
         const detail = payload?.data && typeof payload.data === 'object' ? ` // ${JSON.stringify(payload.data)}` : '';
         const error=new Error(`${payload?.message || 'PocketBase request failed'}: HTTP ${res.status}${detail}`); error.status=res.status; throw error;
@@ -3343,16 +3289,14 @@ ipcMain.handle('devops:deployWeb', async (event, payload) => {
     if (String(syncConfig?.provider || 'pocketbase') !== 'pocketbase') {
       throw new Error('Web-клиент требует PocketBase-конфигурацию');
     }
-    if (!syncConfig?.url || !syncConfig?.campaignId || !syncConfig?.pocketbaseEmail || !syncConfig?.pocketbasePassword) {
-      throw new Error('Перед Web-деплоем сохраните PocketBase URL, Campaign ID, APP_USER_EMAIL и APP_USER_PASSWORD в настройках синхронизации Electron');
+    if (!syncConfig?.url || !syncConfig?.campaignId) {
+      throw new Error('Перед Web-деплоем настройте PocketBase URL и Campaign ID');
     }
     return await getDevOpsModule().deployWeb(rootDir, {
       runtimeConfig: {
         url: syncConfig.url,
         campaignId: syncConfig.campaignId,
         appUsersCollection: syncConfig.pocketbaseUsersCollection,
-        appUserEmail: syncConfig.pocketbaseEmail,
-        appUserPassword: syncConfig.pocketbasePassword,
         tableName: syncConfig.tableName,
         playerTableName: syncConfig.playerTableName,
         chatTableName: syncConfig.chatTableName,

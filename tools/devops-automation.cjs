@@ -782,15 +782,13 @@ function runtimeConfigScript(runtimeConfig = {}) {
     url: String(runtimeConfig.url || '').trim(),
     campaignId: String(runtimeConfig.campaignId || 'main').trim() || 'main',
     appUsersCollection: String(runtimeConfig.appUsersCollection || 'app_users').trim() || 'app_users',
-    appUserEmail: String(runtimeConfig.appUserEmail || '').trim(),
-    appUserPassword: String(runtimeConfig.appUserPassword || ''),
     tableName: String(runtimeConfig.tableName || 'campaign_snapshots').trim() || 'campaign_snapshots',
     playerTableName: String(runtimeConfig.playerTableName || 'campaign_players').trim() || 'campaign_players',
     chatTableName: String(runtimeConfig.chatTableName || 'campaign_messages').trim() || 'campaign_messages',
     combatRuntimeTableName: String(runtimeConfig.combatRuntimeTableName || 'campaign_combat_runtime').trim() || 'campaign_combat_runtime',
     assetsCollection: String(runtimeConfig.assetsCollection || 'campaign_assets').trim() || 'campaign_assets'
   };
-  if (!safe.url || !safe.appUserEmail || !safe.appUserPassword) throw new Error('Не хватает runtime PocketBase-данных для Web-деплоя');
+  if (!safe.url || !safe.campaignId) throw new Error('Не хватает PocketBase URL или Campaign ID для Web-деплоя');
   return `// Generated only in the temporary deployment directory. Do not commit.\nwindow.GRPG_WEB_RUNTIME = ${JSON.stringify(safe)};\n`;
 }
 

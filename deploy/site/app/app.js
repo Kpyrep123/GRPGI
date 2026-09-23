@@ -12,8 +12,6 @@
     url: String(WEB_RUNTIME_CONFIG.url || 'https://sync.grpg-sync.ru').trim(),
     campaignId: String(WEB_RUNTIME_CONFIG.campaignId || 'main').trim() || 'main',
     appUsersCollection: String(WEB_RUNTIME_CONFIG.appUsersCollection || 'app_users').trim() || 'app_users',
-    appUserEmail: String(WEB_RUNTIME_CONFIG.appUserEmail || '').trim(),
-    appUserPassword: String(WEB_RUNTIME_CONFIG.appUserPassword || ''),
     tableName: String(WEB_RUNTIME_CONFIG.tableName || 'campaign_snapshots').trim() || 'campaign_snapshots',
     playerTableName: String(WEB_RUNTIME_CONFIG.playerTableName || 'campaign_players').trim() || 'campaign_players',
     chatTableName: String(WEB_RUNTIME_CONFIG.chatTableName || 'campaign_messages').trim() || 'campaign_messages',
@@ -146,8 +144,6 @@
 
   function sanitizedConfig(config = App.config) {
     const clean = normalizeConfig(config || {});
-    clean.appUserEmail = '';
-    clean.appUserPassword = '';
     return clean;
   }
 
@@ -283,8 +279,6 @@
       backend: 'pocketbase',
       provider: 'pocketbase',
       url: legacyConfig ? DEFAULTS.url : requestedUrl,
-      appUserEmail: legacyConfig ? '' : String(payload.appUserEmail || payload.pocketbaseEmail || payload.pbEmail || DEFAULTS.appUserEmail || '').trim(),
-      appUserPassword: legacyConfig ? '' : String(payload.appUserPassword || payload.pocketbasePassword || payload.pbPassword || DEFAULTS.appUserPassword || ''),
       appUsersCollection: String(payload.appUsersCollection || payload.pocketbaseUsersCollection || DEFAULTS.appUsersCollection).trim() || DEFAULTS.appUsersCollection,
       campaignId: String(payload.campaignId || DEFAULTS.campaignId || 'main').trim() || 'main',
       deviceLabel: String(payload.deviceLabel || '').trim(),
@@ -301,13 +295,8 @@
   }
 
   function hasConfig(config = App.config) {
-    return Boolean(config?.url && config?.campaignId && (App.auth?.token || (config?.appUserEmail && config?.appUserPassword)));
+    return Boolean(config?.url && config?.campaignId);
   }
-
-  function hasRuntimeServiceAuth() {
-    return Boolean(DEFAULTS.appUserEmail && DEFAULTS.appUserPassword);
-  }
-
 
   function encodeStoragePath(path) {
     return String(path || '').split('/').map(part => encodeURIComponent(part)).join('/');
@@ -965,69 +954,6 @@
     return parts.filter(Boolean).join(' && ');
   }
 
-  function tokenExpiryMs(token) {
-    try {
-      const payload = String(token || '').split('.')[1];
-      if (!payload) return 0;
-      const normalized = payload.replace(/-/g, '+').replace(/_/g, '/');
-      const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=');
-      const parsed = JSON.parse(atob(padded));
-      return Number(parsed?.exp || 0) * 1000;
-    } catch {
-      return 0;
-    }
-  }
-
-  async function persistAuth(payload) {
-    const token = String(payload?.token || '');
-    App.auth = { token, expiresAt: tokenExpiryMs(token) };
-    if (token) await storageSet(KEYS.auth, App.auth);
-    else await storageRemove(KEYS.auth);
-    return token;
-  }
-
-  async function refreshPocketBaseAuth(config = App.config) {
-    if (!App.auth?.token) throw new Error('Сохранённая сессия отсутствует');
-    const base = pbBaseUrl(config);
-    const collection = encodeURIComponent(pbCollection(config, 'users'));
-    const response = await fetch(`${base}/api/collections/${collection}/auth-refresh`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${App.auth.token}` }
-    });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok || !payload?.token) throw new Error(payload?.message || `PocketBase auth refresh failed: HTTP ${response.status}`);
-    return persistAuth(payload);
-  }
-
-  async function pbAuthToken(config = App.config, force = false) {
-    const now = Date.now();
-    const currentExpiry = Number(App.auth?.expiresAt || tokenExpiryMs(App.auth?.token));
-    if (!force && App.auth?.token && currentExpiry > now + 60000) return App.auth.token;
-
-    if (App.auth?.token) {
-      try {
-        return await refreshPocketBaseAuth(config);
-      } catch {
-        await persistAuth(null);
-      }
-    }
-
-    if (!config?.appUserEmail || !config?.appUserPassword) {
-      throw new Error('Автоматическая PocketBase-авторизация не внедрена в Web-деплой. Выполните «ДЕПЛОЙ WEB» из DEV-профиля ДМа после сохранения PocketBase-конфигурации в Electron.');
-    }
-
-    const base = pbBaseUrl(config);
-    const collection = encodeURIComponent(pbCollection(config, 'users'));
-    const response = await fetch(`${base}/api/collections/${collection}/auth-with-password`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ identity: config.appUserEmail, password: config.appUserPassword })
-    });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok || !payload?.token) throw new Error(payload?.message || `PocketBase auth failed: HTTP ${response.status}`);
-    return persistAuth(payload);
-  }
-
   async function pbFetch(config, pathname, options = {}) {
     const base = pbBaseUrl(config);
     const url = new URL(pathname, `${base}/`);
@@ -1035,9 +961,8 @@
       if (value == null || value === '') return;
       url.searchParams.set(key, String(value));
     });
-    for (let attempt = 0; attempt < 2; attempt += 1) {
+    for (let attempt = 0; attempt < 1; attempt += 1) {
       const headers = { ...(options.headers || {}) };
-      if (options.auth !== false) headers.Authorization = `Bearer ${await pbAuthToken(config, attempt > 0)}`;
       let body = options.body;
       if (options.json !== undefined) {
         headers['Content-Type'] = 'application/json';
@@ -1046,10 +971,6 @@
       const response = await fetch(url.toString(), { method: options.method || 'GET', headers, body });
       const text = await response.text().catch(() => '');
       const payload = text ? (() => { try { return JSON.parse(text); } catch { return { text }; } })() : null;
-      if (response.status === 401 && attempt === 0) {
-        await persistAuth(null);
-        continue;
-      }
       if (!response.ok) {
         const detail = payload?.data ? ` // ${JSON.stringify(payload.data)}` : '';
         const error=new Error(`${payload?.message || text || 'PocketBase request failed'}: HTTP ${response.status}${detail}`);error.status=response.status;throw error;
@@ -1488,8 +1409,8 @@
     App.config = normalizeConfig(await storageGet(KEYS.config, {}));
     App.cache = await storageGet(KEYS.cache, App.cache);
     App.session = await storageGet(KEYS.session, null);
-    App.auth = await storageGet(KEYS.auth, { token: '', expiresAt: 0 });
-    if (App.auth?.token && !App.auth.expiresAt) App.auth.expiresAt = tokenExpiryMs(App.auth.token);
+    App.auth = { token: '', expiresAt: 0 };
+    await storageRemove(KEYS.auth);
   }
 
   function screenNodes() {
@@ -3825,8 +3746,7 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
     const controller = new AbortController();
     App.realtime.abortController = controller;
     try {
-      const token = await pbAuthToken(App.config);
-      const response = await fetch(`${pbBaseUrl(App.config)}/api/realtime`, { headers: { Authorization: `Bearer ${token}` }, signal: controller.signal });
+      const response = await fetch(`${pbBaseUrl(App.config)}/api/realtime`, { signal: controller.signal });
       if (!response.ok || !response.body) throw new Error(`PocketBase realtime HTTP ${response.status}`);
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
@@ -5941,9 +5861,7 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
     openBoot('login');
     renderLogin();
     const status = $('#login-status');
-    if (status) status.textContent = hasRuntimeServiceAuth()
-      ? 'Выберите персонажа и введите его пароль.'
-      : 'Web-деплой не содержит автоматической PocketBase-авторизации. Выполните деплой из DEV-профиля ДМа.';
+    if (status) status.textContent = 'Выберите персонажа и введите его пароль.';
   }
 
   init().catch(error => {

@@ -1071,7 +1071,7 @@ const Sync = {
   isConfiguredConfig(config = this.config) {
     const provider = this.provider(config);
     if (provider === 'selfhost') return Boolean(config?.enabled && config?.serverUrl && config?.campaignId);
-    return Boolean(config?.enabled && config?.url && config?.pocketbaseEmail && config?.pocketbasePassword && config?.campaignId);
+    return Boolean(config?.enabled && config?.url && config?.campaignId);
   },
   isConfigured() {
     return this.isConfiguredConfig(this.config);
@@ -1410,8 +1410,6 @@ const Sync = {
       url: String(formData.get('url') || '').trim(),
       serverUrl: String(formData.get('serverUrl') || '').trim(),
       accessToken: String(formData.get('accessToken') || '').trim(),
-      pocketbaseEmail: String(formData.get('pocketbaseEmail') || '').trim(),
-      pocketbasePassword: String(formData.get('pocketbasePassword') || '').trim(),
       pocketbaseUsersCollection: String(formData.get('pocketbaseUsersCollection') || 'app_users').trim() || 'app_users',
       pocketbaseAssetsCollection: String(formData.get('pocketbaseAssetsCollection') || 'campaign_assets').trim() || 'campaign_assets',
       campaignId: String(formData.get('campaignId') || '').trim(),
@@ -1485,10 +1483,7 @@ const Sync = {
               <div class="field"><label>URL</label><input class="input" value="${esc(config.url || 'https://sync.grpg-sync.ru')}" readonly /></div>
               <div class="field"><label>CAMPAIGN_ID</label><input class="input" value="${esc(config.campaignId || 'main')}" readonly /></div>
             </div>
-            <div class="cols2">
-              <div class="field"><label>APP_USER_EMAIL</label><input class="input" value="${esc(config.pocketbaseEmail || 'guest@guest.local')}" readonly /></div>
-              <div class="field"><label>APP_USER_PASSWORD</label><input class="input" value="••••••••" readonly /></div>
-            </div>
+            <div class="small-note">Доступ к PocketBase без общего аккаунта. Вход персонажа в профиль остаётся отдельным.</div>
             <div class="cols3">
               <div class="field"><label>BACKEND</label><input class="input" value="PocketBase" readonly /></div>
               <div class="field"><label>APP_VERSION</label><input class="input" value="${esc(GRPG_APP_VERSION)}" readonly /></div>
