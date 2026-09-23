@@ -5946,6 +5946,13 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
       : 'Web-деплой не содержит автоматической PocketBase-авторизации. Выполните деплой из DEV-профиля ДМа.';
   }
 
+  const renderProfileBeforeSheetV142 = renderProfile;
+  renderProfile = function() {
+    const result = renderProfileBeforeSheetV142();
+    if (App.ui.profileTab !== 'skills') window.GRPGProfileSheetV142?.layoutWeb($('#screen-profile'));
+    return result;
+  };
+
   init().catch(error => {
     openBoot('login');
     renderLogin();
