@@ -1650,7 +1650,7 @@
     };
     return {
       era: 'technological',
-      marker: css('--map-marker', '#60c9ff'), route: css('--map-route', '#328dff'), text: css('--map-text', '#e8f8ff'),
+      marker: css('--map-marker', '#b99358'), route: css('--map-route', '#957349'), text: css('--map-text', '#d8cfbd'),
       bg0: '#1c1912', bg1: '#0e0d0a', bg2: '#040403', stars: '#d2bb90', orbit: 'rgba(185,147,88,.18)'
     };
   }
@@ -1997,7 +1997,7 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
         const key = [system.id, target.id].sort().join('::');
         if (seen.has(key)) return;
         seen.add(key);
-        out.push({ from: system, to: target, color: route.color || system.color || '#7df9ff', label: route.label || '' });
+        out.push({ from: system, to: target, color: route.color || system.color || galaxyEraPaletteV1050().route, label: route.label || '' });
       }));
       return out;
     },
@@ -5609,7 +5609,7 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
     item.ammoTypeId=String(item.ammoTypeId||item.ammunitionId||'');
     item.magazineSize=Math.max(0,Math.trunc(Number(item.magazineSize??item.clipSize??0)||0));
     item.ammoPerShot=Math.max(1,Math.trunc(Number(item.ammoPerShot??item.roundsPerShot??1)||1));
-    item.rapidFireShots=Math.max(1,Math.min(3,Math.trunc(Number(item.rapidFireShots??item.burstShots??1)||1)));
+    item.rapidFireShots=Math.max(1,Math.trunc(Number(item.rapidFireShots??item.burstShots??1)||1));
     item.weaponSkillId=String(item.weaponSkillId||'');item.weaponSkillBonus=Number(item.weaponSkillBonus||0);
     item.armorWeightClass=String(item.armorWeightClass||'light')==='heavy'?'heavy':'light';item.heavyArmor=item.armorWeightClass==='heavy'||item.heavyArmor===true;
     item.shieldCoverBonus=Math.max(0,Number(item.shieldCoverBonus||0));item.shieldDexterityCap=String(item.shieldDexterityCap??'').trim()===''?null:Math.max(0,Number(item.shieldDexterityCap)||0);
@@ -5713,8 +5713,8 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
   }
   function itemBadgesWeb118(item,player=currentPlayer()){
     const rows=[],type=normalizedItemTypeV1052(item);
-    if(type==='weapon'){const attack=player?weaponAttackWeb118(player,item):{bonus:Number(item.hitBonus||0),damageBonus:0};rows.push(['Урон',`${item.damage||'—'}${attack.damageBonus?` ${signedWeb118(attack.damageBonus)}`:''}`],['Попадание',signedWeb118(attack.bonus)]);if(Number(item.range||0)>0)rows.push(['Дальность',`${Number(item.range)} гекс.`]);if(Number(item.magazineSize||0)>0){const loaded=player?.weaponMagazines?.[item.id]?.loaded;rows.push(['Магазин',`${loaded==null?Number(item.magazineSize):Number(loaded)} / ${Number(item.magazineSize)}`]);}if(Number(item.rapidFireShots||1)>1)rows.push(['Скорострельность',`${Math.min(3,Number(item.rapidFireShots))} выстрела`]);}
-    else if(type==='armor'){const armor=(item.modifiers||[]).filter(mod=>mod.target==='armor_class'&&mod.op==='add').reduce((sum,mod)=>sum+Number(mod.value||0),0),defense=(item.modifiers||[]).filter(mod=>mod.target==='defense'&&mod.op==='add').reduce((sum,mod)=>sum+Number(mod.value||0),0);if(armor||item.armorClass)rows.push(['Класс брони',armor?signedWeb118(armor):Number(item.armorClass)]);if(defense||item.damageReduction)rows.push(['Защита',defense?signedWeb118(defense):Number(item.damageReduction)]);}
+    if(type==='weapon'){const attack=player?weaponAttackWeb118(player,item):{bonus:Number(item.hitBonus||0),damageBonus:0};rows.push(['Урон',`${item.damage||'—'}${attack.damageBonus?` ${signedWeb118(attack.damageBonus)}`:''}`],['Попадание',signedWeb118(attack.bonus)]);if(Number(item.range||0)>0)rows.push(['Дальность',`${Number(item.range)} гекс.`]);if(Number(item.magazineSize||0)>0){const loaded=player?.weaponMagazines?.[item.id]?.loaded;rows.push(['Магазин',`${loaded==null?Number(item.magazineSize):Number(loaded)} / ${Number(item.magazineSize)}`]);}if(Number(item.rapidFireShots||1)>1)rows.push(['Скорострельность',`${Number(item.rapidFireShots)} выстрела`]);}
+    else if(type==='armor'){const armor=(item.modifiers||[]).filter(mod=>mod.enabled!==false&&mod.target==='armor_class'&&mod.op==='add').reduce((sum,mod)=>sum+Number(mod.value||0),0),defense=(item.modifiers||[]).filter(mod=>mod.enabled!==false&&mod.target==='defense'&&mod.op==='add').reduce((sum,mod)=>sum+Number(mod.value||0),0);if(armor||item.armorClass)rows.push(['Класс брони',armor?signedWeb118(armor):Number(item.armorClass)]);if(defense||item.damageReduction)rows.push(['Защита',defense?signedWeb118(defense):Number(item.damageReduction)]);}
     else if(type==='implant')rows.push(['Энергия',Number(item.energyRequired??item.requiredEnergy??0)]);
     else if(type==='ammo')rows.push(['Тип','Патроны']);
     else if(type==='grenade'){rows.push(['Урон',item.damage||'—']);if(Number(item.grenadeRadius||0)>0)rows.push(['Радиус',`${Number(item.grenadeRadius)} гекс.`]);}
