@@ -1,0 +1,28 @@
+/* A readable character sheet with a compact equipment silhouette. */
+.character-sheet-v142{max-width:1180px;margin:0 auto;display:grid;gap:16px;align-content:start}
+.character-sheet-stack-v142{display:grid!important;grid-template-columns:minmax(0,1fr)!important;gap:16px!important}
+.character-sheet-stack-v142>.profile-card{min-width:0}
+.character-sheet-stack-v142>.stack{display:none}
+.character-sheet-v142 .profile-card:first-child{border-color:rgba(185,147,88,.55)}
+.character-sheet-v142 .character-sheet-story-v142{display:grid;gap:16px;border-top:1px solid var(--line);padding-top:18px}
+.character-sheet-v142 .character-sheet-gear-v142{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;max-width:720px}
+.character-sheet-v142 .character-sheet-gear-v142>[data-slot-type="armor"]{grid-column:2;grid-row:1/3}
+.character-sheet-v142 .character-sheet-gear-v142>[data-slot-type="primaryWeapon"]{grid-column:1;grid-row:1}
+.character-sheet-v142 .character-sheet-gear-v142>[data-slot-type="secondaryWeapon"]{grid-column:3;grid-row:1}
+.character-sheet-v142 .character-sheet-gear-v142>[data-slot-type="backpack"]{grid-column:3;grid-row:2}
+.character-sheet-v142 .character-sheet-implants-v142{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:12px;max-width:720px}
+.character-sheet-v142 .character-sheet-gear-v142>[data-slot-type],.character-sheet-v142 .character-sheet-implants-v142>[data-slot-type]{min-height:76px;padding:7px;overflow:hidden}
+.character-sheet-v142 .character-sheet-implants-v142>[data-slot-type]{min-height:62px}
+.character-sheet-v142 :is(.web-inventory-slot-item-v1067,.inventory-slot-item-v1067){min-width:0}
+.character-sheet-v142 :is(.web-inventory-slot-item-v1067,.inventory-slot-item-v1067) span{white-space:normal;overflow-wrap:anywhere;font-size:11px}
+.character-sheet-v142 .character-sheet-implants-v142 :is(.entity-thumb,.thumb){width:28px;height:28px}
+@media(max-width:650px){.character-sheet-v142 .character-sheet-gear-v142{grid-template-columns:repeat(3,minmax(0,1fr))}.character-sheet-v142 .character-sheet-implants-v142{grid-template-columns:repeat(4,minmax(0,1fr))}.character-sheet-v142 .character-sheet-gear-v142>[data-slot-type],.character-sheet-v142 .character-sheet-implants-v142>[data-slot-type]{min-height:58px;padding:5px}}
+.character-sheet-v142 :is(.web-inventory-slots-v1067,.inventory-equipment-slots-v1067){display:block!important}
+.character-sheet-v142 .character-sheet-gear-v142>.web-inventory-slot-v1067,.character-sheet-v142 .character-sheet-implants-v142>.web-inventory-slot-v1067,.character-sheet-v142 .character-sheet-gear-v142>.inventory-equip-slot-v1067,.character-sheet-v142 .character-sheet-implants-v142>.inventory-equip-slot-v1067{min-height:0;height:auto;align-content:start}
+.character-sheet-v142 :is(.web-inventory-slot-item-v1067,.inventory-slot-item-v1067) :is(.web-item-stats-v118,.web-item-modifiers-v118){display:none!important}
+.character-sheet-v142 .character-sheet-gear-v142 :is(.web-inventory-slot-item-v1067,.inventory-slot-item-v1067){display:flex;align-items:center;gap:6px}
+.character-sheet-v142 .character-sheet-gear-v142 .entity-thumb,.character-sheet-v142 .character-sheet-gear-v142 .thumb{width:38px;height:38px;flex:none}
+.character-sheet-v142 :is(.character-sheet-reputation-v142,.character-sheet-lore-v142){padding:18px}
+.character-sheet-v142 .character-sheet-lore-v142 p{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.6}
+.character-sheet-v142 .character-sheet-reputation-v142 .data-row{padding:7px 0}
+.character-sheet-v142 .character-sheet-reputation-v142 button{margin-top:10px}
