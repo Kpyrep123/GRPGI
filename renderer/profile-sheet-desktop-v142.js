@@ -5,7 +5,11 @@
   UI.renderProfile = function (...args) {
     const result = before(...args);
     const host = document.getElementById('profile-content');
-    if (host?.querySelector('.grid3')) window.GRPGProfileSheetV142?.layoutDesktop(host, App.currentUser || {});
+    if (host?.querySelector('.grid3')) {
+      const user=normalizePlayerProfileV2(App.currentUser || {});
+      if(typeof getEffectiveEnergyMaxV2==='function') user.stats.energyMax=getEffectiveEnergyMaxV2(user);
+      window.GRPGProfileSheetV142?.layoutDesktop(host,user);
+    }
     const toolbar = document.querySelector('#mod-profile .fs-header .row');
     if (toolbar && !toolbar.querySelector('[data-export-profile-pdf-v142]')) {
       const button = document.createElement('button');

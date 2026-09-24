@@ -25,7 +25,7 @@ const lerp = (a,b,t) => a + (b-a) * t;
 const clamp = (v,min,max) => Math.min(Math.max(v,min), max);
 const now = () => performance.now();
 const esc = value => String(value ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#39;');
-const GRPG_APP_VERSION = String(window.electronAPI?.appVersion || '1.0.140');
+const GRPG_APP_VERSION = String(window.electronAPI?.appVersion || '1.0.142');
 
 /* v1.0.75 — cosmetic in-world calendar; stored timestamps remain unchanged */
 const GRPG_LORE_YEAR_V1075 = 3616;
@@ -25715,7 +25715,7 @@ window.GRPGInstallGlobalStockExchangeV1074?.();
       renderLoreSectionV1103(root,user);
       return result;
     }
-    root.querySelector('.profile-lore-rich-v1086')?.remove();
+    // Rich lore is relocated below inventory by the character sheet.
     const loreInput=root.querySelector('#profile-edit-form [name="lore"]');
     const loreField=loreInput?.closest('.field');
     if(loreField)loreField.outerHTML=`<div class="field profile-lore-open-field-v1103"><button class="secondary" type="button" data-profile-section-v1103="lore">${loreTabLabelV1103(user)}</button><div class="small-note">Лор открыт в отдельной вкладке и поддерживает HTML-разметку.</div></div>`;

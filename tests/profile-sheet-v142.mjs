@@ -11,7 +11,7 @@ const host=window.document.createElement('div');
 host.innerHTML=`<div class="profile-card"><div class="section-head"><div class="section-title">Личность</div></div><div class="personality-profile-grid-v1066">Личность</div><section class="profile-lore-rich-v1103">Лор</section></div><div class="web-profile-inventory-v1067"><div class="web-inventory-slots-v1067">${['primaryWeapon','secondaryWeapon','armor','backpack','implant','implant','implant','implant','implant'].map(slot=>`<div class="web-inventory-slot-v1067" data-slot-type="${slot}"></div>`).join('')}</div></div><div class="section-head"><div class="section-title">Характеристики</div></div><div class="stat-grid">Статы</div><div class="section-head"><div class="section-title">Репутация</div></div><div class="reputation-mobile-list">Репутация</div><section class="related-entity-section-v1100">NPC</section>`;
 window.GRPGProfileSheetV142.layoutWeb(host);
 const children=Array.from(host.children);
-assert.ok(children.indexOf(host.querySelector('.stat-grid')) < children.indexOf(host.querySelector('.web-profile-inventory-v1067')));
+assert.ok(children.indexOf(host.querySelector('.sheet-abilities')) < children.indexOf(host.querySelector('.web-profile-inventory-v1067')));
 assert.ok(children.indexOf(host.querySelector('.web-profile-inventory-v1067')) < children.indexOf(host.querySelector('.reputation-mobile-list')));
 assert.ok(children.indexOf(host.querySelector('.reputation-mobile-list')) < children.indexOf(host.querySelector('.character-sheet-story-v142')));
 assert.equal(host.querySelectorAll('.character-sheet-implants-v142 [data-slot-type="implant"]').length,5);

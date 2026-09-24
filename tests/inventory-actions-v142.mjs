@@ -1,0 +1,32 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import vm from 'node:vm';
+import assert from 'node:assert/strict';
+import {pathToFileURL} from 'node:url';
+const root=path.resolve(process.argv[2]||'.');
+const {Window}=await import(process.env.HAPPY_DOM_MODULE?pathToFileURL(process.env.HAPPY_DOM_MODULE):'happy-dom');
+const w=new Window({url:'https://grpgi.test',settings:{disableJavaScriptFileLoading:true,disableCSSFileLoading:true}});
+const context=vm.isContext(w)?w:vm.createContext(w),run=s=>vm.runInContext(s,context);
+w.setInterval=()=>0;w.requestAnimationFrame=()=>0;w.fetch=async()=>{throw Error('Unexpected network')};
+try{
+ const dir=path.join(root,'deploy/site/app');
+ w.document.write(fs.readFileSync(path.join(dir,'index.html'),'utf8').replace(/<script\b[^>]*>\s*<\/script>/gi,''));
+ for(const name of ['rich-text-scope.js','market-engine.js','player-sync-core.js','item-facts-v141.js','inventory-actions-v142.js'])run(fs.readFileSync(path.join(dir,name),'utf8'));
+ run(fs.readFileSync(path.join(dir,'app.js'),'utf8').replace('  init().catch(error => {',`window.testInventory={App,normalize:normalizeInventoryPlayerWebV1067,layout:buildInventoryLayoutWebV1067,accepts:slotAcceptsWebV1067,item:itemWebV1067};if(false) init().catch(error => {`));
+ const api=w.testInventory,menu=w.GRPGInventoryMenuV142;
+ const items=[{id:'gun',type:'weapon',weaponSlot:'versatile',inventoryWidth:1,inventoryHeight:1,mass:1},{id:'implant',type:'implant',inventoryWidth:1,inventoryHeight:1,mass:0},{id:'pack',type:'backpack',inventoryWidth:1,inventoryHeight:1,mass:1,modifiers:[{target:'inventory_slots',op:'add',value:5,enabled:true}]}];
+ api.App.data.items=new Map(items.map(i=>[i.id,i]));
+ const base={id:'p',inventory:[{itemId:'gun',qty:1},{itemId:'implant',qty:1}],equipmentSlots:{},implantSlots:['','','',''],baseImplantSlots:4,implantSlotCount:4,inventoryBaseSlots:5,carryBase:100};
+ const grid={source:'grid',itemId:'gun'},target={slot:'primaryWeapon',index:-1};
+ const equipped=menu.change(base,grid,target,api);assert.equal(equipped.equipmentSlots.primaryWeapon,'gun');assert.equal(equipped.inventory[0].qty,1);assert.equal(base.equipmentSlots.primaryWeapon,undefined);
+ assert.throws(()=>menu.change(equipped,grid,{slot:'secondaryWeapon',index:-1},api),/свободного/);
+ const source={source:'slot',itemId:'gun',slot:'primaryWeapon',index:-1};
+ const removed=menu.change(equipped,source,null,api);assert.equal(removed.equipmentSlots.primaryWeapon,'');assert.equal(removed.inventory[0].qty,1);
+ assert.throws(()=>menu.change(removed,source,null,api),/изменилось/);
+ assert.throws(()=>menu.change(base,grid,{slot:'armor',index:-1},api),/Неподходящий/);
+ const installed=menu.change(base,{source:'grid',itemId:'implant'},{slot:'implant',index:3},api);assert.equal(installed.implantSlots[3],'implant');
+ assert.throws(()=>menu.change(base,{source:'grid',itemId:'implant'},{slot:'implant',index:4},api),/Неподходящий/);
+ const packed={...base,inventoryBaseSlots:1,equipmentSlots:{backpack:'pack'},inventory:[{itemId:'gun',qty:5},{itemId:'pack',qty:1}]};
+ assert.throws(()=>menu.change(packed,{source:'slot',itemId:'pack',slot:'backpack',index:-1},null,api),/Недостаточно ячеек/);
+ console.log('PASS real web normalization: equip/unequip, ownership, stale actions, incompatible slots, implant bounds, backpack capacity');
+}finally{await w.happyDOM.abort();}

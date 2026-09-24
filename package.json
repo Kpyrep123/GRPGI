@@ -1,6 +1,6 @@
 {
   "name": "galactic-rpg-interface",
-  "version": "1.0.141",
+  "version": "1.0.142",
   "description": "Electron/Web tabletop interface with cloud rich-media authoring and fast in-session player editing",
   "author": "qwq",
   "main": "main.js",
@@ -51,7 +51,7 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true
     },
-    "buildVersion": "1.0.141.0",
+    "buildVersion": "1.0.142.0",
     "publish": [
       {
         "provider": "generic",
