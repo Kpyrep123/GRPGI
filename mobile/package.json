@@ -1,13 +1,16 @@
 {
   "name": "galactic-rpg-mobile",
   "private": true,
-  "version": "0.1.5",
+  "version": "1.0.142",
   "description": "Mobile player client for Galactic RPG Interface",
   "scripts": {
     "android:init": "npx cap add android",
     "sync": "npx cap sync android",
     "copy": "npx cap copy android",
-    "open:android": "npx cap open android"
+    "open:android": "npx cap open android",
+    "prepare:web": "node ../tools/prepare-mobile.cjs",
+    "presync": "npm run prepare:web",
+    "precopy": "npm run prepare:web"
   },
   "dependencies": {
     "@capacitor/android": "^8.0.0",

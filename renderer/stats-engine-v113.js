@@ -576,6 +576,11 @@
     return PlayerSync.pushPlayerPatch(String(user?.id||''),patch,options);
   }
   async function persistInventory(user,notice='Инвентарь обновлён'){const normalized=normalizePlayerProfileV2(user);App.state.users[normalized.id]=normalized;PLAYER_TEMPLATES[normalized.id]=copy(normalized);const patch=inventoryPatchFields113(normalized);return pushInventoryPatchSafe113(normalized,patch,{notice,rerender:true});}
+  window.GRPGInventoryMenuV142?.bind({
+    selector:'#profile-content [data-inv113-drag-grid],#profile-content [data-inv113-drag-slot]',
+    current:()=>App.currentUser,item:inventoryItem,normalize:normalizePlayerProfileV2,layout,accepts:slotAccepts,
+    commit:async(mutator,notice)=>{const user=copy(App.currentUser);mutator(user);return persistInventory(user,notice);}
+  });
   let drag113=null;document.addEventListener('dragstart',e=>{const g=e.target.closest?.('[data-inv113-drag-grid]'),s=e.target.closest?.('[data-inv113-drag-slot]');if(!g&&!s)return;drag113=g?{source:'grid',itemId:g.dataset.itemId,unitIndex:i(g.dataset.unitIndex,-1)}:{source:'slot',itemId:s.dataset.itemId,slot:s.dataset.slotV113,index:i(s.dataset.slotIndexV113,-1)};e.dataTransfer.effectAllowed='move';});document.addEventListener('dragend',()=>drag113=null);
   document.addEventListener('dragover',e=>{if(drag113&&e.target.closest?.('[data-inv113-grid],[data-slot-v113]'))e.preventDefault();});
   document.addEventListener('drop',async e=>{if(!drag113)return;const slotNode=e.target.closest?.('[data-slot-v113]'),grid=e.target.closest?.('[data-inv113-grid]');if(!slotNode&&!grid)return;e.preventDefault();const user=normalizePlayerProfileV2(App.currentUser);if(!user)return;
