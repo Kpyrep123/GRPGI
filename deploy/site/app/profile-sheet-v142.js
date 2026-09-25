@@ -19,7 +19,8 @@
     const abilities = sectionForTitle(host, 'Характеристики');
     const specializations = sectionForTitle(host, 'Специализации');
     if(abilities.length) {const card=document.createElement('section');card.className='sheet-abilities';abilities[0].before(card);for(const el of abilities)card.append(el);abilities.splice(0,abilities.length,card);}
-    const reputation = sectionForTitle(host, 'Репутация');
+    const reputationSection = host.querySelector(':scope > .web-reputation-v120');
+    const reputation = reputationSection ? [reputationSection] : sectionForTitle(host, 'Репутация');
     const related = Array.from(host.querySelectorAll(':scope > .related-entity-section-v1100'));
     const tail = document.createElement('section');
     tail.className = 'character-sheet-story-v142';
@@ -31,6 +32,7 @@
     const slots = inventory.querySelector('.web-inventory-slots-v1067');
     if (slots) groupSlots(slots);
     compactInventory(inventory);
+    decorateAbilities(host);
   }
   function groupSlots(host) {
     if (host.querySelector('.character-sheet-gear-v142')) return;
@@ -77,6 +79,7 @@
   function decorateHero(hero,user) {
     if (!hero || hero.querySelector('.sheet-metrics')) return;
     hero.classList.add('sheet-hero');
+    hero.querySelectorAll('.info-card').forEach(card=>{if(['Последнее обновление','Локация'].includes(card.querySelector('.k')?.textContent.trim()))card.remove();});
     let header=hero.querySelector('.profile-hero');
     if (!header) {
       header=document.createElement('div');header.className='profile-hero';
@@ -87,7 +90,7 @@
     }
     const credit=metric('credits','Кредиты',Number(user.credits||0).toLocaleString('ru-RU'));credit.classList.add('sheet-credits');header.append(credit);
     hero.querySelectorAll(':scope > .stat-grid,:scope > .stat,[data-web-inventory-limits-v1067],[data-web-combat-stats-v118],[data-web-combat-stats-v120]').forEach(el=>el.remove());
-    hero.querySelectorAll('.data-row').forEach(row=>{if(['Баланс','Класс брони','Защита','Движение','Обзор'].includes(row.querySelector('.data-label')?.textContent.trim()))row.remove();});
+    hero.querySelectorAll('.data-row').forEach(row=>{if(['Баланс','Класс брони','Защита','Движение','Обзор','Последнее обновление','Локация'].includes(row.querySelector('.data-label')?.textContent.trim()))row.remove();});
     const metrics=document.createElement('div');metrics.className='sheet-metrics';const s=user.stats||{},c=user.combat||{};
     metrics.append(metric('health','Здоровье',`${s.hpCurrent??0} / ${s.hpMax??0}`,s.hpCurrent,s.hpMax),metric('shield','Щит',`${s.shieldCurrent??0} / ${s.shieldMax??0}`,s.shieldCurrent,s.shieldMax),metric('energy','Энергия',`${s.energyCurrent??0} / ${s.energyMax??0}`,s.energyCurrent,s.energyMax),metric('inventory','Инвентарь / вес',`${user.inventorySize??0} яч. / ${user.carryWeightMax??0}`),metric('movement','Движение',`${c.moveRange??0} гекс.`),metric('vision','Обзор',`${c.visionRange??0} гекс.`),metric('armor-class','Класс брони',s.armorClass??0),metric('defense','Защита',s.defense??0));
     header.after(metrics);
@@ -115,18 +118,27 @@
     repTitle.className = 'section-title';
     repTitle.textContent = 'Репутация';
     reputation.append(repTitle);
-    const rows = Array.isArray(user.social?.reputation) ? user.social.reputation : [];
-    for (const row of rows) {
-      const line = document.createElement('div');
-      line.className = 'data-row';
-      const name = document.createElement('span');
-      name.className = 'data-label';
-      name.textContent = row.name || row.orgId || 'Организация';
-      const value = document.createElement('b');
-      value.textContent = String(row.value ?? 0);
-      line.append(name, value);
-      reputation.append(line);
+    const list = document.createElement('div');list.className = 'web-reputation-list-v120';
+    const byId = new Map();
+    const rows = user.social?.reputation?.length ? user.social.reputation : (user.social?.orgs || []);
+    for (const row of rows) if (row?.orgId || row?.id) byId.set(String(row.orgId || row.id), row);
+    const factions = typeof Data !== 'undefined' ? Object.values(Data.factions || {}) : [];
+    for (const faction of factions) {
+      if (typeof isEntityVisible === 'function' && !isEntityVisible(faction, user)) continue;
+      const row = byId.get(String(faction.id)) || rows.find(row=>row?.name && row.name.toLowerCase()===String(faction.name || '').toLowerCase()) || {};
+      const card = document.createElement('div');card.className = 'web-reputation-row-v120';
+      const line=document.createElement('div');
+      if (typeof renderThumb === 'function') line.innerHTML = renderThumb(faction, {size:'sm',type:'organization'});
+      const copy=document.createElement('span'),name=document.createElement('b');name.textContent=faction.name || 'Организация';copy.append(name);
+      if (row.label || row.status) {const status=document.createElement('small');status.textContent=row.label || row.status;copy.append(status);}
+      const value=document.createElement('strong'),score=Math.max(-100,Math.min(100,Number(row.value ?? row.score ?? row.reputation ?? 0)));
+      value.textContent=(score>0?'+':'')+score;line.append(copy,value);
+      const bar=document.createElement('i'),fill=document.createElement('span'),position=(score+100)/2;
+      bar.setAttribute('aria-hidden','true');fill.style.left=Math.min(50,position)+'%';fill.style.width=Math.abs(position-50)+'%';bar.append(fill);
+      card.append(line,bar);list.append(card);
     }
+    if (!list.childElementCount) list.textContent = 'Нет доступных организаций.';
+    reputation.append(list);
     const repButton = social?.querySelector('#open-reputation-v50');
     if (repButton) reputation.append(repButton);
     const skillButton = social?.querySelector('#open-skills-v50');
@@ -145,11 +157,49 @@
     grid.classList.add('character-sheet-stack-v142');
     for (const node of [hero, ability, inventory, reputation, personality, lore, social, ...remaining, form].filter(Boolean)) grid.append(node);
     grid.querySelectorAll(':scope > .stack:empty').forEach(node => node.remove());
+    decorateAbilities(host);
+    compactTools(host, grid);
     if (inventory) {
       const slots = inventory.querySelector('.inventory-equipment-slots-v1067');
       if (slots) groupSlots(slots);
       compactInventory(inventory);
     }
   }
-  root.GRPGProfileSheetV142 = Object.freeze({layoutWeb, layoutDesktop});
+  function decorateAbilities(host) {
+    const names = {'сила':'strength','ловкость':'agility','выносливость':'endurance','интеллект':'intelligence','воля':'will','слава':'glory'};
+    host.querySelectorAll('.abilities .ability,.sheet-abilities .stat').forEach(card=>{
+      const label = (card.querySelector('.data-label,span')?.textContent || '').trim().toLowerCase();
+      if (names[label]) {card.classList.add('sheet-ability-art');card.style.setProperty('--ability-art', `url("${assetBase}ability-${names[label]}.png")`);}
+    });
+  }
+  function compactTools(host, grid) {
+    const nodes = ['profile-edit-form','updater-profile-panel','devops-profile-panel-v64'].map(id=>host.querySelector('#'+id)).filter(Boolean);
+    if (!nodes.length || host.querySelector('.sheet-tools')) return;
+    const tools = document.createElement('section');tools.className='sheet-tools';tools.setAttribute('aria-label','Настройки профиля и приложения');
+    for (const node of nodes) {
+      const details=document.createElement('details'),summary=document.createElement('summary');
+      details.dataset.sheetTool=node.id;summary.textContent=node.querySelector('.section-title')?.textContent || 'Настройки';
+      details.append(summary,node);tools.append(details);
+    }
+    grid.append(tools);
+  }
+  // Keep unchanged grid nodes and decoded images through synchronous profile renders.
+  function captureInventory(host) {
+    if (!host) return null;
+    const selector='.web-inventory-grid-v1067,.inventory-grid-v1067',grid=host.querySelector(selector);
+    return grid ? {grid,selector,children:Array.from(grid.children)} : null;
+  }
+  function restoreInventory(host, previous) {
+    if (!previous) return;
+    const next=host?.querySelector(previous.selector);if(!next || next===previous.grid)return;
+    const key=node=>node.dataset.itemId ? `item:${node.dataset.itemId}:${node.dataset.unitIndex}` : `cell:${node.style.gridColumn}:${node.style.gridRow}`;
+    const old=new Map(previous.children.map(node=>[key(node),node]));
+    for (const node of Array.from(next.children)) {
+      const match=old.get(key(node));if(match && match.outerHTML===node.outerHTML)node.replaceWith(match);
+    }
+    for(const attr of Array.from(previous.grid.attributes))if(!next.hasAttribute(attr.name))previous.grid.removeAttribute(attr.name);
+    for(const attr of Array.from(next.attributes))previous.grid.setAttribute(attr.name,attr.value);
+    previous.grid.replaceChildren(...next.childNodes);next.replaceWith(previous.grid);
+  }
+  root.GRPGProfileSheetV142 = Object.freeze({layoutWeb, layoutDesktop, captureInventory, restoreInventory});
 })(window);

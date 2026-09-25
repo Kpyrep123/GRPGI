@@ -25,7 +25,7 @@ const lerp = (a,b,t) => a + (b-a) * t;
 const clamp = (v,min,max) => Math.min(Math.max(v,min), max);
 const now = () => performance.now();
 const esc = value => String(value ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#39;');
-const GRPG_APP_VERSION = String(window.electronAPI?.appVersion || '1.0.142');
+const GRPG_APP_VERSION = String(window.electronAPI?.appVersion || '1.0.143');
 
 /* v1.0.75 — cosmetic in-world calendar; stored timestamps remain unchanged */
 const GRPG_LORE_YEAR_V1075 = 3616;
@@ -25728,6 +25728,8 @@ window.GRPGInstallGlobalStockExchangeV1074?.();
     if(!button||!button.closest('#profile-content'))return;
     event.preventDefault();
     activeProfileSectionV1103=button.dataset.profileSectionV1103==='lore'?'lore':'profile';
+    delete document.getElementById('profile-content').dataset.profileRenderSignatureV123;
+    document.getElementById('mod-profile')?.scrollTo({top:0,behavior:'instant'});
     UI.renderProfile();
   });
 })();

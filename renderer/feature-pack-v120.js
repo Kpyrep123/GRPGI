@@ -255,7 +255,7 @@
     const skills=skillIds.map(id=>{try{return Data?.getSkill?.(id)||null;}catch{return null;}}).filter(Boolean);
     const npcs=npcIds.map(id=>{try{return Data?.getNpc?.(id)||null;}catch{return null;}}).filter(Boolean);
     const origins=originIds.map(id=>{try{return Data?.getSocialOrigin?.(id)||Data?.getGeographicOrigin?.(id)||null;}catch{return null;}}).filter(Boolean);
-    return JSON.stringify({user,items,skills,npcs,origins,theme:document.documentElement?.dataset?.eraTheme||''});
+    return JSON.stringify({user,items,skills,npcs,origins,factions:Data.factions,theme:document.documentElement?.dataset?.eraTheme||''});
   }
 
   function cleanProfile120(){

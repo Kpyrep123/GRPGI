@@ -48,7 +48,7 @@
       if(api.details)button('Описание',()=>{dialog.close();api.details(source.itemId);});
       button('Закрыть',()=>dialog.close());dialog.append(title,facts,message,actions);
       dialog.addEventListener('cancel',e=>{if(busy)e.preventDefault();});
-      dialog.addEventListener('close',()=>{dialog.remove();if(node.isConnected)node.focus();else document.querySelector(api.selector)?.focus();});
+      dialog.addEventListener('close',()=>{dialog.remove();if(node.isConnected)node.focus({preventScroll:true});else document.querySelector(api.selector)?.focus({preventScroll:true});});
       document.body.append(dialog);dialog.showModal();
     }
     document.addEventListener('click',e=>{const node=e.target.closest?.(api.selector);if(!node)return;e.preventDefault();e.stopImmediatePropagation();open(node);},true);
