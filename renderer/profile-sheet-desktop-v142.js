@@ -3,6 +3,10 @@
   'use strict';
   const before = UI.renderProfile.bind(UI);
   UI.renderProfile = function (...args) {
+    const previousHost=document.getElementById('profile-content');
+    const inventory=window.GRPGProfileSheetV142?.captureInventory(previousHost);
+    const module=document.getElementById('mod-profile'),scroll=module?.scrollTop || 0;
+    const openTools=Array.from(previousHost?.querySelectorAll('.sheet-tools details[open]') || []).map(el=>el.dataset.sheetTool);
     const result = before(...args);
     const host = document.getElementById('profile-content');
     if (host?.querySelector('.grid3')) {
@@ -10,6 +14,9 @@
       if(typeof getEffectiveEnergyMaxV2==='function') user.stats.energyMax=getEffectiveEnergyMaxV2(user);
       window.GRPGProfileSheetV142?.layoutDesktop(host,user);
     }
+    window.GRPGProfileSheetV142?.restoreInventory(host,inventory);
+    for(const id of openTools){const details=host?.querySelector(`[data-sheet-tool="${id}"]`);if(details)details.open=true;}
+    if(module)module.scrollTop=scroll;
     const toolbar = document.querySelector('#mod-profile .fs-header .row');
     if (toolbar && !toolbar.querySelector('[data-export-profile-pdf-v142]')) {
       const button = document.createElement('button');
