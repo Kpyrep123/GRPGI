@@ -41,9 +41,10 @@ try {
       } } },
       planets: { PLANETS: { port: {
         id: 'port', name: 'Порт Вольный', stockMarketEnabled: true,
-        market: [{ itemId: 'medkit', enabled: true, appearanceChance: 100, minPrice: 120, maxPrice: 120 }]
+        market: [{ itemId: 'medkit', enabled: true, appearanceChance: 100, minPrice: 120, maxPrice: 120 }, { itemId: 'vest', enabled: true, appearanceChance: 100, minPrice: 200, maxPrice: 200 }]
       } } },
       equipment: { EQUIPMENT: {
+        vest: { id: 'vest', name: 'Защитный жилет', type: 'armor', inventoryWidth: 1, inventoryHeight: 1 },
         medkit: { id: 'medkit', name: 'Полевой медицинский набор', type: 'gear', rarity: 'редкий', mass: 1, inventoryWidth: 1, inventoryHeight: 1, desc: 'Комплект первой помощи для дальней экспедиции.' },
         stock_acme: { id: 'stock_acme', name: 'Консорциум «Гелиос»', type: 'stock', ticker: 'HLS', stockMinPrice: 85, stockMaxPrice: 85, desc: 'Акции энергетического консорциума.' }
       } },
@@ -60,6 +61,11 @@ try {
     UI.renderMarket();
   });
 
+  assert.equal(await page.locator('[data-market-category-v144]').count(), 3);
+  await page.locator('[data-market-category-v144="Броня"]').click();
+  assert.equal(await page.locator('[data-market-v1074][data-source="market"]').count(), 1);
+  assert.equal(await page.locator('[data-market-v1074][data-item-id="vest"]').count(), 1);
+  await page.locator('[data-market-category-v144="all"]').click();
   await page.locator('[data-market-v1074][data-item-id="medkit"]').click();
   const goodsMarkup = await page.locator('#market-items').innerHTML();
   assert.match(goodsMarkup, /data-market-quantity-v139/, goodsMarkup.slice(-2000));
@@ -71,6 +77,7 @@ try {
   if (process.env.SCREENSHOT_DIR) await page.screenshot({ path: path.join(process.env.SCREENSHOT_DIR, 'v139-market-goods.png'), fullPage: true });
 
   await page.locator('[data-market-tab-v1074="stocks"]').click();
+  assert.equal(await page.locator('[data-market-category-v144]').count(), 0);
   await page.locator('[data-market-v1074][data-item-id="stock_acme"]').click();
   const stockInput = page.locator('[data-market-qty-input-v139]');
   await stockInput.fill('12');
