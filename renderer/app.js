@@ -457,7 +457,7 @@ function createBlankEntity(type) {
     return { id: `flora_${stamp}`, name: 'Новая флора', habitat: '', summary: '', danger: 'Низкая', use: '', image: '', relatedArticleIds: [], visibility: { playerIds: [] } };
   }
   if (type === 'fauna') {
-    return { id: `fauna_${stamp}`, name: 'Новая фауна', habitat: '', summary: '', danger: 'Низкая', behavior: '', image: '', relatedArticleIds: [], visibility: { playerIds: [] } };
+    return { id: `fauna_${stamp}`, name: 'Новая фауна', habitat: '', summary: '', danger: 'Низкая', behavior: '', image: '', hpMax: 10, damage: '1', hitBonus: 0, attackRange: 1, moveRange: 6, visionRange: 6, armorClass: 10, defense: 0, initiative: 0, relatedArticleIds: [], visibility: { playerIds: [] } };
   }
   if (type === 'articles') {
     return {
@@ -5209,6 +5209,9 @@ const Configurator = {
   render() {
     const root = $('#config-content');
     if (!root) return;
+    const previousRootScroll = root.scrollTop;
+    const previousSideScroll = root.querySelector('.config-side')?.scrollTop || 0;
+    const previousListScroll = root.querySelector('.config-entity-list')?.scrollTop || 0;
     const types = Object.entries(WORLD_SECTIONS);
     const rawItems = this.getItems(this.selectedType);
     const search = String(this.searchQuery || '').trim().toLowerCase();
@@ -5254,6 +5257,11 @@ const Configurator = {
         </div>
       </div>
     `;
+    root.scrollTop = previousRootScroll;
+    const nextSide = root.querySelector('.config-side');
+    const nextList = root.querySelector('.config-entity-list');
+    if (nextSide) nextSide.scrollTop = previousSideScroll;
+    if (nextList) nextList.scrollTop = previousListScroll;
 
     root.querySelectorAll('[data-type]').forEach(node => {
       node.addEventListener('click', () => {
@@ -5548,6 +5556,22 @@ const Configurator = {
         <div class="cols2">
           <div class="field"><label>Опасность</label><input class="input" name="danger" value="${esc(fauna.danger || '')}" /></div>
           <div class="field"><label>Поведение</label><input class="input" name="behavior" value="${esc(fauna.behavior || '')}" /></div>
+        </div>
+        <div class="section-title">Боевые характеристики</div>
+        <div class="cols3">
+          <div class="field"><label>HP</label><input class="input" type="number" min="1" step="1" name="hpMax" value="${Number(fauna.hpMax ?? fauna.hp ?? 10)}" /></div>
+          <div class="field"><label>Урон атаки</label><input class="input" name="damage" value="${esc(fauna.damage || '1')}" /></div>
+          <div class="field"><label>Бонус попадания</label><input class="input" type="number" step="1" name="hitBonus" value="${Number(fauna.hitBonus || 0)}" /></div>
+        </div>
+        <div class="cols3">
+          <div class="field"><label>Дальность атаки (гексы)</label><input class="input" type="number" min="0" step="1" name="attackRange" value="${Number(fauna.attackRange ?? fauna.range ?? 1)}" /></div>
+          <div class="field"><label>Движение (гексы)</label><input class="input" type="number" min="0" step="1" name="moveRange" value="${Number(fauna.moveRange ?? 6)}" /></div>
+          <div class="field"><label>Обзор (гексы)</label><input class="input" type="number" min="0" step="1" name="visionRange" value="${Number(fauna.visionRange ?? 6)}" /></div>
+        </div>
+        <div class="cols3">
+          <div class="field"><label>Класс брони</label><input class="input" type="number" min="0" step="1" name="armorClass" value="${Number(fauna.armorClass ?? 10)}" /></div>
+          <div class="field"><label>Защита</label><input class="input" type="number" min="0" step="1" name="defense" value="${Number(fauna.defense || 0)}" /></div>
+          <div class="field"><label>Инициатива</label><input class="input" type="number" step="1" name="initiative" value="${Number(fauna.initiative || 0)}" /></div>
         </div>
         <div class="field"><label>Связанные статьи</label>${renderRelatedArticlesEditor(fauna.relatedArticleIds || [])}</div>
         <button class="primary" type="submit">SAVE_FAUNA</button>
@@ -5894,6 +5918,15 @@ const Configurator = {
         summary: String(formData.get('summary') || '').trim(),
         danger: String(formData.get('danger') || '').trim(),
         behavior: String(formData.get('behavior') || '').trim(),
+        hpMax: Math.max(1, Number(formData.get('hpMax') || 10)),
+        damage: String(formData.get('damage') || '1').trim(),
+        hitBonus: Number(formData.get('hitBonus') || 0),
+        attackRange: Math.max(0, Number(formData.get('attackRange') || 0)),
+        moveRange: Math.max(0, Number(formData.get('moveRange') || 0)),
+        visionRange: Math.max(0, Number(formData.get('visionRange') || 0)),
+        armorClass: Math.max(0, Number(formData.get('armorClass') || 0)),
+        defense: Math.max(0, Number(formData.get('defense') || 0)),
+        initiative: Number(formData.get('initiative') || 0),
         image,
         relatedArticleIds: getCheckedValues(formEl, 'relatedArticleIds'),
         visibility: { playerIds: getCheckedValues(formEl, 'visibilityPlayerIds') }
@@ -7305,21 +7338,10 @@ Configurator.collectEntity = function(type, formEl, formData = new FormData(form
   return entity;
 };
 
-Configurator.render = (function(orig) {
-  return function() {
-    orig.call(this);
-    const root = $('#config-content');
-    root?.querySelectorAll('[data-config-id] b').forEach((node, index) => {
-      const item = this.getItems(this.selectedType)[index];
-      if (item) node.textContent = item.title || item.name || item.displayName || item.id;
-    });
-  };
-})(Configurator.render);
-
-
 // ===== v0.3.11 profile & item overhaul =====
 const ITEM_TYPE_OPTIONS_V2 = [
   { value: 'weapon', label: 'Оружие' },
+  { value: 'shield', label: 'Щиты' },
   { value: 'armor', label: 'Броня' },
   { value: 'implant', label: 'Импланты' },
   { value: 'stock', label: 'Акции' },
@@ -7345,7 +7367,7 @@ function itemRarityLabelV2(value) {
 }
 function mapLegacyItemTypeV2(value) {
   const map = {
-    weapon: 'weapon', armor: 'armor', implant: 'implant', stock: 'stock', stocks: 'stock', share: 'stock', shares: 'stock', tool: 'hacking', tech: 'tech',
+    weapon: 'weapon', shield: 'shield', shields: 'shield', armor: 'armor', implant: 'implant', stock: 'stock', stocks: 'stock', share: 'stock', shares: 'stock', tool: 'hacking', tech: 'tech',
     misc: 'misc', consumable: 'consumable', trade: 'misc', permit: 'document', flora: 'misc', fauna: 'misc'
   };
   return map[String(value || '').trim()] || String(value || 'misc').trim() || 'misc';
@@ -7413,6 +7435,7 @@ function normalizePlayerProfileV2(user = {}) {
 function getWeaponOptionsBySlotV2(slot = 'primary') {
   return Object.values(EQUIPMENT).filter(item => {
     const norm = normalizeEquipmentItemV2(item);
+    if (norm.type === 'shield') return slot === 'primary';
     if (norm.type !== 'weapon') return false;
     if (!slot) return true;
     if (norm.weaponSlot === 'versatile') return true;
@@ -7672,7 +7695,7 @@ UI.renderProfile = function() {
         <div class="card profile-card">
           <div class="section-title">Экипировка</div>
           <div class="result-stack">
-            <div><div class="small-note" style="margin-bottom:6px">Основное оружие</div>${primary ? renderEntityButton('item', primary, { compact: false, thumbSize: 'md', subtitle: itemExtraSummaryV2(primary) }) : '<div class="equip"><div class="icon">⚔</div><div>—</div></div>'}</div>
+            <div><div class="small-note" style="margin-bottom:6px">Основное оружие / щит</div>${primary ? renderEntityButton('item', primary, { compact: false, thumbSize: 'md', subtitle: itemExtraSummaryV2(primary) }) : '<div class="equip"><div class="icon">⚔</div><div>—</div></div>'}</div>
             <div><div class="small-note" style="margin-bottom:6px">Вторичное оружие</div>${secondary ? renderEntityButton('item', secondary, { compact: false, thumbSize: 'md', subtitle: itemExtraSummaryV2(secondary) }) : '<div class="equip"><div class="icon">✦</div><div>—</div></div>'}</div>
             <div><div class="small-note" style="margin-bottom:6px">Броня${armor?.armorClass ? ` · КБ ${esc(String(armor.armorClass))}` : ''}</div>${armor ? renderEntityButton('item', armor, { compact: false, thumbSize: 'md', subtitle: itemExtraSummaryV2(armor) }) : '<div class="equip"><div class="icon">⛨</div><div>—</div></div>'}</div>
           </div>
@@ -7810,7 +7833,7 @@ Configurator.renderPlayerEditor = function(user) {
         <div class="field"><label>CHA</label><input class="input" type="number" name="cha" value="${Number(user.abilities?.cha || 0)}" /></div>
       </div>
       <div class="cols3">
-        <div class="field"><label>Основное оружие</label><select class="select" name="primaryWeapon"><option value="">—</option>${primaryOptions.map(option => `<option value="${option.id}" ${option.id === (user.equipmentSlots?.primaryWeapon || '') ? 'selected' : ''}>${esc(option.name)}</option>`).join('')}</select></div>
+        <div class="field"><label>Основное оружие / щит</label><select class="select" name="primaryWeapon"><option value="">—</option>${primaryOptions.map(option => `<option value="${option.id}" ${option.id === (user.equipmentSlots?.primaryWeapon || '') ? 'selected' : ''}>${esc(option.name)}</option>`).join('')}</select></div>
         <div class="field"><label>Вторичное оружие</label><select class="select" name="secondaryWeapon"><option value="">—</option>${secondaryOptions.map(option => `<option value="${option.id}" ${option.id === (user.equipmentSlots?.secondaryWeapon || '') ? 'selected' : ''}>${esc(option.name)}</option>`).join('')}</select></div>
         <div class="field"><label>Броня</label><select class="select" name="armor"><option value="">—</option>${armorOptions.map(option => `<option value="${option.id}" ${option.id === (user.equipmentSlots?.armor || '') ? 'selected' : ''}>${esc(option.name)}</option>`).join('')}</select></div>
       </div>
@@ -19213,7 +19236,7 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
       <div class="cols3"><div class="field"><label>Текущий щит</label><input class="input" type="number" name="shieldCurrent" value="${Number(user.stats.shieldCurrent || 0)}" /></div><div class="field"><label>Макс. щит</label><input class="input" type="number" name="shieldMax" value="${Number(user.stats.shieldMax || 0)}" /></div><div class="field"><label>Энергия (базовый максимум)</label><input class="input" type="number" name="energyMax" value="${Number(user.stats.energyMax || 1)}" /></div></div>
       <div class="section-title">Характеристики</div>${renderAbilityInputsV50(user)}
       <div class="section-title">Специализации</div>${renderSpecializationInputsV55(user)}
-      <div class="cols3"><div class="field"><label>Основное оружие</label><select class="select" name="primaryWeapon"><option value="">—</option>${primaryOptions.map(option => `<option value="${option.id}" ${option.id === (user.equipmentSlots?.primaryWeapon || '') ? 'selected' : ''}>${esc(option.name)}</option>`).join('')}</select></div><div class="field"><label>Вторичное оружие</label><select class="select" name="secondaryWeapon"><option value="">—</option>${secondaryOptions.map(option => `<option value="${option.id}" ${option.id === (user.equipmentSlots?.secondaryWeapon || '') ? 'selected' : ''}>${esc(option.name)}</option>`).join('')}</select></div><div class="field"><label>Броня</label><select class="select" name="armor"><option value="">—</option>${armorOptions.map(option => `<option value="${option.id}" ${option.id === (user.equipmentSlots?.armor || '') ? 'selected' : ''}>${esc(option.name)}</option>`).join('')}</select></div></div>
+      <div class="cols3"><div class="field"><label>Основное оружие / щит</label><select class="select" name="primaryWeapon"><option value="">—</option>${primaryOptions.map(option => `<option value="${option.id}" ${option.id === (user.equipmentSlots?.primaryWeapon || '') ? 'selected' : ''}>${esc(option.name)}</option>`).join('')}</select></div><div class="field"><label>Вторичное оружие</label><select class="select" name="secondaryWeapon"><option value="">—</option>${secondaryOptions.map(option => `<option value="${option.id}" ${option.id === (user.equipmentSlots?.secondaryWeapon || '') ? 'selected' : ''}>${esc(option.name)}</option>`).join('')}</select></div><div class="field"><label>Броня</label><select class="select" name="armor"><option value="">—</option>${armorOptions.map(option => `<option value="${option.id}" ${option.id === (user.equipmentSlots?.armor || '') ? 'selected' : ''}>${esc(option.name)}</option>`).join('')}</select></div></div>
       <div class="field"><label>Лор</label><textarea class="area" name="lore">${esc(user.lore || '')}</textarea>${typeof __htmlHint !== 'undefined' ? __htmlHint : ''}</div>
       <div class="field"><label>Заметки</label><textarea class="area" name="notes">${esc(user.notes || '')}</textarea>${typeof __htmlHint !== 'undefined' ? __htmlHint : ''}</div>
       <div class="field"><label>Инвентарь</label>${renderInventoryRowsEditor(user.inventory || [])}</div>
@@ -22656,6 +22679,7 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
   const ITEM_TYPES_V1052 = [
     { value: 'gear', label: 'Снаряжение' },
     { value: 'weapon', label: 'Оружие' },
+    { value: 'shield', label: 'Щиты' },
     { value: 'grenade', label: 'Гранаты' },
     { value: 'turret', label: 'Турели' },
     { value: 'drone', label: 'Дроны' },
@@ -22786,6 +22810,7 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
   function mapLegacyItemTypeV1052(value) {
     const raw = String(value || '').trim().toLowerCase();
     if (raw === 'weapon') return 'weapon';
+    if (['shield', 'shields', 'щит', 'щиты'].includes(raw)) return 'shield';
     if (raw === 'armor') return 'armor';
     if (raw === 'implant') return 'implant';
     if (['ammo', 'ammunition', 'патроны', 'боеприпасы'].includes(raw)) return 'ammo';
@@ -22816,7 +22841,7 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
     next.damage = damageItem ? String(raw.damage || '').trim() : '';
     next.hitBonus = attackItem ? Number(raw.hitBonus || raw.attackBonus || 0) : 0;
     next.range = attackItem ? Math.max(0, Number(raw.range ?? raw.attackRange ?? raw.maxRange ?? 10)) : 0;
-    next.weaponSlot = next.type === 'weapon' ? String(raw.weaponSlot || 'primary') : '';
+    next.weaponSlot = next.type === 'weapon' ? String(raw.weaponSlot || 'primary') : next.type === 'shield' ? 'primary' : '';
     next.grenadeRange = next.type === 'grenade' ? Math.max(0, Number(raw.grenadeRange ?? raw.throwRange ?? raw.range ?? 6) || 0) : 0;
     next.grenadeRadius = next.type === 'grenade' ? Math.max(0, Number(raw.grenadeRadius ?? raw.blastRadius ?? raw.radius ?? 2) || 0) : 0;
     next.unitHp = ['turret','drone'].includes(next.type) ? Math.max(1, Number(raw.unitHp ?? raw.hpMax ?? raw.hp ?? 10) || 10) : 0;
@@ -22888,7 +22913,7 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
   const __itemExtraSummaryV1052 = itemExtraSummaryV2;
   itemExtraSummaryV2 = function(item = {}) {
     const norm = normalizeEquipmentItemV2(item);
-    const typeLabel = ({gear:'Снаряжение',weapon:'Оружие',grenade:'Граната',turret:'Турель',drone:'Дрон',armor:'Броня',backpack:'Рюкзак',implant:'Имплант',stock:'Акции'})[norm.type] || 'Снаряжение';
+    const typeLabel = ({gear:'Снаряжение',weapon:'Оружие',shield:'Щиты',grenade:'Граната',turret:'Турель',drone:'Дрон',armor:'Броня',backpack:'Рюкзак',implant:'Имплант',stock:'Акции'})[norm.type] || 'Снаряжение';
     const bits = [typeLabel];
     if (norm.rarity) bits.push(norm.rarity);
     if (['weapon','grenade','turret','drone'].includes(norm.type) && norm.damage) bits.push(`урон ${norm.damage}`);
@@ -23014,6 +23039,7 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
   Configurator.renderEquipmentEditor = function(rawItem) {
     const item = normalizeEquipmentItemV2(rawItem);
     const isWeapon = item.type === 'weapon';
+    const isShield = item.type === 'shield';
     const isGrenade = item.type === 'grenade';
     const isTurret = item.type === 'turret';
     const isDrone = item.type === 'drone';
@@ -23021,7 +23047,7 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
     const isImplant = item.type === 'implant';
     const isStock = item.type === 'stock';
     return `<form id="config-editor-form" class="form equipment-editor-v1052" data-entity-type="equipment" data-item-type="${esc(item.type)}">
-      ${this.renderHeader(item, 'Предметы разделены на снаряжение, оружие, гранаты, турели, дроны, броню, импланты и акции.')}
+      ${this.renderHeader(item, 'Предметы разделены на снаряжение, оружие, щиты, гранаты, турели, дроны, броню, импланты и акции.')}
       ${imageFieldMarkup(item, 'Изображение предмета')}
       <div class="cols3"><div class="field"><label>ID</label><input class="input" name="id" value="${esc(item.id)}" /></div><div class="field"><label>Категория</label><select class="select" name="type">${ITEM_TYPES_V1052.map(opt => `<option value="${opt.value}" ${opt.value === item.type ? 'selected' : ''}>${esc(opt.label)}</option>`).join('')}</select></div><div class="field"><label>Редкость</label><select class="select" name="rarity">${ITEM_RARITY_OPTIONS_V2.map(r => `<option value="${esc(r)}" ${r === item.rarity ? 'selected' : ''}>${esc(r)}</option>`).join('')}</select></div></div>
       <div class="field"><label>Название</label><input class="input" name="name" value="${esc(item.name || '')}" /></div>
@@ -23030,6 +23056,11 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
       <div class="item-specific-v1052 ${isWeapon ? '' : 'hidden'}" data-for-item="weapon">
         <div class="cols2"><div class="field"><label>Урон</label><input class="input" name="damage" value="${esc(item.damage || '')}" placeholder="например 2d6+1" /></div><div class="field"><label>Дальность (гексы)</label><input class="input" type="number" min="0" step="1" name="range" value="${Number(item.range || 0)}" /><div class="small-note">В гексах.</div></div></div>
         <div class="cols2"><div class="field"><label>Бонус к попаданию</label><input class="input" type="number" name="hitBonus" value="${Number(item.hitBonus || 0)}" /></div><div class="field"><label>Слот</label><select class="select" name="weaponSlot">${WEAPON_SLOT_OPTIONS_V2.map(opt => `<option value="${opt.value}" ${opt.value === String(item.weaponSlot || 'primary') ? 'selected' : ''}>${esc(opt.label)}</option>`).join('')}</select></div></div>
+        ${requirementInputsV1052(item)}
+      </div>
+      <div class="item-specific-v1052 ${isShield ? '' : 'hidden'}" data-for-item="shield">
+        <div class="small-note">Щит занимает слот основного оружия. Его бонус не складывается с укрытием.</div>
+        <div class="cols2"><div class="field"><label>Бонус физического щита</label><input class="input" type="number" min="0" step="1" name="shieldCoverBonusV122" value="${Number(item.shieldCoverBonus || 0)}" /></div><div class="field"><label>Предел Ловкости</label><input class="input" type="number" min="0" step="1" name="shieldDexterityCapV122" value="${item.shieldDexterityCap ?? ''}" placeholder="без ограничения" /></div></div>
         ${requirementInputsV1052(item)}
       </div>
       <div class="item-specific-v1052 ${isGrenade ? '' : 'hidden'}" data-for-item="grenade"><div class="cols3"><div class="field"><label>Урон</label><input class="input" name="damage" value="${esc(item.damage || '')}" placeholder="например 3d6" /></div><div class="field"><label>Дальность броска (гексы)</label><input class="input" type="number" min="0" step="1" name="grenadeRange" value="${Number(item.grenadeRange || 0)}" /></div><div class="field"><label>Радиус поражения (гексы)</label><input class="input" type="number" min="0" step="1" name="grenadeRadius" value="${Number(item.grenadeRadius || 0)}" /></div></div><div class="small-note">Дальность броска и радиус поражения задаются в гексах. Один бросок расходует один экземпляр гранаты из инвентаря.</div></div>
@@ -23192,7 +23223,9 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
         ticker: itemType === 'stock' ? String(formData.get('ticker') || '').trim().toUpperCase() : '',
         stockMinPrice: itemType === 'stock' ? Math.max(0, Math.trunc(Number(formData.get('stockMinPrice') || 0))) : 0,
         stockMaxPrice: itemType === 'stock' ? Math.max(0, Math.trunc(Number(formData.get('stockMaxPrice') || 0))) : 0,
-        requirements: Object.fromEntries(ABILITIES_V1052.map(row => [row.key, ['weapon','armor','implant'].includes(itemType) ? Number(formData.get(`req_${row.key}`) || 0) : 0]))
+        shieldCoverBonus: itemType === 'shield' ? Math.max(0, Number(formData.get('shieldCoverBonusV122') || 0)) : 0,
+        shieldDexterityCap: itemType === 'shield' && String(formData.get('shieldDexterityCapV122') || '').trim() !== '' ? Math.max(0, Number(formData.get('shieldDexterityCapV122'))) : null,
+        requirements: Object.fromEntries(ABILITIES_V1052.map(row => [row.key, ['weapon','shield','armor','implant'].includes(itemType) ? Number(formData.get(`req_${row.key}`) || 0) : 0]))
       });
       return entity;
     }
@@ -23379,7 +23412,7 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
     return sortEntitiesForList(Object.values(EQUIPMENT || {}).map(normalizeEquipmentItemV2).filter(item => item.availableAsStarting && creationOptionAvailableV1066(item, campaign)));
   }
   function startingEquipmentLabelV1066(item = {}) {
-    return ({weapon:'Оружие',grenade:'Гранаты',turret:'Турели',drone:'Дроны',armor:'Броня',backpack:'Рюкзак',implant:'Имплант',stock:'Акции',ammo:'Патроны',gear:'Снаряжение'})[item.type] || 'Снаряжение';
+    return ({weapon:'Оружие',shield:'Щиты',grenade:'Гранаты',turret:'Турели',drone:'Дроны',armor:'Броня',backpack:'Рюкзак',implant:'Имплант',stock:'Акции',ammo:'Патроны',gear:'Снаряжение'})[item.type] || 'Снаряжение';
   }
   function startingEquipmentDetailMarkupV1072(item = {}, selected = false) {
     const width = Math.max(1, Number.parseInt(item.inventoryWidth ?? item.sizeWidth ?? 1, 10) || 1);
@@ -24286,7 +24319,7 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
     if (slotType === 'armor') return type === 'armor';
     if (slotType === 'backpack') return type === 'backpack';
     if (slotType === 'implant') return type === 'implant';
-    if (slotType === 'primaryWeapon') return type === 'weapon' && ['primary','versatile',''].includes(String(item.weaponSlot || 'primary'));
+    if (slotType === 'primaryWeapon') return type === 'shield' || type === 'weapon' && ['primary','versatile',''].includes(String(item.weaponSlot || 'primary'));
     if (slotType === 'secondaryWeapon') return type === 'weapon' && ['secondary','versatile',''].includes(String(item.weaponSlot || 'secondary'));
     return false;
   }
@@ -24581,7 +24614,7 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
   }
   function wcInventoryTypeLabelV1068(item = {}) {
     const type = normalizeEquipmentItemV2(item).type;
-    return ({weapon:'Оружие',grenade:'Гранаты',turret:'Турели',drone:'Дроны',armor:'Броня',backpack:'Рюкзак',implant:'Имплант',stock:'Акции',ammo:'Патроны',gear:'Снаряжение'})[type] || 'Снаряжение';
+    return ({weapon:'Оружие',shield:'Щиты',grenade:'Гранаты',turret:'Турели',drone:'Дроны',armor:'Броня',backpack:'Рюкзак',implant:'Имплант',stock:'Акции',ammo:'Патроны',gear:'Снаряжение'})[type] || 'Снаряжение';
   }
   function wcInventoryReadStateV1068(container) {
     const hidden = container?.querySelector?.('[name="wcInventoryStateV1068"]');
@@ -25140,7 +25173,7 @@ window.scrollVisibleMessageThreadToBottomV1070 = scrollVisibleMessageThreadToBot
 
   function marketTypeLabelV1071(item = {}) {
     const type = normalizeEquipmentItemV2(item).type;
-    return ({weapon:'Оружие',grenade:'Гранаты',turret:'Турели',drone:'Дроны',armor:'Броня',backpack:'Рюкзак',implant:'Имплант',stock:'Акции',ammo:'Патроны',gear:'Снаряжение'})[type] || 'Снаряжение';
+    return ({weapon:'Оружие',shield:'Щиты',grenade:'Гранаты',turret:'Турели',drone:'Дроны',armor:'Броня',backpack:'Рюкзак',implant:'Имплант',stock:'Акции',ammo:'Патроны',gear:'Снаряжение'})[type] || 'Снаряжение';
   }
 
   function marketItemIsStockV1073(item = {}) {
