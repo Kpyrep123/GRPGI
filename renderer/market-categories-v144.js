@@ -1,6 +1,6 @@
 (function (root) {
-  const labels = {weapon:'Оружие',ammo:'Боеприпасы',ammunition:'Боеприпасы',grenade:'Гранаты',turret:'Турели',drone:'Дроны',armor:'Броня',implant:'Импланты',backpack:'Рюкзаки'};
-  const order = ['Оружие','Боеприпасы','Гранаты','Броня','Импланты','Рюкзаки','Дроны','Турели','Снаряжение'];
+  const labels = {weapon:'Оружие',shield:'Щиты',ammo:'Боеприпасы',ammunition:'Боеприпасы',grenade:'Гранаты',turret:'Турели',drone:'Дроны',armor:'Броня',implant:'Импланты',backpack:'Рюкзаки'};
+  const order = ['Оружие','Щиты','Боеприпасы','Гранаты','Броня','Импланты','Рюкзаки','Дроны','Турели','Снаряжение'];
   function category(item = {}) {
     return labels[String(item?.type || '').trim().toLowerCase()] || 'Снаряжение';
   }
