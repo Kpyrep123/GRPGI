@@ -196,6 +196,10 @@ function Unit:GetEquippedItemData(slot)
 end
 function Unit:HasReaction() return self.__data.reactionAvailable == true end
 function Unit:IsReactionAvailable() return self:HasReaction() end
+function Unit:HasAction() return self.__data.actionAvailable == true end
+function Unit:IsActionAvailable() return self:HasAction() end
+function Unit:GetMovementSpent() return math.max(0, __num(self.__data.movementSpent)) end
+function Unit:GetMovementRemaining() return math.max(0, __num(self.__data.movementRemaining)) end
 function Unit:GetMovementMode() return tostring(self.__data.movementMode or 'ground') end
 function Unit:IsFlying() return self:GetMovementMode() == 'flight' end
 function Unit:IsSwimming() return self:GetMovementMode() == 'swim' end
@@ -233,7 +237,7 @@ function Unit:IsItemBroken(slot)
   local row = self:GetEquippedItemData(slot)
   return row ~= nil and (row.broken == true or (__num(row.durabilityMax) > 0 and __num(row.durability) <= 0))
 end
-function Unit:IsShieldDestroyed(slot) return self:IsItemBroken(slot or 'secondaryWeapon') end
+function Unit:IsShieldDestroyed(slot) return self:IsItemBroken(slot or 'primaryWeapon') end
 function Unit:GetCharges(slot)
   local row = self:GetEquippedItemData(slot)
   return row and math.max(0, math.floor(__num(row.charges))) or 0
@@ -306,6 +310,14 @@ function IgnoreAbsorption(amount, source)
   return __push({ kind = 'ignore_absorption', amount = math.max(0, __num(amount)), percent = 0, absorptionSource = tostring(source or 'all') })
 end
 function SpendReaction(unit) return __push({ kind = 'spend_reaction', unitId = __id(unit) }) end
+function RestoreReaction(unit) return __push({ kind = 'restore_reaction', unitId = __id(unit) }) end
+function SpendAction(unit) return __push({ kind = 'spend_action', unitId = __id(unit) }) end
+function RestoreAction(unit) return __push({ kind = 'restore_action', unitId = __id(unit) }) end
+function SpendMovement(unit, amount) return __push({ kind = 'spend_movement', unitId = __id(unit), amount = math.max(0, __num(amount)) }) end
+function RestoreMovement(unit, amount)
+  if amount == nil then return __push({ kind = 'restore_movement', unitId = __id(unit), all = true }) end
+  return __push({ kind = 'restore_movement', unitId = __id(unit), amount = math.max(0, __num(amount)) })
+end
 function SetCondition(unit, name, enabled) return __push({ kind = 'set_condition', unitId = __id(unit), name = tostring(name or ''), enabled = enabled ~= false }) end
 function SetDying(unit, enabled) return SetCondition(unit, 'dying', enabled) end
 function SetStabilized(unit, enabled) return SetCondition(unit, 'stabilized', enabled) end
