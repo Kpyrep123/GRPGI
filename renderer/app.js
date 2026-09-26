@@ -15692,7 +15692,6 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
           })).filter(sound => sound.url)
         }));
         parsed.sceneAmbient = parsed.sceneAmbient && typeof parsed.sceneAmbient === 'object' ? parsed.sceneAmbient : {};
-        if (!parsed.sections.length) parsed.sections.push({ id: COMBAT_AUDIO_DEFAULT_SECTION_V37, name: 'Общее', sounds: [] });
         return parsed;
       }
     } catch {}
@@ -15725,11 +15724,10 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
       Combat.render();
     },
     deleteSection(sectionId) {
-      if (this.sections.length <= 1) {
-        Toast.show('Нельзя удалить последний раздел звуков.', 'info');
-        return;
-      }
-      this.state.sections = this.sections.filter(section => section.id !== sectionId);
+      const section = this.sections.find(item => item.id === sectionId);
+      if (!section) return false;
+      if (section.sounds.length && !confirm(`Удалить раздел «${section.name}» вместе со всеми звуками (${section.sounds.length})?`)) return false;
+      this.state.sections = this.sections.filter(item => item.id !== sectionId);
       Object.entries(this.state.sceneAmbient || {}).forEach(([sceneId, soundId]) => {
         if (!this.findSound(soundId)) delete this.state.sceneAmbient[sceneId];
       });
@@ -15851,7 +15849,7 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
             ${this.sections.map(section => `
               <div class="combat-sound-section-v37" data-sound-section="${esc(section.id)}">
                 <div class="combat-sound-section-head-v37">
-                  <b>${esc(section.name)}</b>
+                  <input class="combat-sound-name-input-v42" value="${esc(section.name)}" data-sound-section-rename="${esc(section.id)}" aria-label="Название раздела звуков" />
                   <div class="row combat-editor-actions">
                     <button class="secondary" type="button" data-sound-add="${esc(section.id)}">ДОБАВИТЬ ФАЙЛ</button>
                     <button class="secondary" type="button" data-sound-random="${esc(section.id)}">СЛУЧАЙНЫЙ</button>
@@ -16148,9 +16146,10 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
 
   const __deleteSectionV40 = audioApi.deleteSection.bind(audioApi);
   audioApi.deleteSection = function(sectionId) {
-    const section = this.findSection(sectionId);
-    (section?.sounds || []).forEach(sound => this.stopSound(sound.id));
-    return __deleteSectionV40(sectionId);
+    const sounds = this.sections.find(section => section.id === sectionId)?.sounds || [];
+    const result = __deleteSectionV40(sectionId);
+    if (!this.sections.some(section => section.id === sectionId)) sounds.forEach(sound => this.stopSound(sound.id));
+    return result;
   };
 
   const __addSectionV40 = audioApi.addSection.bind(audioApi);
@@ -16307,6 +16306,15 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
   if (window.CombatAudioV37) {
     const audioApi = window.CombatAudioV37;
 
+    audioApi.renameSection = function(sectionId, name) {
+      const section = this.sections.find(item => item.id === sectionId);
+      const clean = String(name || '').trim();
+      if (!section || !clean) return false;
+      section.name = clean;
+      this.save();
+      Combat.render();
+      return true;
+    };
     audioApi.renameSound = function(sectionId, soundId, name) {
       const section = this.findSection(sectionId);
       const sound = section?.sounds?.find(item => item.id === soundId);
@@ -16407,6 +16415,11 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
     if (!window.__combatSoundRenameDelegationV42) {
       window.__combatSoundRenameDelegationV42 = true;
       document.addEventListener('change', event => {
+        const sectionInput = event.target.closest?.('[data-sound-section-rename]');
+        if (sectionInput && document.getElementById('mod-combat')?.contains(sectionInput)) {
+          if (!audioApi.renameSection(sectionInput.dataset.soundSectionRename, sectionInput.value)) sectionInput.value = audioApi.findSection(sectionInput.dataset.soundSectionRename)?.name || '';
+          event.stopPropagation();return;
+        }
         const input = event.target.closest?.('[data-sound-rename]');
         if (!input || !document.getElementById('mod-combat')?.contains(input)) return;
         const [sectionId, soundId] = String(input.dataset.soundRename || '').split(':');
@@ -16414,7 +16427,7 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
         event.stopPropagation();
       }, true);
       document.addEventListener('keydown', event => {
-        const input = event.target.closest?.('[data-sound-rename]');
+        const input = event.target.closest?.('[data-sound-rename],[data-sound-section-rename]');
         if (!input) return;
         if (event.key === 'Enter') {
           event.preventDefault();
@@ -19812,7 +19825,7 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
     const audioApi = window.CombatAudioV37;
     if (!audioApi) { body.innerHTML = '<div class="small-note">Локальная библиотека звуков недоступна.</div>'; return; }
     const ambientId = audioApi.state?.sceneAmbient?.global || '';
-    body.innerHTML = `<div class="small-note">Звуки хранятся локально в папке данных приложения. Панель доступна только ДМу. Фон главного экрана использует тот же набор групп, что и боевые сцены.</div><div class="row combat-editor-actions"><input class="input" id="global-ambient-section-name-v60" placeholder="Новый раздел звуков" /><button class="secondary" type="button" id="global-ambient-add-section-v60">ДОБАВИТЬ РАЗДЕЛ</button><button class="ghost" type="button" id="global-ambient-stop-v60">ОСТАНОВИТЬ ФОН</button></div><div class="combat-sound-sections-v37">${audioApi.sections.map(section => `<div class="combat-sound-section-v37"><div class="combat-sound-section-head-v37"><b>${esc(section.name)}</b><div class="row combat-editor-actions"><button class="secondary" type="button" data-global-sound-add="${esc(section.id)}">ДОБАВИТЬ ФАЙЛЫ</button><button class="secondary" type="button" data-global-sound-random="${esc(section.id)}">СЛУЧАЙНЫЙ</button></div></div><div class="combat-sound-list-v37">${section.sounds.map(sound => `<div class="combat-sound-row-v37"><span>${esc(sound.name)}</span><div class="row combat-editor-actions"><button class="ghost" type="button" data-global-sound-play="${esc(sound.id)}">ВОСПРОИЗВЕСТИ</button><button class="ghost ${ambientId === sound.id ? 'active' : ''}" type="button" data-global-sound-ambient="${esc(sound.id)}">ФОН</button><button class="ghost" type="button" data-global-sound-stop="${esc(sound.id)}" title="Остановить фон">⏹</button></div></div>`).join('') || '<div class="small-note">В этом разделе пока нет файлов.</div>'}</div></div>`).join('')}</div>`;
+    body.innerHTML = `<div class="small-note">Звуки хранятся локально в папке данных приложения. Панель доступна только ДМу. Фон главного экрана использует тот же набор групп, что и боевые сцены.</div><div class="row combat-editor-actions"><input class="input" id="global-ambient-section-name-v60" placeholder="Новый раздел звуков" /><button class="secondary" type="button" id="global-ambient-add-section-v60">ДОБАВИТЬ РАЗДЕЛ</button><button class="ghost" type="button" id="global-ambient-stop-v60">ОСТАНОВИТЬ ФОН</button></div><div class="combat-sound-sections-v37">${audioApi.sections.map(section => `<div class="combat-sound-section-v37"><div class="combat-sound-section-head-v37"><input class="combat-sound-name-input-v42" value="${esc(section.name)}" data-global-section-rename="${esc(section.id)}" aria-label="Название раздела звуков"/><div class="row combat-editor-actions"><button class="ghost" type="button" data-global-section-delete="${esc(section.id)}">УДАЛИТЬ РАЗДЕЛ</button><button class="secondary" type="button" data-global-sound-add="${esc(section.id)}">ДОБАВИТЬ ФАЙЛЫ</button><button class="secondary" type="button" data-global-sound-random="${esc(section.id)}">СЛУЧАЙНЫЙ</button></div></div><div class="combat-sound-list-v37">${section.sounds.map(sound => `<div class="combat-sound-row-v37"><span>${esc(sound.name)}</span><div class="row combat-editor-actions"><button class="ghost" type="button" data-global-sound-play="${esc(sound.id)}">ВОСПРОИЗВЕСТИ</button><button class="ghost ${ambientId === sound.id ? 'active' : ''}" type="button" data-global-sound-ambient="${esc(sound.id)}">ФОН</button><button class="ghost" type="button" data-global-sound-stop="${esc(sound.id)}" title="Остановить фон">⏹</button></div></div>`).join('') || '<div class="small-note">В этом разделе пока нет файлов.</div>'}</div></div>`).join('')}</div>`;
   }
   document.addEventListener('click', event => {
     const ambientBtn = event.target.closest?.('#ambient-mute-btn');
@@ -19822,13 +19835,14 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
     }
     const modal = document.getElementById('global-ambient-modal-v60');
     if (!modal?.classList.contains('open')) return;
-    const target = event.target.closest?.('#global-ambient-add-section-v60,#global-ambient-stop-v60,[data-global-sound-add],[data-global-sound-random],[data-global-sound-play],[data-global-sound-ambient],[data-global-sound-stop]');
+    const target = event.target.closest?.('#global-ambient-add-section-v60,#global-ambient-stop-v60,[data-global-sound-add],[data-global-sound-random],[data-global-sound-play],[data-global-sound-ambient],[data-global-sound-stop],[data-global-section-delete]');
     if (!target) return;
     event.preventDefault(); event.stopPropagation();
     const audioApi = window.CombatAudioV37;
     if (!audioApi) return;
     if (target.id === 'global-ambient-add-section-v60') { const input = document.getElementById('global-ambient-section-name-v60'); audioApi.addSection(input?.value || ''); if (input) input.value = ''; }
     else if (target.id === 'global-ambient-stop-v60' || target.dataset.globalSoundStop) { delete audioApi.state.sceneAmbient.global; audioApi.save(); audioApi.stopAmbient(); }
+    else if (target.dataset.globalSectionDelete) audioApi.deleteSection(target.dataset.globalSectionDelete);
     else if (target.dataset.globalSoundAdd) audioApi.addSound(target.dataset.globalSoundAdd);
     else if (target.dataset.globalSoundRandom) audioApi.playRandom(target.dataset.globalSoundRandom);
     else if (target.dataset.globalSoundPlay) audioApi.play(target.dataset.globalSoundPlay);
@@ -19836,6 +19850,13 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
     setTimeout(renderGlobalAmbientV60, 80);
   }, true);
 
+  document.addEventListener('change', event => {
+    const input=event.target.closest?.('[data-global-section-rename]');
+    if (!input || !document.getElementById('global-ambient-modal-v60')?.contains(input)) return;
+    const api=window.CombatAudioV37;
+    if (!api?.renameSection?.(input.dataset.globalSectionRename,input.value)) input.value=api?.findSection(input.dataset.globalSectionRename)?.name||'';
+    renderGlobalAmbientV60();
+  });
   document.addEventListener('DOMContentLoaded', () => {
     try { App.fillLoginSelect?.(); } catch {}
   });
@@ -21765,7 +21786,7 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
     document.body.appendChild(modal);
     modal.addEventListener('click', event => {
       if (event.target === modal || event.target.closest('#region-ambient-close-v36')) { modal.classList.remove('open'); return; }
-      const target = event.target.closest('[data-ra-add-section],[data-ra-add],[data-ra-random],[data-ra-play],[data-ra-ambient],[data-ra-stop],#region-ambient-stop-v36');
+      const target = event.target.closest('[data-ra-add-section],[data-ra-add],[data-ra-random],[data-ra-play],[data-ra-ambient],[data-ra-stop],[data-ra-delete-section],#region-ambient-stop-v36');
       if (!target) return;
       const audioApi = window.CombatAudioV37;
       if (!audioApi) return;
@@ -21773,11 +21794,19 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
       const key = regionAmbientKeyV36();
       if (target.id === 'region-ambient-stop-v36' || target.dataset.raStop !== undefined) { delete audioApi.state.sceneAmbient[key]; audioApi.save(); audioApi.stopAmbient(); }
       else if (target.dataset.raAddSection !== undefined) { const input = document.getElementById('region-ambient-section-name-v36'); audioApi.addSection(input?.value || ''); if (input) input.value = ''; }
+      else if (target.dataset.raDeleteSection) audioApi.deleteSection(target.dataset.raDeleteSection);
       else if (target.dataset.raAdd) audioApi.addSound(target.dataset.raAdd);
       else if (target.dataset.raRandom) audioApi.playRandom(target.dataset.raRandom);
       else if (target.dataset.raPlay) audioApi.play(target.dataset.raPlay);
       else if (target.dataset.raAmbient) audioApi.setAmbient(key, target.dataset.raAmbient);
       setTimeout(renderRegionAmbientBodyV36, 80);
+    });
+    modal.addEventListener('change', event => {
+      const input=event.target.closest?.('[data-ra-rename-section]');
+      if (!input) return;
+      const api=window.CombatAudioV37;
+      if (!api?.renameSection?.(input.dataset.raRenameSection,input.value)) input.value=api?.findSection(input.dataset.raRenameSection)?.name||'';
+      renderRegionAmbientBodyV36();
     });
     return modal;
   }
@@ -21792,7 +21821,7 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
     const ambientId = audioApi.state?.sceneAmbient?.[regionAmbientKeyV36()] || '';
     body.innerHTML = `<div class="small-note">Звуки хранятся локально в папке данных приложения. Эмбиент привязан к этой карте региона и запускается при её открытии.</div>
       <div class="row combat-editor-actions" style="margin-top:10px;gap:8px;flex-wrap:wrap"><input class="input" id="region-ambient-section-name-v36" placeholder="Новый раздел звуков" /><button class="secondary" type="button" data-ra-add-section="1">ДОБАВИТЬ РАЗДЕЛ</button><button class="ghost" type="button" id="region-ambient-stop-v36">СТОП ЭМБИЕНТ</button></div>
-      <div class="combat-sound-sections-v37" style="margin-top:10px">${audioApi.sections.map(section => `<div class="combat-sound-section-v37"><div class="combat-sound-section-head-v37"><b>${esc(section.name)}</b><div class="row combat-editor-actions"><button class="secondary" type="button" data-ra-add="${esc(section.id)}">ДОБАВИТЬ ФАЙЛЫ</button><button class="secondary" type="button" data-ra-random="${esc(section.id)}">СЛУЧАЙНЫЙ</button></div></div><div class="combat-sound-list-v37">${section.sounds.map(sound => `<div class="combat-sound-row-v37"><span>${esc(sound.name)}</span><div class="row combat-editor-actions"><button class="ghost" type="button" data-ra-play="${esc(sound.id)}">ВОСПРОИЗВЕСТИ</button><button class="ghost ${ambientId === sound.id ? 'active' : ''}" type="button" data-ra-ambient="${esc(sound.id)}">ФОН</button><button class="ghost" type="button" data-ra-stop="${esc(sound.id)}" title="Остановить фон">⏹</button></div></div>`).join('') || '<div class="small-note">В этом разделе пока нет файлов.</div>'}</div></div>`).join('')}</div>`;
+      <div class="combat-sound-sections-v37" style="margin-top:10px">${audioApi.sections.map(section => `<div class="combat-sound-section-v37"><div class="combat-sound-section-head-v37"><input class="combat-sound-name-input-v42" value="${esc(section.name)}" data-ra-rename-section="${esc(section.id)}" aria-label="Название раздела звуков"/><div class="row combat-editor-actions"><button class="ghost" type="button" data-ra-delete-section="${esc(section.id)}">УДАЛИТЬ РАЗДЕЛ</button><button class="secondary" type="button" data-ra-add="${esc(section.id)}">ДОБАВИТЬ ФАЙЛЫ</button><button class="secondary" type="button" data-ra-random="${esc(section.id)}">СЛУЧАЙНЫЙ</button></div></div><div class="combat-sound-list-v37">${section.sounds.map(sound => `<div class="combat-sound-row-v37"><span>${esc(sound.name)}</span><div class="row combat-editor-actions"><button class="ghost" type="button" data-ra-play="${esc(sound.id)}">ВОСПРОИЗВЕСТИ</button><button class="ghost ${ambientId === sound.id ? 'active' : ''}" type="button" data-ra-ambient="${esc(sound.id)}">ФОН</button><button class="ghost" type="button" data-ra-stop="${esc(sound.id)}" title="Остановить фон">⏹</button></div></div>`).join('') || '<div class="small-note">В этом разделе пока нет файлов.</div>'}</div></div>`).join('')}</div>`;
   }
   function openRegionAmbientV36() {
     if (!window.CombatAudioV37) return Toast.show('Библиотека звуков недоступна', 'err');
@@ -25529,14 +25558,18 @@ window.GRPGInstallGlobalStockExchangeV1074?.();
     const favorites=favoritesV1079(),groups=new Map(),selectedKey=Wiki.currentView?archiveHitKeyV1079(Wiki.currentView.type,Wiki.currentView.id):'';
     result.rows.forEach(hit=>{const group=categoryV1079(hit,result.globalScope);if(!groups.has(group))groups.set(group,[]);groups.get(group).push(hit);});
     const forceOpen=Boolean(normalizedTextV1079(Wiki.archiveQueryV1079))||Wiki.archiveCategoryV1079!=='all'||Wiki.archiveStatusV1079!=='all';
+    const previousScroll=target.scrollTop;
+    const openGroups=new Set(Array.from(target.querySelectorAll('.wiki-group-v1079[open]'),node=>node.dataset.archiveGroup));
+    const hadGroups=Boolean(target.querySelector('.wiki-group-v1079'));
     target.classList.add('wiki-results-v1079');
     target.innerHTML=Array.from(groups.entries()).map(([group,rows],groupIndex)=>{
       const containsSelected=rows.some(hit=>archiveHitKeyV1079(hit)===selectedKey);
-      return `<details class="wiki-group-v1079" ${forceOpen||containsSelected||groupIndex===0?'open':''}><summary><span>${esc(group)}</span><span class="wiki-group-count-v1079">${rows.length}</span></summary><div class="wiki-group-list-v1079">${rows.map(hit=>{
+      return `<details class="wiki-group-v1079" data-archive-group="${esc(group)}" ${hadGroups?openGroups.has(group)?'open':'':forceOpen||containsSelected||groupIndex===0?'open':''}><summary><span>${esc(group)}</span><span class="wiki-group-count-v1079">${rows.length}</span></summary><div class="wiki-group-list-v1079">${rows.map(hit=>{
         const key=archiveHitKeyV1079(hit),unread=isUnreadV1079(hit),favorite=favorites.has(key);
         return `<div class="wiki-hit wiki-hit-rich wiki-hit-v1079 ${unread?'wiki-hit-unread-v42':''} ${key===selectedKey?'active':''}" data-entity="${esc(hit.type)}" data-id="${esc(hit.entity.id)}" tabindex="0" role="button">${renderThumb(hit.entity,{size:'sm',type:hit.type})}<div class="wiki-hit-copy-v1079"><div class="wiki-hit-title-v1079"><b>${esc(titleForEntity(hit.type,hit.entity))}</b>${unread?'<span class="wiki-unread-pill-v42">НОВОЕ</span>':''}</div><div class="subtle wiki-hit-summary-v1079">${esc(hit.summary||baseCategoryV1079(hit))}</div></div><button class="wiki-favorite-v1079 ${favorite?'active':''}" type="button" data-wiki-favorite-v1079 data-entity="${esc(hit.type)}" data-id="${esc(hit.entity.id)}" aria-label="${favorite?'Убрать из избранного':'Добавить в избранное'}">${favorite?'★':'☆'}</button></div>`;
       }).join('')}</div></details>`;
     }).join('')||'<div class="subtle">Ничего не найдено в пределах текущего доступа и выбранных фильтров.</div>';
+    target.scrollTop=previousScroll;
     target.querySelectorAll('.wiki-hit-v1079').forEach(node=>{
       const open=()=>{Wiki.directArticleIdV1082='';Wiki.showEntity(node.dataset.entity,node.dataset.id);};
       node.addEventListener('click',event=>{if(!event.target.closest('[data-wiki-favorite-v1079]'))open();});
