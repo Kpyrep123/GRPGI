@@ -175,6 +175,9 @@ end
 | `unit:HasEquippedType("armor")` | Экипирован ли предмет типа; синоним `IsItemTypeEquipped` |
 | `unit:GetEquippedItem("primaryWeapon")` | ID предмета в указанном слоте или `nil` |
 | `unit:HasReaction()`, `unit:IsReactionAvailable()` | Не потрачена ли реакция в текущем раунде |
+| `unit:HasAction()`, `unit:IsActionAvailable()` | Доступно ли обычное действие |
+| `unit:GetMovementSpent()` | Уже потраченная дальность движения в текущем ходу |
+| `unit:GetMovementRemaining()` | Оставшаяся дальность движения в текущем ходу |
 | `unit:GetAmmo(slot)`, `unit:GetMagazineSize(slot)`, `unit:GetAmmoType(slot)` | Состояние магазина оружия |
 | `unit:IsWeaponEmpty(slot)` | У оружия есть магазин и в нём 0 патронов |
 | `unit:GetDurability(slot)`, `unit:GetMaxDurability(slot)` | Текущая и максимальная прочность предмета |
@@ -206,6 +209,11 @@ SetDamage(amount)
 SetArmorPenetration(amount, source)
 IgnoreAbsorption(amountOrSpec, source)
 SpendReaction(unit)
+RestoreReaction(unit)
+SpendAction(unit)
+RestoreAction(unit)
+SpendMovement(unit, amount)
+RestoreMovement(unit, amount) -- без amount полностью восстанавливает движение
 Reload(unit, slot)
 StandardAttack(attacker, target, spec)
 SetCondition(unit, name, enabled)
