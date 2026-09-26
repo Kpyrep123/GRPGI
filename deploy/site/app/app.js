@@ -556,7 +556,7 @@
     const ordered = Array.from(groups.entries()).sort((a, b) => a[0].localeCompare(b[0], 'ru'));
     return ordered.map(([category, group], groupIndex) => {
       const containsSelected = group.some(item => item.id === entity?.id && item._type === entity?._type);
-      return `<details class="archive-group-v1079" ${forceOpen || containsSelected || groupIndex === 0 ? 'open' : ''}>
+      return `<details class="archive-group-v1079" data-archive-group="${esc(category)}" ${options.openGroups ? options.openGroups.has(category) ? 'open' : '' : forceOpen || containsSelected || groupIndex === 0 ? 'open' : ''}>
         <summary><span>${esc(category)}</span><span class="archive-group-count-v1079">${group.length}</span></summary>
         <div class="archive-group-list-v1079">${group.map(item => {
         const unread = item._type === 'article' && !isArchiveArticleRead(item.id);
@@ -2652,6 +2652,11 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
       const count = (collections[tab] || []).filter(item => item._type !== 'article' || !articleSearchOnlyV1082(item)).length;
       return `<button class="chip-btn ${App.ui.archiveTab === tab && App.ui.archiveScopeV1079 !== 'all' ? 'active' : ''}" data-action="archive-tab" data-tab="${tab}">${label} · ${count}</button>`;
     };
+    const oldSidebar = root.querySelector('.archive-sidebar');
+    const oldCatalog = root.querySelector('.archive-catalog-side');
+    const sidebarScroll = oldSidebar?.scrollTop || 0;
+    const catalogScroll = oldCatalog?.scrollTop || 0;
+    const openGroups = oldCatalog ? new Set(Array.from(oldCatalog.querySelectorAll('.archive-group-v1079[open]'), group => group.dataset.archiveGroup)) : null;
     root.innerHTML = `
       <div class="segmented archive-top-nav-v1060">
         ${tabButton('articles', 'Статьи')}
@@ -2672,7 +2677,7 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
       <div class="archive-split">
         <aside class="archive-sidebar">
           <div class="archive-list-title"><div class="eyebrow">Каталог</div><div class="small-note">Разверните нужную тематическую группу и выберите материал.</div></div>
-          <div class="archive-catalog archive-catalog-side">${groupedArchiveMarkup(result.rows, entity, { globalScope: result.globalScope, forceOpen: forceGroupsOpen })}</div>
+          <div class="archive-catalog archive-catalog-side">${groupedArchiveMarkup(result.rows, entity, { globalScope: result.globalScope, forceOpen: forceGroupsOpen, openGroups })}</div>
         </aside>
         <div class="archive-detail-top archive-detail-pane">
           <button class="secondary archive-back-v1079" type="button" data-action="archive-back-v1079">К каталогу</button>
@@ -2680,6 +2685,8 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
         </div>
       </div>
     `;
+    root.querySelector('.archive-sidebar').scrollTop = sidebarScroll;
+    root.querySelector('.archive-catalog-side').scrollTop = catalogScroll;
   }
 
   function renderMarket() {

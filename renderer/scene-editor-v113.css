@@ -632,3 +632,8 @@ body.combat-stability-v108 #gm-dock-btn {
 .scene-loot-result-row-v118[role=button] {cursor:context-menu;}
 
 .scene-sound-tools-v104 { background:#0b131c; padding-bottom:8px; }
+.scene-palette-card-v104:has(.scene-asset-library-delete-v144){grid-template-columns:42px minmax(0,1fr) 24px 28px 28px}
+.scene-palette-card-v104 > .scene-asset-library-delete-v144{grid-column:5;grid-row:1;width:28px;height:28px;padding:0;border:1px solid rgba(220,122,122,.45);border-radius:5px;background:rgba(160,60,60,.12);color:#efb9b9;cursor:pointer}
+.scene-palette-card-v104 > .scene-asset-library-delete-v144:hover{background:rgba(160,60,60,.32)}
+.scene-palette-card-v104:has(.scene-asset-library-delete-v144)>small{grid-column:2/6}
+.scene-sound-section-name-v144{min-width:0;max-width:100%;font-weight:650}
