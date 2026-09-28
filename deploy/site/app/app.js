@@ -5888,7 +5888,8 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
   const renderCurrentScreenBeforeNavV149=renderCurrentScreen;
   renderCurrentScreen=function(){
     const changed=Boolean(webNavScreenV149&&webNavScreenV149!==App.ui.screen);
-    if(changed&&!webNavPopV149)history.pushState({grpgInternalV149:true,screen:App.ui.screen},'',location.href);
+    if(!webNavScreenV149)history.replaceState({grpgInternalV149:true,screen:App.ui.screen},'',location.href);
+    else if(changed&&!webNavPopV149)history.pushState({grpgInternalV149:true,screen:App.ui.screen},'',location.href);
     webNavScreenV149=App.ui.screen;
     const result=renderCurrentScreenBeforeNavV149();
     saveWebNavigationV149();
