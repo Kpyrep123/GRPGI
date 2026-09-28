@@ -5847,6 +5847,82 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
 
   window.GRPGWebFeaturePackV120=Object.freeze({version:'1.0.135',normalizeItem:normalizeItemWeb118,normalizePlayer:normalizePlayerWeb120,normalizeSkill:normalizeSkillWeb120,archiveEquipmentFacts:archiveEquipmentFactsWebV131});
 
+  /* v1.0.149 — persistent web navigation and mobile back handling */
+  const WEB_NAV_KEY_V149='grpg.web.navigation.v149';
+  const WEB_SCREENS_V149=new Set(['home','archive','market','chat','combat','profile']);
+  let webNavPopV149=false,webNavScreenV149='',webNavScrollTimerV149=0;
+  function webNavSnapshotV149(){
+    return{
+      screen:WEB_SCREENS_V149.has(App.ui.screen)?App.ui.screen:'home',
+      scrollY:Math.max(0,Math.trunc(window.scrollY||document.scrollingElement?.scrollTop||0)),
+      archiveTab:App.ui.archiveTab,selectedArchiveId:App.ui.selectedArchiveId,selectedArchiveType:App.ui.selectedArchiveType,
+      archiveQuery:App.ui.archiveQuery,archiveScopeV1079:App.ui.archiveScopeV1079,archiveCategoryV1079:App.ui.archiveCategoryV1079,
+      archiveStatusV1079:App.ui.archiveStatusV1079,archiveSortV1079:App.ui.archiveSortV1079,
+      selectedThreadKey:App.ui.selectedThreadKey,selectedCombatSceneId:App.ui.selectedCombatSceneId,
+      focusedSystemId:App.ui.focusedSystemId,galaxySelectedSystemId:App.ui.galaxySelectedSystemId,galaxySelectedPlanetId:App.ui.galaxySelectedPlanetId,
+      profileTab:App.ui.profileTab,profileItemModal:App.ui.profileItemModal?deep(App.ui.profileItemModal):null,
+      marketTab:marketTabWebV1073,marketSelection:marketSelectionWebV1071?deep(marketSelectionWebV1071):null,
+      stockSelection:stockSelectionWebV1074?deep(stockSelectionWebV1074):null,stockTimeframe:stockTimeframeWebV148
+    };
+  }
+  function saveWebNavigationV149(){
+    if(App.ui.boot!=='app'||!App.session?.userId)return;
+    try{sessionStorage.setItem(WEB_NAV_KEY_V149,JSON.stringify(webNavSnapshotV149()));}catch{}
+  }
+  function restoreWebNavigationV149(){
+    let saved=null;try{saved=JSON.parse(sessionStorage.getItem(WEB_NAV_KEY_V149)||'null');}catch{}
+    if(!saved||!WEB_SCREENS_V149.has(saved.screen))saved={screen:'home',scrollY:0};
+    ['archiveTab','selectedArchiveId','selectedArchiveType','archiveQuery','archiveScopeV1079','archiveCategoryV1079','archiveStatusV1079','archiveSortV1079','selectedThreadKey','selectedCombatSceneId','focusedSystemId','galaxySelectedSystemId','galaxySelectedPlanetId','profileTab'].forEach(key=>{if(saved[key]!=null)App.ui[key]=saved[key];});
+    App.ui.screen=RUNTIME.hideCombat&&saved.screen==='combat'?'home':saved.screen;
+    if(saved.marketTab)marketTabWebV1073=saved.marketTab==='stocks'?'stocks':'goods';
+    marketSelectionWebV1071=saved.marketSelection&&typeof saved.marketSelection==='object'?saved.marketSelection:null;
+    stockSelectionWebV1074=saved.stockSelection&&typeof saved.stockSelection==='object'?saved.stockSelection:null;
+    if(saved.stockTimeframe)stockTimeframeWebV148=saved.stockTimeframe;
+    webNavScreenV149=App.ui.screen;
+    history.replaceState({grpgInternalV149:true,screen:App.ui.screen},'',location.href);
+    requestAnimationFrame(()=>requestAnimationFrame(()=>{
+      window.scrollTo({top:Math.max(0,Number(saved.scrollY)||0),left:0,behavior:'auto'});
+      if(saved.profileItemModal?.itemId)openProfileItemModalV1060(saved.profileItemModal.itemId,saved.profileItemModal);
+    }));
+  }
+  const renderCurrentScreenBeforeNavV149=renderCurrentScreen;
+  renderCurrentScreen=function(){
+    const changed=Boolean(webNavScreenV149&&webNavScreenV149!==App.ui.screen);
+    if(!webNavScreenV149)history.replaceState({grpgInternalV149:true,screen:App.ui.screen},'',location.href);
+    else if(changed&&!webNavPopV149)history.pushState({grpgInternalV149:true,screen:App.ui.screen},'',location.href);
+    webNavScreenV149=App.ui.screen;
+    const result=renderCurrentScreenBeforeNavV149();
+    saveWebNavigationV149();
+    return result;
+  };
+  const openProfileItemModalBeforeNavV149=openProfileItemModalV1060;
+  openProfileItemModalV1060=function(itemId,meta={}){
+    const alreadyOpen=Boolean(document.getElementById('profile-item-modal-v1060'));
+    const result=openProfileItemModalBeforeNavV149(itemId,meta);
+    if(!alreadyOpen&&!webNavPopV149)history.pushState({grpgInternalV149:true,screen:App.ui.screen,layer:'profile-item'},'',location.href);
+    saveWebNavigationV149();
+    return result;
+  };
+  const closeProfileItemModalBeforeNavV149=closeProfileItemModalV1060;
+  closeProfileItemModalV1060=function(){
+    const hadModal=Boolean(document.getElementById('profile-item-modal-v1060'));
+    const result=closeProfileItemModalBeforeNavV149();
+    saveWebNavigationV149();
+    if(hadModal&&!webNavPopV149&&history.state?.layer==='profile-item')history.back();
+    return result;
+  };
+  window.addEventListener('popstate',event=>{
+    webNavPopV149=true;
+    if(document.getElementById('profile-item-modal-v1060'))closeProfileItemModalBeforeNavV149();
+    const target=event.state?.grpgInternalV149&&WEB_SCREENS_V149.has(event.state.screen)?event.state.screen:null;
+    if(target&&target!==App.ui.screen){App.ui.screen=target;renderCurrentScreen();}
+    saveWebNavigationV149();
+    queueMicrotask(()=>{webNavPopV149=false;});
+  });
+  window.addEventListener('scroll',()=>{clearTimeout(webNavScrollTimerV149);webNavScrollTimerV149=setTimeout(saveWebNavigationV149,120);},{passive:true});
+  window.addEventListener('pagehide',saveWebNavigationV149);
+  window.addEventListener('beforeunload',saveWebNavigationV149);
+
   async function init() {
     await retireRemovedWebNotificationsV1092();
     bindGlobalEvents();
@@ -5872,6 +5948,7 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
       if (App.session?.userId && App.data.players.has(App.session.userId) && sessionCampaignAllowedV1049()) {
         applyEraThemeV1049(campaignV1049(selectedCampaignV1049()));
         openBoot('app');
+        restoreWebNavigationV149();
         renderCurrentScreen();
         startRealtimeSync();
       } else {
