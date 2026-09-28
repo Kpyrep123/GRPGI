@@ -3793,6 +3793,33 @@ ipcMain.handle('market:transaction', async (_event, payload = {}) => {
   }
 });
 
+ipcMain.handle('stock-exchange:get', async (_event, payload = {}) => {
+  try {
+    const config = await loadSyncConfig();
+    if (!config.enabled) return { ok: false, status: 'unavailable', message: 'Для биржи требуется сервер синхронизации' };
+    const request = isPocketBaseSyncConfig(config) ? pocketbaseFetch : selfhostFetch;
+    return await request(config, `/api/grpgi/stock-exchange-v148?campaignId=${encodeURIComponent(config.campaignId)}&playerId=${encodeURIComponent(payload.playerId || '')}`);
+  } catch (error) { return { ok: false, status: 'error', httpStatus: Number(error.status || 0), message: error.message }; }
+});
+
+ipcMain.handle('stock-exchange:order', async (_event, payload = {}) => {
+  try {
+    const config = await loadSyncConfig();
+    if (!config.enabled) return { ok: false, status: 'unavailable', message: 'Для биржи требуется сервер синхронизации' };
+    const request = isPocketBaseSyncConfig(config) ? pocketbaseFetch : selfhostFetch;
+    return await request(config, '/api/grpgi/stock-exchange-v148/order', { method: 'POST', json: { ...payload, campaignId: config.campaignId, updatedBy: config.deviceLabel || 'desktop-stock' } });
+  } catch (error) { return { ok: false, status: 'error', httpStatus: Number(error.status || 0), message: error.message }; }
+});
+
+ipcMain.handle('stock-exchange:cancel', async (_event, payload = {}) => {
+  try {
+    const config = await loadSyncConfig();
+    if (!config.enabled) return { ok: false, status: 'unavailable', message: 'Для биржи требуется сервер синхронизации' };
+    const request = isPocketBaseSyncConfig(config) ? pocketbaseFetch : selfhostFetch;
+    return await request(config, '/api/grpgi/stock-exchange-v148/cancel', { method: 'POST', json: { ...payload, campaignId: config.campaignId } });
+  } catch (error) { return { ok: false, status: 'error', httpStatus: Number(error.status || 0), message: error.message }; }
+});
+
 ipcMain.handle('players:pull', async (_event, payload) => {
   try {
     const config = await loadSyncConfig();
