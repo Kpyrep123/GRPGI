@@ -2,6 +2,8 @@
 
 Приложение использует PocketBase как основной удалённый backend.
 
+Для серверной биржи 1.0.148 дополнительно установите `grpgi_stock_exchange_v148.js`, `grpgi_stock_exchange_v148.pb.js` и секундный worker. Полная последовательность с резервной копией, systemd и проверками приведена в `POCKETBASE_STOCK_DEPLOY_V148.md`.
+
 Рекомендуемый публичный адрес:
 
 ```text
