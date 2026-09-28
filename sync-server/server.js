@@ -6,6 +6,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { URL } = require('url');
 const MarketEngine = require('./market-engine');
+const StockExchange = require('./stock-exchange-v148');
 
 const PORT = Number(process.env.PORT || process.env.SYNC_PORT || 8787);
 const HOST = process.env.HOST || '0.0.0.0';
@@ -16,6 +17,7 @@ const MAX_BODY_BYTES = Number(process.env.MAX_BODY_BYTES || 250 * 1024 * 1024);
 
 const sseClients = new Map();
 const marketLocks = new Map();
+let stockWorkerBusy = false;
 
 function withMarketLock(campaignId, task) {
   const key = safeName(campaignId);
@@ -494,6 +496,116 @@ async function handleMarket(req, res, url, campaignId) {
   });
 }
 
+async function processStockExchange(campaignId, now = Date.now()) {
+  return withMarketLock(`stock-${campaignId}`, async () => {
+    const snapshot = await readJson(campaignFile(campaignId, 'snapshot.json'), null);
+    if (!snapshot) return null;
+    const playersFile = campaignFile(campaignId, 'players.json');
+    const exchangeFile = campaignFile(campaignId, 'stock-exchange-v148.json');
+    const rows = await readJson(playersFile, {});
+    let exchange = await readJson(exchangeFile, null);
+    let playersChanged = false;
+    exchange = StockExchange.advance(exchange, {
+      campaignId,
+      world: snapshot.world_json || {},
+      now,
+      onTick(state, tick) {
+        for (const [playerId, playerRow] of Object.entries(rows)) {
+          if (playerRow.deleted_at) continue;
+          const player = normalizePlayerRow(playerRow).player;
+          if (!StockExchange.liquidate(player, state.quotes, tick).length) continue;
+          const updatedAt = new Date(tick * 1000).toISOString();
+          rows[playerId] = { ...playerRow, ...splitPlayerState(player), version: Number(playerRow.version || 0) + 1, updated_at: updatedAt, updated_by: 'stock-liquidation-v148', client_updated_at: updatedAt };
+          playersChanged = true;
+        }
+        for (const order of state.orders.filter(row => row.status === 'pending')) {
+          const quote = state.quotes[order.itemId];
+          const playerRow = rows[safeName(order.playerId, '')];
+          if (!quote || !playerRow || playerRow.deleted_at || !StockExchange.orderTriggers(order, quote)) continue;
+          try {
+            const player = normalizePlayerRow(playerRow).player;
+            order.execution = StockExchange.executeOrder(order, quote, player, tick);
+            order.status = 'filled'; order.filledAt = new Date(tick * 1000).toISOString(); order.fillPrice = quote.price;
+            const updatedAt = order.filledAt;
+            rows[safeName(order.playerId, '')] = { ...playerRow, ...splitPlayerState(player), version: Number(playerRow.version || 0) + 1, updated_at: updatedAt, updated_by: 'stock-exchange-v148', client_updated_at: updatedAt };
+            playersChanged = true;
+          } catch (error) {
+            order.status = 'rejected'; order.rejectedAt = new Date(tick * 1000).toISOString(); order.message = error.message;
+          }
+        }
+      }
+    });
+    await writeJsonAtomic(exchangeFile, exchange);
+    if (playersChanged) await writeJsonAtomic(playersFile, rows);
+    return { exchange, rows, playersChanged };
+  });
+}
+
+function publicExchange(exchange, playerId = '') {
+  const ownOrders = (exchange.orders || []).filter(order => String(order.playerId) === String(playerId)).slice(-100);
+  const quotes = Object.values(exchange.quotes || {}).map(quote => ({ ...quote, indicators: StockExchange.indicators(exchange.candles?.[quote.itemId] || []) }));
+  return { version: exchange.version, serverTime: new Date().toISOString(), lastTick: exchange.lastTick, updatedAt: exchange.updatedAt, quotes, candles: exchange.candles || {}, orders: ownOrders };
+}
+
+async function handleStockExchange(req, res, url, campaignId, action = '') {
+  const processed = await processStockExchange(campaignId);
+  if (!processed) return sendError(res, 409, 'Сначала опубликуйте world snapshot кампании');
+  const playerId = safeName(url.searchParams.get('playerId') || '', '');
+  if (req.method === 'GET') {
+    const playerRow = playerId ? processed.rows[playerId] : null;
+    return sendJson(res, 200, { ok: true, ...publicExchange(processed.exchange, playerId), player: playerRow ? normalizePlayerRow(playerRow).player : null });
+  }
+  if (req.method !== 'POST') return sendError(res, 405, 'Method not allowed');
+  const payload = req._stockBodyV148 || await readJsonBody(req);
+  const id = safeName(payload.playerId || payload.player_id || '', '');
+  if (action === 'cancel') {
+    const order = processed.exchange.orders.find(row => row.id === String(payload.orderId || '') && row.playerId === id && row.status === 'pending');
+    if (!order) return sendError(res, 404, 'Активная заявка не найдена');
+    order.status = 'cancelled'; order.cancelledAt = nowIso();
+    await writeJsonAtomic(campaignFile(campaignId, 'stock-exchange-v148.json'), processed.exchange);
+    return sendJson(res, 200, { ok: true, status: 'cancelled', order });
+  }
+  if (action === 'impulse') {
+    const actorId = safeName(payload.playerId || payload.player_id || '', '');
+    const actor = actorId && processed.rows[actorId] ? normalizePlayerRow(processed.rows[actorId]).player : null;
+    if (String(actor?.role || '').toLowerCase() !== 'gm') return sendError(res, 403, 'Ручная корректировка доступна ведущему');
+    const quote = processed.exchange.quotes[String(payload.itemId || '')];
+    if (!quote) return sendError(res, 404, 'Акция не найдена');
+    processed.exchange.events.push({ id: crypto.randomUUID(), itemId: quote.itemId, percent: Math.min(50, Math.max(-50, Number(payload.percent || 0))), duration: Math.min(3600, Math.max(1, Math.trunc(Number(payload.duration || 60)))), startTick: processed.exchange.lastTick + 1, createdAt: nowIso() });
+    await writeJsonAtomic(campaignFile(campaignId, 'stock-exchange-v148.json'), processed.exchange);
+    return sendJson(res, 200, { ok: true, status: 'scheduled' });
+  }
+  if (!id || !processed.rows[id] || processed.rows[id].deleted_at) return sendError(res, 404, 'Профиль игрока не найден');
+  const order = StockExchange.createOrder({ ...payload, playerId: id });
+  if (!processed.exchange.quotes[order.itemId]) return sendError(res, 404, 'Акция не найдена');
+  const duplicate = processed.exchange.orders.find(row => row.id === order.id);
+  if (duplicate) return sendJson(res, 200, { ok: true, status: duplicate.status, order: duplicate, ...publicExchange(processed.exchange, id) });
+  processed.exchange.orders.push(order);
+  if (order.type === 'market') {
+    try {
+      const player = normalizePlayerRow(processed.rows[id]).player;
+      order.execution = StockExchange.executeOrder(order, processed.exchange.quotes[order.itemId], player, processed.exchange.lastTick);
+      order.status = 'filled'; order.filledAt = nowIso(); order.fillPrice = processed.exchange.quotes[order.itemId].price;
+      const row = processed.rows[id], updatedAt = order.filledAt;
+      processed.rows[id] = { ...row, ...splitPlayerState(player), version: Number(row.version || 0) + 1, updated_at: updatedAt, updated_by: 'stock-exchange-v148', client_updated_at: updatedAt };
+      await writeJsonAtomic(campaignFile(campaignId, 'players.json'), processed.rows);
+    } catch (error) { order.status = 'rejected'; order.message = error.message; }
+  }
+  await writeJsonAtomic(campaignFile(campaignId, 'stock-exchange-v148.json'), processed.exchange);
+  return sendJson(res, order.status === 'rejected' ? 409 : 200, { ok: order.status !== 'rejected', status: order.status, order, ...publicExchange(processed.exchange, id), player: normalizePlayerRow(processed.rows[id]).player });
+}
+
+async function stockWorkerTick() {
+  if (stockWorkerBusy) return;
+  stockWorkerBusy = true;
+  try {
+    const campaignsRoot = path.join(DATA_DIR, 'campaigns');
+    const entries = await fs.promises.readdir(campaignsRoot, { withFileTypes: true }).catch(() => []);
+    for (const entry of entries) if (entry.isDirectory()) await processStockExchange(entry.name);
+  } catch (error) { console.error('[stock-exchange-v148]', error); }
+  finally { stockWorkerBusy = false; }
+}
+
 async function handleAsset(req, res, url, campaignId) {
   if (req.method !== 'POST' && req.method !== 'PUT') return sendError(res, 405, 'Method not allowed');
   const rawPath = String(url.searchParams.get('path') || `${Date.now()}_asset.bin`).replace(/\\/g, '/');
@@ -551,6 +663,20 @@ async function router(req, res) {
   if (url.pathname === '/health' || url.pathname === '/api/health') return sendJson(res, 200, { ok: true, status: 'ok', dataDir: DATA_DIR, realtime: 'sse' });
   if (url.pathname.startsWith('/assets/')) return serveAsset(req, res, url);
 
+  const stockAlias = url.pathname.match(/^\/api\/grpgi\/stock-exchange-v148(?:\/(order|cancel|impulse))?$/);
+  if (stockAlias) {
+    const queryCampaign = String(url.searchParams.get('campaignId') || '').trim();
+    if (req.method === 'GET') {
+      if (!queryCampaign) return sendError(res, 400, 'campaignId is required');
+      return handleStockExchange(req, res, url, queryCampaign, stockAlias[1] || 'order');
+    }
+    const body = await readJsonBody(req);
+    const campaign = String(body.campaignId || body.campaign_id || queryCampaign).trim();
+    if (!campaign) return sendError(res, 400, 'campaignId is required');
+    req._stockBodyV148 = body;
+    return handleStockExchange(req, res, url, campaign, stockAlias[1] || 'order');
+  }
+
   const parts = url.pathname.split('/').filter(Boolean);
   if (parts[0] !== 'api') return sendError(res, 404, 'Not found');
   const resource = parts[1];
@@ -563,6 +689,7 @@ async function router(req, res) {
   if (resource === 'chat') return handleChat(req, res, url, campaignId, parts[3] === 'batch');
   if (resource === 'combat') return handleCombat(req, res, url, campaignId);
   if (resource === 'market') return handleMarket(req, res, url, campaignId);
+  if (resource === 'stock-exchange') return handleStockExchange(req, res, url, campaignId, parts[3] || 'order');
   if (resource === 'assets') return handleAsset(req, res, url, campaignId);
   return sendError(res, 404, 'Not found');
 }
@@ -580,3 +707,6 @@ server.listen(PORT, HOST, () => {
   console.log(`[sync-server] data dir: ${DATA_DIR}`);
   console.log(`[sync-server] auth: ${SYNC_TOKEN ? 'token required' : 'disabled'}`);
 });
+
+const stockWorker = setInterval(stockWorkerTick, 1000);
+stockWorker.unref();
