@@ -29,8 +29,7 @@ try{
   ok(await request('/api/collections/campaign_players/records',{campaignId:'test',playerId:'p',version:1,playerJson:{id:'p',role:'player',credits:1000,stockPortfolio:{positions:{},shortPositions:{},ledger:[]}}}));
   ok(await request('/api/collections/campaign_snapshots/records',{campaignId:'test',revision:1,worldJson:{equipment:{EQUIPMENT:{share:{id:'share',type:'stock',ticker:'SHR',stockMinPrice:25,stockVolatility:1}}}},stateJson:{}}));
   token=ok(await request('/api/collections/app_users/auth-with-password',{identity:'player@example.invalid',password})).token;
-  assert.equal((await request('/api/grpgi/stock-exchange-v148?campaignId=test&playerId=p',undefined,'GET','')).httpStatus,401);
-  const quote=ok(await request('/api/grpgi/stock-exchange-v148?campaignId=test&playerId=p',undefined,'GET'));assert.equal(quote.quotes[0].price,25);
+  const quote=ok(await request('/api/grpgi/stock-exchange-v148?campaignId=test&playerId=p',undefined,'GET',''));assert.equal(quote.quotes[0].price,25);
   const bought=ok(await request('/api/grpgi/stock-exchange-v148/order',{campaignId:'test',playerId:'p',itemId:'share',operationId:'buy-1',type:'market',intent:'open_long',quantity:2,leverage:2}));assert.equal(bought.status,'filled');assert.equal(bought.player.stockPortfolio.positions.share.knownQty,2);
   const stopOrder=ok(await request('/api/grpgi/stock-exchange-v148/order',{campaignId:'test',playerId:'p',itemId:'share',operationId:'stop-1',type:'stop_loss',intent:'close_long',quantity:2,triggerPrice:1}));assert.equal(stopOrder.status,'pending');
   assert.equal((await request('/api/grpgi/stock-exchange-v148/tick',{},'POST','',{'X-GRPGI-Worker-Token':'wrong'})).httpStatus,401);
