@@ -19,6 +19,9 @@
     };
     const collectEntity=Configurator.collectEntity.bind(Configurator);
     Configurator.collectEntity=function(type,form,formData=new FormData(form)){
+      if(type==='equipment'&&String(formData.get('type')||'').toLowerCase()==='stock'){
+        formData.set('stockMaxPrice',formData.get('stockMinPrice')||'0');
+      }
       const entity=collectEntity(type,form,formData);
       if(type==='equipment'&&String(entity?.type||'').toLowerCase()==='stock'){
         entity.stockMaxPrice=Number(entity.stockMinPrice||0);
