@@ -4,7 +4,7 @@
   window.__stockExchangeV148=true;
   let exchange=null,timeframe='1m',busy=false;
   const escape=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
-  const credits=value=>typeof formatCredits==='function'?formatCredits(Number(value||0)):Number(value||0).toFixed(2);
+  const credits=value=>Number(value||0).toLocaleString('ru-RU',{minimumFractionDigits:2,maximumFractionDigits:4});
   const selectedId=()=>document.querySelector('#market-items [data-market-v1074].selected')?.dataset.itemId||'';
   const quote=itemId=>exchange?.quotes?.find(row=>row.itemId===itemId)||null;
 
@@ -48,8 +48,8 @@
   function decorate(){
     if(!document.querySelector('#market-items [data-market-tab-v1074="stocks"].active'))return;
     for(const tile of document.querySelectorAll('#market-items [data-market-v1074][data-item-id]')){const live=quote(tile.dataset.itemId);if(!live)continue;const price=tile.querySelector('strong');if(price)price.textContent=credits(live.price);}
-    const itemId=selectedId(),selection=document.querySelector('#market-items .stock-selection-v1074');if(!itemId||!selection||selection.dataset.stockV148===itemId)return;
-    const live=quote(itemId),oldChart=selection.querySelector('.stock-chart-v1074'),oldTrade=selection.querySelector('.market-quantity-v139, :scope > .primary');if(oldChart)oldChart.outerHTML=chart(itemId);else selection.querySelector('.stock-selection-head-v1074')?.insertAdjacentHTML('afterend',chart(itemId));if(oldTrade)oldTrade.remove();selection.insertAdjacentHTML('beforeend',orderPanel(itemId));selection.dataset.stockV148=itemId;
+    const itemId=selectedId(),selection=document.querySelector('#market-items .stock-selection-v1074');if(!itemId||!selection)return;
+    const live=quote(itemId),oldChart=selection.querySelector('.stock-chart-v1074, .stock-ta-v148, .stock-chart-empty-v148'),oldTrade=selection.querySelector('.market-quantity-v139, :scope > .primary');if(oldChart)oldChart.outerHTML=chart(itemId);else selection.querySelector('.stock-selection-head-v1074')?.insertAdjacentHTML('afterend',chart(itemId));if(oldTrade)oldTrade.remove();if(!selection.querySelector('.stock-orders-v148'))selection.insertAdjacentHTML('beforeend',orderPanel(itemId));selection.dataset.stockV148=itemId;
     if(live){const box=selection.querySelector('.stock-selection-quote-v1074');if(box)box.innerHTML=`<span>Серверная цена · ${escape(live.regime||'ожидание')}</span><b>${credits(live.price)}</b><small>Обновление каждую секунду</small><strong>${live.change>=0?'▲':'▼'} ${Math.abs(Number(live.changePercent||0)).toFixed(2)}%</strong>`;}
   }
 
