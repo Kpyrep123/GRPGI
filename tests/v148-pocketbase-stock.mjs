@@ -14,6 +14,8 @@ const right=core.advance(JSON.parse(JSON.stringify(start)),'campaign',world,1_70
 assert.deepEqual(left.quotes,right.quotes);
 assert.match(routes,/\$apis\.requireAuth\(\)/);
 assert.match(routes,/stock-exchange-v148\/tick/);
+assert.equal((routes.match(/require\(__hooks\+'\/grpgi_stock_exchange_v148\.js'\)/g)||[]).length,5);
+assert.doesNotMatch(routes,/^var stockV148=/m);
 assert.match(worker,/X-GRPGI-Worker-Token/);
 assert.match(fs.readFileSync(new URL('../pocketbase/pb_hooks/grpgi_stock_exchange_v148.js',import.meta.url),'utf8'),/runInTransaction/);
 console.log('v148 PocketBase stock hooks: ok');
