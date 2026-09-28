@@ -14,11 +14,13 @@ const right=core.advance(JSON.parse(JSON.stringify(start)),'campaign',world,1_70
 assert.deepEqual(left.quotes,right.quotes);
 const recovered=core.advance({...structuredClone(start),quotes:{share:{...start.quotes.share,price:0.01,previousPrice:0.01}}},'campaign',world,1_700_000_001_000);
 assert.ok(recovered.quotes.share.price>40);
-assert.match(routes,/\$apis\.requireAuth\(\)/);
+assert.doesNotMatch(routes,/\$apis\.requireAuth\(\)/);
 assert.match(routes,/stock-exchange-v148\/tick/);
 assert.equal((routes.match(/require\(__hooks\+'\/grpgi_stock_exchange_v148\.js'\)/g)||[]).length,5);
 assert.doesNotMatch(routes,/^var stockV148=/m);
 assert.match(worker,/X-GRPGI-Worker-Token/);
 assert.match(fs.readFileSync(new URL('../pocketbase/pb_hooks/grpgi_stock_exchange_v148.js',import.meta.url),'utf8'),/runInTransaction/);
 assert.match(fs.readFileSync(new URL('../pocketbase/pb_hooks/grpgi_stock_exchange_v148.js',import.meta.url),'utf8'),/row\.get\('state_json'\)/);
+const nested=core.createState(JSON.stringify({deep:{catalog:[{id:'nested',type:'stock',stockMinPrice:12}]}}),1_700_000_000_000);
+assert.equal(nested.quotes.nested.price,12);
 console.log('v148 PocketBase stock hooks: ok');
