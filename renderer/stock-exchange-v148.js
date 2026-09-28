@@ -8,6 +8,26 @@
   const selectedId=()=>document.querySelector('#market-items [data-market-v1074].selected')?.dataset.itemId||'';
   const quote=itemId=>exchange?.quotes?.find(row=>row.itemId===itemId)||null;
 
+  if(typeof Configurator==='object'&&Configurator.renderEquipmentEditor&&Configurator.collectEntity){
+    const renderEquipment=Configurator.renderEquipmentEditor.bind(Configurator);
+    Configurator.renderEquipmentEditor=function(item){
+      let html=renderEquipment(item);
+      if(String(item?.type||'').toLowerCase()!=='stock')return html;
+      html=html.replace('Минимальная цена акции','Стартовая цена');
+      html=html.replace(/<div class="field"><label>Максимальная цена акции<\/label><input class="input" type="number" min="0" step="1" name="stockMaxPrice" value="[^"]*" \/><\/div>/,`<div class="field"><label>Волатильность</label><input class="input" type="number" min="0.05" max="8" step="0.05" name="stockVolatility" value="${Number(item.stockVolatility??1)}" /></div>`);
+      return html.replace('Тикер и единый диапазон цены действуют на всех планетах. Акции хранятся в портфеле и продаются за 100% котировки.','Стартовая цена берётся из прежней нижней цены. Верхнего предела нет; волатильность регулирует амплитуду движения.');
+    };
+    const collectEntity=Configurator.collectEntity.bind(Configurator);
+    Configurator.collectEntity=function(type,form,formData=new FormData(form)){
+      const entity=collectEntity(type,form,formData);
+      if(type==='equipment'&&String(entity?.type||'').toLowerCase()==='stock'){
+        entity.stockMaxPrice=Number(entity.stockMinPrice||0);
+        entity.stockVolatility=Math.max(.05,Math.min(8,Number(formData.get('stockVolatility')||1)));
+      }
+      return entity;
+    };
+  }
+
   function chart(itemId){
     const rows=(exchange?.candles?.[itemId]||[]).slice(-(timeframe==='1h'?60:timeframe==='5m'?30:20));
     if(rows.length<2)return'<div class="stock-chart-empty-v148">Сервер накапливает историю котировок…</div>';
