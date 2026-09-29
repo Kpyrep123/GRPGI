@@ -108,6 +108,10 @@
       <div class="dock-item" data-label="РЫНОК" id="open-market-direct">
         <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M6 6h15l-1.5 9h-12z"></path><path d="M6 6 5 3H2"></path><circle cx="9" cy="20" r="1"></circle><circle cx="18" cy="20" r="1"></circle></svg>
       </div>
+      <div class="dock-item hidden" data-label="ХАБ" id="open-hub-v153">
+        <div class="dock-icon">⌾</div>
+        <span>ХАБ</span>
+      </div>
       <div class="dock-item" data-label="СООБЩЕНИЯ" id="open-messages">
         <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path><path d="M8 9h8"></path><path d="M8 13h5"></path></svg>
       </div>
@@ -246,7 +250,7 @@
       </div>
       <div id="campaign-studio-content-v1056" class="campaign-studio-content-v1056"></div>
     </div>
-<div id="mod-sync" class="fs-module">
+    <div id="mod-sync" class="fs-module">
       <div class="fs-header">
         <div>
           <div class="mono accent">СИНХРОНИЗАЦИЯ</div>
@@ -255,6 +259,14 @@
         <button class="secondary module-close">ЗАКРЫТЬ</button>
       </div>
       <div id="sync-content"></div>
+    </div>
+
+    <div id="mod-hub-v153" class="fs-module hub-module-v153">
+      <div class="fs-header">
+        <div><div class="mono accent">РЕЖИМ ХАБА</div><div class="subtle" id="hub-subtitle-v153">Интерактивная локация</div></div>
+        <button class="secondary module-close">ЗАКРЫТЬ</button>
+      </div>
+      <div id="hub-content-v153"></div>
     </div>
 
     <div id="toast" class="toast info"></div>
@@ -287,5 +299,7 @@
   <script src="./profile-print-v142.js"></script>
   <script src="./profile-sheet-desktop-v142.js"></script>
   <script src="./stock-exchange-v148.js?v=1.0.150"></script>
+  <link rel="stylesheet" href="./hub-v153.css?v=1.0.153" />
+  <script src="./hub-v153.js?v=1.0.153"></script>
 </body>
 </html>
