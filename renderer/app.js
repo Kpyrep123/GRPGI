@@ -23072,7 +23072,7 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
       <div class="item-specific-v1052 ${isDrone ? '' : 'hidden'}" data-for-item="drone">${unitCombatItemFieldsV105(item, 'Дрон')}</div>
       <div class="item-specific-v1052 ${isArmor ? '' : 'hidden'}" data-for-item="armor"><div class="field"><label>Класс брони</label><input class="input" type="number" min="0" name="armorClass" value="${Number(item.armorClass || 0)}" /></div>${requirementInputsV1052(item)}</div>
       <div class="item-specific-v1052 ${isImplant ? '' : 'hidden'}" data-for-item="implant"><div class="field"><label>Требуемая энергия</label><input class="input" type="number" min="0" name="energyRequired" value="${Number(item.energyRequired || 0)}" /></div>${requirementInputsV1052(item)}<div class="small-note">Установка импланта задаётся отдельно для каждого персонажа в разделе «Персонажи».</div></div>
-      <div class="item-specific-v1052 ${isStock ? '' : 'hidden'}" data-for-item="stock"><div class="cols3"><div class="field"><label>Тикер</label><input class="input" name="ticker" maxlength="12" value="${esc(item.ticker || '')}" placeholder="KTR" /></div><div class="field"><label>Минимальная цена акции</label><input class="input" type="number" min="0" step="1" name="stockMinPrice" value="${Number(item.stockMinPrice ?? 100)}" /></div><div class="field"><label>Максимальная цена акции</label><input class="input" type="number" min="0" step="1" name="stockMaxPrice" value="${Number(item.stockMaxPrice ?? 100)}" /></div></div><div class="small-note">Тикер и единый диапазон цены действуют на всех планетах. Акции хранятся в портфеле и продаются за 100% котировки.</div></div>
+      <div class="item-specific-v1052 ${isStock ? '' : 'hidden'}" data-for-item="stock"><div class="cols3"><div class="field"><label>Тикер</label><input class="input" name="ticker" maxlength="12" value="${esc(item.ticker || '')}" placeholder="KTR" /></div><div class="field"><label>Стартовая цена</label><input class="input" type="number" min="0.01" step="0.01" name="stockMinPrice" value="${Number(item.stockMinPrice ?? 100)}" /></div><div class="field"><label>Волатильность</label><input class="input" type="number" min="0.05" max="3" step="0.05" name="stockVolatility" value="${Number(item.stockVolatility ?? 1)}" /></div></div><div class="small-note">Волатильность: 0,5 — стабильная акция; 1 — стандартная; 2 — высокая; 3 — экстремальная. Параметр меняет амплитуду, но не задаёт минимальную или максимальную цену.</div></div>
       <div class="item-specific-v1052 ${item.type === 'gear' ? '' : 'hidden'}" data-for-item="gear"><div class="small-note">Снаряжение хранится в инвентаре и не имеет урона, КБ, энергопотребления или требований характеристик.</div></div>
       <div class="field"><label>Теги (по одному на строку)</label><textarea class="area inv-editor" name="tags">${esc(listText(item.tags))}</textarea></div>
       <div class="field"><label>Связанные статьи</label>${renderRelatedArticlesEditor(item.relatedArticleIds || [])}</div>
@@ -23225,8 +23225,9 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
         armorClass: itemType === 'armor' ? Number(formData.get('armorClass') || 0) : 0,
         energyRequired: itemType === 'implant' ? Number(formData.get('energyRequired') || 0) : 0,
         ticker: itemType === 'stock' ? String(formData.get('ticker') || '').trim().toUpperCase() : '',
-        stockMinPrice: itemType === 'stock' ? Math.max(0, Math.trunc(Number(formData.get('stockMinPrice') || 0))) : 0,
-        stockMaxPrice: itemType === 'stock' ? Math.max(0, Math.trunc(Number(formData.get('stockMaxPrice') || 0))) : 0,
+        stockMinPrice: itemType === 'stock' ? Math.max(0.01, Number(formData.get('stockMinPrice') || 100)) : 0,
+        stockMaxPrice: itemType === 'stock' ? Math.max(0.01, Number(formData.get('stockMinPrice') || 100)) : 0,
+        stockVolatility: itemType === 'stock' ? clamp(Number(formData.get('stockVolatility') || 1), 0.05, 3) : 0,
         shieldCoverBonus: itemType === 'shield' ? Math.max(0, Number(formData.get('shieldCoverBonusV122') || 0)) : 0,
         shieldDexterityCap: itemType === 'shield' && String(formData.get('shieldDexterityCapV122') || '').trim() !== '' ? Math.max(0, Number(formData.get('shieldDexterityCapV122'))) : null,
         requirements: Object.fromEntries(ABILITIES_V1052.map(row => [row.key, ['weapon','shield','armor','implant'].includes(itemType) ? Number(formData.get(`req_${row.key}`) || 0) : 0]))
@@ -25038,16 +25039,18 @@ window.scrollVisibleMessageThreadToBottomV1070 = scrollVisibleMessageThreadToBot
     const next = normalizeEquipmentBeforeStocksV1074(raw);
     if (next.type === 'stock') {
       const legacy = legacyStockRangeV1074(next.id);
-      const fallback = Math.max(0, Math.trunc(Number(raw.stockPrice ?? raw.basePrice ?? 100) || 0));
-      const min = Math.max(0, Math.trunc(Number(raw.stockMinPrice ?? raw.stockPriceMin ?? legacy?.min ?? fallback) || 0));
-      const max = Math.max(0, Math.trunc(Number(raw.stockMaxPrice ?? raw.stockPriceMax ?? legacy?.max ?? fallback) || 0));
+      const fallback = Math.max(0.01, Number(raw.stockPrice ?? raw.basePrice ?? 100) || 100);
+      const min = Math.max(0.01, Number(raw.stockMinPrice ?? raw.stockPriceMin ?? legacy?.min ?? fallback) || fallback);
+      const max = Math.max(0.01, Number(raw.stockMaxPrice ?? raw.stockPriceMax ?? legacy?.max ?? min) || min);
       next.ticker = stockTickerV1074Raw(raw, next);
-      next.stockMinPrice = Math.min(min, max);
-      next.stockMaxPrice = Math.max(min, max);
+      next.stockMinPrice = min || max || fallback;
+      next.stockMaxPrice = next.stockMinPrice;
+      next.stockVolatility = clamp(Number(raw.stockVolatility ?? raw.volatility ?? 1), 0.05, 3);
     } else {
       delete next.ticker;
       delete next.stockMinPrice;
       delete next.stockMaxPrice;
+      delete next.stockVolatility;
     }
     return next;
   };
