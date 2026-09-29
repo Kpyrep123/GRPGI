@@ -5398,6 +5398,7 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
   }
   const renderGoodsMarketBeforeStocksWebV1074=renderMarket;
   renderMarket=function(){
+    if(String(currentPlanet()?.locationType||'planet').toLowerCase()==='hub')marketTabWebV1073='stocks';
     if(marketTabWebV1073!=='stocks'){renderGoodsMarketBeforeStocksWebV1074();return;}
     const root=$('#screen-market'),player=currentPlayer(),planet=currentPlanet();setTopbar('Торговый терминал','Глобальная биржа и личный портфель');if(!player||!planet){root.innerHTML='<div class="placeholder market-disabled">Терминал заблокирован. У профиля нет текущей планеты.</div>';return;}normalizeStockPlayerWebV1074(player);const rotation=marketRotationWebV1071(planet),serverMap=new Map((stockExchangeWebV148?.quotes||[]).map(row=>[row.itemId,row])),offers=rotation.offers.filter(row=>MarketEngineV1071.isStock(App.data.items.get(row.itemId))).map(row=>({...row,...(serverMap.get(row.itemId)||{})}));rotation.quotes=rotation.quotes.map(row=>({...row,...(serverMap.get(row.itemId)||{})}));if(stockSelectionWebV1074&&!MarketEngineV1071.isStock(App.data.items.get(stockSelectionWebV1074.itemId)))stockSelectionWebV1074=null;
     root.innerHTML=`<div class="market-terminal-v1071 ${rotation.stockMarketEnabled?'':'locked'}"><div class="hero-card market-hero-v1071"><div class="section-head"><div><div class="eyebrow">БИРЖА</div><div class="section-title">${esc(planet.name)}</div><div class="small-note">Игровой день рынка: ${esc(formatDate(rotation.rotationKey))}</div></div><div class="pill">Баланс: ${formatCredits(player.credits||0)}</div></div></div><div class="market-tabs-v1073" role="tablist"><button class="secondary" type="button" data-web-market-tab-v1073="goods">ТОВАРЫ</button><button class="secondary active" type="button" data-web-market-tab-v1073="stocks">АКЦИИ</button></div><div class="market-access-banner-v1071 ${rotation.stockMarketEnabled?'ok':'err'}">${rotation.stockMarketEnabled?'Все акции доступны по единым ценам на всех планетах. Продажа — 100% текущей котировки.':'На этой планете нет фондового рынка. Портфель доступен для просмотра, торговые операции отключены.'}</div><div class="market-dual-grid-v1071 stock-layout-v1074"><section class="market-pane-v1071" data-web-stock-market-drop-v1074><div class="market-pane-head-v1071"><div><span class="eyebrow">КОТИРОВКИ</span><b>Биржевые котировки</b></div><span>${offers.length} поз.</span></div><div class="stock-quotes-grid-v1074">${offers.map(stockOfferTileWebV1074).join('')||'<div class="placeholder">На этой планете фондовый рынок недоступен.</div>'}</div></section><section class="market-pane-v1071">${stockPortfolioMarkupWebV1074(player,rotation)}</section></div>${stockSelectionMarkupWebV1074(player,planet,rotation)}</div>`;
@@ -5986,6 +5987,21 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
     layout:buildInventoryLayoutWebV1067,accepts:slotAcceptsWebV1067,
     commit:(mutator,notice)=>commitPlayerMutation(mutator,notice),details:openProfileItemModalV1060
   });
+  window.GRPGHubBridgeV153 = {
+    currentPlayer,
+    currentPlanet,
+    planets: () => Array.from(App.data.planets.values()),
+    item: id => App.data.items.get(String(id || '')) || null,
+    npc: id => App.data.npcs.get(String(id || '')) || null,
+    article: id => App.data.articles.get(String(id || '')) || null,
+    commit: (mutator, notice = 'Состояние хаба сохранено') => commitPlayerMutation(mutator, notice),
+    openArticle: id => openArticleById(String(id || ''), { directAccess: true }),
+    openStocks: () => { marketTabWebV1073 = 'stocks'; App.ui.screen = 'market'; renderCurrentScreen(); },
+    notify,
+    esc,
+    deep,
+    app: App
+  };
   const renderProfileBeforeSheetV142 = renderProfile;
   renderProfile = function() {
     const host=$('#screen-profile'),previous=window.GRPGProfileSheetV142?.captureInventory(host),scroll=document.scrollingElement?.scrollTop || 0;
