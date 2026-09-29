@@ -1,0 +1,11 @@
+# Place this block before the general PocketBase reverse_proxy.
+@grpgi_market path /api/grpgi/stock-exchange-v148*
+handle @grpgi_market {
+    reverse_proxy 127.0.0.1:8091
+}
+
+# Existing PocketBase route remains after it:
+# handle {
+#     reverse_proxy 127.0.0.1:8090
+# }
+
