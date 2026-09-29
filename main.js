@@ -3798,7 +3798,7 @@ ipcMain.handle('stock-exchange:get', async (_event, payload = {}) => {
     const config = await loadSyncConfig();
     if (!config.enabled) return { ok: false, status: 'unavailable', message: 'Для биржи требуется сервер синхронизации' };
     const request = isPocketBaseSyncConfig(config) ? pocketbaseFetch : selfhostFetch;
-    return await request(config, `/api/grpgi/stock-exchange-v148?campaignId=${encodeURIComponent(config.campaignId)}&playerId=${encodeURIComponent(payload.playerId || '')}`);
+    return await request(config, `/api/grpgi/stock-exchange-v148?campaignId=${encodeURIComponent(config.campaignId)}&playerId=${encodeURIComponent(payload.playerId || '')}&itemId=${encodeURIComponent(payload.itemId || '')}`);
   } catch (error) { return { ok: false, status: 'error', httpStatus: Number(error.status || 0), message: error.message }; }
 });
 

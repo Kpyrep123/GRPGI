@@ -1,0 +1,15 @@
+{
+  "name": "grpgi-market-service",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Isolated server-authoritative stock exchange for GRPGI",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "check": "node --check server.js"
+  },
+  "engines": {
+    "node": ">=22.5 <25"
+  }
+}
+
