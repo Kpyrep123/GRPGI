@@ -1,0 +1,27 @@
+[Unit]
+Description=GRPGI isolated market service
+After=network-online.target pocketbase.service
+Wants=network-online.target
+RequiresMountsFor=/var/lib/grpgi-market
+
+[Service]
+Type=simple
+User=pocketbase
+Group=pocketbase
+WorkingDirectory=/opt/grpgi-market-service
+EnvironmentFile=/etc/grpgi-market.env
+ExecStart=/usr/bin/node /opt/grpgi-market-service/server.js
+Restart=on-failure
+RestartSec=5
+CPUQuota=30%
+MemoryMax=256M
+TasksMax=32
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/grpgi-market /opt/pocketbase/pb_data
+
+[Install]
+WantedBy=multi-user.target
+
