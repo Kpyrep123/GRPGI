@@ -132,9 +132,9 @@
     Configurator.collectEntity=function(type,form,data){const current=this.getSelectedEntity(),entity=oldCollect(type,form,data);if(type==='planets'&&entity){entity.locationType=String(data.get('locationTypeV153')||current?.locationType||'planet');entity.hub=copy(current?.hub||asHub(current));}return entity;};
     Configurator.render=function(){const result=oldRenderAll();document.getElementById('hub-builder-open-v153')?.addEventListener('click',()=>openBuilder(this.getSelectedEntity()));return result;};
   }
-  let builder=null;
-  function closeBuilder(){document.getElementById('hub-builder-v153')?.remove();document.body.classList.remove('hub-builder-open-v153');if(builder)App.uiHoverLock=Boolean(builder.previousHoverLock);builder=null;}
-  function openBuilder(planet){if(!planet)return;builder={planet,hub:asHub(planet),mapId:'',selectedId:'',view:{scale:1,x:0,y:0},previousHoverLock:Boolean(App.uiHoverLock)};builder.mapId=builder.hub.defaultMapId||builder.hub.maps[0].id;App.uiHoverLock=true;document.body.classList.add('hub-builder-open-v153');drawBuilder();}
+  let builder=null,builderResizeObserver=null;
+  function closeBuilder(){builderResizeObserver?.disconnect();builderResizeObserver=null;document.getElementById('hub-builder-v153')?.remove();document.body.classList.remove('hub-builder-open-v153');if(builder)App.uiHoverLock=Boolean(builder.previousHoverLock);builder=null;}
+  function openBuilder(planet){if(!planet)return;builder={planet,hub:asHub(planet),mapId:'',selectedId:'',view:{scale:1,x:0,y:0,fit:true},previousHoverLock:Boolean(App.uiHoverLock)};builder.mapId=builder.hub.defaultMapId||builder.hub.maps[0].id;App.uiHoverLock=true;document.body.classList.add('hub-builder-open-v153');drawBuilder();}
   const PREFABS155=[
     {id:'decor',kind:'asset',type:'decor',name:'Ассет',width:100,height:80},
     {id:'door',kind:'asset',type:'door',name:'Дверь',width:100,height:30,blockMovement:true},
@@ -180,7 +180,7 @@
       '<div class="hub-actions-v153"><button class="secondary" type="button" data-duplicate>ДУБЛИКАТ</button><button class="secondary" type="button" data-template>В ШАБЛОНЫ</button><button class="danger" type="button" data-delete>УДАЛИТЬ</button></div></form>';
   }
   function drawBuilder(){
-    if(!builder)return;if(!builder.history)prepare155();document.getElementById('hub-builder-v153')?.remove();
+    if(!builder)return;builderResizeObserver?.disconnect();builderResizeObserver=null;if(!builder.history)prepare155();document.getElementById('hub-builder-v153')?.remove();
     const map=map155(),o=map.objects.find(o=>o.id===builder.selectedId),node=document.createElement('div');
     node.id='hub-builder-v153';node.className='hub-builder-v153';node.tabIndex=-1;
     const palette=[...PREFABS155,...Object.values(NPCS).map(n=>({id:'npc:'+n.id,kind:'unit',type:'npc',npcId:n.id,name:n.name,image:n.image,width:48,height:48})),...builder.hub.prefabs].filter(p=>kind155(p)===builder.tab&&(!builder.search||p.name.toLowerCase().includes(builder.search.toLowerCase())));
@@ -206,15 +206,19 @@
     node.querySelector('[data-close]').onclick=closeBuilder;
     node.querySelector('[data-save]').onclick=async()=>{builder.hub.maps.forEach(syncSpawns155);builder.planet.locationType='hub';builder.planet.hub=copy(builder.hub);await Configurator.persistAll('Хаб сохранён');closeBuilder();Configurator.render();};
     node.querySelector('[data-undo]').onclick=()=>undo155();node.querySelector('[data-redo]').onclick=()=>undo155(true);
-    node.querySelectorAll('[data-map]').forEach(b=>b.onclick=()=>{builder.mapId=b.dataset.map;builder.selectedId='';builder.view={scale:1,x:0,y:0};drawBuilder();});
-    node.querySelector('[data-add-map]').onclick=()=>{checkpoint155();const id=uid('map');builder.hub.maps.push({id,name:'Новая карта',width:1200,height:720,objects:[],spawnPoints:[]});builder.mapId=id;builder.selectedId='';drawBuilder();};
-    node.querySelector('[data-copy-map]').onclick=()=>{checkpoint155();const c=copy(map),ids=new Map();c.id=uid('map');c.name+=' — копия';c.objects.forEach(o=>{const old=o.id;o.id=uid(kind155(o));ids.set(old,o.id);});c.objects.forEach(o=>{if(o.targetMapId===map.id){o.targetMapId=c.id;o.targetSpawnId=ids.get(o.targetSpawnId)||o.targetSpawnId;}});syncSpawns155(c);builder.hub.maps.push(c);builder.mapId=c.id;builder.selectedId='';drawBuilder();};
+    node.querySelectorAll('[data-map]').forEach(b=>b.onclick=()=>{builder.mapId=b.dataset.map;builder.selectedId='';builder.view={scale:1,x:0,y:0,fit:true};drawBuilder();});
+    node.querySelector('[data-add-map]').onclick=()=>{checkpoint155();const id=uid('map');builder.hub.maps.push({id,name:'Новая карта',width:1200,height:720,objects:[],spawnPoints:[]});builder.mapId=id;builder.selectedId='';builder.view={scale:1,x:0,y:0,fit:true};drawBuilder();};
+    node.querySelector('[data-copy-map]').onclick=()=>{checkpoint155();const c=copy(map),ids=new Map();c.id=uid('map');c.name+=' — копия';c.objects.forEach(o=>{const old=o.id;o.id=uid(kind155(o));ids.set(old,o.id);});c.objects.forEach(o=>{if(o.targetMapId===map.id){o.targetMapId=c.id;o.targetSpawnId=ids.get(o.targetSpawnId)||o.targetSpawnId;}});syncSpawns155(c);builder.hub.maps.push(c);builder.mapId=c.id;builder.selectedId='';builder.view={scale:1,x:0,y:0,fit:true};drawBuilder();};
     node.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{builder.tab=b.dataset.tab;drawBuilder();});
     node.querySelector('[data-search]').onchange=e=>{builder.search=e.target.value;drawBuilder();};
     node.querySelectorAll('[data-tool]').forEach(b=>b.onclick=()=>{builder.tool=b.dataset.tool;drawBuilder();});
-    const zoom=v=>{builder.view.scale=Math.max(.1,Math.min(5,v));view();};
+    const zoom=v=>{builder.view.fit=false;builder.view.scale=Math.max(.1,Math.min(5,v));view();};
     node.querySelector('[data-zoom-out]').onclick=()=>zoom(builder.view.scale/1.2);node.querySelector('[data-zoom-in]').onclick=()=>zoom(builder.view.scale*1.2);
-    node.querySelector('[data-reset-view]').onclick=()=>{builder.view={scale:Math.min(1,viewport.clientWidth/map.width,viewport.clientHeight/map.height)*.9,x:0,y:0};view();};
+    const fit=()=>{builder.view={scale:Math.min(viewport.clientWidth/map.width,viewport.clientHeight/map.height)*.9,x:0,y:0,fit:true};view();};
+    node.querySelector('[data-reset-view]').onclick=fit;
+    if(builder.view.fit)fit();
+    builderResizeObserver=new ResizeObserver(()=>{if(builder?.view.fit&&node.isConnected)fit();});
+    builderResizeObserver.observe(viewport);
     viewport.addEventListener('wheel',e=>{e.preventDefault();zoom(builder.view.scale*(e.deltaY<0?1.12:1/1.12));},{passive:false});
     node.querySelectorAll('[data-prefab]').forEach(card=>{card.ondragstart=e=>{e.dataTransfer.setData('application/x-grpgi-hub-prefab',card.dataset.prefab);e.dataTransfer.effectAllowed='copy';};});
     viewport.ondragover=e=>{e.preventDefault();e.dataTransfer.dropEffect='copy';};
@@ -224,7 +228,7 @@
       const transform=e.target.closest('[data-transform]')?.dataset.transform;const pan=builder.tool==='pan'||e.button===1,measure=builder.tool==='measure';e.preventDefault();viewport.setPointerCapture(e.pointerId);
       if(ob&&!pan&&!measure){checkpoint155();if(e.shiftKey){ob={...copy(ob),id:uid(kind155(ob))};map.objects.push(ob);const clone=el.cloneNode(true);clone.dataset.hubObjectV153=ob.id;el.parentElement.append(clone);}builder.selectedId=ob.id;}
       const origin=ob?{x:ob.x,y:ob.y,width:ob.width,height:ob.height,rotation:ob.rotation||0}:null;
-      const move=ev=>{if(pan){builder.view.x=initial.panX+ev.clientX-initial.x;builder.view.y=initial.panY+ev.clientY-initial.y;view();}else if(measure){const q=point(ev);node.querySelector('[data-measure]').textContent=Math.round(Math.hypot(q.x-p.x,q.y-p.y))+' px';}else if(ob&&!ob.locked){const q=point(ev);if(transform==='size'){ob.width=Math.max(12,Math.round(origin.width+q.x-p.x));ob.height=Math.max(12,Math.round(origin.height+q.y-p.y));}else if(transform==='rotate'){ob.rotation=Math.round(origin.rotation+(ev.clientX-initial.x));if(ev.shiftKey)ob.rotation=Math.round(ob.rotation/15)*15;}else{ob.x=Math.round(origin.x+q.x-p.x);ob.y=Math.round(origin.y+q.y-p.y);}const target=stage.querySelector('[data-hub-object-v153="'+ob.id+'"]');if(target){target.style.left=ob.x+'px';target.style.top=ob.y+'px';target.style.width=ob.width+'px';target.style.height=ob.height+'px';target.style.transform='rotate('+(ob.rotation||0)+'deg)';}}};
+      const move=ev=>{if(pan){builder.view.fit=false;builder.view.x=initial.panX+ev.clientX-initial.x;builder.view.y=initial.panY+ev.clientY-initial.y;view();}else if(measure){const q=point(ev);node.querySelector('[data-measure]').textContent=Math.round(Math.hypot(q.x-p.x,q.y-p.y))+' px';}else if(ob&&!ob.locked){const q=point(ev);if(transform==='size'){ob.width=Math.max(12,Math.round(origin.width+q.x-p.x));ob.height=Math.max(12,Math.round(origin.height+q.y-p.y));}else if(transform==='rotate'){ob.rotation=Math.round(origin.rotation+(ev.clientX-initial.x));if(ev.shiftKey)ob.rotation=Math.round(ob.rotation/15)*15;}else{ob.x=Math.round(origin.x+q.x-p.x);ob.y=Math.round(origin.y+q.y-p.y);}const target=stage.querySelector('[data-hub-object-v153="'+ob.id+'"]');if(target){target.style.left=ob.x+'px';target.style.top=ob.y+'px';target.style.width=ob.width+'px';target.style.height=ob.height+'px';target.style.transform='rotate('+(ob.rotation||0)+'deg)';}}};
       const up=()=>{viewport.removeEventListener('pointermove',move);viewport.releasePointerCapture(e.pointerId);if(!pan&&!measure){if(!ob)builder.selectedId='';redraw();}};
       viewport.addEventListener('pointermove',move);viewport.addEventListener('pointerup',up,{once:true});
     };
