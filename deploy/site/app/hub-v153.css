@@ -4,3 +4,19 @@
 .hub-door-open-v156{opacity:.45;border-style:dashed!important}
 .hub-modal-v153{z-index:2147483646}
 .hub-map-v153{background-size:100% 100%;background-repeat:no-repeat}
+/* Shared hub hex terrain and per-player visibility. */
+.hub-map-v153{min-width:0;min-height:0;isolation:isolate}
+.hub-hex-grid-v157,.hub-walls-v157,.hub-fog-v157{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.hub-hex-grid-v157{z-index:0;fill:none;stroke:rgba(230,189,124,.16);stroke-width:1}
+.hub-walls-v157{z-index:95;fill:none;stroke:#d6a65b;stroke-linecap:round;stroke-linejoin:round;overflow:visible}
+.hub-walls-editor-v157 polyline{pointer-events:stroke;cursor:move;stroke:#e4bb75}
+.hub-walls-editor-v157 polyline.selected{stroke:#fff1cc;filter:drop-shadow(0 0 4px #d6a65b)}
+.hub-wall-preview-v157{stroke:#fff;stroke-dasharray:10 6;pointer-events:none!important}
+.hub-fog-v157{z-index:200}
+.hub-player-v153{z-index:250;box-sizing:border-box;overflow:hidden;width:40px;height:40px;transition:left .26s ease-in-out,top .26s ease-in-out;background:#392e1f}
+.hub-player-v153 img{width:100%;height:100%;object-fit:cover;border-radius:50%}
+.hub-player-v153 span{color:#f5dfb8}
+.hub-object-v153[hidden]{display:none!important}
+.hub-walking-v157{cursor:progress}.hub-walking-v157 [data-object]{pointer-events:none}
+.hub-fog-toggle-v157{display:flex;align-items:center;gap:4px;font-size:11px;white-space:nowrap}
+.hub-builder-toolbar-v153{overflow-x:auto;overflow-y:hidden;white-space:nowrap}.hub-builder-toolbar-v153>.row{flex-shrink:0}
