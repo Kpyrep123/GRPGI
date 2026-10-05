@@ -5990,6 +5990,7 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
   window.GRPGHubBridgeV153 = {
     currentPlayer,
     currentPlanet,
+    canAdd: (p,id,n) => canAddInventoryItemWebV1067(p,id,n),
     planets: () => Array.from(App.data.planets.values()),
     item: id => App.data.items.get(String(id || '')) || null,
     npc: id => App.data.npcs.get(String(id || '')) || null,

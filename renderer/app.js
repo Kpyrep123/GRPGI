@@ -6013,12 +6013,13 @@ const Configurator = {
     throw new Error(`Unknown type ${type}`);
   },
   async persistAll(message, options = {}) {
+    const worldSections=options.worldSections || [this.selectedType];
     const intentId=options?.playerSync?.playerId;
     const playerIntent=intentId?deep(App.state.users[intentId]||PLAYER_TEMPLATES[intentId]||{}):null;
     const playerIntentBase=intentId?deep(PlayerSync._editorBaseV135?.get(intentId)||PlayerSync.projectedPlayerV135(intentId)):null;
     if (!window.electronAPI?.saveWorldData) {
       Toast.show('Сохранение файлов мира доступно только в Electron', 'err');
-      return;
+      return {ok:false,localSaved:false,message:'Запись мира недоступна'};
     }
 
     const snapshot = buildWorldSnapshot();
@@ -6039,9 +6040,10 @@ const Configurator = {
     Debug.log('PERSIST_ALL_RESULT', res);
     if (!res?.ok || !res.world) {
       Toast.show(`Ошибка записи мира: ${res?.message || 'unknown'}`, 'err');
-      return;
+      return {ok:false,localSaved:false,message:res?.message||'Ошибка записи мира'};
     }
 
+    try {
     worldData = res.world;
     applyWorldData(res.world);
     let snapshotSyncRes = null;
@@ -6069,7 +6071,7 @@ const Configurator = {
     } else {
       Sync.markLocalDirty('WORLD_CONFIG_PENDING_SYNC');
       await Persistence.save(App.state);
-      snapshotSyncRes = await Sync.pushCurrentSnapshot('world-config-save', { silent: true, worldSections: [this.selectedType] });
+      snapshotSyncRes = await Sync.pushCurrentSnapshot('world-config-save', { silent: true, worldSections });
       App.state = await Persistence.load();
     }
 
@@ -6083,6 +6085,11 @@ const Configurator = {
     if (playerSyncFailed) Toast.show(`Локально сохранено, но профильная запись не обновлена в облаке: ${playerSyncRes?.message || 'unknown error'}`, 'err');
     else if (snapshotSyncRes?.ok || snapshotSyncRes?.status === 'disabled') Toast.show(`${message}${snapshotSyncRes?.cloudBackupCreated ? '. Предыдущая облачная ревизия сохранена в резервную копию' : ''}`, 'ok');
     else Toast.show(`Локально сохранено, но облако не обновлено: ${snapshotSyncRes?.message || 'unknown error'}`, 'err');
+    return {ok:!playerSyncFailed && Boolean(snapshotSyncRes?.ok || snapshotSyncRes?.status==='disabled'),localSaved:true,sync:snapshotSyncRes};
+    } catch(error) {
+      Toast.show('Локально сохранено, но синхронизация не завершена: '+error.message,'err');
+      return {ok:false,localSaved:true,message:error.message};
+    }
   },
   async resetWorldDefaults() {
     if (!window.electronAPI?.resetWorldData) {
