@@ -8,5 +8,5 @@
   });
   document.getElementById('nav-hub-v153')?.addEventListener('click',runtime.show);
   const syncNav=()=>document.getElementById('nav-hub-v153')?.classList.toggle('hidden',!window.GRPGHubCoreV156.isHub(B.currentPlanet()));syncNav();setInterval(syncNav,3000);
-  window.GRPGHubV153={show:runtime.show,isHub:window.GRPGHubCoreV156.isHub,version:156};
+  window.GRPGHubV153={show:runtime.show,isHub:window.GRPGHubCoreV156.isHub,version:157};
 })();
