@@ -1,0 +1,1 @@
+(function(){'use strict';window.GRPGNewsWebV159=window.GRPGNewsUIV159.create(window.GRPGNewsBridgeV159);if(document.getElementById('screen-news')?.classList.contains('active'))window.GRPGNewsWebV159.show();})();
