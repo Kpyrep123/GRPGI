@@ -20,7 +20,7 @@ window.GRPGNewsUIV159={create(B){let identity='',busy=false,draft=null,host;
   form.onsubmit=async event=>{event.preventDefault();if(busy)return;const owner=B.current()?.id,campaign=B.campaign(),files=Array.from(fileInput.files),text=body.value.trim();
    try{if(!text&&!files.length)throw Error('Добавьте текст или изображение');if(files.length>4)throw Error('Можно добавить до 4 изображений');for(const f of files)if(!/^image\/(png|jpeg|webp|gif)$/.test(f.type)||f.size>8*1024*1024)throw Error('PNG, JPEG, WebP или GIF, до 8 МБ на изображение');
     busy=true;form.querySelectorAll('input,textarea,button').forEach(n=>n.disabled=true);status.textContent='Публикация сохраняется…';
-    draft ||= {id:'post-'+crypto.randomUUID(),createdAt:new Date().toISOString(),publishedAt:B.date(),images:[]};
+    const createdAt=new Date().toISOString();draft ||= {id:'post-'+crypto.randomUUID(),createdAt,publishedAt:C.loreDate(createdAt),images:[]};
     for(let i=draft.images.length;i<files.length;i++)draft.images.push(await B.upload(files[i],draft.id,i));
     if(context()!==owner+':'+campaign)throw Error('Персонаж или кампания изменились');
     const p=C.post({...draft,body:text,campaignId:campaign});await B.commit(player=>{if(player.id!==owner)throw Error('Персонаж изменился');C.put(player,p);},'Публикация сохранена',owner);

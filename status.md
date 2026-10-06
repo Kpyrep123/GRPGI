@@ -3,6 +3,19 @@
 Обновлено: 2026-10-06. Версия клиента в `package.json`: **1.0.155**. Модули Хаба используют общие правила/runtime v156 и пространственную модель v157; версия установщика не менялась.
 
 
+
+## GalaGram dates and Hub navigation (2026-10-06)
+
+Base: main `ef6e5fa` after PR #35; branch `fix/galagram-year-hub-navigation`.
+
+- New player publications use the actual creation timestamp with only the year replaced by **3616**. Month, day, time, and timezone suffix are preserved; campaign market dates no longer determine publication dates. Previously saved player posts display and sort with year 3616 without rewriting their stored profile data. New World Config News forms also default to 3616; existing world-news dates remain intact.
+- Hub navigation, transitions, and dialogue progress save without success notifications. Error notifications remain, and purchases still confirm success. Profile synchronization and per-step persistence are unchanged.
+- Player token animation is 140 ms instead of 260 ms. Each animation runs concurrently with that step's save rather than starting after the save. The next step starts only when both finish. Fog and visible objects update only after the save and animation complete; a failed save rolls the token back to the last confirmed position and stops the route. Network latency still limits movement speed.
+- Hovering over an empty map hex draws the planned hex route and destination. Inaccessible destinations have a red outline. Preview uses the same wall/door-aware pathfinder as movement, coalesces pointer events to animation frames, and avoids recalculating within the same hex. Leaving the map clears preview; movement shows its remaining route. Wall segments are prepared once per path search rather than once per expanded edge.
+- Desktop and web use matching shared runtime, spatial, News core and composer files. Relevant script/CSS cache keys updated; installer version unchanged.
+- Passed: `node tests/hub-navigation-v160.browser.mjs` for desktop/web route previews, blocked destinations, pointer leave, quiet dialogue/navigation, overlapping saves/animation, next-step timing, confirmed fog and failed-save rollback. Also passed the existing Hub browser suite (editor/graph, saves, dialogue/trading, movement/fog and leaving the hub), Hub core/spatial tests, GalaGram core/browser suites (including year-only timestamps, legacy ordering and retries), skill-chain regression, syntax checks and `git diff --check`. Route screenshots inspected.
+- Native Electron, live PocketBase and multi-device behavior were not exercised. No server/schema changes, deployment, or installer release.
+
 ## GalaGram: shared News feed (2026-10-06)
 
 Base: main `2bf3d9b`; branch `feat/galagram-feed`.
