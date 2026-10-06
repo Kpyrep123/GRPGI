@@ -19281,6 +19281,19 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
     return __configInsertEntityV50(type, entity);
   };
 
+  const __configReplaceEntityV50 = Configurator.replaceEntity.bind(Configurator);
+  Configurator.replaceEntity = function(type, oldId, entity) {
+    if (type !== 'skills') return __configReplaceEntityV50(type, oldId, entity);
+    // Editing is an upsert. removeEntity is reserved for explicit deletion: it
+    // removes prerequisites and granted skills, even if the ID is unchanged.
+    if (oldId !== entity.id) {
+      if (SKILLS_V50[entity.id]) throw new Error('Навык с таким ID уже существует');
+      this.remapReferences(type, oldId, entity.id);
+    }
+    this.insertEntity(type, entity);
+    this.selectedId = entity.id;
+  };
+
   const __configRemoveEntityV50 = Configurator.removeEntity.bind(Configurator);
   Configurator.removeEntity = function(type, id) {
     if (type === 'factions') { delete FACTIONS_V50[id]; for (const player of Object.values(PLAYER_TEMPLATES || {})) { if (player.social?.reputation) player.social.reputation = normalizeReputationRowsV50(player.social.reputation).filter(row => row.orgId !== id); } syncFactionsWorldDataV50(); return; }
@@ -19323,6 +19336,7 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
         requiredAbilities: ABILITY_MODEL_V50.map(item => ({ key: item.key, value: normalizeAbilityValueV53(formData.get(`requiredAbility_${item.key}`) || 0, 0) })).filter(row => row.value > 0),
         requiredSkillIds: getCheckedValues(formEl, 'requiredSkillIds'),
         specializationIncreases: getCheckedValues(formEl, 'specializationIncreaseIds'),
+        treePos: normalizeSkillTreePositionSafeV64(SKILLS_V50[this.selectedId]?.treePos),
         color: String(formData.get('color') || '#7df9ff').trim() || '#7df9ff',
         description: String(formData.get('description') || '').trim(),
         image,
@@ -19380,8 +19394,9 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
       return;
     }
     if (type === 'skills') {
-      if (oldId !== newId && SKILLS_V50[oldId]) { SKILLS_V50[newId] = { ...SKILLS_V50[oldId], id: newId }; delete SKILLS_V50[oldId]; }
-      for (const player of Object.values(PLAYER_TEMPLATES || {})) {
+      if (oldId === newId) return;
+      if (SKILLS_V50[oldId]) { SKILLS_V50[newId] = { ...SKILLS_V50[oldId], id: newId }; delete SKILLS_V50[oldId]; }
+      for (const player of new Set([...Object.values(PLAYER_TEMPLATES || {}), ...Object.values(App.state?.users || {})])) {
         player.skills = normalizeSkillIdArrayV50(player.skills).map(id => id === oldId ? newId : id);
         if (player.specializations && Object.prototype.hasOwnProperty.call(player.specializations, oldId)) {
           player.specializations[newId] = player.specializations[oldId];
