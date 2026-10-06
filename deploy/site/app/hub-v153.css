@@ -20,3 +20,6 @@
 .hub-walking-v157{cursor:progress}.hub-walking-v157 [data-object]{pointer-events:none}
 .hub-fog-toggle-v157{display:flex;align-items:center;gap:4px;font-size:11px;white-space:nowrap}
 .hub-builder-toolbar-v153{overflow-x:auto;overflow-y:hidden;white-space:nowrap}.hub-builder-toolbar-v153>.row{flex-shrink:0}
+
+/* Route preview stays above fog; objects and terrain remain subject to normal visibility. */
+.hub-route-v160{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:220;fill:rgba(228,187,117,.18);stroke:#f0c47c;stroke-width:2}.hub-route-v160 polyline{fill:none;stroke-width:3;stroke-dasharray:9 6;stroke-linecap:round;stroke-linejoin:round}.hub-route-v160 circle{fill:#f0c47c;stroke:#392e1f;stroke-width:1}.hub-route-v160 .hub-route-blocked-v160{fill:rgba(210,90,65,.18);stroke:#d25a41}.hub-player-v153{transition:left .14s linear,top .14s linear}
