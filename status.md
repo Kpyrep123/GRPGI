@@ -2,6 +2,18 @@
 
 Обновлено: 2026-10-06. Версия клиента в `package.json`: **1.0.155**. Модули Хаба используют общие правила/runtime v156 и пространственную модель v157; версия установщика не менялась.
 
+
+## GalaGram: shared News feed (2026-10-06)
+
+Base: main `2bf3d9b`; branch `feat/galagram-feed`.
+
+- Desktop News is now a GalaGram feed with player posts, profile author names/avatars, plain text, up to four image attachments (PNG/JPEG/WebP/GIF, 8 MB each), previews, and deletion of the current character's posts. Existing News titles, subtitles, rich bodies, images, visibility, unread markers, and stock ticker remain supported.
+- World Config News keeps the existing `NEWS` / `NEWS_LIST` structure and adds an author selector: world news/DM, an existing NPC, or an organization whose name is typed manually. Existing records require no migration.
+- Player posts use the same article fields in a `newsPosts` map in each synchronized profile, scoped to the selected story campaign. Publication patches only this map, avoiding world snapshot writes. Deletion uses tombstones; author names come from the owner profile. Feed ordering uses in-world publication dates with creation timestamps as tie breakers.
+- Web has a separate GalaGram navigation tab, including restored navigation/history. Shared core/UI files match desktop. Images upload through the existing campaign_assets collection and desktop media bridge; interrupted uploads recover by assetPath. Failed publication retains the composer, uploaded image URLs, and stable post ID for retry. Refresh does not clear drafts.
+- Passed: `node tests/galagram-v159.cjs` (legacy records, visibility/campaign scope, ownership, organization/NPC World Config, desktop profile-only patch/rollback, web PocketBase asset contract and recovery); `node tests/galagram-v159.browser.mjs` (Chromium composer, images, save/upload failures and retries, refresh, deletion, author labels, escaped player text, mobile width); existing skill-chain and fauna/shield World Config regressions; JS syntax and git diff whitespace checks. Browser test accepts PLAYWRIGHT_CORE_PATH and CHROMIUM_PATH overrides. Installer version unchanged; web app cache key updated.
+- Native Electron, live PocketBase permissions/uploads, and two-device synchronization were not exercised. No deployment or merge performed. Android's copied mobile/www bundle is outside this requested web/desktop change.
+
 ## World Config: редактирование навыка сохраняет ветку (2026-10-06)
 
 Основа: `main`, `469190f` после слияния PR #33. Ветка исправления: `fix/skill-chain-edit`.

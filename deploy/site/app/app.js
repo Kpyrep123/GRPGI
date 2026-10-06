@@ -3545,6 +3545,7 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
     if (App.ui.screen === 'archive') renderArchive();
     if (App.ui.screen === 'market') renderMarket();
     if (App.ui.screen === 'chat') renderChat();
+    if (App.ui.screen === 'news') { setTopbar('GalaGram', 'Лента кампании'); window.GRPGNewsWebV159?.show(); }
     if (App.ui.screen === 'combat' && !RUNTIME.hideCombat) renderCombat();
     if (App.ui.screen === 'profile') renderProfile();
   }
@@ -5867,7 +5868,7 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
 
   /* v1.0.149 — persistent web navigation and mobile back handling */
   const WEB_NAV_KEY_V149='grpg.web.navigation.v149';
-  const WEB_SCREENS_V149=new Set(['home','archive','market','chat','combat','profile']);
+  const WEB_SCREENS_V149=new Set(['home','archive','market','chat','combat','profile','news']);
   let webNavPopV149=false,webNavScreenV149='',webNavScrollTimerV149=0;
   function webNavSnapshotV149(){
     return{
@@ -5987,6 +5988,20 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
     layout:buildInventoryLayoutWebV1067,accepts:slotAcceptsWebV1067,
     commit:(mutator,notice)=>commitPlayerMutation(mutator,notice),details:openProfileItemModalV1060
   });
+  window.GRPGNewsBridgeV159 = {
+    root:()=>document.getElementById('screen-news'),current:currentPlayer,campaign:()=>String(App.session?.campaignId||App.config?.campaignId||'main'),
+    world:()=>App.data.newsList||[],players:()=>Array.from(App.data.players.values()),visible:p=>visibleForPlayer(p,currentPlayer()?.id),npc:id=>App.data.npcs.get(id),rich:s=>normalizeRichHtml(s),
+    date:()=>App.data.campaigns.get(App.session?.campaignId||App.config?.campaignId)?.marketDate||new Date().toISOString(),notify:s=>notify(s,'err'),
+    commit:async(mutator,notice,id)=>{if(currentPlayer()?.id!==id)throw Error('Персонаж изменился');await commitPlayerMutation(mutator,notice);},
+    upload:async(file,id,index)=>{
+      const config={...App.config},collection=pbCollection(config,'assets'),assetPath=`${config.campaignId}/news/${id}/${index}-${file.name.replace(/[^a-zA-Z0-9._-]/g,'_')}`;
+      const find=()=>pbFetch(config,`/api/collections/${encodeURIComponent(collection)}/records`,{query:{filter:pbAnd(pbEq('campaignId',config.campaignId),pbEq('assetPath',assetPath)),perPage:1}}).then(r=>r.items?.[0]);
+      let record=await find();if(!record){const form=new FormData();Object.entries({campaignId:config.campaignId,section:'news',entityId:id,assetPath,clientUpdatedAt:new Date().toISOString()}).forEach(([k,v])=>form.append(k,v));form.append('file',file);
+        try{record=await pbFetch(config,`/api/collections/${encodeURIComponent(collection)}/records`,{method:'POST',body:form});}catch(err){record=await find().catch(()=>null);if(!record)throw err;}
+      }
+      const filename=Array.isArray(record.file)?record.file[0]:record.file;if(!filename)throw Error('Облако не вернуло изображение');return `${pbBaseUrl(config)}/api/files/${encodeURIComponent(collection)}/${encodeURIComponent(record.id)}/${encodeURIComponent(filename)}`;
+    }
+  };
   window.GRPGHubBridgeV153 = {
     currentPlayer,
     currentPlanet,
