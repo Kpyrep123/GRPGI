@@ -10,7 +10,7 @@
     const hub = clone(planet?.hub || {});
     if (!hub.maps?.length) hub.maps = [{id:'main', name:'Основная карта', width:1200, height:720, objects:[], spawnPoints:[{id:'default', name:'Вход', x:120, y:360}]}];
     hub.maps.forEach(m => { m.objects ||= []; m.spawnPoints ||= []; m.width = Math.max(640, Number(m.width) || 1200); m.height = Math.max(420, Number(m.height) || 720); });
-    hub.dialogs ||= []; hub.dialogs.forEach(d=>{d.nodes ||= [];d.startNodeId ||= d.nodes[0]?.id;d.nodes.forEach(n=>n.choices ||= []);}); hub.prefabs ||= []; hub.flags ||= [];
+    hub.dialogs ||= []; hub.dialogs.forEach(d=>{d.nodes ||= [];d.startNodeId ||= d.nodes[0]?.id;d.nodes.forEach(n=>{n.choices ||= [];n.terminal ??= !n.choices.length;});}); hub.prefabs ||= []; hub.flags ||= [];
     hub.defaultMapId ||= hub.maps[0].id;
     return hub;
   }
@@ -21,7 +21,7 @@
     return {...old, planetId:planet.id, mapId:map.id, spawnId:spawn.id || '',
       x:Math.max(0, Math.min(map.width, Number.isFinite(old.x) ? old.x : spawn.x)),
       y:Math.max(0, Math.min(map.height, Number.isFinite(old.y) ? old.y : spawn.y)),
-      flags:old.flags || {}, completedDialogs:old.completedDialogs || {}, completedNodes:old.completedNodes || {},
+      completedConversations:old.completedConversations || {}, flags:old.flags || {}, completedDialogs:old.completedDialogs || {}, completedNodes:old.completedNodes || {},
       dialogCursors:old.dialogCursors || {}, completedChoices:old.completedChoices || {}, completedInteractions:old.completedInteractions || {}, objectStates:old.objectStates || {}};
   }
   function storeState(player, state) {
@@ -35,6 +35,22 @@
     return where === 'equipped' ? equipped : where === 'inventory' ? inventory : inventory || equipped;
   }
   const key = (...parts) => JSON.stringify(parts);
+  function completedDialog(player,state,condition) {
+    // Legacy unscoped prerequisites retain their original, current-hub meaning.
+    if(!condition.npcId&&!condition.objectId&&!condition.planetId)return !!state.completedDialogs?.[condition.id];
+    const states=[state,...Object.values(player.hubProgress||{}).filter(s=>s&&typeof s==='object'&&s.planetId!==state.planetId)];
+    if(player.hubState?.planetId!==state.planetId&&player.hubState)states.push(player.hubState);
+    return states.some(s=>{
+      if(condition.planetId&&s.planetId!==condition.planetId)return false;
+      if(!condition.npcId&&!condition.objectId)return !!s.completedDialogs?.[condition.id];
+      return Object.values(s.completedConversations||{}).some(c=>c&&c.dialogId===condition.id&&(!condition.npcId||c.npcId===condition.npcId)&&(!condition.objectId||c.objectId===condition.objectId));
+    });
+  }
+  function destination(dialog,choice) {
+    if(choice?.target==='start')return dialog.startNodeId;
+    if(choice?.target==='end')return '';
+    return choice?.nextNodeId||'';
+  }
   function reason(rule, player, state, context = {}) {
     const maps = ids(rule.mapIds), objects = ids(rule.objectIds), npcs = ids(rule.npcIds);
     if (maps.length && !maps.includes(state.mapId)) return 'Недоступно на этой карте';
@@ -43,15 +59,15 @@
     if (ids(rule.allowedPlayerIds).length && !ids(rule.allowedPlayerIds).includes(player.id)) return 'Нет доступа у персонажа';
     if (rule.requiredFlag && !state.flags[rule.requiredFlag]) return 'Не выполнено условие флага';
     if (rule.requiredItemId && !hasItem(player, rule.requiredItemId, rule.itemLocation)) return 'Нет требуемого предмета';
-    if (rule.requiredDialogId && !state.completedDialogs[rule.requiredDialogId]) return 'Сначала завершите предыдущий диалог';
-    for (const c of rule.conditions || []) {
-      if(!c.id)return 'Условие не настроено';
-      let ok = false;
-      if (c.type === 'flag') ok = c.value === false ? !state.flags[c.id] : !!state.flags[c.id];
-      if (c.type === 'dialog') ok = !!state.completedDialogs[c.id];
-      if (c.type === 'item') ok = hasItem(player, c.id, c.location || 'either');
-      if (!ok) return c.type === 'item' ? 'Нет требуемого предмета' : c.type === 'dialog' ? 'Сначала завершите предыдущий диалог' : 'Не выполнено условие флага';
-    }
+    if (rule.requiredDialogId && !completedDialog(player,state,{id:rule.requiredDialogId})) return 'Сначала завершите предыдущий диалог';
+    const conditions=rule.conditions||[];
+    if(conditions.some(c=>!c.id||!['flag','dialog','item'].includes(c.type)))return 'Условие не настроено';
+    const checks=conditions.map(c=>{
+      let ok=c.type==='flag'?!!state.flags[c.id]:c.type==='dialog'?completedDialog(player,state,c):hasItem(player,c.id,c.location||'either');
+      if(c.value===false)ok=!ok;
+      return {ok,why:c.type==='item'?'Нет требуемого предмета':c.type==='dialog'?'Сначала завершите предыдущий диалог':'Не выполнено условие флага'};
+    });
+    if(checks.length&&(rule.conditionMode==='any'?!checks.some(c=>c.ok):!checks.every(c=>c.ok)))return checks.find(c=>!c.ok).why;
     return '';
   }
   function visible(o, p, s) {
@@ -64,10 +80,12 @@
   function choiceReason(d,n,c,p,s,o) {
     const why = reason(c,p,s,{object:o}) || (c.once && s.completedChoices[key(d.id,n.id,c.id)] ? 'Действие уже выполнено' : '');
     if (why) return why;
-    if (c.nextNodeId) {
-      const next = d.nodes.find(x => x.id === c.nextNodeId);
+    if(c.target==='unset'||(c.target==='node'&&!c.nextNodeId)||(c.target&&!['node','start','end'].includes(c.target)))return 'This reply has no destination';
+    const nextId=destination(d,c);
+    if (nextId) {
+      const next = d.nodes.find(x => x.id === nextId);
       if (!next) return 'Следующая колонка не найдена';
-      const after=clone(s);effects(n,after);effects(c,after);return nodeReason(d,next,p,after,o);
+      const after=clone(s);effects(n,after);effects(c,after);after.completedNodes[key(d.id,n.id)]=true;return nodeReason(d,next,p,after,o);
     }
     return '';
   }
@@ -79,8 +97,9 @@
   function effects(rule,s) { if (rule.setFlag) s.flags[rule.setFlag] = true; if (rule.clearFlag) delete s.flags[rule.clearFlag]; }
   function finishDialog(d,o,s) {
     s.completedDialogs[d.id] = true;
+    s.completedConversations ||= {};s.completedConversations[key(d.id,s.mapId,o.id,o.npcId||'')]={dialogId:d.id,npcId:o.npcId||'',objectId:o.id,mapId:s.mapId,planetId:s.planetId};
     if (d.completionFlag) s.flags[d.completionFlag] = true;
-    effects(o,s); if (o.once) s.completedInteractions[o.id] = true;
+    effects(d,s);effects(o,s); if (o.once) s.completedInteractions[o.id] = true;
   }
   function advance(hub,objectId,dialogId,nodeId,choiceId,player,state) {
     const o = hub.maps.find(m => m.id === state.mapId)?.objects.find(x => x.id === objectId);
@@ -94,14 +113,16 @@
     if (blocked) throw new Error(blocked);
     const c = choiceId == null ? null : n.choices.find(x => x.id === choiceId);
     if (choiceId != null && !c) throw new Error('Ответ не найден');
+    if(!c&&n.terminal===false&&!n.choices?.length)throw new Error('This node has no replies or ending');
     if (!c && n.choices?.length) throw new Error('Выберите доступный ответ');
     if (c) { const why=choiceReason(d,n,c,player,state,o); if (why) throw new Error(why); }
     effects(n,state); if (c) effects(c,state);
     state.completedNodes[key(d.id,n.id)] = true;
     if (c) state.completedChoices[key(d.id,n.id,c.id)] = true;
-    if (!c?.nextNodeId) {finishDialog(d,o,state);delete state.dialogCursors[cursorKey];}
-    else state.dialogCursors[cursorKey]=c.nextNodeId;
-    return {nextNodeId:c?.nextNodeId || '', articleId:c?.articleId || n.articleId || ''};
+    const nextId=destination(d,c);
+    if (!nextId) {finishDialog(d,o,state);delete state.dialogCursors[cursorKey];}
+    else state.dialogCursors[cursorKey]=nextId;
+    return {nextNodeId:nextId, articleId:c?.articleId || n.articleId || ''};
   }
   function use(hub,o,p,s) {
     const why=access(o,p,s); if (why) throw new Error(why);
@@ -140,6 +161,24 @@
     }
     return true;
   }
+  function inspectDialog(d) {
+    const issues=[],seen=new Set(),error=(message,nodeId)=>issues.push({level:'error',message,nodeId});
+    if(!d.nodes?.some(n=>n.id===d.startNodeId))error('Choose a starting node');
+    for(const n of d.nodes||[]){
+      if(!n.id||seen.has(n.id))error('Duplicate or missing node ID',n.id);seen.add(n.id);
+      if(n.terminal===false&&!n.choices?.length)error('Add replies or mark an ending: '+(n.name||n.id),n.id);
+      const replies=new Set();for(const c of n.choices||[]){if(!c.id||replies.has(c.id))error('Duplicate or missing reply ID',n.id);replies.add(c.id);
+        if(c.target==='unset')error('Reply has no destination: '+(c.text||c.id),n.id);
+        if(c.target&&!['node','start','end','unset'].includes(c.target))error('Unknown reply destination',n.id);
+        if(destination(d,c)&&!d.nodes.some(x=>x.id===destination(d,c)))error('Reply targets a missing node',n.id);
+        if(c.target==='node'&&!c.nextNodeId)error('Choose a destination for the reply',n.id);
+        if(n.once&&destination(d,c)===n.id)issues.push({level:'warning',message:'A one-time node cannot return to itself: '+(n.name||n.id),nodeId:n.id});
+      }
+    }
+    const reached=new Set(),queue=[d.startNodeId];while(queue.length){const id=queue.shift();if(reached.has(id))continue;reached.add(id);const n=d.nodes?.find(x=>x.id===id);for(const c of n?.choices||[]){const next=destination(d,c);if(next&&!reached.has(next))queue.push(next);}}
+    for(const n of d.nodes||[])if(!reached.has(n.id))issues.push({level:'warning',message:'Unreachable node: '+(n.name||n.id),nodeId:n.id});
+    return issues;
+  }
   function validate(hub) {
     const errors=[],seen=new Set();
     for(const m of hub.maps){if(seen.has(m.id))errors.push('Повтор ID карты: '+m.id);seen.add(m.id);if(!Number.isFinite(+m.width)||+m.width<640||!Number.isFinite(+m.height)||+m.height<420)errors.push('Минимальный размер карты: 640 × 420');}
@@ -148,8 +187,10 @@
     for(const o of all){for(const id of ids(o.dialogIds||o.dialogId))if(!dialogIds.includes(id))errors.push('Диалог объекта не найден: '+(o.name||o.id));if(o.type==='transition'&&o.targetMapId&&!hub.maps.some(m=>m.id===o.targetMapId))errors.push('Карта перехода не найдена');}
     const checkConditions=r=>{for(const c of r.conditions||[])if(!c.id||!['flag','dialog','item'].includes(c.type)||(c.type==='dialog'&&!dialogIds.includes(c.id)))errors.push('Незаполненное или неверное условие');};
     all.forEach(checkConditions);
-    for(const d of hub.dialogs){checkConditions(d);if(!d.nodes?.some(n=>n.id===d.startNodeId))errors.push('Начальная колонка не найдена: '+d.name);for(const n of d.nodes||[]){checkConditions(n);for(const c of n.choices||[]){checkConditions(c);if(c.nextNodeId&&!d.nodes.some(x=>x.id===c.nextNodeId))errors.push('Переход к удалённой колонке: '+d.name);}}}
+    for(const d of hub.dialogs){checkConditions(d);for(const n of d.nodes||[]){checkConditions(n);for(const c of n.choices||[])checkConditions(c);}}
+    for(const d of hub.dialogs)errors.push(...inspectDialog(d).filter(x=>x.level==='error').map(x=>x.message));
+    if(new Set(hub.dialogs.map(d=>d.id)).size!==hub.dialogs.length)errors.push('Duplicate dialogue ID');
     return [...new Set(errors)];
   }
-  globalThis.GRPGHubCoreV156={clone,ids,kind,isHub,trader,hubOf,stateFor,storeState,hasItem,key,reason,visible,access,dialogReason,nodeReason,choiceReason,dialogsFor,effects,advance,use,purchase,canMove,validate};
+  globalThis.GRPGHubCoreV156={clone,ids,kind,isHub,trader,hubOf,stateFor,storeState,hasItem,key,completedDialog,destination,reason,visible,access,dialogReason,nodeReason,choiceReason,dialogsFor,effects,advance,use,purchase,canMove,inspectDialog,validate};
 })();

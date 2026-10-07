@@ -29,7 +29,7 @@ try{
     window.Configurator={selectedType:'planets',selectedId:'h',getSelectedEntity:()=>PLANETS.h,renderPlanetEditor:()=>'<div class="section-title">Локация</div>',collectEntity:()=>({id:'h'}),render(){document.getElementById('config-content').innerHTML=this.renderPlanetEditor(PLANETS.h);}};
   });
   await page.evaluate(src=>{Configurator.persistAll=eval('({'+src+'})').persistAll;},persist);
-  for(const file of ['hub-core-v156.js','hub-spatial-v157.js','hub-runtime-v156.js','hub-authoring-v156.js','hub-v153.js'])await page.addScriptTag({url:'https://hub.test/renderer/'+file});
+  for(const file of ['hub-core-v156.js','hub-spatial-v157.js','dialog-view-v161.js','hub-runtime-v156.js','hub-authoring-v156.js','dialog-editor-v161.js','hub-v153.js'])await page.addScriptTag({url:'https://hub.test/renderer/'+file});
   await page.evaluate(()=>Configurator.render());await page.locator('#hub-builder-open-v153').evaluate(n=>n.click());
   await page.waitForSelector('#hub-builder-v153');
   for(const width of [1440,1000,760]){
@@ -54,23 +54,23 @@ try{
   await page.locator('[data-ref="dialog"][data-field="name"]').fill('New action');
   await page.locator('[data-add-column]').click();assert.equal(await page.locator('[data-column]').count(),2);
   await page.locator('[data-column]').first().locator('[data-add-choice]').click();
-  await page.locator('[data-choice-row] [data-field="text"]').fill('Continue');
+  await page.locator('[data-inspector] [data-field="text"]').fill('Continue');
   const next=await page.locator('[data-column]').last().getAttribute('data-column');
   const fromPort=page.locator('[data-node-output]').first(),toPort=page.locator('[data-node-input="'+next+'"]');
   await fromPort.scrollIntoViewIfNeeded();await toPort.scrollIntoViewIfNeeded();
   const fromRect=await fromPort.boundingBox(),toRect=await toPort.boundingBox();
   await page.mouse.move(fromRect.x+fromRect.width/2,fromRect.y+fromRect.height/2);await page.mouse.down();await page.mouse.move(toRect.x+toRect.width/2,toRect.y+toRect.height/2,{steps:14});await page.mouse.up();
-  await page.waitForSelector('[data-edge]');assert.equal(await page.locator('[data-edge]').count(),1);
+  await page.waitForSelector('[data-edge]',{state:'attached'});assert.equal(await page.locator('[data-edge]').count(),1);
   // Moving a node preserves its link; disconnecting and reconnecting update the underlying response.
   const handle=page.locator('[data-node-handle]').last(),handleRect=await handle.boundingBox(),nodeBefore=await page.locator('[data-column]').last().evaluate(n=>({x:parseFloat(n.style.left),y:parseFloat(n.style.top)}));
   await page.mouse.move(handleRect.x+120,handleRect.y+20);await page.mouse.down();await page.mouse.move(handleRect.x+180,handleRect.y+60,{steps:10});await page.mouse.up();
   const nodeAfter=await page.locator('[data-column]').last().evaluate(n=>({x:parseFloat(n.style.left),y:parseFloat(n.style.top)}));assert.ok(nodeAfter.x>nodeBefore.x+50);assert.ok(nodeAfter.y>nodeBefore.y+30);
-  await page.locator('[data-unlink]').click();assert.equal(await page.locator('[data-edge]').count(),0);
-  await page.locator('[data-node-output]').focus();await page.keyboard.press('Enter');await page.locator('[data-node-input="'+next+'"]').focus();await page.keyboard.press('Enter');await page.waitForSelector('[data-edge]');await page.locator('[data-graph-zoom-out]').click();assert.equal(await page.locator('[data-graph-scale]').textContent(),'83%');await page.locator('[data-graph-zoom-in]').click();assert.equal(await page.locator('[data-edge]').count(),1);
-  await page.locator('[data-column]').last().locator('[data-field="once"]').check();
-  await page.locator('[data-column]').last().locator('summary').filter({hasText:'Карты и собеседники'}).click();
-  await page.locator('[data-column]').last().locator('[data-multi-field="mapIds"]').selectOption('main');
-  await page.locator('[data-column]').last().locator('[data-multi-field="objectIds"]').selectOption('sign');
+  await page.locator('[data-select-reply]').first().click();await page.locator('[data-destination]').selectOption('unset');assert.equal(await page.locator('[data-edge]').count(),0);
+  await page.locator('[data-node-output]').focus();await page.keyboard.press('Enter');await page.locator('[data-node-input="'+next+'"]').focus();await page.keyboard.press('Enter');await page.waitForSelector('[data-edge]',{state:'attached'});await page.locator('.dlg-editor-v161 [data-zoom-out]').click();assert.equal(await page.locator('[data-graph-scale]').textContent(),'83%');await page.locator('.dlg-editor-v161 [data-zoom-in]').click();await page.waitForSelector('[data-edge]',{state:'attached'});assert.equal(await page.locator('[data-edge]').count(),1);
+  await page.locator('[data-column]').last().locator('[data-select-node]').click();await page.locator('[data-inspector] [data-field="terminal"]').check();await page.locator('[data-inspector] [data-field="once"]').check();
+  await page.locator('[data-inspector] summary').filter({hasText:'Maps and speakers'}).click();
+  await page.locator('[data-inspector] [data-multi-field="mapIds"]').selectOption('main');
+  await page.locator('[data-inspector] [data-multi-field="objectIds"]').selectOption('sign');
   if(process.env.SCREENSHOT_DIR){fs.mkdirSync(process.env.SCREENSHOT_DIR,{recursive:true});await page.screenshot({path:path.join(process.env.SCREENSHOT_DIR,'hub-dialog-editor.png')});}
   await page.locator('[data-close-authoring]').click();
   // Refresh replaces every planet reference while the independent editor draft remains open.
@@ -82,7 +82,7 @@ try{
   await page.evaluate(()=>{cloudFail=false;cloudThrow=true;});await page.locator('[data-save]').click();await page.waitForFunction(()=>!document.getElementById('hub-builder-v153').inert);assert.equal(await page.locator('#hub-builder-v153').count(),1);
   await page.evaluate(()=>cloudThrow=false);await page.locator('[data-save]').click();await page.waitForSelector('#hub-builder-v153',{state:'detached'});
   const saved=await page.evaluate(()=>({planet:window.saved.planets.PLANETS.h,sections:lastSections}));assert.equal(saved.planet.otherMetadata,'keep');assert.deepEqual(saved.sections,['planets']);assert.equal(saved.planet.hub.maps[0].objects[0].trader,true);assert.equal(saved.planet.hub.flags.length,2);assert.equal(saved.planet.hub.maps[0].walls.length,1);const savedGraph=saved.planet.hub.dialogs.at(-1);assert.equal(savedGraph.nodes[0].choices[0].nextNodeId,savedGraph.nodes[1].id);assert.ok(savedGraph.nodes[1].editorPosition.x>500);assert.ok(saved.planet.hub.maps[0].objects.find(o=>o.id==='sign').image.startsWith('https://'));assert.ok(await page.evaluate(()=>uploads.includes('/fixture/legacy-sign.png')));
-  await page.locator('#hub-builder-open-v153').evaluate(n=>n.click());await page.locator('[data-dialogs]').click();await page.locator('[data-select-dialog]').last().click();assert.equal(await page.locator('[data-column]').count(),2);await page.waitForSelector('[data-edge]');assert.equal(await page.locator('[data-edge]').count(),1);await page.locator('[data-close-authoring]').click();await page.locator('[data-close]').click();
+  await page.locator('#hub-builder-open-v153').evaluate(n=>n.click());await page.locator('[data-dialogs]').click();await page.locator('[data-select-dialog]').last().click();assert.equal(await page.locator('[data-column]').count(),2);await page.waitForSelector('[data-edge]',{state:'attached'});assert.equal(await page.locator('[data-edge]').count(),1);await page.locator('[data-close-authoring]').click();await page.locator('[data-close]').click();
   // Cancel must not leak the draft into the live planet.
   await page.locator('#hub-builder-open-v153').evaluate(n=>n.click());await page.locator('[data-prop="map.name"]').fill('Cancelled');await page.locator('[data-close]').click();assert.equal(await page.evaluate(()=>PLANETS.h.hub.maps[0].name),'Main');
   await page.evaluate(()=>UI.openModule('hub-v153'));await page.locator('#mod-hub-v153').evaluate(n=>n.classList.add('open'));
@@ -120,7 +120,7 @@ try{
   await page.setContent('<div id="screen-hub-v153" class="screen"></div><button id="nav-hub-v153" class="nav-btn"></button>');
   await page.addStyleTag({url:'https://hub.test/deploy/site/app/hub-v153.css'});
   await page.evaluate(({planet,player})=>{player.hubState=null;player.hubProgress={};window.webPlayer=player;window.webPlanet=planet;window.GRPGHubBridgeV153={app:{ui:{}},currentPlayer:()=>webPlayer,currentPlanet:()=>webPlanet,canAdd:()=>({ok:true}),item:id=>EQUIPMENT[id],article:()=>null,openArticle(){},openStocks(){},notify(){},async commit(mutator){const next=deep(webPlayer);await mutator(next);webPlayer=next;}};},fixture);
-  for(const file of ['hub-core-v156.js','hub-spatial-v157.js','hub-runtime-v156.js','hub-v153.js'])await page.addScriptTag({url:'https://hub.test/deploy/site/app/'+file});
+  for(const file of ['hub-core-v156.js','hub-spatial-v157.js','dialog-view-v161.js','hub-runtime-v156.js','hub-v153.js'])await page.addScriptTag({url:'https://hub.test/deploy/site/app/'+file});
   await page.locator('#nav-hub-v153').click();await page.locator('[data-object="sign"]').click();await page.locator('[data-dialog="intro"]').click();await page.locator('[data-finish]').click();await page.waitForSelector('[data-dialog="erase"]');await page.locator('[data-dialog="erase"]').click();await page.locator('[data-choice="erase"]').click();await page.waitForSelector('.hub-modal-v153',{state:'detached'});assert.equal(await page.evaluate(()=>webPlayer.hubState.flags.erased),true);
   await page.locator('[data-trade]').click();await page.locator('[data-buy="key"]').click();await page.waitForFunction(()=>webPlayer.credits===4);
   // Web uses the same step animation and stops on save failure or leaving the hub.

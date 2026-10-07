@@ -4,7 +4,7 @@
   const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   function create(B) {
     let ctx=null,queue=Promise.resolve(),walking=false,epoch=0;
-    function modal(title,html){document.querySelector('.hub-modal-v153')?.remove();const n=document.createElement('div');n.className='hub-modal-v153';n.innerHTML=`<div class="hub-modal-card-v153"><div class="row" style="justify-content:space-between"><h3>${esc(title)}</h3><button class="secondary" data-close>ЗАКРЫТЬ</button></div><div data-modal-body>${html}</div><div role="status" data-status></div></div>`;document.body.append(n);n.onclick=e=>{if(e.target===n||e.target.closest('[data-close]'))n.remove();};return n;}
+    function modal(title,html){window.GRPGDialogViewV161.active?.leave();document.querySelector('.hub-modal-v153')?.remove();const n=document.createElement('div');n.className='hub-modal-v153';n.innerHTML=`<div class="hub-modal-card-v153"><div class="row" style="justify-content:space-between"><h3>${esc(title)}</h3><button class="secondary" data-close>ЗАКРЫТЬ</button></div><div data-modal-body>${html}</div><div role="status" data-status></div></div>`;document.body.append(n);n.onclick=e=>{if(e.target===n||e.target.closest('[data-close]'))n.remove();};return n;}
     function transact(mutator,notice=null) {
       const captured=ctx;
       const task=queue.then(async()=>{
@@ -98,19 +98,21 @@
       info.querySelector('[data-trade]')?.addEventListener('click',()=>merchant(id));
     }
     function openDialog(objectId,dialogId){
-      if(walking)return;refresh();const o=ctx.map.objects.find(x=>x.id===objectId),d=ctx.hub.dialogs.find(x=>x.id===dialogId);if(!o||!d||!S.inSight(ctx.map,ctx.state,B.currentPlayer(),o))return;
-      let nodeId=ctx.state.dialogCursors[C.key(d.id,ctx.state.mapId,o.id)]||d.startNodeId||d.nodes?.[0]?.id;const n=modal(d.name||'Диалог','');
-      const draw=()=>{
-        if(!refresh())return n.remove();const p=B.currentPlayer(),o=ctx.map.objects.find(x=>x.id===objectId),d=ctx.hub.dialogs.find(x=>x.id===dialogId),step=d?.nodes.find(x=>x.id===nodeId),host=n.querySelector('[data-modal-body]');
-        const why=!o||!d||!step||!S.inSight(ctx.map,ctx.state,p,o)?'Диалог недоступен':C.dialogReason(d,p,ctx.state,o)||C.nodeReason(d,step,p,ctx.state,o);
-        if(why){host.textContent=why;return;}
-        host.innerHTML=`<div class="hub-dialog-line-v153"><b>${esc(step.speaker||o.name||'')}</b><p>${esc(step.text||'')}</p></div><div class="hub-actions-v153">${step.choices?.length?step.choices.map(c=>{const why=C.choiceReason(d,step,c,p,ctx.state,o);return `<button class="secondary" data-choice="${esc(c.id)}" ${why?'disabled data-blocked="1"':''}>${esc(c.text||'Продолжить')}${why?` — ${esc(why)}`:''}</button>`;}).join(''):'<button class="primary" data-finish>ЗАВЕРШИТЬ</button>'}</div>`;
-        const advance=choiceId=>busy(n,()=>transact((p,s,h)=>C.advance(h,objectId,dialogId,nodeId,choiceId,p,s),null),r=>{
-          if(r.nextNodeId){nodeId=r.nextNodeId;draw();}else{n.remove();if(B.isActive()){show();select(objectId);}}
-          if(r.articleId)B.openArticle(r.articleId);
-        });
-        host.querySelectorAll('[data-choice]').forEach(b=>b.onclick=()=>advance(b.dataset.choice));host.querySelector('[data-finish]')?.addEventListener('click',()=>advance(null));
-      };draw();
+      if(walking||!refresh())return;const object=ctx.map.objects.find(x=>x.id===objectId),dialog=ctx.hub.dialogs.find(x=>x.id===dialogId);
+      if(!object||!dialog||!S.inSight(ctx.map,ctx.state,B.currentPlayer(),object))return;
+      const playerId=ctx.playerId,planetId=ctx.planet.id,mapId=ctx.map.id;
+      document.querySelector('.hub-modal-v153:not(.hub-conversation-v161)')?.remove();
+      return window.GRPGDialogViewV161.open({
+        npc:B.npc,
+        snapshot:()=>{
+          if(!refresh()||ctx.playerId!==playerId||ctx.planet.id!==planetId||ctx.map.id!==mapId||!B.isActive())return {why:'Conversation is no longer available'};
+          const p=B.currentPlayer(),o=ctx.map.objects.find(x=>x.id===objectId),d=ctx.hub.dialogs.find(x=>x.id===dialogId),id=d&&(ctx.state.dialogCursors[C.key(d.id,mapId,objectId)]||d.startNodeId),n=d?.nodes.find(x=>x.id===id);
+          return {dialog:d,node:n,object:o,player:p,state:ctx.state,why:!o||!S.inSight(ctx.map,ctx.state,p,o)?'The speaker is unavailable':''};
+        },
+        choose:(choiceId,nodeId)=>{if(!B.isActive()||B.currentPlayer()?.id!==playerId||B.currentPlanet()?.id!==planetId)throw new Error('Conversation is no longer available');return transact((p,s,h)=>{if(s.mapId!==mapId)throw new Error('The speaker is on another map');return C.advance(h,objectId,dialogId,nodeId,choiceId,p,s);},null);},
+        onLeave:()=>{if(B.isActive()&&B.currentPlayer()?.id===playerId&&B.currentPlanet()?.id===planetId){show();select(objectId);}},
+        openArticle:B.openArticle
+      });
     }
     function merchant(id){
       if(walking)return;refresh();const o=ctx.map.objects.find(x=>x.id===id);if(!o||!C.trader(o)||!S.inSight(ctx.map,ctx.state,B.currentPlayer(),o))return;
