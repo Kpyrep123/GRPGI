@@ -5,7 +5,7 @@
   const ids = value => Array.isArray(value) ? value.filter(Boolean).map(String) : String(value || '').split(/[\n,]/).map(s => s.trim()).filter(Boolean);
   const kind = o => o.kind || (o.type === 'npc' ? 'unit' : o.type === 'zone' ? 'zone' : 'asset');
   const isHub = p => String(p?.locationType || p?.placeType || '').toLowerCase() === 'hub';
-  const trader = o => o.trader === undefined ? (o.merchantItemIds || []).length > 0 : o.trader === true;
+  const trader = o => o.trader === undefined ? (o.merchantMarket===undefined ? ids(o.merchantItemIds).length>0 : Array.isArray(o.merchantMarket)&&o.merchantMarket.some(e=>e&&e.enabled!==false)) : o.trader === true;
   function hubOf(planet) {
     const hub = clone(planet?.hub || {});
     if (!hub.maps?.length) hub.maps = [{id:'main', name:'Основная карта', width:1200, height:720, objects:[], spawnPoints:[{id:'default', name:'Вход', x:120, y:360}]}];
@@ -134,10 +134,35 @@
     else if(!o.articleId&&!o.setFlag&&!o.clearFlag&&!o.once) throw new Error('Действие не настроено');
     effects(o,s); if(o.once)s.completedInteractions[o.id]=true;
   }
-  function purchase(hub,o,itemId,p,s,item,canAdd=()=>({ok:true})) {
+  function merchantErrors(o) {
+    if(o.merchantMarket===undefined)return [];
+    if(!Array.isArray(o.merchantMarket))return ['Merchant assortment must be a list'];
+    const errors=[],seen=new Set();
+    for(const e of o.merchantMarket){
+      if(!e||!e.itemId||seen.has(e.itemId)){errors.push('Duplicate or missing merchant item');continue;}seen.add(e.itemId);
+      if(![e.appearanceChance,e.minPrice,e.maxPrice].every(v=>typeof v==='number'&&Number.isFinite(v))||e.appearanceChance<0||e.appearanceChance>100||e.minPrice<0||e.maxPrice<e.minPrice||!Number.isSafeInteger(e.minPrice)||!Number.isSafeInteger(e.maxPrice))errors.push('Merchant chance must be 0–100%; prices must be whole credits, with minimum ≤ maximum');
+    }
+    return errors;
+  }
+  function merchantRotation(o,item,context={}) {
+    const equipment={},legacy=o.merchantMarket===undefined;
+    const entries=legacy?ids(o.merchantItemIds).map(id=>{const i=item(id);return {itemId:id,enabled:true,appearanceChance:100,minPrice:Number(i?.price??i?.cost??0),maxPrice:Number(i?.price??i?.cost??0)};}):o.merchantMarket;
+    const errors=merchantErrors(o);if(errors.length)throw new Error(errors[0]);
+    for(const e of entries){const i=item(e.itemId);if(i)equipment[e.itemId]=i;}
+    const E=globalThis.GRPGMarketEngineV1071;
+    // Legacy fixed lists remain usable in old embedded clients and standalone rule tests.
+    if(legacy)return {rotationKey:'legacy',usesGameDate:false,offers:entries.filter(e=>equipment[e.itemId]&&equipment[e.itemId].type!=='stock').map(e=>({itemId:e.itemId,price:e.minPrice}))};
+    if(!E)throw new Error('Daily merchant market is unavailable');
+    const scope=JSON.stringify(['hub-merchant',context.planetId||'',context.mapId||'',o.id]);
+    return E.buildRotation({...context,equipment,planet:{id:scope,market:entries.map(e=>({...e,unique:false})),stockMarketEnabled:false},marketState:{claims:{}}});
+  }
+  function purchase(hub,o,itemId,p,s,item,canAdd=()=>({ok:true}),marketContext={},quote=null) {
     const why=access(o,p,s);if(why)throw new Error(why);
-    if(!trader(o)||!ids(o.merchantItemIds).includes(itemId)||!item||item.type==='stock')throw new Error('Товар недоступен');
-    const cost=Number(item.price ?? item.cost ?? 0),credits=Number(p.credits||0);
+    if(!trader(o)||!item||item.type==='stock')throw new Error('Товар недоступен');
+    const rotation=merchantRotation(o,id=>id===itemId?item:null,{...marketContext,planetId:s.planetId,mapId:s.mapId}),offer=rotation.offers.find(e=>e.itemId===itemId);
+    if(!offer)throw new Error('This item is not available today');
+    if(o.merchantMarket!==undefined&&(!quote||quote.rotationKey!==rotation.rotationKey||quote.price!==offer.price||quote.config!==JSON.stringify(o.merchantMarket)))throw new Error('The assortment changed. Reopen the merchant to see current offers.');
+    const cost=Number(offer.price),credits=Number(p.credits||0);
     if(!Number.isFinite(cost)||cost<0||!Number.isFinite(credits))throw new Error('Некорректная цена или баланс');
     if(credits<cost)throw new Error('Недостаточно кредитов');
     const room=canAdd(p,itemId,1);if(!room?.ok)throw new Error(room?.reason||'Недостаточно места');
@@ -187,10 +212,11 @@
     for(const o of all){for(const id of ids(o.dialogIds||o.dialogId))if(!dialogIds.includes(id))errors.push('Диалог объекта не найден: '+(o.name||o.id));if(o.type==='transition'&&o.targetMapId&&!hub.maps.some(m=>m.id===o.targetMapId))errors.push('Карта перехода не найдена');}
     const checkConditions=r=>{for(const c of r.conditions||[])if(!c.id||!['flag','dialog','item'].includes(c.type)||(c.type==='dialog'&&!dialogIds.includes(c.id)))errors.push('Незаполненное или неверное условие');};
     all.forEach(checkConditions);
+    for(const o of [...all,...(hub.prefabs||[])])errors.push(...merchantErrors(o));
     for(const d of hub.dialogs){checkConditions(d);for(const n of d.nodes||[]){checkConditions(n);for(const c of n.choices||[])checkConditions(c);}}
     for(const d of hub.dialogs)errors.push(...inspectDialog(d).filter(x=>x.level==='error').map(x=>x.message));
     if(new Set(hub.dialogs.map(d=>d.id)).size!==hub.dialogs.length)errors.push('Duplicate dialogue ID');
     return [...new Set(errors)];
   }
-  globalThis.GRPGHubCoreV156={clone,ids,kind,isHub,trader,hubOf,stateFor,storeState,hasItem,key,completedDialog,destination,reason,visible,access,dialogReason,nodeReason,choiceReason,dialogsFor,effects,advance,use,purchase,canMove,inspectDialog,validate};
+  globalThis.GRPGHubCoreV156={clone,ids,kind,isHub,trader,hubOf,stateFor,storeState,hasItem,key,completedDialog,destination,reason,visible,access,dialogReason,nodeReason,choiceReason,dialogsFor,effects,advance,use,merchantErrors,merchantRotation,purchase,canMove,inspectDialog,validate};
 })();
