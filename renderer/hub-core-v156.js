@@ -156,19 +156,34 @@
     const scope=JSON.stringify(['hub-merchant',context.planetId||'',context.mapId||'',o.id]);
     return E.buildRotation({...context,equipment,planet:{id:scope,market:entries.map(e=>({...e,unique:false})),stockMarketEnabled:false},marketState:{claims:{}}});
   }
-  function purchase(hub,o,itemId,p,s,item,canAdd=()=>({ok:true}),marketContext={},quote=null) {
+  function purchase(hub,o,itemId,p,s,item,canAdd=()=>({ok:true}),marketContext={},quote=null,quantity=1) {
     const why=access(o,p,s);if(why)throw new Error(why);
     if(!trader(o)||!item||item.type==='stock')throw new Error('Товар недоступен');
     const rotation=merchantRotation(o,id=>id===itemId?item:null,{...marketContext,planetId:s.planetId,mapId:s.mapId}),offer=rotation.offers.find(e=>e.itemId===itemId);
     if(!offer)throw new Error('This item is not available today');
     if(o.merchantMarket!==undefined&&(!quote||quote.rotationKey!==rotation.rotationKey||quote.price!==offer.price||quote.config!==JSON.stringify(o.merchantMarket)))throw new Error('The assortment changed. Reopen the merchant to see current offers.');
-    const cost=Number(offer.price),credits=Number(p.credits||0);
-    if(!Number.isFinite(cost)||cost<0||!Number.isFinite(credits))throw new Error('Некорректная цена или баланс');
+    if(!Number.isSafeInteger(quantity)||quantity<1||quantity>10000)throw new Error('Enter a quantity from 1 to 10,000');
+    if(o.once&&quantity!==1)throw new Error('This interaction is available once');
+    const cost=Number(offer.price)*quantity,credits=Number(p.credits||0);
+    if(!Number.isFinite(cost)||cost<0||(o.merchantMarket!==undefined&&!Number.isSafeInteger(cost))||!Number.isFinite(credits))throw new Error('Некорректная цена или баланс');
     if(credits<cost)throw new Error('Недостаточно кредитов');
-    const room=canAdd(p,itemId,1);if(!room?.ok)throw new Error(room?.reason||'Недостаточно места');
+    const room=canAdd(p,itemId,quantity);if(!room?.ok)throw new Error(room?.reason||'Недостаточно места');
     p.credits=credits-cost;p.inventory ||= [];
-    const row=p.inventory.find(r=>r.itemId===itemId);if(row)row.qty=Number(row.qty||0)+1;else p.inventory.push({itemId,qty:1,positions:[]});
+    const row=p.inventory.find(r=>r.itemId===itemId);if(row)row.qty=Number(row.qty||0)+quantity;else p.inventory.push({itemId,qty:quantity,positions:[]});
     effects(o,s);if(o.once)s.completedInteractions[o.id]=true;
+  }
+  function sell(hub,o,itemId,unitIndex,p,s,item,marketContext={},quote=null) {
+    const why=access(o,p,s);if(why)throw new Error(why);
+    if(!trader(o)||!item||item.type==='stock')throw new Error('Item is unavailable');
+    const rotation=merchantRotation(o,id=>id===itemId?item:null,{...marketContext,planetId:s.planetId,mapId:s.mapId}),offer=rotation.offers.find(e=>e.itemId===itemId);
+    if(!offer)throw new Error('This merchant does not accept this item');
+    if(!quote||quote.rotationKey!==rotation.rotationKey||quote.price!==offer.price||quote.config!==JSON.stringify(o.merchantMarket))throw new Error('The assortment changed. Reopen the merchant to see current offers.');
+    const row=(p.inventory||[]).find(r=>r.itemId===itemId),equipped=[...Object.values(p.equipmentSlots||{}),...(p.implantSlots||[])].filter(id=>id===itemId).length;
+    if(!row||!Number.isSafeInteger(unitIndex)||unitIndex<equipped||unitIndex>=Number(row.qty)||Number(row.qty)<=equipped)throw new Error('The inventory item changed or is equipped');
+    const price=Math.floor(Number(offer.price)*.7),credits=Number(p.credits||0);
+    if(!Number.isFinite(price)||price<0||!Number.isFinite(credits)||!Number.isFinite(credits+price))throw new Error('Invalid price or balance');
+    row.qty=Number(row.qty)-1;if(Array.isArray(row.positions))row.positions.splice(unitIndex,1);if(!row.qty)p.inventory=p.inventory.filter(r=>r!==row);
+    p.credits=credits+price;effects(o,s);if(o.once)s.completedInteractions[o.id]=true;
   }
   function canMove(map,state,x,y){
     for(const o of map.objects||[]){
@@ -218,5 +233,5 @@
     if(new Set(hub.dialogs.map(d=>d.id)).size!==hub.dialogs.length)errors.push('Duplicate dialogue ID');
     return [...new Set(errors)];
   }
-  globalThis.GRPGHubCoreV156={clone,ids,kind,isHub,trader,hubOf,stateFor,storeState,hasItem,key,completedDialog,destination,reason,visible,access,dialogReason,nodeReason,choiceReason,dialogsFor,effects,advance,use,merchantErrors,merchantRotation,purchase,canMove,inspectDialog,validate};
+  globalThis.GRPGHubCoreV156={clone,ids,kind,isHub,trader,hubOf,stateFor,storeState,hasItem,key,completedDialog,destination,reason,visible,access,dialogReason,nodeReason,choiceReason,dialogsFor,effects,advance,use,merchantErrors,merchantRotation,purchase,sell,canMove,inspectDialog,validate};
 })();

@@ -1,0 +1,17 @@
+import fs from 'node:fs';import vm from 'node:vm';import assert from 'node:assert/strict';
+const X=vm.createContext({});for(const f of ['market-engine.js','hub-core-v156.js'])vm.runInContext(fs.readFileSync(new URL('../renderer/'+f,import.meta.url),'utf8'),X);
+const C=X.GRPGHubCoreV156,clone=x=>JSON.parse(JSON.stringify(x)),item={id:'gun',type:'weapon'},o={id:'trader',trader:true,merchantMarket:[{itemId:'gun',enabled:true,minPrice:10,maxPrice:10,appearanceChance:100}]},context={campaign:{marketDate:'3616-10-07'},campaignId:'main'},state={planetId:'h',mapId:'m',flags:{},completedInteractions:{}},quote={rotationKey:'3616-10-07',price:10,config:JSON.stringify(o.merchantMarket)},p={credits:100,inventory:[{itemId:'gun',qty:2,positions:[null,{x:2,y:0}]}],equipmentSlots:{primaryWeapon:'gun'},implantSlots:[]};
+let checked=0;C.purchase({},o,'gun',p,state,item,(p,id,qty)=>{checked=qty;return {ok:true};},context,quote,3);assert.equal(checked,3);assert.equal(p.credits,70);assert.equal(p.inventory[0].qty,5);
+const before=clone(p);for(const qty of [0,-1,1.5,NaN,10001])assert.throws(()=>C.purchase({},o,'gun',p,state,item,()=>({ok:true}),context,quote,qty),/quantity/);assert.deepEqual(p,before);
+assert.throws(()=>C.purchase({},o,'gun',p,state,item,()=>({ok:false,reason:'full'}),context,quote,2),/full/);assert.deepEqual(p,before);
+assert.throws(()=>C.purchase({},o,'gun',p,state,item,()=>({ok:true}),context,quote,8),/кредитов/);assert.deepEqual(p,before);
+assert.throws(()=>C.sell({},o,'gun',0,p,state,item,context,quote),/equipped/);assert.deepEqual(p,before);
+assert.throws(()=>C.sell({},o,'gun',1,p,state,item,{campaign:{marketDate:'3616-10-08'}},quote),/assortment changed/);assert.deepEqual(p,before);
+assert.throws(()=>C.sell({},o,'gun',9,p,state,item,context,quote),/changed/);
+C.sell({},o,'gun',1,p,state,item,context,quote);assert.equal(p.credits,77);assert.equal(p.inventory[0].qty,4);assert.deepEqual(p.inventory[0].positions,[null]);assert.equal(p.equipmentSlots.primaryWeapon,'gun');
+p.equipmentSlots={};p.inventory[0].qty=1;C.sell({},o,'gun',0,p,state,item,context,quote);assert.equal(p.inventory.length,0);assert.equal(p.credits,84);
+assert.throws(()=>C.sell({},o,'gun',0,p,state,item,context,quote),/changed/);
+assert.throws(()=>C.purchase({},{...o,once:true},'gun',p,state,item,()=>({ok:true}),context,quote,2),/once/);
+const huge={...o,merchantMarket:[{...o.merchantMarket[0],minPrice:Number.MAX_SAFE_INTEGER,maxPrice:Number.MAX_SAFE_INTEGER}]};assert.throws(()=>C.purchase({},huge,'gun',{credits:1e20},state,item,()=>({ok:true}),context,{...quote,price:Number.MAX_SAFE_INTEGER,config:JSON.stringify(huge.merchantMarket)},2),/цена/);
+for(const f of ['merchant-ui-v163.js','merchant-v163.css','hub-core-v156.js','hub-runtime-v156.js','hub-spatial-v157.js'])assert.equal(fs.readFileSync(new URL('../renderer/'+f,import.meta.url),'utf8'),fs.readFileSync(new URL('../deploy/site/app/'+f,import.meta.url),'utf8'));
+console.log('Merchant Terminal: atomic quantity, credit/capacity limits, invalid quantity/overflow, once, 70% buyback, equipped/changed items, stale sales, inventory positions and mirrors passed');

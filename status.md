@@ -5,6 +5,17 @@
 
 
 
+## Hub merchant Terminal UI and equipment images (2026-10-07)
+
+Base: main `9ed86b9` after PR #38; branch `feat/hub-merchant-terminal`.
+
+- Product range editor rows now display the existing equipment image beside each item. Missing/broken images have a fallback; checkbox, chance, price, search, Apply/Cancel and Hub draft saving behavior remain.
+- Replaced the narrow merchant list with a shared desktop/web Terminal window. Merchant goods and the selected item's purchase/details panel are on the left; the character's real inventory layout is on the right. Tiles span the item's inventory width/height, display images and prices, and support search/category filtering. The daily assortment/date/UTC line is removed from the player screen; daily pricing and quote validation remain. Inventory cells, carrying weight/capacity, overflow, equipped items, and desktop stacks/document entries are displayed. The real desktop/web inventory layout helpers are passed through adapters rather than recreated in the merchant UI.
+- Selecting merchant goods or owned equipment shows the image, shared item facts (including weapon stats, ammo/magazine, armor and modifiers), description, requirements and tags. Buying supports an atomic quantity of 1–10,000, credit/capacity checks and drag/drop into inventory. Once-only traders accept a single item. Unequipped inventory items can be sold one at a time when present in this merchant's current offers, at floor(70% of the current purchase price), matching the existing planetary Terminal rule. Equipped copies cannot be sold. Sale removes the selected inventory instance/position and keeps equipment assignments intact.
+- Shared purchase/sale rules revalidate merchant access, visibility, daily offers, quote/configuration, quantity, balance and ownership before mutation. Saves use the existing atomic profile mutation/rollback path. Pending orders disable duplicate submission while Leave/Escape stays available; closing during a save does not reopen the window. Open inventory/credits update when profile data changes without replacing an in-progress quantity input. Modal keyboard focus, narrow-screen stacking, scrollable grids and unavailable-image fallbacks are supported.
+- Added `merchant-terminal-v163.mjs` and `merchant-terminal-v163.browser.mjs`, and expanded the Hub browser integration with editor images and the new item-selection flow. Coverage includes real client inventory helpers and the actual web bridge, size/image tiles, left/right layout, stats, quantity purchases, capacity/credits, sale ownership/equipped protection, stale quotes, failed saves/retry/rollback, search/categories, drag/drop, responsive layouts and Leave during a pending save. Existing assortment, Hub core/spatial, dialogue rules and navigation browser regressions pass. Shared-file equality, JS syntax and `git diff --check` checked; desktop/web/mobile and editor screenshots inspected.
+- New shared UI/CSS and changed script cache keys included. Installer remains 1.0.155. No server schema change, deployment or installer release; this follows the existing client-side Hub mutation architecture. Native Electron, live PocketBase, multi-device synchronization and the copied Android mobile/www bundle were not exercised.
+
 ## Daily NPC and asset merchant assortments (2026-10-07)
 
 Base: main `f6f4616` after PR #37; branch `feat/npc-daily-assortments`.

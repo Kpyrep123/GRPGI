@@ -6003,6 +6003,8 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
     }
   };
   window.GRPGHubBridgeV153 = {
+    itemThumb: item => renderEntityThumb(item),
+    inventoryLayout: player => buildInventoryLayoutWebV1067(player),
     currentPlayer,
     currentPlanet,
     canAdd: (p,id,n) => canAddInventoryItemWebV1067(p,id,n),

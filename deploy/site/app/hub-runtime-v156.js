@@ -117,9 +117,19 @@
     function merchant(id){
       if(walking)return;refresh();const o=ctx.map.objects.find(x=>x.id===id);if(!o||!C.trader(o)||!S.inSight(ctx.map,ctx.state,B.currentPlayer(),o))return;
       let rotation;try{rotation=C.merchantRotation(o,B.item,{...B.marketContext?.(),planetId:ctx.planet.id,mapId:ctx.map.id});}catch(e){B.notify(e.message,'err');return;}
-      const rows=rotation.offers.map(offer=>({...B.item(offer.itemId),price:offer.price})),config=JSON.stringify(o.merchantMarket);
-      const n=modal(o.name||'Торговец',`${rotation.rotationKey==='legacy'?'':`<p>Daily assortment · ${esc(rotation.rotationKey)}${rotation.usesGameDate?' · campaign day':' · UTC'}</p>`}<p>Кредиты: <b data-credits>${esc(B.currentPlayer().credits||0)}</b></p>${rows.map(i=>`<div class="hub-card-v153 row" style="justify-content:space-between"><div><b>${esc(i.name||i.id)}</b><div>${esc(i.price??i.cost??0)} кр.</div></div><button class="primary" data-buy="${esc(i.id)}">КУПИТЬ</button></div>`).join('')||'<p>No goods available today.</p>'}`);
-      n.querySelectorAll('[data-buy]').forEach(b=>b.onclick=()=>busy(n,()=>transact((p,s,h)=>C.purchase(h,objectNow(id,p,s,h),b.dataset.buy,p,s,B.item(b.dataset.buy),B.canAdd,B.marketContext?.()||{},{rotationKey:rotation.rotationKey,price:rows.find(i=>i.id===b.dataset.buy)?.price,config}),'Покупка сохранена'),()=>{n.querySelector('[data-credits]').textContent=B.currentPlayer().credits;n.querySelector('[data-status]').textContent='Покупка сохранена';if(B.isActive()){show();select(id);}}));
+      const playerId=ctx.playerId,planetId=ctx.planet.id,mapId=ctx.map.id,config=JSON.stringify(o.merchantMarket);
+      window.GRPGMerchantUIV163.open({
+        name:o.name,rotation,item:B.item,itemThumb:B.itemThumb,inventoryLayout:p=>B.inventoryLayout?.(C.clone(p)),player:B.currentPlayer,canAdd:B.canAdd,once:o.once,notify:B.notify,
+        available:()=>B.isActive()&&B.currentPlayer()?.id===playerId&&B.currentPlanet()?.id===planetId&&C.stateFor(B.currentPlayer(),B.currentPlanet(),C.hubOf(B.currentPlanet())).mapId===mapId,
+        transact:(chosen,quantity)=>transact((p,s,h)=>{
+          if(s.mapId!==mapId)throw new Error('The merchant is on another map');
+          const live=objectNow(id,p,s,h),quote={rotationKey:rotation.rotationKey,price:rotation.offers.find(e=>e.itemId===chosen.itemId)?.price,config};
+          if(chosen.source==='market')C.purchase(h,live,chosen.itemId,p,s,B.item(chosen.itemId),B.canAdd,B.marketContext?.()||{},quote,quantity);
+          else if(chosen.source==='inventory')C.sell(h,live,chosen.itemId,chosen.unitIndex,p,s,B.item(chosen.itemId),B.marketContext?.()||{},quote);
+          else throw new Error('Select an inventory item');
+        },chosen.source==='market'?'Покупка сохранена':'Продажа сохранена'),
+        onLeave:()=>{if(B.isActive()&&B.currentPlayer()?.id===playerId&&B.currentPlanet()?.id===planetId){show();select(id);}}
+      });
     }
     return {show,select,openDialog,merchant,transact,refresh,walk};
   }
