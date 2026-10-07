@@ -5,6 +5,16 @@
 
 
 
+## Daily NPC and asset merchant assortments (2026-10-07)
+
+Base: main `f6f4616` after PR #37; branch `feat/npc-daily-assortments`.
+
+- Trader remains an independent asset/unit flag. Edit product range opens a separate modal window above the Hub editor, with the complete physical equipment catalogue, availability checkboxes, search, Selected only, appearance chance (0–100%) and minimum/maximum prices in whole credits. Financial stocks remain in their existing separate exchange. Apply changes only the Hub draft, with undo/redo; Cancel/Escape discard window edits. Save hub uses the existing validated world save and failure/retry path. Disabled entries keep their settings. Duplicated objects, maps and prefabs retain their merchant configuration.
+- `merchantMarket` stores per-item rules inside existing planet Hub objects. Offers reuse the planetary market engine, with campaign/hub/map/merchant identity in the seed. Stock and prices remain stable for all players on a given day; appearance and bounded prices roll again on the next campaign market day. Without a configured campaign date, rollover is midnight UTC. Like the planetary market, a fixed campaign market date must be advanced by the DM to rotate stock. Appearance chance determines the daily presence of a product, not the chance of a successful purchase. No per-day purchase quantity limit was added.
+- Shared desktop/web purchase rules regenerate today's offer before mutation and reject obsolete day, price or assortment configuration. Spatial purchase wrapper forwards quotation/date arguments while preserving visibility/reach checks. Existing capacity, credit, access, once-only effects and atomic profile save/rollback remain. Legacy `merchantItemIds` continue as fixed-price lists until the DM applies the new editor; empty explicit assortments never fall back to them.
+- Added deterministic assortment rule coverage and expanded Hub browser integration for the separate window, catalogue selection, filtering, range validation, Apply/Cancel/Escape, undo/redo, saved configuration, campaign dates, stale-window rejection and desktop/web purchases with save failure/retry and capacity rollback. Existing Hub rules/spatial, dialogue and navigation regression checks remain covered. Script cache keys updated; installer version remains 1.0.155.
+- Configuration fits existing planet/profile JSON; no server schema change or deployment. Native Electron, live PocketBase and multi-device synchronization were not exercised. Purchase checks follow the existing client-side Hub mutation architecture; this change does not introduce a server-authoritative NPC trading endpoint. Android's copied mobile/www bundle remains outside this desktop/web change.
+
 ## RPG dialogue editor and full-screen conversations (2026-10-07)
 
 Base: main `8562a6b` after PR #36; branch `feat/hub-rpg-dialogues`.
