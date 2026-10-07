@@ -81,12 +81,12 @@
     }
   }
   async function saveBuilder(){
-    const current=builder;if(!current||current.saving)return;
+    const current=builder;if(!current||current.saving)return {ok:false,message:'The Hub draft is unavailable or already saving'};
     document.activeElement?.blur();current.hub.maps.forEach(syncSpawns155);
-    const errors=C.validate(current.hub);if(errors.length){Toast.show(errors.join(' · '),'err');return;}
+    const errors=C.validate(current.hub);if(errors.length){Toast.show(errors.join(' · '),'err');return {ok:false,message:errors.join(' · ')};}
     const live=PLANETS[current.planet.id];
-    if(!live){Toast.show('Планета удалена. Черновик хаба остаётся открыт.','err');return;}
-    if(JSON.stringify(live.hub||null)!==JSON.stringify(current.baseHub)){Toast.show('Хаб изменён извне. Сохранение отменено, чтобы не перезаписать изменения. Черновик остаётся открыт.','err');return;}
+    if(!live){Toast.show('Планета удалена. Черновик хаба остаётся открыт.','err');return {ok:false,message:'The planet was deleted. The Hub draft remains open.'};}
+    if(JSON.stringify(live.hub||null)!==JSON.stringify(current.baseHub)){Toast.show('Хаб изменён извне. Сохранение отменено, чтобы не перезаписать изменения. Черновик остаётся открыт.','err');return {ok:false,message:'The Hub changed externally. Saving was cancelled; the draft remains open.'};}
     const previous={hub:copy(live.hub||null),locationType:live.locationType};
     current.saving=true;const node=document.getElementById('hub-builder-v153');node.inert=true;
     try{
@@ -98,12 +98,12 @@
         if(result?.localSaved){current.baseHub=copy(current.hub);throw new Error('Хаб записан локально, но облако не подтверждено. Повторите сохранение.');}
         throw new Error(result?.message||'Не удалось сохранить хаб');
       }
-      current.saving=false;closeBuilder();Configurator.render();
+      current.saving=false;closeBuilder();Configurator.render();return {ok:true};
     }catch(error){
       if(current.baseHub===undefined||JSON.stringify(current.baseHub)!==JSON.stringify(current.hub)){
         const target=PLANETS[current.planet.id];if(target&&JSON.stringify(target.hub)===JSON.stringify(current.hub)){if(previous.hub===null)delete target.hub;else target.hub=previous.hub;target.locationType=previous.locationType;}
       }
-      Toast.show(error.message,'err');
+      Toast.show(error.message,'err');return {ok:false,message:error.message};
     }finally{current.saving=false;node.inert=false;}
   }
   function drawBuilder(){
@@ -206,13 +206,13 @@
     node.querySelector('[data-dialogs]').onclick=openDialogEditor;
     node.querySelector('[data-flags]').onclick=()=>A.openFlags({hub:builder.hub,checkpoint:checkpoint155,onClose:drawBuilder});
   }
-  function openDialogEditor(){A.openDialogs({hub:builder.hub,items:Object.values(EQUIPMENT),npcs:Object.values(NPCS),checkpoint:checkpoint155,onClose:drawBuilder});}
+  function openDialogEditor(){A.openDialogs({hub:builder.hub,items:Object.values(EQUIPMENT),npcs:Object.values(NPCS),planetId:builder.planet.id,testPlayer:App.currentUser,checkpoint:checkpoint155,onSave:saveBuilder,onClose:drawBuilder});}
   function boot(){
     enhanceConfigurator();
     playerRuntime=window.GRPGHubRuntimeV156.create({
       root:()=>document.getElementById('hub-content-v153'),currentPlayer:()=>App.currentUser,currentPlanet,
       isActive:()=>UI.activeModuleId==='hub-v153',activate:()=>{},
-      item:id=>Data.getItem(id),article:id=>ARTICLES[id],
+      item:id=>Data.getItem(id),npc:id=>NPCS[id],article:id=>ARTICLES[id],
       canAdd:(p,id,n)=>window.GRPGInventoryV1067.canAddItem(p,id,n),
       notify:(m,t)=>Toast.show(m,t),openStocks:()=>UI.openModule('market'),
       openArticle:id=>{UI.closeModule();UI.openModule('wiki',{preserveWikiState:true});Wiki.showEntity('article',id,true);},
