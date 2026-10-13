@@ -1,9 +1,21 @@
 # GRPGI — состояние проекта
 
-Обновлено: 2026-10-07. Версия клиента в `package.json`: **1.0.155**. Модули Хаба используют общие правила/runtime v156 и пространственную модель v157; версия установщика не менялась.
+Обновлено: 2026-10-13. Версия клиента в `package.json`: **1.0.155**. Модули Хаба используют общие правила/runtime v156 и пространственную модель v157; версия установщика не менялась.
 
 
 
+
+## Hub interaction range, camera, market styling and transition links (2026-10-13)
+
+Base: main `2ae37c2` after PR #39; branch `fix/hub-controls-transitions`.
+
+- Objects and characters can be interacted with only within **2 hexes**, measured between the character's hex and the object's centre hex. Fog visibility remains required. The inspector explains the range limit and disables unavailable actions; direct dialogue/merchant entry and confirmed use/dialogue/purchase/sale mutations enforce the same shared spatial rule. An open conversation or merchant cannot bypass the limit after the character position changes.
+- Player camera supports wheel zoom (25–300%, anchored under the cursor), left-button or middle-button dragging to pan, zoom buttons and return-to-character. A short left click still moves along the hex path. Drag gestures suppress movement/object selection, middle-button autoscroll and native image dragging. Camera state is kept per character/hub/map across redraws. Route previews, animations, fog and following the character use logical map coordinates at the current scale. Player tokens do not intercept portal clicks at the arrival point.
+- Merchant goods now use `market-shop-tile-v1071` and `market-shop-grid-v1071`; inventory uses `market-inventory-tile-v1071`, and panels reuse the planetary market styles. Item sizes, inspection, quantity buying, drag/drop, sales and daily validation remain. Store and assortment-editor labels, descriptions of controls, errors, currency/capacity, slot names, attribute requirements and accessibility text are localized into Russian. World-authored names/descriptions/tags remain unchanged.
+- Textured objects no longer show overlaid names in the player map or Hub editor. Names remain in tooltips, accessible labels, inspector and the asset palette. Hub palette cards use a single column and an explicit image/text grid, with wrapping names: the reused combat palette's reserved button columns no longer collapse the asset text area.
+- New transitions target another transition on the selected map via `targetObjectId`; the editor can create the reverse link with «Связать в обе стороны». Arrivals use the destination transition's centre hex and do not require a Start Point there. Start Point remains the initial-entry asset. Existing saved spawn-based links remain compatible until edited; changing a destination switches to transition links. Validation catches missing/self/unconfigured targets. Copying a map remaps links between its copied transitions, and linked configuration survives the normal save/undo path.
+- Added `hub-controls-v164.mjs` and `hub-controls-v164.browser.mjs`: exact 2/3-hex boundaries, all guarded action types, fog, reciprocal spawn-free travel, bad/legacy links, wheel anchor, left/middle pan without movement, zoomed click navigation, camera retention, textured labels, market class/localization and portal return. Expanded Hub editor integration for visible palette names, two-way linking, map-copy remapping and saved links; existing suites adjusted for range/localized messages. Passed Hub core/spatial, daily assortments, merchant Terminal rules/browser, editor/save/failure/retry browser integration, dialogue rules/browser and navigation browser regressions. JS syntax, shared-file equality and `git diff --check` pass; editor, map, desktop/web trading and narrow-screen screenshots inspected.
+- Script/CSS cache keys updated. Installer stays 1.0.155. No server/schema changes, deployment or installer release. Native Electron, live PocketBase, multi-device sync and copied Android mobile/www bundle were not exercised.
 
 ## Hub merchant Terminal UI and equipment images (2026-10-07)
 
