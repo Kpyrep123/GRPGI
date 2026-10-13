@@ -18,11 +18,11 @@ for(const bad of [entry('a',101),entry('a',-1),entry('a',NaN),entry('a',100,5,4)
 assert.ok(C.merchantErrors({merchantMarket:[entry('a'),entry('a')]}).length);
 const state={planetId:'h',mapId:'m',flags:{},completedInteractions:{}},p={id:'p',credits:100,inventory:[]},quote={rotationKey:r.rotationKey,price:r.offers[0].price,config:JSON.stringify(o.merchantMarket)};
 const original=plain(p),buy=(object=o,id='a',q=quote,c=market,room)=>C.purchase({},object,id,p,state,item(id),room,c,q);
-assert.throws(()=>buy(o,'a',null),/assortment changed/);assert.deepEqual(p,original);
-assert.throws(()=>buy(o,'a',{...quote,price:0}),/assortment changed/);
-assert.throws(()=>buy(o,'a',quote,{...market,campaign:{marketDate:'3616-10-08'}}),/assortment changed/);
-assert.throws(()=>buy({...o,merchantMarket:[entry('a',100,3,31)]}),/assortment changed/);
-assert.throws(()=>buy(o,'b'),/not available/);assert.throws(()=>buy(o,'disabled'),/not available/);assert.throws(()=>buy(o,'stock'),/недоступен/);
+assert.throws(()=>buy(o,'a',null),/Ассортимент изменился/);assert.deepEqual(p,original);
+assert.throws(()=>buy(o,'a',{...quote,price:0}),/Ассортимент изменился/);
+assert.throws(()=>buy(o,'a',quote,{...market,campaign:{marketDate:'3616-10-08'}}),/Ассортимент изменился/);
+assert.throws(()=>buy({...o,merchantMarket:[entry('a',100,3,31)]}),/Ассортимент изменился/);
+assert.throws(()=>buy(o,'b'),/недоступен/);assert.throws(()=>buy(o,'disabled'),/недоступен/);assert.throws(()=>buy(o,'stock'),/недоступен/);
 assert.throws(()=>buy(o,'a',quote,market,()=>({ok:false,reason:'full'})),/full/);assert.deepEqual(p,original);
 p.credits=0;assert.throws(()=>buy(),/кредитов/);p.credits=100;
 buy();assert.equal(p.credits,100-quote.price);assert.equal(p.inventory[0].qty,1);buy();assert.equal(p.inventory[0].qty,2);

@@ -24,7 +24,13 @@
   function visibleCells(m,s,p){const start=nearest(m,s.x,s.y),out=new Set();if(!start)return out;const radius=vision(m,p),a={x:s.x,y:s.y};for(let r=start.r-Math.ceil(radius);r<=start.r+Math.ceil(radius);r++)for(let q=start.q-Math.ceil(radius);q<=start.q+Math.ceil(radius);q++){const h={q,r};if(valid(m,h)&&distance(start,h)<=radius&&(cellKey(h)===cellKey(start)||lineOfSight(m,s,a,center(m,h))))out.add(cellKey(h));}return out;}
   function reveal(m,s,p){if(!m.fogEnabled)return;s.exploration||={};const old=s.exploration[m.id],seen=new Set(old?.gridKey===gridKey(m)?old.cells:[]);visibleCells(m,s,p).forEach(k=>seen.add(k));s.exploration[m.id]={gridKey:gridKey(m),cells:[...seen]};}
   function inSight(m,s,p,o,sight){if(!m.fogEnabled)return true;const pos=hex(m,(+o.x||0)+(+o.width||48)/2,(+o.y||0)+(+o.height||48)/2);return (sight||visibleCells(m,s,p)).has(cellKey(pos));}
-  function assertObject(h,o,p,s){const m=h.maps.find(m=>m.id===s.mapId);if(!m||!inSight(m,s,p,o))throw new Error('Объект скрыт туманом войны');}
+  const INTERACTION_RANGE=2;
+  function interactionReason(m,s,p,o){
+    if(!m||!o||!inSight(m,s,p,o))return 'Объект скрыт туманом войны';
+    const from=hex(m,s.x,s.y),to=hex(m,(+o.x||0)+(+o.width||48)/2,(+o.y||0)+(+o.height||48)/2);
+    return distance(from,to)>INTERACTION_RANGE?'Подойдите ближе: взаимодействие доступно в пределах 2 гексов':'';
+  }
+  function assertObject(h,o,p,s){const why=interactionReason(h.maps.find(m=>m.id===s.mapId),s,p,o);if(why)throw new Error(why);}
   // Binary heap gives deterministic shortest hex paths without scanning every open node.
   function path(m,s,x,y){const start=nearest(m,s.x,s.y),goal=nearest(m,x,y);if(!start||!goal||Math.abs(x-center(m,goal).x)>size(m)*2||Math.abs(y-center(m,goal).y)>size(m)*2)return [];if(distance(start,goal)===0)return [];const wallSegments=segments(m),heap=[],scores=new Map([[cellKey(start),0]]),parent=new Map(),closed=new Set();let order=0;
     const less=(a,b)=>a.f<b.f||(a.f===b.f&&a.order<b.order);
@@ -43,5 +49,5 @@
   const purchase=C.purchase;C.purchase=(h,o,id,p,s,...args)=>{assertObject(h,o,p,s);return purchase(h,o,id,p,s,...args);};
   const advance=C.advance;C.advance=(h,oid,did,nid,cid,p,s)=>{const o=h.maps.find(m=>m.id===s.mapId)?.objects.find(o=>o.id===oid);if(o)assertObject(h,o,p,s);return advance(h,oid,did,nid,cid,p,s);};
   const validate=C.validate;C.validate=h=>{const errors=validate(h);for(const m of h.maps){if(m.hexSize!==undefined&&(!Number.isFinite(+m.hexSize)||+m.hexSize<20||+m.hexSize>80))errors.push('Размер гекса: 20–80 px');if(m.visionRange!==undefined&&m.visionRange!==''&&(!Number.isFinite(+m.visionRange)||+m.visionRange<0||+m.visionRange>30))errors.push('Обзор: 0–30 гексов');try{cells(m);}catch(e){errors.push(e.message);}const seen=new Set();for(const w of m.walls||[]){if(!w.id||seen.has(w.id)||!Array.isArray(w.points)||w.points.length<2||w.points.some(p=>!Number.isFinite(p.x)||!Number.isFinite(p.y)||p.x<0||p.y<0||p.x>m.width||p.y>m.height)||!Number.isFinite(+w.thickness)||+w.thickness<1||+w.thickness>80)errors.push('Некорректная стена');seen.add(w.id);}}return [...new Set(errors)];};
-  globalThis.GRPGHubSpatialV157={size,center,hex,nearest,valid,distance,cells,cellKey,gridKey,points,polygon,segmentDistance,canMove,lineOfSight,vision,visibleCells,reveal,inSight,assertObject,path,step,normalize,gridMarkup,wallsMarkup,drawFog};
+  globalThis.GRPGHubSpatialV157={size,center,hex,nearest,valid,distance,cells,cellKey,gridKey,points,polygon,segmentDistance,canMove,lineOfSight,vision,visibleCells,reveal,inSight,INTERACTION_RANGE,interactionReason,assertObject,path,step,normalize,gridMarkup,wallsMarkup,drawFog};
 })();
