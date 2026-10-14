@@ -3293,6 +3293,7 @@ ipcMain.handle('devops:deployWeb', async (event, payload) => {
       throw new Error('Перед Web-деплоем настройте PocketBase URL и Campaign ID');
     }
     return await getDevOpsModule().deployWeb(rootDir, {
+      localAudioDir: writableWorldAudioDir(),
       runtimeConfig: {
         url: syncConfig.url,
         campaignId: syncConfig.campaignId,

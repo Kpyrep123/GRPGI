@@ -851,7 +851,31 @@ async function copyPublicLandingBackgroundV1068(rootDir, stagingSite) {
   return { copied: 1, missing: [] };
 }
 
-async function prepareWebDeploySource(sourcePath, runtimeConfig = {}, rootDir = '') {
+async function copyWebAmbientV167(rootDir, stagingSite, localAudioDir = '') {
+  const filename = 'web_ambient.m4a';
+  const target = path.join(stagingSite, 'app', 'assets', 'audio', filename);
+  const dirs = [rootDir && path.join(rootDir, 'renderer', 'assets', 'audio'), localAudioDir].filter(Boolean);
+  for (const dir of dirs) {
+    let source = path.join(dir, filename);
+    if (!fs.existsSync(source) && dir === localAudioDir && fs.existsSync(dir)) {
+      // Imported desktop audio uses a timestamp prefix; do not copy the entire library.
+      const imported = (await fs.promises.readdir(dir)).filter(name => /^\d+_web_ambient\.m4a$/i.test(name));
+      const candidates = await Promise.all(imported.map(async name => ({ file: path.join(dir, name), stat: await fs.promises.stat(path.join(dir, name)) })));
+      candidates.sort((a, b) => b.stat.mtimeMs - a.stat.mtimeMs);
+      source = candidates.find(c => c.stat.isFile() && c.stat.size > 0)?.file || source;
+    }
+    if (!fs.existsSync(source)) continue;
+    const stat = await fs.promises.stat(source);
+    if (!stat.isFile() || stat.size === 0) continue;
+    await fs.promises.mkdir(path.dirname(target), { recursive: true });
+    await fs.promises.copyFile(source, target);
+    return { copied: true, source, bytes: stat.size };
+  }
+  const staged = await fs.promises.stat(target).catch(() => null);
+  return { copied: Boolean(staged?.isFile() && staged.size > 0), source: staged ? target : '', bytes: staged?.size || 0 };
+}
+
+async function prepareWebDeploySource(sourcePath, runtimeConfig = {}, rootDir = '', localAudioDir = '') {
   const stagingRoot = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'grpgi-web-deploy-'));
   const stagingSite = path.join(stagingRoot, 'site');
   await fs.promises.cp(sourcePath, stagingSite, { recursive: true, force: true });
@@ -861,7 +885,8 @@ async function prepareWebDeploySource(sourcePath, runtimeConfig = {}, rootDir = 
   const markerAssets = await copyWebMarkerAssetsV1055(rootDir, stagingSite);
   const uiExtraAssets = await copyWebUiExtraAssetsV1060(rootDir, stagingSite);
   const landingBackground = await copyPublicLandingBackgroundV1068(rootDir, stagingSite);
-  return { stagingRoot, stagingSite, markerAssets, uiExtraAssets, landingBackground };
+  const webAmbient = await copyWebAmbientV167(rootDir, stagingSite, localAudioDir);
+  return { stagingRoot, stagingSite, markerAssets, uiExtraAssets, landingBackground, webAmbient };
 }
 
 async function deployWeb(rootDir, options = {}) {
@@ -872,7 +897,7 @@ async function deployWeb(rootDir, options = {}) {
     const config = loadConfig(rootDir);
     const web = validateWebConfig(config, rootDir);
     assertWebSourceHasNoLegacyBackend(web.sourcePath);
-    prepared = await prepareWebDeploySource(web.sourcePath, options.runtimeConfig || {}, rootDir);
+    prepared = await prepareWebDeploySource(web.sourcePath, options.runtimeConfig || {}, rootDir, options.localAudioDir || '');
     const deploySourcePath = prepared.stagingSite;
     const sshInfo = await commandAvailable('ssh', ['-V']);
     const scpInfo = await commandAvailable('scp', ['-V']);
@@ -918,6 +943,9 @@ async function deployWeb(rootDir, options = {}) {
       '[ -s "$incoming/app/app.js" ]',
       '[ -s "$incoming/app/article-sandbox.html" ]',
       '[ -s "$incoming/app/runtime-config.js" ]',
+      // Keep an already-uploaded large ambient file when this local checkout lacks it.
+      'if [ ! -s "$incoming/app/assets/audio/web_ambient.m4a" ] && [ -s "$target/app/assets/audio/web_ambient.m4a" ]; then mkdir -p "$incoming/app/assets/audio"; cp -a "$target/app/assets/audio/web_ambient.m4a" "$incoming/app/assets/audio/web_ambient.m4a"; printf GRPGI_AMBIENT_PRESERVED; fi',
+      'if [ ! -s "$incoming/app/assets/audio/web_ambient.m4a" ]; then printf GRPGI_AMBIENT_MISSING; fi',
       'rm -rf "$backup"',
       'if [ -d "$target/downloads" ]; then mkdir -p "$incoming/downloads"; cp -a "$target/downloads/." "$incoming/downloads/"; fi',
       // scp is executed as root and the server may use umask 077. In that case
@@ -951,6 +979,10 @@ async function deployWeb(rootDir, options = {}) {
       healthChecks,
       healthWarnings,
       runtimeAuthInjected: true,
+      webAmbientCopied: Boolean(prepared?.webAmbient?.copied),
+      webAmbientPreserved: String(deployed.stdout).includes('GRPGI_AMBIENT_PRESERVED'),
+      webAmbientMissing: String(deployed.stdout).includes('GRPGI_AMBIENT_MISSING'),
+      webAmbientBytes: Number(prepared?.webAmbient?.bytes || 0),
       markerAssetsCopied: Number(prepared?.markerAssets?.copied || 0),
       markerAssetsMissing: prepared?.markerAssets?.missing || [],
       landingBackgroundCopied: Number(prepared?.landingBackground?.copied || 0),
@@ -1118,6 +1150,7 @@ module.exports = {
   getStatus,
   publishDesktopRelease,
   deployWeb,
+  prepareWebDeploySource,
   createSourceArchive,
   defaultArchiveName,
   sanitizeError

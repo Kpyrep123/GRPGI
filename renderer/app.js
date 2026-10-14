@@ -22249,12 +22249,12 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
         const label = item.ok ? 'OK' : 'WARN';
         return `${label} ${item.url} ${code ? `HTTP ${code}` : (item.statusText || 'нет ответа')}`;
       });
-      const hasWarnings = Boolean((result.healthWarnings || []).length);
+      const hasWarnings = Boolean((result.healthWarnings || []).length || result.webAmbientMissing);
       setDevOpsOutputV64(
-        `Web задеплоен успешно.\nИсточник: ${result.source}\nСервер: ${result.endpoint}\nКаталог: ${result.target}\nПроверка файлов: OK\nHTTP-диагностика (не вызывает rollback):\n${healthLines.join('\n') || 'не настроена'}`,
+        `Web задеплоен успешно.\nИсточник: ${result.source}\nСервер: ${result.endpoint}\nКаталог: ${result.target}\nФоновый звук: ${result.webAmbientCopied ? 'загружен с этого компьютера' : result.webAmbientPreserved ? 'сохранён на сервере' : 'web_ambient.m4a отсутствует локально и на сервере'}\nПроверка файлов: OK\nHTTP-диагностика (не вызывает rollback):\n${healthLines.join('\n') || 'не настроена'}`,
         hasWarnings ? '' : 'ok'
       );
-      Toast.show(hasWarnings ? 'Web опубликован; HTTP-проверка дала предупреждение' : 'Web-версия опубликована', hasWarnings ? 'info' : 'ok');
+      Toast.show(hasWarnings ? 'Web опубликован; есть предупреждения' : 'Web-версия опубликована', hasWarnings ? 'info' : 'ok');
     } finally {
       setDevOpsBusyV64(false);
     }
