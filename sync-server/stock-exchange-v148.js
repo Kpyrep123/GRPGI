@@ -1,6 +1,7 @@
 'use strict';
 
 const crypto = require('crypto');
+const StockMotion = require('./stock-motion-v165.js');
 
 const VERSION = 148;
 const MAX_HISTORY = 3600;
@@ -37,20 +38,9 @@ function createState(world = {}, now = Date.now()) {
   const quotes = {};
   for (const item of stockItems(world)) {
     const price = initialPrice(item);
-    quotes[item.id] = { itemId: item.id, ticker: ticker(item), price, previousPrice: price, change: 0, changePercent: 0, volatility: volatility(item), tick: second };
+    quotes[item.id] = { itemId: item.id, ticker: ticker(item), price, anchor: price, previousPrice: price, change: 0, changePercent: 0, volatility: volatility(item), tick: second };
   }
   return { version: VERSION, lastTick: second, quotes, candles: {}, orders: [], events: [], updatedAt: new Date(second * 1000).toISOString() };
-}
-
-function regime(campaignId, itemId, tick) {
-  const block = Math.floor(tick / 90);
-  const value = random(`${campaignId}|${itemId}|regime|${block}`);
-  if (value < 0.18) return { id: 'trend-up', drift: 0.00042, reversion: 0.03 };
-  if (value < 0.36) return { id: 'trend-down', drift: -0.00038, reversion: 0.03 };
-  if (value < 0.56) return { id: 'volatile', drift: 0, reversion: 0.015, noise: 2.1 };
-  if (value < 0.76) return { id: 'range', drift: 0, reversion: 0.12, noise: 0.65 };
-  if (value < 0.88) return { id: 'breakout', drift: (random(`${campaignId}|${itemId}|breakout|${block}`) < .5 ? -1 : 1) * 0.00085, reversion: 0.01, noise: 1.35 };
-  return { id: 'calm', drift: 0.00003, reversion: 0.06, noise: 0.3 };
 }
 
 function manualImpulse(state, itemId, tick) {
@@ -59,15 +49,10 @@ function manualImpulse(state, itemId, tick) {
 }
 
 function nextPrice(state, campaignId, quote, tick) {
-  const mode = regime(campaignId, quote.itemId, tick);
-  const vol = quote.volatility || 1;
-  const noise = (random(`${campaignId}|${quote.itemId}|noise|${tick}`) - .5) * 0.0014 * vol * (mode.noise || 1);
-  const anchor = Math.max(MIN_PRICE, number(quote.anchor, quote.price));
-  const deviation = (anchor - quote.price) / Math.max(anchor, MIN_PRICE);
-  const shockRoll = random(`${campaignId}|${quote.itemId}|shock|${tick}`);
-  const shock = shockRoll > .998 ? (random(`${campaignId}|${quote.itemId}|shock-dir|${tick}`) < .5 ? -1 : 1) * (0.008 + random(`${campaignId}|${quote.itemId}|shock-size|${tick}`) * 0.025) * vol : 0;
-  const delta = mode.drift * vol + noise + deviation * mode.reversion * 0.01 + shock + manualImpulse(state, quote.itemId, tick);
-  return { price: Math.max(MIN_PRICE, round(quote.price * Math.exp(delta), 4)), regime: mode.id };
+  const movement=StockMotion.next({campaignId,itemId:quote.itemId,tick,stepSeconds:1,price:quote.price,anchor:quote.anchor,volatility:quote.volatility});
+  const impulse=manualImpulse(state,quote.itemId,tick);
+  if(impulse)return {price:Math.max(MIN_PRICE,round(movement.price*Math.exp(impulse),4)),regime:'dm-impulse'};
+  return movement;
 }
 
 function addCandle(state, itemId, tick, price) {
@@ -86,8 +71,9 @@ function normalizeState(state, world, now) {
   for (const item of stockItems(world)) {
     if (!next.quotes[item.id]) {
       const price = initialPrice(item);
-      next.quotes[item.id] = { itemId: item.id, ticker: ticker(item), price, previousPrice: price, change: 0, changePercent: 0, volatility: volatility(item), tick: next.lastTick || Math.floor(now / 1000) };
+      next.quotes[item.id] = { itemId: item.id, ticker: ticker(item), price, anchor: price, previousPrice: price, change: 0, changePercent: 0, volatility: volatility(item), tick: next.lastTick || Math.floor(now / 1000) };
     }
+    if(!Number.isFinite(next.quotes[item.id].anchor)||next.quotes[item.id].anchor<MIN_PRICE)next.quotes[item.id].anchor=Math.max(MIN_PRICE,number(next.quotes[item.id].price,initialPrice(item)));
     next.quotes[item.id].volatility = volatility(item);
   }
   return next;

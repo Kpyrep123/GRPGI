@@ -1,9 +1,19 @@
 # GRPGI — состояние проекта
 
-Обновлено: 2026-10-13. Версия клиента в `package.json`: **1.0.155**. Модули Хаба используют общие правила/runtime v156 и пространственную модель v157; версия установщика не менялась.
+Обновлено: 2026-10-14. Версия клиента в `package.json`: **1.0.155**. Модули Хаба используют общие правила/runtime v156 и пространственную модель v157; версия установщика не менялась.
 
 
 
+
+## Intraday stock movement without sustained holding drift (2026-10-14)
+
+Base: main `72f5c10` after PR #40; branch `feat/intraday-stock-motion`.
+
+- Added one ES5/CommonJS `stock-motion-v165.js` model, mirrored for isolated `market-service`, JSON `sync-server` and PocketBase hooks. Five-minute phases use 12 patterns with randomized orientation/levels, smooth targets, zero-mean innovations and rare shocks. Log-price reversion has a three-minute half-life toward a persistent anchor. The ordinary generator has no permanent upward drift or hourly price reset. Existing stockVolatility scales excursions/noise; no world configuration is rewritten or price ceiling added. Technical floor stays 0.01. One-second/ten-second time scaling is tested; different backend tick sizes have comparable distributions, not identical random trajectories.
+- Existing isolated-service SQLite anchors/prices/candles/portfolios/orders persist. Legacy JSON backends now store an anchor at creation and fill a missing anchor once from the current quote, without resetting that quote or rewriting balances. Normal ticks do not move the anchor. Existing isolated-service exact DM impulse/finish re-anchor and exact-price controls remain; explicit DM changes can alter long-term value. Legacy backend impulse handling remains in its adapter. Server routes, clients, installer and DB schema are unchanged.
+- Measured 24 seeds × 24 hours per volatility (576 hourly windows) against a frozen v152 isolated-service reference. At volatility 1 the median hourly max/min range is **11.9854%** versus **0.4149%** before; its 10th–90th percentile is **9.5114–15.0769%**. Signed 24-hour holding median is **+0.0452%**, mean **+0.2913%**, and median absolute endpoint change **2.6507%**. At volatility 0.5/2 the hourly medians are 5.8233%/25.4074%. These are simulation sample results, not profit guarantees or hard price bounds. All tested hourly windows contain meaningful moves in both directions; a one-week sample remains near the anchor instead of compounding upward.
+- New `stock-motion-v165.mjs` checks before/after motion, two-way excursions, timestep scaling, deterministic replay, high/low deviation recovery, positive prices, missing-anchor migration, serialized chunk/restart equivalence and mirrored files. New `stock-motion-v165.integration.mjs` starts the real isolated service against temporary SQLite databases with a controlled server clock: a naturally profitable TP without DM intervention, long/short TP, limit/SL, exact +/- DM events, re-anchor, candles, campaign isolation, idempotency and restart persistence all pass. Existing stock core, PocketBase JS core, calibration/pattern checks pass. The unrelated legacy `v148-stock-config.mjs` remains pinned to installer 1.0.148 and fails on the already-existing 1.0.155 package; package/client files are unchanged. Native live PocketBase and the production host were not exercised.
+- Added `market-service/INTRADAY_MOTION_V165.md` with mechanics, measured results, tests and server update commands, and linked it from the stock guide. Both the adapter and its adjacent helper must be deployed to the active backend and that service restarted; clients need no update. No deployment or installer release was performed.
 
 ## Hub interaction range, camera, market styling and transition links (2026-10-13)
 
