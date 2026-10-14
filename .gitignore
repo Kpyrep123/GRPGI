@@ -29,3 +29,7 @@ mobile/android/**/build/
 .sync-fix-backups/
 
 /mobile/generated-www/
+
+# Large ambient track is supplied locally and copied by Deploy Web.
+/renderer/assets/audio/web_ambient.m4a
+/deploy/site/app/assets/audio/web_ambient.m4a
