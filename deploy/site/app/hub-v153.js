@@ -7,7 +7,9 @@
     activate:()=>{B.app.ui.screen='hub-v153';document.querySelectorAll('.screen').forEach(x=>x.classList.toggle('active',x.id==='screen-hub-v153'));document.querySelectorAll('.nav-btn').forEach(x=>x.classList.toggle('active',x.id==='nav-hub-v153'));},
     commit:async(mutator,notice,expectedId)=>{if(B.currentPlayer()?.id!==expectedId)throw new Error('Персонаж изменился');return B.commit(mutator,notice);}
   });
-  document.getElementById('nav-hub-v153')?.addEventListener('click',runtime.show);
+  // Older cached app bundles lack the unified route: prevent their generic nav handler from clearing it.
+  if(!B.openHub)document.getElementById('nav-hub-v153')?.addEventListener('click',event=>{event.stopImmediatePropagation();runtime.show();},{capture:true});
   const syncNav=()=>document.getElementById('nav-hub-v153')?.classList.toggle('hidden',!window.GRPGHubCoreV156.isHub(B.currentPlanet()));syncNav();setInterval(syncNav,3000);
-  window.GRPGHubV153={show:runtime.show,isHub:window.GRPGHubCoreV156.isHub,version:157};
+  window.GRPGHubV153={show:runtime.show,isHub:window.GRPGHubCoreV156.isHub,version:168};
+  if(B.app.ui.screen==='hub-v153'){if(B.openHub)B.openHub();else runtime.show();}
 })();

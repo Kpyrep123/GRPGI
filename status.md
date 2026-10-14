@@ -1,9 +1,18 @@
 # GRPGI — состояние проекта
 
-Обновлено: 2026-10-14. Версия клиента в `package.json`: **1.0.155**. Модули Хаба используют общие правила/runtime v156 и пространственную модель v157; версия установщика не менялась.
+Обновлено: 2026-10-15. Версия клиента в `package.json`: **1.0.155**. Модули Хаба используют общие правила/runtime v156 и пространственную модель v157; версия установщика не менялась.
 
 
 
+
+## Web Hub empty-screen navigation regression (2026-10-15)
+
+Base: main `8484290` after PR #43; branch `fix/web-hub-navigation`.
+
+- Confirmed a navigation race in the complete web client: the Hub button lacked `data-screen`, while the asynchronously initialized generic handler bound all `.nav-btn` buttons. When this handler ran after the Hub adapter's click handler, it assigned `undefined` to the active screen and removed every active screen, leaving the previous Profile header and a blank workspace. Earlier Hub tests used a bridge fixture and did not execute the full application's async startup/nav binding.
+- Hub now has a proper `hub-v153` screen identifier and renders through the common screen switch, with its own header and inclusion in saved navigation/Back/Forward routes. Generic navigation binds only buttons with a screen identifier. The adapter avoids duplicate handling in the updated client; its capture fallback blocks the faulty generic handler in an older cached app bundle. If the route is restored before the adapter is loaded, it displays a loading state and renders when the adapter initializes. Updated app/adapter cache keys.
+- New `web-hub-navigation-v168.browser.mjs` loads the actual web HTML, scripts and styles, delays async service-worker cleanup and lets the real app bind navigation. It reproduces the pre-fix `undefined` screen on main `8484290` and verifies Profile→Hub map/object/dialogue display, repeated switches, title, one active screen, saved route, browser Back/Forward, delayed adapter initialization and cached-app compatibility. The cloud is replaced with an offline test response; authenticated production data is not fetched. The existing editor/save/desktop/web dialogue/trade browser regression passes. JS syntax and diff checks pass; a full-page screenshot was inspected.
+- Publish the updated `deploy/site/app/app.js`, `hub-v153.js` and `index.html` together using Deploy Web. Static assets require no backend/service restart. Installer stays 1.0.155. No deployment, installer release, DB/schema or desktop behavior changes.
 
 ## Hub workspace, object interaction popup and local web audio deployment (2026-10-14)
 

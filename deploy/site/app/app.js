@@ -3548,6 +3548,11 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
     if (App.ui.screen === 'news') { setTopbar('GalaGram', 'Лента кампании'); window.GRPGNewsWebV159?.show(); }
     if (App.ui.screen === 'combat' && !RUNTIME.hideCombat) renderCombat();
     if (App.ui.screen === 'profile') renderProfile();
+    if (App.ui.screen === 'hub-v153') {
+      setTopbar('Хаб', currentPlanet()?.name || 'Локация персонажа');
+      if (window.GRPGHubV153) window.GRPGHubV153.show();
+      else $('#screen-hub-v153').textContent = 'Хаб загружается…';
+    }
   }
 
   function openArticleById(articleId, options = {}) {
@@ -4161,7 +4166,7 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
       lastDesktopLayout = desktopLayout;
     });
 
-    $$('.nav-btn').forEach(btn => btn.addEventListener('click', () => {
+    $$('.nav-btn[data-screen]').forEach(btn => btn.addEventListener('click', () => {
       App.ui.screen = btn.dataset.screen;
       renderCurrentScreen();
     }));
@@ -5868,7 +5873,7 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
 
   /* v1.0.149 — persistent web navigation and mobile back handling */
   const WEB_NAV_KEY_V149='grpg.web.navigation.v149';
-  const WEB_SCREENS_V149=new Set(['home','archive','market','chat','combat','profile','news']);
+  const WEB_SCREENS_V149=new Set(['home','archive','market','chat','combat','profile','news','hub-v153']);
   let webNavPopV149=false,webNavScreenV149='',webNavScrollTimerV149=0;
   function webNavSnapshotV149(){
     return{
@@ -6014,6 +6019,7 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
     article: id => App.data.articles.get(String(id || '')) || null,
     commit: (mutator, notice = 'Состояние хаба сохранено') => commitPlayerMutation(mutator, notice),
     openArticle: id => openArticleById(String(id || ''), { directAccess: true }),
+    openHub: () => { App.ui.screen = 'hub-v153'; renderCurrentScreen(); },
     openStocks: () => { marketTabWebV1073 = 'stocks'; App.ui.screen = 'market'; renderCurrentScreen(); },
     notify,
     esc,
