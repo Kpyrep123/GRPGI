@@ -1,8 +1,11 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
+import {createRequire} from 'node:module';
+import {fileURLToPath} from 'node:url';
+const require=createRequire(import.meta.url);
 const code=fs.readFileSync(new URL('../pocketbase/pb_hooks/grpgi_stock_exchange_v148.js',import.meta.url),'utf8');
-const context={module:{exports:{}},toString:value=>Buffer.from(value).toString('utf8'),DynamicModel:function(fields){Object.assign(this,fields);}};
+const context={require,__hooks:fileURLToPath(new URL('../pocketbase/pb_hooks',import.meta.url)),module:{exports:{}},toString:value=>Buffer.from(value).toString('utf8'),DynamicModel:function(fields){Object.assign(this,fields);}};
 vm.createContext(context);
 vm.runInContext(code,context);
 const world={equipment:{EQUIPMENT:{stock_adr:{id:'stock_adr',type:'stock',name:'Акция',stockMinPrice:170,stockVolatility:1}}}};

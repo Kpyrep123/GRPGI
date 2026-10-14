@@ -4,6 +4,7 @@ const http = require('node:http');
 const { URL } = require('node:url');
 const { DatabaseSync } = require('node:sqlite');
 const crypto = require('node:crypto');
+const StockMotion = require('./stock-motion-v165.js');
 
 const PORT = Number(process.env.MARKET_PORT || 8091);
 const HOST = process.env.MARKET_HOST || '127.0.0.1';
@@ -15,20 +16,6 @@ const DEFAULT_CAMPAIGN = process.env.MARKET_CAMPAIGN_ID || 'main';
 const ADMIN_TOKEN = String(process.env.GRPGI_STOCK_WORKER_TOKEN || '');
 const MIN_PRICE = 0.01;
 const MAX_ORDER_QUANTITY = 1_000_000;
-const MARKET_PATTERNS = [
- ['calm','trend-up','trend-up','range','trend-down','volatile','trend-up','calm'],
- ['range','trend-down','trend-down','volatile','trend-up','range','trend-down','calm'],
- ['calm','trend-up','trend-down','trend-up','trend-down','range','volatile','calm'],
- ['range','calm','breakout-up','trend-up','range','trend-down','volatile','calm'],
- ['calm','volatile','breakout-down','trend-down','range','trend-up','volatile','range'],
- ['range','trend-up','range','trend-up','trend-down','trend-down','volatile','calm'],
- ['calm','trend-down','range','trend-down','trend-up','trend-up','volatile','range'],
- ['volatile','range','calm','breakout-up','trend-down','range','trend-up','calm'],
- ['range','volatile','calm','breakout-down','trend-up','range','trend-down','calm'],
- ['calm','trend-up','volatile','trend-down','range','trend-up','trend-down','range'],
- ['range','trend-down','volatile','trend-up','calm','breakout-up','range','calm'],
- ['calm','range','trend-up','trend-down','volatile','breakout-down','range','calm']
-];
 
 const market = new DatabaseSync(MARKET_DB);
 const pocketbase = new DatabaseSync(POCKETBASE_DB);
@@ -89,10 +76,9 @@ function syncStocks(campaign){
   market.exec('COMMIT');
  }catch(error){market.exec('ROLLBACK');throw error;}
 }
-function regime(campaign,itemId,tick){const phaseBlock=Math.floor(tick/900),cycle=Math.floor(phaseBlock/8),phase=phaseBlock%8,patternIndex=Math.floor(random(`${campaign}|${itemId}|pattern|${cycle}`)*MARKET_PATTERNS.length),mode=MARKET_PATTERNS[patternIndex][phase];if(mode==='trend-up')return[mode,.00001,.00008,1];if(mode==='trend-down')return[mode,-.000009,.00008,1];if(mode==='volatile')return[mode,0,.00004,1.8];if(mode==='range')return[mode,0,.0005,.65];if(mode==='breakout-up')return[mode,.000025,.00003,1.35];if(mode==='breakout-down')return[mode,-.000025,.00003,1.35];return['calm',.000001,.00025,.35];}
 function activeImpulses(campaign,itemId,tick){return market.prepare('SELECT percent,start_tick,end_tick,start_price,target_price FROM events WHERE campaign_id=? AND item_id=? AND start_tick<=? AND end_tick>?').all(campaign,itemId,tick,tick);}
 function eventImpulse(rows){return rows.reduce((sum,event)=>{const steps=Math.max(1,Math.ceil((event.end_tick-event.start_tick)/TICK_SECONDS)),start=Math.max(MIN_PRICE,Number(event.start_price)||1),target=Math.max(MIN_PRICE,Number(event.target_price)||start*(1+Number(event.percent||0)/100));return sum+Math.log(target/start)/steps;},0);}
-function nextPrice(campaign,q,tick){const impulses=activeImpulses(campaign,q.item_id,tick);if(impulses.length){const delta=eventImpulse(impulses),price=Math.max(MIN_PRICE,round(q.price*Math.exp(delta))),finish=impulses.some(event=>tick+TICK_SECONDS>=event.end_tick);return{price,regime:'dm-impulse',anchor:finish?price:null};}const [name,drift,reversion,noiseScale]=regime(campaign,q.item_id,tick),noise=(random(`${campaign}|${q.item_id}|noise|${tick}`)-.5)*.00035*q.volatility*noiseScale,deviation=(q.anchor-q.price)/Math.max(q.anchor,MIN_PRICE),shockRoll=random(`${campaign}|${q.item_id}|shock|${tick}`),shock=shockRoll>.99985?(random(`${campaign}|${q.item_id}|shock-dir|${tick}`)<.5?-1:1)*(.002+random(`${campaign}|${q.item_id}|shock-size|${tick}`)*.004)*q.volatility:0,delta=drift*q.volatility+noise+deviation*reversion+shock;return{price:Math.max(MIN_PRICE,round(q.price*Math.exp(delta))),regime:name,anchor:null};}
+function nextPrice(campaign,q,tick){const impulses=activeImpulses(campaign,q.item_id,tick);if(impulses.length){const delta=eventImpulse(impulses),price=Math.max(MIN_PRICE,round(q.price*Math.exp(delta))),finish=impulses.some(event=>tick+TICK_SECONDS>=event.end_tick);return{price,regime:'dm-impulse',anchor:finish?price:null};}return StockMotion.next({campaignId:campaign,itemId:q.item_id,tick,stepSeconds:TICK_SECONDS,price:q.price,anchor:q.anchor,volatility:q.volatility});}
 function writeCandle(campaign,itemId,tick,price){const bucket=Math.floor(tick/60)*60,volume=round(random(`${itemId}|volume|${tick}`)*40+1,2);market.prepare(`INSERT INTO candles(campaign_id,item_id,bucket_time,open,high,low,close,volume) VALUES(?,?,?,?,?,?,?,?)
  ON CONFLICT(campaign_id,item_id,bucket_time) DO UPDATE SET high=max(high,excluded.high),low=min(low,excluded.low),close=excluded.close,volume=volume+excluded.volume`).run(campaign,itemId,bucket,price,price,price,price,volume);market.prepare(`DELETE FROM candles WHERE campaign_id=? AND item_id=? AND bucket_time NOT IN (SELECT bucket_time FROM candles WHERE campaign_id=? AND item_id=? ORDER BY bucket_time DESC LIMIT ?)`).run(campaign,itemId,campaign,itemId,MAX_CANDLES);}
 function playerRow(campaign,playerId){return pocketbase.prepare('SELECT id,playerJson,version FROM campaign_players WHERE campaignId=? AND playerId=? LIMIT 1').get(campaign,playerId);}

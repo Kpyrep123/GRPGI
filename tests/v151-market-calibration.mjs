@@ -4,8 +4,8 @@ import fs from 'node:fs';
 const server = fs.readFileSync(new URL('../market-service/server.js', import.meta.url), 'utf8');
 const renderer = fs.readFileSync(new URL('../renderer/app.js', import.meta.url), 'utf8');
 
-assert.match(server, /Math\.floor\(tick\/900\)/);
-assert.match(server, /\*\.00035\*q\.volatility/);
+assert.match(server, /StockMotion\.next\(/);
+assert.match(server, /stepSeconds:TICK_SECONDS/);
 assert.doesNotMatch(server, /delta=\([^\n]+\)\*TICK_SECONDS\+eventImpulse/);
 assert.match(server, /start_price REAL,target_price REAL/);
 assert.match(server, /Math\.log\(target\/start\)\/steps/);

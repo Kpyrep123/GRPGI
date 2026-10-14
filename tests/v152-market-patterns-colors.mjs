@@ -5,7 +5,8 @@ const server = fs.readFileSync(new URL('../market-service/server.js', import.met
 const web = fs.readFileSync(new URL('../deploy/site/app/app.js', import.meta.url), 'utf8');
 const electron = fs.readFileSync(new URL('../renderer/stock-exchange-v148.js', import.meta.url), 'utf8');
 
-const source = server.match(/const MARKET_PATTERNS = (\[[\s\S]*?\n\]);/)?.[1];
+const motion=fs.readFileSync(new URL('../market-service/stock-motion-v165.js',import.meta.url),'utf8');
+const source = motion.match(/var PATTERNS=(\[[\s\S]*?\n\]);/)?.[1];
 assert.ok(source, 'MARKET_PATTERNS is missing');
 const patterns = Function(`"use strict"; return (${source});`)();
 assert.ok(patterns.length >= 10, 'not enough market patterns');
