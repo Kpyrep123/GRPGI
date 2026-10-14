@@ -5,6 +5,16 @@
 
 
 
+## Web ambient controls and stock chart timelines (2026-10-14)
+
+Base: main `3da04a8` after PR #41; branch `feat/web-ambient-chart-timelines`.
+
+- The standalone web client loads `./assets/audio/web_ambient.m4a` as a looping background track at exactly 0.15 volume. A compact amber circular mute button remains available on login and all screens, with localized tooltip/accessible label, pressed state and a crossed-out muted icon. Mute preference persists separately from desktop audio settings. Playback begins after pointer/keyboard interaction; autoplay rejection is retried, storage denial is tolerated, missing media is marked without repeated requests on every gesture. Desktop and combat audio are unchanged.
+- **Audio asset pending:** `web_ambient.m4a` was not found in main or by exact/simplified Library filename searches. No replacement audio was invented. Supply the requested file at `deploy/site/app/assets/audio/web_ambient.m4a` before deploying this audio feature; actual decoding/listening remains unverified.
+- Desktop and web stock chart windows now offer 1 hour, 3 hours and 6 hours (60/180/360 minute candles). The default is 1 hour; period price changes use the same selected slice. Existing isolated service default retains 360 candles, legacy backends 720; no server changes are needed. Chart history is limited by available server data and a custom retention setting below 360. Updated client script cache keys; installer remains 1.0.155.
+- `tests/web-ambient-chart-v166.mjs` runs audio controls with simulated media (15% volume, looping, gesture start, concurrent play protection, pause/unmute, saved mute, storage denial, autoplay retry and missing-media feedback) and actual desktop/web period/chart functions against 400 candles to verify 60/180/360 slices and period changes. Syntax, stock core regression and diff checks passed. Native browser visual/audio QA and live deployment were not performed.
+- Deploy the updated `deploy/site/app/app.js`, `index.html`, `web-ambient-v166.js`, `web-ambient-v166.css` and supplied audio file together. Static web assets require no market-service or PocketBase restart. Desktop chart updates require the updated renderer bundle; no installer was released.
+
 ## Intraday stock movement without sustained holding drift (2026-10-14)
 
 Base: main `72f5c10` after PR #40; branch `feat/intraday-stock-motion`.
