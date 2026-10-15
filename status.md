@@ -5,6 +5,16 @@
 
 
 
+## Equipment-based terminal and NPC assortments (2026-10-16)
+
+Base: main `6332a2a` after PR #45; branch `feat/equipment-merchant-assortments`.
+
+- Moved assortment authoring into World Config equipment cards. Each item lists planet terminals and Merchant-flagged Hub units/assets, labelled by hub, map, object and linked NPC. Added availability checkboxes, daily chance, integer minimum/maximum prices, row midpoints, an explicitly unweighted average, search and selected-only filtering. Removed the old assortment entry points from planet cards and the Hub inspector; Merchant flags remain on Hub objects. Stocks retain their shared market.
+- Equipment `merchantOffers` use destination-scoped references, so repeated NPCs/object IDs on different maps are independent. Legacy assortments remain fallback data; explicit disabled assignments suppress them. Removed/unflagged merchants retain visible warnings. Planet renames update equipment references. Shared desktop/web and JSON-server market resolution uses the effective assortment, retaining daily rotations, item images, prices, buy/sell and stale-quote guards.
+- Equipment saves publish equipment and planets together. Snapshots project effective assignments into existing planet/object assortment fields for the current server endpoint and older clients, without mutating the input snapshot. No PocketBase schema/route or isolated stock service changes. Details and deployment: `EQUIPMENT_MERCHANTS_V170.md`.
+- Passed new shared/server and real-configurator browser tests, including normal save/reopen, synced sections, compatibility projection, scoped merchant discovery, disable/chance, min/max validation, averages/filtering, actual Hub buy/sell, stale quotes, orphan warnings and planet rename. Existing Hub editor/dialogue/trade, terminal/category, web ambient/chart, full-web walking and navigation regressions passed. Syntax, shared mirrors and diff checks pass. Native PocketBase integration was blocked by missing `POCKETBASE_EXE`; the deployed goods hook is absent from this checkout. No production endpoint, deployment or installer build performed.
+- Installer stays 1.0.155. Apply updated desktop source/bundle and run Deploy Web from this revision. JSON sync-server installations additionally need the updated engine plus new helper and a backend restart; no stock-market service restart is needed.
+
 ## Continuous Hub walking, 5% hourly stock range and leverage accounting (2026-10-16)
 
 Base: main `7d6bcd1` after PR #44; branch `fix/hub-walk-market-risk`.

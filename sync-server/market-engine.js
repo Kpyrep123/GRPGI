@@ -1,6 +1,7 @@
 'use strict';
 
 const crypto = require('crypto');
+const MerchantCatalog=require('./merchant-catalog-v170');
 
 const SELL_RATE = 0.7;
 
@@ -77,7 +78,7 @@ function buildRotation({ campaignId = 'main', planet = {}, equipment = {}, state
   const day = rotationKey(now);
   const claims = marketClaims(state);
   const offers = [];
-  for (const raw of Array.isArray(planet.market) ? planet.market : []) {
+  for (const raw of MerchantCatalog.entries(planet,equipment)) {
     const itemId = String(raw?.itemId || '').trim();
     const item = equipment[itemId];
     if (!itemId || !item) continue;
