@@ -196,7 +196,7 @@
 
   function priceHistory({ campaignId = 'main', planet = {}, planets = {}, equipment = {}, itemId = '', entry = null, endDay = new Date(), days = DEFAULT_HISTORY_DAYS } = {}) {
     const item = equipmentItem(equipment, itemId) || {};
-    const marketEntry = entry || (isStock(item) ? stockPriceEntry(item, planets) : (Array.isArray(planet.market) ? planet.market.find(row => String(row?.itemId || '') === String(itemId)) : null));
+    const marketEntry = entry || (isStock(item) ? stockPriceEntry(item, planets) : (global.GRPGMerchantCatalogV170?.entries(planet,equipment,planet.merchantScope)||planet.market||[]).find(row => String(row?.itemId || '') === String(itemId)));
     if (!marketEntry || !itemId) return [];
     const count = Math.max(2, Math.min(180, intValue(days, DEFAULT_HISTORY_DAYS)));
     const lastDay = dateKey(endDay);
@@ -221,7 +221,7 @@
     const day = resolved.day;
     const claims = claimsFrom(marketState);
     const offers = [];
-    const rows = Array.isArray(planet.market) ? planet.market : [];
+    const rows = global.GRPGMerchantCatalogV170 ? global.GRPGMerchantCatalogV170.entries(planet,equipment,planet.merchantScope) : (Array.isArray(planet.market) ? planet.market : []);
     rows.forEach(rawEntry => {
       const raw = rawEntry || {};
       const itemId = String(raw.itemId || '').trim();

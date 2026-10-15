@@ -153,26 +153,33 @@
   }
   function merchantRotation(o,item,context={}) {
     const equipment={},legacy=o.merchantMarket===undefined;
-    const entries=legacy?ids(o.merchantItemIds).map(id=>{const i=item(id);return {itemId:id,enabled:true,appearanceChance:100,minPrice:Number(i?.price??i?.cost??0),maxPrice:Number(i?.price??i?.cost??0)};}):o.merchantMarket;
-    const errors=merchantErrors(o);if(errors.length)throw new Error(errors[0]);
-    for(const e of entries){const i=item(e.itemId);if(i)equipment[e.itemId]=i;}
+    let entries=legacy?ids(o.merchantItemIds).map(id=>{const i=item(id);return {itemId:id,enabled:true,appearanceChance:100,minPrice:Number(i?.price??i?.cost??0),maxPrice:Number(i?.price??i?.cost??0)};}):o.merchantMarket;
+    const catalog=globalThis.GRPGMerchantCatalogV170,scope={kind:'hub',planetId:context.planetId||'',mapId:context.mapId||'',objectId:o.id};
+    const all=context.equipment||{};const list=typeof all.values==='function'&&typeof all.get==='function'?[...all.values()]:Object.values(all);
+    // Single-item validation still resolves its equipment-side assignment without a supplied catalogue.
+    for(const e of entries){const value=item(e.itemId);if(value&&!list.some(i=>i.id===value.id))list.push(value);}
+    const hasOverrides=Boolean(catalog&&list.some(i=>(i.merchantOffers||[]).some(e=>catalog.key(e)===catalog.key(scope))));
+    if(hasOverrides)entries=catalog.entries({market:entries},list,scope);
+    const configuration=hasOverrides?JSON.stringify(entries):JSON.stringify(o.merchantMarket);
+    const errors=merchantErrors({merchantMarket:legacy&&!hasOverrides?undefined:entries});if(errors.length)throw new Error(errors[0]);
+    for(const e of entries){const i=item(e.itemId)||list.find(i=>i.id===e.itemId);if(i)equipment[e.itemId]=i;}
     const E=globalThis.GRPGMarketEngineV1071;
     // Legacy fixed lists remain usable in old embedded clients and standalone rule tests.
-    if(legacy)return {rotationKey:'legacy',usesGameDate:false,offers:entries.filter(e=>equipment[e.itemId]&&equipment[e.itemId].type!=='stock').map(e=>({itemId:e.itemId,price:e.minPrice}))};
+    if(legacy&&!hasOverrides)return {configuration,rotationKey:'legacy',usesGameDate:false,offers:entries.filter(e=>equipment[e.itemId]&&equipment[e.itemId].type!=='stock').map(e=>({itemId:e.itemId,price:e.minPrice}))};
     if(!E)throw new Error('Ассортимент торговца недоступен');
-    const scope=JSON.stringify(['hub-merchant',context.planetId||'',context.mapId||'',o.id]);
-    return E.buildRotation({...context,equipment,planet:{id:scope,market:entries.map(e=>({...e,unique:false})),stockMarketEnabled:false},marketState:{claims:{}}});
+    const rotationScope=JSON.stringify(['hub-merchant',context.planetId||'',context.mapId||'',o.id]);
+    return {...E.buildRotation({...context,equipment,planet:{id:rotationScope,market:entries.map(e=>({...e,unique:false})),stockMarketEnabled:false},marketState:{claims:{}}}),configuration};
   }
   function purchase(hub,o,itemId,p,s,item,canAdd=()=>({ok:true}),marketContext={},quote=null,quantity=1) {
     const why=access(o,p,s);if(why)throw new Error(why);
     if(!trader(o)||!item||item.type==='stock')throw new Error('Товар недоступен');
-    const rotation=merchantRotation(o,id=>id===itemId?item:null,{...marketContext,planetId:s.planetId,mapId:s.mapId}),offer=rotation.offers.find(e=>e.itemId===itemId);
+    const rotation=merchantRotation(o,id=>id===itemId?item:null,{...marketContext,equipment:marketContext.equipment||{[itemId]:item},planetId:s.planetId,mapId:s.mapId}),offer=rotation.offers.find(e=>e.itemId===itemId);
     if(!offer)throw new Error('Этот товар сегодня недоступен');
-    if(o.merchantMarket!==undefined&&(!quote||quote.rotationKey!==rotation.rotationKey||quote.price!==offer.price||quote.config!==JSON.stringify(o.merchantMarket)))throw new Error('Ассортимент изменился. Откройте торговца заново.');
+    if(rotation.configuration!==undefined&&(!quote||quote.rotationKey!==rotation.rotationKey||quote.price!==offer.price||quote.config!==rotation.configuration))throw new Error('Ассортимент изменился. Откройте торговца заново.');
     if(!Number.isSafeInteger(quantity)||quantity<1||quantity>10000)throw new Error('Укажите количество от 1 до 10 000');
     if(o.once&&quantity!==1)throw new Error('Это взаимодействие доступно один раз');
     const cost=Number(offer.price)*quantity,credits=Number(p.credits||0);
-    if(!Number.isFinite(cost)||cost<0||(o.merchantMarket!==undefined&&!Number.isSafeInteger(cost))||!Number.isFinite(credits))throw new Error('Некорректная цена или баланс');
+    if(!Number.isFinite(cost)||cost<0||(rotation.configuration!==undefined&&!Number.isSafeInteger(cost))||!Number.isFinite(credits))throw new Error('Некорректная цена или баланс');
     if(credits<cost)throw new Error('Недостаточно кредитов');
     const room=canAdd(p,itemId,quantity);if(!room?.ok)throw new Error(room?.reason||'Недостаточно места');
     p.credits=credits-cost;p.inventory ||= [];
@@ -182,9 +189,9 @@
   function sell(hub,o,itemId,unitIndex,p,s,item,marketContext={},quote=null) {
     const why=access(o,p,s);if(why)throw new Error(why);
     if(!trader(o)||!item||item.type==='stock')throw new Error('Предмет недоступен');
-    const rotation=merchantRotation(o,id=>id===itemId?item:null,{...marketContext,planetId:s.planetId,mapId:s.mapId}),offer=rotation.offers.find(e=>e.itemId===itemId);
+    const rotation=merchantRotation(o,id=>id===itemId?item:null,{...marketContext,equipment:marketContext.equipment||{[itemId]:item},planetId:s.planetId,mapId:s.mapId}),offer=rotation.offers.find(e=>e.itemId===itemId);
     if(!offer)throw new Error('Торговец не принимает этот предмет');
-    if(!quote||quote.rotationKey!==rotation.rotationKey||quote.price!==offer.price||quote.config!==JSON.stringify(o.merchantMarket))throw new Error('Ассортимент изменился. Откройте торговца заново.');
+    if(!quote||quote.rotationKey!==rotation.rotationKey||quote.price!==offer.price||quote.config!==rotation.configuration)throw new Error('Ассортимент изменился. Откройте торговца заново.');
     const row=(p.inventory||[]).find(r=>r.itemId===itemId),equipped=[...Object.values(p.equipmentSlots||{}),...(p.implantSlots||[])].filter(id=>id===itemId).length;
     if(!row||!Number.isSafeInteger(unitIndex)||unitIndex<equipped||unitIndex>=Number(row.qty)||Number(row.qty)<=equipped)throw new Error('Предмет изменился или экипирован');
     const price=Math.floor(Number(offer.price)*.7),credits=Number(p.credits||0);

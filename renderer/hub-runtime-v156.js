@@ -174,7 +174,7 @@
     function merchant(id){
       if(walking)return;refresh();const o=ctx.map.objects.find(x=>x.id===id);if(!o||!C.trader(o))return;const blocked=S.interactionReason(ctx.map,ctx.state,B.currentPlayer(),o);if(blocked){B.notify(blocked,'err');return;}
       let rotation;try{rotation=C.merchantRotation(o,B.item,{...B.marketContext?.(),planetId:ctx.planet.id,mapId:ctx.map.id});}catch(e){B.notify(e.message,'err');return;}
-      const playerId=ctx.playerId,planetId=ctx.planet.id,mapId=ctx.map.id,config=JSON.stringify(o.merchantMarket);
+      const playerId=ctx.playerId,planetId=ctx.planet.id,mapId=ctx.map.id,config=rotation.configuration;
       window.GRPGMerchantUIV163.open({
         name:o.name,rotation,item:B.item,itemThumb:B.itemThumb,inventoryLayout:p=>B.inventoryLayout?.(C.clone(p)),player:B.currentPlayer,canAdd:B.canAdd,once:o.once,notify:B.notify,
         available:()=>{if(!B.isActive()||B.currentPlayer()?.id!==playerId||B.currentPlanet()?.id!==planetId)return false;const hub=C.hubOf(B.currentPlanet()),state=C.stateFor(B.currentPlayer(),B.currentPlanet(),hub),map=hub.maps.find(m=>m.id===mapId),object=map?.objects.find(o=>o.id===id);return state.mapId===mapId&&object&&C.visible(object,B.currentPlayer(),state)&&!S.interactionReason(map,state,B.currentPlayer(),object);},
