@@ -1,6 +1,6 @@
 /* Shared deterministic intraday motion. ES5/CommonJS for Node and PocketBase's JS runtime. */
 'use strict';
-var MIN_PRICE=.01,PHASE_SECONDS=300,HALF_LIFE_SECONDS=180,EXCURSION=.10,NOISE_PER_SQRT_SECOND=.0006;
+var MIN_PRICE=.01,PHASE_SECONDS=300,HALF_LIFE_SECONDS=180,EXCURSION=.038,NOISE_PER_SQRT_SECOND=.00035;
 var PATTERNS=[
  ['calm','trend-up','trend-up','range','trend-down','volatile','trend-up','calm'],
  ['range','trend-down','trend-down','volatile','trend-up','range','trend-down','calm'],
@@ -34,8 +34,18 @@ function next(options){
  // Zero-mean innovations; time-scaled OU variance keeps 1s and 10s backends comparable.
  var seed=campaign+'|'+item+'|tick|'+tick,z=(random(seed+'|a')+random(seed+'|b')+random(seed+'|c')-1.5)*2;
  var noise=z*NOISE_PER_SQRT_SECOND*vol*a.noise*Math.sqrt((1-decay*decay)/(2*k));
- var shock=random(seed+'|shock')<1-Math.exp(-seconds/14400)?(random(seed+'|direction')<.5?-1:1)*(.01+random(seed+'|size')*.02)*vol:0;
- var logPrice=Math.log(anchor)+deviation*decay+target*(1-decay)+noise+shock,result=Math.max(MIN_PRICE,Math.round(Math.exp(logPrice)*10000)/10000);
- return {price:result,regime:a.id,anchor:null};
+ // The reference can move: ordinary prices do not always return to the original entry band.
+ var sentiment=(random(campaign+'|'+item+'|sentiment|'+Math.floor(tick/1800))*2-1);
+ var anchorNoise=(random(seed+'|anchor-a')+random(seed+'|anchor-b')-1)*.00005*vol*Math.sqrt(seconds);
+ var jump=0;
+ // Draw news per second, even when the service advances in ten-second batches.
+ for(var eventTick=Math.floor(tick-seconds)+1;eventTick<=Math.floor(tick);eventTick++){
+  var news=campaign+'|'+item+'|news-v169|'+eventTick;
+  if(random(news+'|arrival')<1/14400)jump+=(random(news+'|direction')<.5?-1:1)*(.025+random(news+'|size')*.05)*vol;
+ }
+ var anchorDelta=sentiment*.000004*vol*seconds+anchorNoise+jump;
+ var nextAnchor=Math.max(MIN_PRICE,anchor*Math.exp(anchorDelta));
+ var logPrice=Math.log(anchor)+anchorDelta+deviation*decay+target*(1-decay)+noise,result=Math.max(MIN_PRICE,Math.round(Math.exp(logPrice)*10000)/10000);
+ return {price:result,regime:jump?'news-shock':a.id,anchor:nextAnchor};
 }
-module.exports={version:165,MIN_PRICE:MIN_PRICE,PHASE_SECONDS:PHASE_SECONDS,HALF_LIFE_SECONDS:HALF_LIFE_SECONDS,EXCURSION:EXCURSION,PATTERNS:PATTERNS,next:next};
+module.exports={version:169,MIN_PRICE:MIN_PRICE,PHASE_SECONDS:PHASE_SECONDS,HALF_LIFE_SECONDS:HALF_LIFE_SECONDS,EXCURSION:EXCURSION,PATTERNS:PATTERNS,next:next};

@@ -1,3 +1,5 @@
+> Superseded by [v169 market risk calibration](MARKET_RISK_V169.md), including the 5% median hourly range and moving reference. The measurements below describe v165.
+
 # Внутридневное движение акций
 
 Биржа использует `stock-motion-v165.js`. Та же модель включена в запасные генераторы `sync-server` и PocketBase. Клиенты получают готовые серверные котировки; их API и сборка не меняются.

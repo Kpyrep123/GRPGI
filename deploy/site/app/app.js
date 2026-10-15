@@ -3889,7 +3889,7 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
     notify('Сохранённый вход персонажа удалён. Техническое подключение восстановится автоматически.', 'warn');
   }
 
-  async function commitPlayerMutation(mutator, successMessage) {
+  async function commitPlayerMutation(mutator, successMessage, { rerender = true } = {}) {
     const player = currentPlayer();
     if (!player) throw new Error('Профиль игрока не выбран');
     const baseRow = await apiPullPlayer(App.config, player.id);
@@ -3915,8 +3915,8 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
     App.data.playerRows.set(player.id, saved);
     App.data.players = buildPlayerMap(App.cache.snapshot, Array.from(App.data.playerRows.values()));
     await saveCache();
-    renderCurrentScreen();
-    notify(successMessage, 'ok');
+    if (rerender) renderCurrentScreen();
+    if (successMessage) notify(successMessage, 'ok');
   }
 
   async function buyItem(itemId, price) {
@@ -5355,7 +5355,7 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
   function stockOrderPriceWebV150(order){if(order.status==='filled')return`Исполнено: ${formatCredits(order.fillPrice)}`;if(order.type==='limit')return`Лимит: ${formatCredits(order.limitPrice)}`;if(['stop_loss','take_profit'].includes(order.type))return`Активация: ${formatCredits(order.triggerPrice)}`;if(order.type==='trailing_stop')return`Отклонение: ${Number(order.trailingPercent||0).toFixed(1)}%`;return'По рынку';}
   function stockOrderTimeWebV150(order){const date=new Date(order.filledAt||order.cancelledAt||order.createdAt||0);return Number.isFinite(date.getTime())?date.toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'—';}
   function stockOrderListWebV150(itemId){const rows=(stockExchangeWebV148?.orders||[]).filter(row=>row.itemId===itemId),pending=rows.filter(row=>row.status==='pending'),shown=stockOrderViewWebV150==='active'?pending:rows;return`<div class="stock-order-history-v150"><div class="stock-order-filter-v150"><button class="secondary ${stockOrderViewWebV150==='active'?'active':''}" type="button" data-web-stock-order-view-v150="active">АКТИВНЫЕ · ${pending.length}</button><button class="secondary ${stockOrderViewWebV150==='all'?'active':''}" type="button" data-web-stock-order-view-v150="all">ВСЕ · ${rows.length}</button></div>${shown.length?shown.map(order=>`<div class="stock-order-row-v150 ${esc(order.status)}"><div><b>${esc(stockOrderTypeLabelsWebV150[order.type]||order.type)} · ${esc(stockOrderIntentLabelsWebV150[order.intent]||order.intent)}</b><span>${Number(order.quantity||0)} шт. · ×${Number(order.leverage||1)} · ${esc(stockOrderPriceWebV150(order))} · ${esc(stockOrderTimeWebV150(order))}</span></div><div><span class="stock-order-status-v150">${esc(stockOrderStatusLabelsWebV150[order.status]||order.status)}</span>${order.status==='pending'?`<button class="secondary" type="button" data-web-stock-cancel-v148="${esc(order.id)}">ОТМЕНИТЬ</button>`:''}</div>${order.message?`<small>${esc(order.message)}</small>`:''}</div>`).join(''):'<div class="stock-chart-empty-v148">Заявок в этом разделе нет.</div>'}</div>`;}
-  function stockOrderPanelWebV148(item){const rows=(stockExchangeWebV148?.orders||[]).filter(row=>row.itemId===item.id),pending=rows.filter(row=>row.status==='pending').length,tabs=`<div class="stock-order-mode-v150"><button class="secondary ${stockOrderViewWebV150==='new'?'active':''}" type="button" data-web-stock-order-view-v150="new">НОВАЯ ЗАЯВКА</button><button class="secondary ${stockOrderViewWebV150!=='new'?'active':''}" type="button" data-web-stock-order-view-v150="active">МОИ ЗАЯВКИ${pending?` · ${pending}`:''}</button></div>`;if(stockOrderViewWebV150!=='new')return`<div class="stock-orders-v148" data-order-type="market">${tabs}${stockOrderListWebV150(item.id)}</div>`;return`<div class="stock-orders-v148" data-order-type="market">${tabs}<div class="stock-order-tabs-v148"><b>Параметры</b><span>Исполняется сервером, даже когда сайт закрыт</span></div><div class="stock-order-grid-v148"><label>Операция<select class="input" data-web-stock-order-intent-v148><option value="open_long">Открыть лонг</option><option value="close_long">Закрыть лонг</option><option value="open_short">Открыть шорт</option><option value="close_short">Закрыть шорт</option></select></label><label>Тип<select class="input" data-web-stock-order-type-v148><option value="market">Рыночная</option><option value="limit">Лимитная</option><option value="stop_loss">Стоп-лосс</option><option value="take_profit">Тейк-профит</option><option value="trailing_stop">Трейлинг-стоп</option></select></label><label>Количество<input class="input" type="number" min="1" max="1000000" value="1" data-web-stock-order-quantity-v148></label><label class="stock-field-trigger-v149">Цена активации<input class="input" type="number" min="0.01" step="0.01" data-web-stock-order-trigger-v148></label><label class="stock-field-limit-v149">Лимитная цена<input class="input" type="number" min="0.01" step="0.01" data-web-stock-order-limit-v148></label><label class="stock-field-trailing-v149">Отклонение, %<input class="input" type="number" min=".1" max="50" step=".1" value="1" data-web-stock-order-trailing-v148></label><label>Плечо<select class="input" data-web-stock-order-leverage-v148><option value="1">×1</option><option value="2">×2</option><option value="3">×3</option></select></label><button class="primary stock-submit-v149" type="button" data-web-stock-submit-v148="${esc(item.id)}">РАЗМЕСТИТЬ</button></div></div>`;}
+  function stockOrderPanelWebV148(item){const rows=(stockExchangeWebV148?.orders||[]).filter(row=>row.itemId===item.id),pending=rows.filter(row=>row.status==='pending').length,tabs=`<div class="stock-order-mode-v150"><button class="secondary ${stockOrderViewWebV150==='new'?'active':''}" type="button" data-web-stock-order-view-v150="new">НОВАЯ ЗАЯВКА</button><button class="secondary ${stockOrderViewWebV150!=='new'?'active':''}" type="button" data-web-stock-order-view-v150="active">МОИ ЗАЯВКИ${pending?` · ${pending}`:''}</button></div>`;if(stockOrderViewWebV150!=='new')return`<div class="stock-orders-v148" data-order-type="market">${tabs}${stockOrderListWebV150(item.id)}</div>`;return`<div class="stock-orders-v148" data-order-type="market">${tabs}<div class="stock-order-tabs-v148"><b>Параметры</b><span>Исполняется сервером, даже когда сайт закрыт</span></div><div class="stock-order-grid-v148"><label>Операция<select class="input" data-web-stock-order-intent-v148><option value="open_long">Открыть лонг</option><option value="close_long">Закрыть лонг</option><option value="open_short">Открыть шорт</option><option value="close_short">Закрыть шорт</option></select></label><label>Тип<select class="input" data-web-stock-order-type-v148><option value="market">Рыночная</option><option value="limit">Лимитная</option><option value="stop_loss">Стоп-лосс</option><option value="take_profit">Тейк-профит</option><option value="trailing_stop">Трейлинг-стоп</option></select></label><label>Количество<input class="input" type="number" min="1" max="1000000" value="1" data-web-stock-order-quantity-v148></label><label class="stock-field-trigger-v149">Цена активации<input class="input" type="number" min="0.01" step="0.01" data-web-stock-order-trigger-v148></label><label class="stock-field-limit-v149">Лимитная цена<input class="input" type="number" min="0.01" step="0.01" data-web-stock-order-limit-v148></label><label class="stock-field-trailing-v149">Отклонение, %<input class="input" type="number" min=".1" max="50" step=".1" value="1" data-web-stock-order-trailing-v148></label><label>Плечо (уменьшает залог)<select class="input" data-web-stock-order-leverage-v148><option value="1">×1</option><option value="2">×2</option><option value="3">×3</option></select></label><button class="primary stock-submit-v149" type="button" data-web-stock-submit-v148="${esc(item.id)}">РАЗМЕСТИТЬ</button></div><p class="small-note">Количество — число акций. При цене 100 залог для 3 акций с плечом ×3 равен 100; изменение цены на 10 даёт прибыль или убыток 30.</p></div>`;}
   function stockDmPanelWebV149(item){const role=String(currentPlayer()?.role||'').toLowerCase();if(!['gm','dm','master'].includes(role))return'';return`<div class="stock-dm-v149"><div class="stock-order-tabs-v148"><b>Управление ДМа</b><span>Импульс приводит цену к указанному изменению за весь срок. Новый импульс заменяет предыдущий.</span></div><div class="stock-dm-grid-v149"><label>Точная цена<input class="input" type="number" min=".01" step=".01" placeholder="Без изменения" data-web-stock-dm-price-v149></label><label>Изменение за срок, %<input class="input" type="number" min="-50" max="50" step=".1" value="5" data-web-stock-dm-percent-v149></label><label>Длительность, секунд<input class="input" type="number" min="10" max="3600" step="10" value="60" data-web-stock-dm-duration-v149></label><button class="secondary" data-web-stock-impulse-v149="${esc(item.id)}">ПРИМЕНИТЬ</button></div><div class="stock-dm-presets-v149">${[-10,-5,5,10].map(v=>`<button class="secondary" data-web-stock-preset-v149="${v}">${v>0?'+':''}${v}%</button>`).join('')}</div></div>`;}
   function stockTickerWebV1074(item={}){return MarketEngineV1071.stockTicker(item)||'—';}
   function stockQtyWebV1074(position={}){return Math.max(0,Number(position.knownQty||0))+Math.max(0,Number(position.unpricedQty||0));}
@@ -5379,7 +5379,7 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
 
   function stockPortfolioStatsWebV1074(player,rotation){
     normalizeStockPlayerWebV1074(player);const portfolio=player.stockPortfolio,quotes=new Map((rotation.quotes||[]).map(row=>[row.itemId,row]));let marketValue=0,invested=0,unrealized=0,unpricedQty=0,expenses=0,income=0,realized=0;
-    Object.values(portfolio.positions||{}).forEach(position=>{const quote=quotes.get(position.itemId),qty=stockQtyWebV1074(position),known=Math.max(0,Number(position.knownQty||0)),basis=Math.max(0,Number(position.costBasis||0)),margin=Math.max(0,Number(position.margin??basis));invested+=margin;unpricedQty+=Math.max(0,Number(position.unpricedQty||0));if(quote){marketValue+=qty*quote.price;unrealized+=known*quote.price-basis;}});
+    Object.values(portfolio.positions||{}).forEach(position=>{const quote=quotes.get(position.itemId),qty=stockQtyWebV1074(position),known=Math.max(0,Number(position.knownQty||0)),basis=Math.max(0,Number(position.costBasis||0)),margin=Math.max(0,Number(position.margin??basis));invested+=margin;unpricedQty+=Math.max(0,Number(position.unpricedQty||0));if(quote){marketValue+=Math.max(0,margin+known*quote.price-basis)+Math.max(0,qty-known)*quote.price;unrealized+=known*quote.price-basis;}});
     Object.values(portfolio.shortPositions||{}).forEach(position=>{const quote=quotes.get(position.itemId),qty=Math.max(0,Number(position.quantity||0)),basis=Math.max(0,Number(position.costBasis||0)),margin=Math.max(0,Number(position.margin??basis)),average=qty?basis/qty:0;invested+=margin;if(quote){const equity=Math.max(0,margin+(average-quote.price)*qty);marketValue+=equity;unrealized+=(average-quote.price)*qty;}});
     (portfolio.ledger||[]).forEach(row=>{if(['buy','open_long','open_short'].includes(row.type))expenses+=Math.abs(Number(row.cashFlow??row.margin??row.total)||0);if(['sell','close_long','close_short'].includes(row.type)){income+=Math.max(0,Number(row.cashFlow??row.total)||0);if(Number.isFinite(Number(row.realizedPnl)))realized+=Number(row.realizedPnl);}if(['liquidation_long','liquidation_short'].includes(row.type))realized+=Number(row.realizedPnl||0);});
     return{portfolio,quotes,marketValue,invested,unrealized,unpricedQty,expenses,income,realized,totalResult:realized+unrealized};
@@ -5779,7 +5779,7 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
     renderCurrentScreen();
   }
   const playerWritesV135=window.GRPGPlayerSyncCoreV135.createQueue();
-  commitPlayerMutation=async function(mutator,successMessage){
+  commitPlayerMutation=async function(mutator,successMessage,{rerender=true}={}){
     const core=window.GRPGPlayerSyncCoreV135;
     const current=currentPlayer();if(!current)throw new Error('Профиль игрока не выбран');
     const playerId=String(current.id),before=deep(current),optimistic=normalizePlayerWeb120(deep(current));
@@ -5790,7 +5790,7 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
     optimisticPlayersWeb120.set(playerId,{seq,player:deep(normalizedOptimistic)});
     App.data.players.set(playerId,deep(normalizedOptimistic));
     document.body.classList.add('web-player-write-pending-v120');
-    renderOptimisticPlayerWeb120(before,normalizedOptimistic);
+    if(rerender)renderOptimisticPlayerWeb120(before,normalizedOptimistic);
     return playerWritesV135.run(playerId,async()=>{
       let saved=null;
       for(let conflict=0;conflict<4&&!saved;conflict++){
@@ -5814,7 +5814,7 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
       if(latest?.seq===seq)optimisticPlayersWeb120.delete(playerId);
       App.data.players=buildPlayerMap(App.cache.snapshot,Array.from(App.data.playerRows.values()));
       await saveCache();
-      if(latest?.seq===seq){document.body.classList.remove('web-player-write-pending-v120');renderCurrentScreen();if(successMessage)notify(successMessage,'ok');}
+      if(latest?.seq===seq){document.body.classList.remove('web-player-write-pending-v120');if(rerender)renderCurrentScreen();if(successMessage)notify(successMessage,'ok');}
       return saved;
     }).catch(async error=>{
       const latest=optimisticPlayersWeb120.get(playerId);
@@ -5822,7 +5822,7 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
         optimisticPlayersWeb120.delete(playerId);document.body.classList.remove('web-player-write-pending-v120');
         try{const row=await apiPullPlayer(App.config,playerId);if(row)App.data.playerRows.set(playerId,row);}catch{}
         App.data.players=buildPlayerMap(App.cache.snapshot,Array.from(App.data.playerRows.values()));
-        await saveCache();renderCurrentScreen();
+        await saveCache();if(rerender)renderCurrentScreen();
       }
       throw error;
     });
@@ -6017,7 +6017,7 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
     item: id => App.data.items.get(String(id || '')) || null,
     npc: id => App.data.npcs.get(String(id || '')) || null,
     article: id => App.data.articles.get(String(id || '')) || null,
-    commit: (mutator, notice = 'Состояние хаба сохранено') => commitPlayerMutation(mutator, notice),
+    commit: (mutator, notice = 'Состояние хаба сохранено') => commitPlayerMutation(mutator, notice, { rerender: false }),
     openArticle: id => openArticleById(String(id || ''), { directAccess: true }),
     openHub: () => { App.ui.screen = 'hub-v153'; renderCurrentScreen(); },
     openStocks: () => { marketTabWebV1073 = 'stocks'; App.ui.screen = 'market'; renderCurrentScreen(); },
