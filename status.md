@@ -1,9 +1,20 @@
 # GRPGI — состояние проекта
 
-Обновлено: 2026-10-15. Версия клиента в `package.json`: **1.0.155**. Модули Хаба используют общие правила/runtime v156 и пространственную модель v157; версия установщика не менялась.
+Обновлено: 2026-10-16. Версия клиента в `package.json`: **1.0.155**. Модули Хаба используют общие правила/runtime v156 и пространственную модель v157; версия установщика не менялась.
 
 
 
+
+## Continuous Hub walking, 5% hourly stock range and leverage accounting (2026-10-16)
+
+Base: main `7d6bcd1` after PR #44; branch `fix/hub-walk-market-risk`.
+
+- Fixed the web movement regression introduced when Hub joined common navigation: the real optimistic mutation queue called `renderCurrentScreen()` after a confirmed step, rebuilding the map and changing the runtime epoch. Hub writes now use `{rerender:false}` throughout optimistic, confirmed and failed-save paths; default rendering for other mutations remains. The runtime retains its map, saves/animates each hex and continues to the selected destination. Save failures still stop/roll back to the last confirmed hex. New full-web test runs the real bridge/mutation queue with versioned API fixtures and checks five adjacent steps from one click, unchanged map identity and a mid-route failed save; prior mocked-commit navigation tests alone did not catch this.
+- Recalibrated the shared ES5 motion model (same deployed filename `stock-motion-v165.js`, exported version 169). Its ordinary excursion/noise are lower; reference sentiment/noise and unscheduled symmetric news shifts now move the reference itself, preventing guaranteed return to the old fixed band. No per-stock settings, price reset, ceiling, fees or schema changes. Existing references persist; exact isolated DM impulse/re-anchor remains. JSON/PocketBase adapters persist returned references too.
+- Measured 24 seeds × 24 hours (576 hourly windows) at standard volatility: median hourly max/min range **5.0428%**, versus **11.9854%**; 10th–90th percentiles **3.8820–9.3711%**. The target is a typical range, not a hard 5% limit. A fixed-band all-cash/no-fee strategy loses in 4/24 new runs versus 0/24 before; worst new endpoint −14.9392%, maximum drawdown 23.5226%. Its median endpoint remains +12.1224%; this demonstrates risk, not perfect market balance. Full metrics, limits and deployment are in `market-service/MARKET_RISK_V169.md`; v165 model is frozen as a reference fixture.
+- Verified that the same share quantity correctly has the same cash P/L with different collateral: equal collateral produces ×1/×2/×3 exposure and gains/losses. No second multiplication was introduced. Fixed actual reporting issues: leveraged long portfolio value now uses equity rather than borrowed notional, close ledger leverage follows the stored effective position, legacy fills/liquidations record margin/cashFlow/realizedPnl, and mixed entries preserve legacy all-cash collateral when margin is absent. Added localized order labels/example. Existing balances/positions/old ledger rows are not rewritten.
+- Passed v135 desktop/web queued-write/retry/stale-update checks, full-web five-step/failure and startup/back-forward regressions, desktop/web hover/navigation/failure browser regressions, shared core/spatial/range checks, stock core/PocketBase JS/calibration/pattern/chart checks, deterministic/time-scaled motion and anchor persistence/restart checks, leveraged long/short equal-collateral/partial/mixed/legacy tests across all three backends, and temporary real SQLite integration including DM events, orders, idempotency and restart. Model comparison and drawdown sample are reproducible in `market-risk-v169.mjs`; UI equity checks use actual portfolio functions. Syntax, mirror and diff checks pass. Native live PocketBase/Electron and production data were not exercised.
+- Updated web/renderer cache keys and stock deployment guides. Installer remains 1.0.155. Web requires Deploy Web; active market backend requires its adapter+model together and restart (isolated: `grpgi-market`). No deployment or installer release performed.
 
 ## Web Hub empty-screen navigation regression (2026-10-15)
 

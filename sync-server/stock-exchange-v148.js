@@ -89,6 +89,7 @@ function advance(state, { campaignId = 'main', world = {}, now = Date.now(), onT
       const movement = nextPrice(next, campaignId, quote, tick);
       quote.previousPrice = previous; quote.price = movement.price; quote.change = round(quote.price - previous, 4);
       quote.changePercent = previous > 0 ? round(quote.change / previous * 100, 4) : 0;
+      if(Number.isFinite(movement.anchor))quote.anchor=movement.anchor;
       quote.regime = movement.regime; quote.tick = tick;
       addCandle(next, quote.itemId, tick, quote.price);
     }
@@ -129,49 +130,42 @@ function ensurePortfolio(player) {
 }
 
 function executeOrder(order, quote, player, tick) {
-  const portfolio = ensurePortfolio(player), quantity = Math.max(1, Math.trunc(number(order.quantity, 1))), price = quote.price;
-  const total = round(price * quantity, 4), leverage = clamp(order.leverage || 1, 1, 3);
-  if (order.intent === 'open_long') {
-    const margin = total / leverage; if (number(player.credits) < margin) throw new Error('Недостаточно средств для открытия позиции');
-    player.credits = round(number(player.credits) - margin, 4);
-    const position = portfolio.positions[order.itemId] || { itemId: order.itemId, knownQty: 0, costBasis: 0, margin: 0, leverage };
-    position.knownQty += quantity; position.costBasis += total; position.margin = number(position.margin) + margin; position.leverage = leverage; portfolio.positions[order.itemId] = position;
-  } else if (order.intent === 'close_long') {
-    const position = portfolio.positions[order.itemId]; if (!position || number(position.knownQty) < quantity) throw new Error('Недостаточно акций в длинной позиции');
-    const average = number(position.costBasis) / position.knownQty, marginShare = number(position.margin, position.costBasis) * quantity / position.knownQty;
-    player.credits = round(number(player.credits) + marginShare + (price - average) * quantity, 4);
-    position.knownQty -= quantity; position.costBasis -= average * quantity; position.margin = Math.max(0, number(position.margin) - marginShare); if (position.knownQty <= 0) delete portfolio.positions[order.itemId];
-  } else if (order.intent === 'open_short') {
-    const margin = total / leverage; if (number(player.credits) < margin) throw new Error('Недостаточно средств для открытия шорта');
-    player.credits = round(number(player.credits) - margin, 4);
-    const position = portfolio.shortPositions[order.itemId] || { itemId: order.itemId, quantity: 0, costBasis: 0, margin: 0, leverage };
-    position.quantity += quantity; position.costBasis += total; position.margin += margin; position.leverage = leverage; portfolio.shortPositions[order.itemId] = position;
-  } else if (order.intent === 'close_short') {
-    const position = portfolio.shortPositions[order.itemId]; if (!position || position.quantity < quantity) throw new Error('Недостаточно акций в короткой позиции');
-    const average = position.costBasis / position.quantity, marginShare = position.margin * quantity / position.quantity;
-    player.credits = round(number(player.credits) + marginShare + (average - price) * quantity, 4);
-    position.quantity -= quantity; position.costBasis -= average * quantity; position.margin -= marginShare; if (position.quantity <= 0) delete portfolio.shortPositions[order.itemId];
-  } else throw new Error('Неизвестное направление заявки');
-  const ledger = { id: order.id, type: order.intent, itemId: order.itemId, quantity, unitPrice: price, total, leverage, createdAt: new Date(tick * 1000).toISOString() };
-  portfolio.ledger.push(ledger); if (portfolio.ledger.length > 500) portfolio.ledger.splice(0, portfolio.ledger.length - 500);
-  return ledger;
+  var book=ensurePortfolio(player),qty=Math.max(1,Math.trunc(number(order.quantity,1))),price=quote.price,total=round(price*qty,4),leverage=clamp(order.leverage||1,1,3),position,count,average,share=0,pnl=0,cashFlow=0,margin=0;
+  var long=order.intent==='open_long'||order.intent==='close_long',opening=order.intent==='open_long'||order.intent==='open_short';
+  if(!opening&&order.intent!=='close_long'&&order.intent!=='close_short')throw new Error('Неизвестное направление заявки');
+  var positions=long?book.positions:book.shortPositions,key=long?'knownQty':'quantity';
+  if(opening){
+    margin=total/leverage;if(number(player.credits)<margin)throw new Error('Недостаточно средств для открытия позиции');
+    position=positions[order.itemId]||{itemId:order.itemId,costBasis:0,margin:0};position[key]=number(position[key])+qty;
+    var oldBasis=number(position.costBasis);position.costBasis=oldBasis+total;position.margin=number(position.margin,oldBasis)+margin;
+    position.leverage=position.costBasis/position.margin;positions[order.itemId]=position;cashFlow=-margin;
+  }else{
+    position=positions[order.itemId];count=position&&number(position[key]);if(!position||count<qty)throw new Error('Недостаточно акций в позиции');
+    average=number(position.costBasis)/count;var positionMargin=number(position.margin,position.costBasis);share=positionMargin*qty/count;
+    leverage=positionMargin>0?number(position.costBasis)/positionMargin:1;pnl=(long?price-average:average-price)*qty;
+    cashFlow=Math.max(0,share+pnl);pnl=cashFlow-share;margin=share;
+    position[key]-=qty;position.costBasis=Math.max(0,number(position.costBasis)-average*qty);position.margin=Math.max(0,positionMargin-share);if(position[key]<=0)delete positions[order.itemId];
+  }
+  player.credits=round(number(player.credits)+cashFlow,4);
+  var ledger={id:order.id,type:order.intent,itemId:order.itemId,quantity:qty,unitPrice:price,total:total,leverage:leverage,margin:round(margin,4),cashFlow:round(cashFlow,4),realizedPnl:round(pnl,4),createdAt:new Date(tick*1000).toISOString()};
+  book.ledger.push(ledger);if(book.ledger.length>500)book.ledger.splice(0,book.ledger.length-500);return ledger;
 }
 
 function liquidate(player, quotes = {}, tick = Math.floor(Date.now() / 1000)) {
   const portfolio = ensurePortfolio(player), events = [];
   for (const [itemId, position] of Object.entries(portfolio.positions)) {
-    const quote = quotes[itemId], qty = number(position.knownQty), entry = qty > 0 ? number(position.costBasis) / qty : 0, leverage = clamp(position.leverage || 1, 1, 3);
+    const quote = quotes[itemId], qty = number(position.knownQty), entry = qty > 0 ? number(position.costBasis) / qty : 0, leverage = clamp(number(position.costBasis)/Math.max(.01,number(position.margin,position.costBasis)),1,3);
     if (!quote || !qty || quote.price > entry * (1 - 0.9 / leverage)) continue;
     const payout = Math.max(0, number(position.margin, position.costBasis) + (quote.price - entry) * qty);
     player.credits = round(number(player.credits) + payout, 4); delete portfolio.positions[itemId];
-    events.push({ id: crypto.randomUUID(), type: 'liquidation_long', itemId, quantity: qty, unitPrice: quote.price, leverage, total: payout, createdAt: new Date(tick * 1000).toISOString() });
+    events.push({ id: crypto.randomUUID(), type: 'liquidation_long', itemId, quantity: qty, unitPrice: quote.price, leverage, total: payout, margin:number(position.margin,position.costBasis),cashFlow:payout,realizedPnl:round(payout-number(position.margin,position.costBasis),4),createdAt: new Date(tick * 1000).toISOString() });
   }
   for (const [itemId, position] of Object.entries(portfolio.shortPositions)) {
-    const quote = quotes[itemId], qty = number(position.quantity), entry = qty > 0 ? number(position.costBasis) / qty : 0, leverage = clamp(position.leverage || 1, 1, 3);
+    const quote = quotes[itemId], qty = number(position.quantity), entry = qty > 0 ? number(position.costBasis) / qty : 0, leverage = clamp(number(position.costBasis)/Math.max(.01,number(position.margin,position.costBasis)),1,3);
     if (!quote || !qty || quote.price < entry * (1 + 0.9 / leverage)) continue;
-    const payout = Math.max(0, number(position.margin) + (entry - quote.price) * qty);
+    const payout = Math.max(0, number(position.margin,position.costBasis) + (entry - quote.price) * qty);
     player.credits = round(number(player.credits) + payout, 4); delete portfolio.shortPositions[itemId];
-    events.push({ id: crypto.randomUUID(), type: 'liquidation_short', itemId, quantity: qty, unitPrice: quote.price, leverage, total: payout, createdAt: new Date(tick * 1000).toISOString() });
+    events.push({ id: crypto.randomUUID(), type: 'liquidation_short', itemId, quantity: qty, unitPrice: quote.price, leverage, total: payout, margin:number(position.margin,position.costBasis),cashFlow:payout,realizedPnl:round(payout-number(position.margin,position.costBasis),4),createdAt: new Date(tick * 1000).toISOString() });
   }
   portfolio.ledger.push(...events); if (portfolio.ledger.length > 500) portfolio.ledger.splice(0, portfolio.ledger.length - 500);
   return events;
