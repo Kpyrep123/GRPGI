@@ -7,6 +7,8 @@
 3. **Планеты → planet → Торговля**: enter a signed price adjustment, e.g. `25` for +25% or `-25` for −25%.
 4. Open **Ассортимент терминала** from a planet card, or **Ассортимент торговца** from a Merchant-flagged Hub asset/unit. Both use the same separate large editor. Apply changes to the draft, then save the card or Hub. Cancel/Escape discards the assortment window's edits; Hub undo includes applied assortment changes.
 
+Tag and category lists now use search, persistent selected chips and explicit right-hand checkboxes. Type a tag name and press Enter or Add to create it; case-insensitive existing names are reused. New tags enter the shared registry only when the owning card/Hub is saved. Cancelling the assortment window discards its new tags.
+
 The catalogue has images, search, category/tag filters, recommended-price filters and views for all goods, included goods and individual settings. Multiple tag/category selections use OR within each group; the groups combine with AND. Stocks are excluded.
 
 - **Add/change selected** creates explicit assignments for the selected, currently shown goods. Future equipment additions are not added by that action.
