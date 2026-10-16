@@ -1,5 +1,7 @@
 # Equipment-based merchant assortments
 
+The v171 editor adds bulk assortment rules, tags, templates and recommended pricing; see `ASSORTMENTS_V171.md` for the current workflow. The details below describe the retained v170 compatibility format.
+
 In World Config, open **Equipment → an item → Торговцы и терминалы**. Enable the terminals and Hub merchants that should sell it, enter the daily appearance chance and minimum/maximum price, then save the equipment card. Each row shows its midpoint; the summary is the unweighted mean of the enabled rows' midpoints, not a probability-weighted market quote. Search by planet, hub, map or merchant; use the selected-only filter to review assignments.
 
 Save a Hub object with its **Merchant / Торговец** flag first. Both units and assets qualify. The destination label includes hub, map and object, plus the linked NPC name where available. Identical NPCs or object IDs on different maps have independent assortments. Turning the Merchant flag off excludes the object from discovery and trading. Existing assignments remain visible with a warning so they can be disabled or restored. Start points are excluded. Stocks continue using the shared stock market.

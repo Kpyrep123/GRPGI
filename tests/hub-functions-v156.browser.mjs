@@ -45,7 +45,7 @@ try{
   await page.locator('[data-prop="name"]').fill('Saved unit');
   await page.locator('[data-pick-object-image]').click();await page.waitForFunction(()=>uploads?.length===1);
   await page.locator('[data-bool="trader"]').check();
-  assert.equal(await page.locator('[data-edit-assortment]').count(),0);assert.ok((await page.locator('[data-inspector]').textContent()).includes('World Config → Снаряжение'));
+  assert.equal(await page.locator('[data-edit-assortment]').count(),1);assert.ok((await page.locator('[data-inspector]').textContent()).includes('АССОРТИМЕНТ ТОРГОВЦА'));
   await page.locator('[data-edit-flags]').click();await page.locator('[data-new-flag]').fill('door_unlocked');await page.locator('[data-new-name]').fill('Door unlocked');await page.locator('[data-add-flag]').click();await page.locator('[data-close-authoring]').click();
   await page.locator('[data-condition-add]').click();await page.locator('[data-condition-field="id"]').selectOption('door_unlocked');
   // Draw, duplicate, undo and restore a wall in the independent map draft.

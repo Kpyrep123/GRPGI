@@ -158,8 +158,8 @@
     const all=context.equipment||{};const list=typeof all.values==='function'&&typeof all.get==='function'?[...all.values()]:Object.values(all);
     // Single-item validation still resolves its equipment-side assignment without a supplied catalogue.
     for(const e of entries){const value=item(e.itemId);if(value&&!list.some(i=>i.id===value.id))list.push(value);}
-    const hasOverrides=Boolean(catalog&&list.some(i=>(i.merchantOffers||[]).some(e=>catalog.key(e)===catalog.key(scope))));
-    if(hasOverrides)entries=catalog.entries({market:entries},list,scope);
+    const hasOverrides=Boolean(catalog&&(o.assortmentPolicy||list.some(i=>(i.merchantOffers||[]).some(e=>catalog.key(e)===catalog.key(scope)))));
+    if(hasOverrides)entries=catalog.entries({market:entries,assortmentPolicy:o.assortmentPolicy,priceAdjustmentPct:context.priceAdjustmentPct},list,scope);
     const configuration=hasOverrides?JSON.stringify(entries):JSON.stringify(o.merchantMarket);
     const errors=merchantErrors({merchantMarket:legacy&&!hasOverrides?undefined:entries});if(errors.length)throw new Error(errors[0]);
     for(const e of entries){const i=item(e.itemId)||list.find(i=>i.id===e.itemId);if(i)equipment[e.itemId]=i;}
