@@ -5,6 +5,16 @@
 
 
 
+## Checkbox lists, typed tags and multi-value draft preservation (2026-10-16)
+
+Base: main `7ed168c` after PR #47; branch `fix/checkbox-multiselect`.
+
+- Replaced exposed native multiple-selection lists with the reusable `checkbox-picker-v172` component: search, persistent selected chips/count, visible right-hand checkboxes and a selected-row border/background. No Ctrl/Command-click is required. The shared desktop/web entry points automatically enhance existing and subsequently inserted multi-selects, including equipment tags, assortment category/tag filters, Hub dialogue assignments/player visibility and dialogue graph map/NPC/object scopes. Native selects remain hidden successful form controls so existing IDs, array values and domain handlers continue to work.
+- Tag controls allow typed creation by Enter or Add, reuse existing names case-insensitively, and save new definitions to the World Config tag registry through the normal card/Hub save. New tags remain in the owning draft before saving; cancelling a modal does not change the registry. Entity-reference controls only search/select valid IDs. Added `AGENTS.md` to require this shared pattern for future multi-value UI.
+- Found and fixed an existing draft limitation: `FormDrafts` stored only `select.value` and restored only the first selected value. The component adapts draft remember/apply to arrays, including definitions for newly typed tags, so repeated form rendering retains the complete selection. Normal form submissions preserve the original select semantics and submit new tag definitions with equipment/planets; temporary modal definitions are removed from saved policies after promotion into the registry.
+- New real-renderer browser test passes: pointer-away selection, multiple choices, chips/search/keyboard, typed tags/dedup, form re-render and normal save/reopen, modal cancel/promotion, automatically enhanced future controls, saved Hub dialogue/player arrays, saved graph map/object scopes, and desktop/narrow screenshots. Existing full assortment editor/save/failure/retry/purchase browser regression, shared assortment/legacy merchant tests and full-web five-step/failure movement regression pass. Syntax, mirrored component and diff checks pass. Screenshots inspected. Native Electron and production endpoints were not exercised.
+- Apply updated desktop source/bundle and Deploy Web for the common control. No market backend changes, service restart, DB/schema migration or installer version change. Installer remains 1.0.155. No deployment, merge or installer build performed.
+
 ## Bulk assortments, recommended prices and trade tags (2026-10-16)
 
 Base: main `aeb5f47` after PR #46; branch `feat/bulk-merchant-assortments`.
