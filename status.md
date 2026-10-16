@@ -5,6 +5,17 @@
 
 
 
+## Bulk assortments, recommended prices and trade tags (2026-10-16)
+
+Base: main `aeb5f47` after PR #46; branch `feat/bulk-merchant-assortments`.
+
+- Added separate World Config categories for **Теги** and **Шаблоны ассортимента**, stored alongside equipment in `TRADE_CATALOG`. Existing equipment tags seed the registry once; deleted tags remain unresolved restrictions rather than broadening rules. Equipment cards now expose recommended prices, registered tag selection and destination-specific manual overrides/inheritance.
+- Added one separate large assortment editor for planet terminals, Merchant-flagged Hub units/assets and templates. It provides item images, search/category/tag/price filters, selected/stock/override views, bulk add/exclude/reset, dynamic rules including future goods, per-rule chance/variation overrides, midpoint previews and unweighted average. Bulk actions affect only selected visible results. Fixed ranges override calculated prices. Planet adjustment and optional merchant adjustment combine with recommended prices and daily variation; Hub merchants inherit planet pricing by default.
+- Restored the Hub Merchant assortment button and added a terminal editor button/price adjustment to planet cards. Both edit detached drafts until the card/Hub is saved. Templates can be applied to several destinations in one save; saved merchant assortments can be copied into another merchant or template. Individual exceptions survive template application; reapplying the same rule IDs does not duplicate them. Templates are copies, not automatic live subscriptions.
+- Shared desktop/web/JSON-server resolution retains old assortments, adopts v170 equipment assignments into policy overrides on editing, and keeps the original legacy baseline separate from generated rows. Snapshots project effective legacy fields for the existing server endpoint. Equipment/tag/planet/template saves publish equipment and planets together. Old/orphan assignments are retained; item and planet ID remapping is supported. No stock engine, DB schema or collection changes.
+- Passed shared policy/pricing/seeded daily/Node transaction/Hub inheritance/stale-quote/mirror tests; real-configurator browser tests cover registry/templates, normal save/reopen, price recalculation, item/merchant agreement, bulk filters, manual exceptions, multi-destination saves, orphan retention, detached Hub undo and disk-failure/retry, saved Hub purchase, and responsive bounds at 1440/980/390 px. Existing Hub authoring/dialogue/trade browser, full-web walking/mutation, desktop terminal quantities, core/range, category and ambient/chart regressions pass. JS syntax/diff checks pass. Screenshots inspected. Native Electron/live PocketBase goods hooks and production data were not tested; no hook/executable is supplied here.
+- Deployment/workflow: `ASSORTMENTS_V171.md`. Apply desktop source/bundle and run Deploy Web from this revision. JSON sync-server users deploy its shared helper with the engine and restart that backend. No isolated stock service restart. Installer stays 1.0.155. No deployment, merge or installer build performed.
+
 ## Equipment-based terminal and NPC assortments (2026-10-16)
 
 Base: main `6332a2a` after PR #45; branch `feat/equipment-merchant-assortments`.
