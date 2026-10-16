@@ -11,11 +11,12 @@ Tag and category lists now use search, persistent selected chips and explicit ri
 
 The catalogue has images, search, category/tag filters, recommended-price filters and views for all goods, included goods and individual settings. Multiple tag/category selections use OR within each group; the groups combine with AND. Stocks are excluded.
 
+- **В ассортименте** is the persistent goods checkbox. Checking/unchecking it immediately changes the draft assortment and survives saving/reopening. The separate **Для массовых действий** checkbox is only a temporary batch selection.
 - **Add/change selected** creates explicit assignments for the selected, currently shown goods. Future equipment additions are not added by that action.
 - **Include by current filter** creates a dynamic rule. It also matches future goods. Rules have optional chance/variation overrides; blank values inherit the assortment defaults. The last matching enabled rule wins.
 - **Exclude selected** creates explicit exclusions that win over rules.
 - **Reset manual settings** removes the explicit exception and returns to rules or the original legacy assortment.
-- **Изменить** next to an item selects only that item and loads its settings into the right panel. Use a fixed min/max range or recommended-price mode. Settings in that panel apply only when the add/change action is pressed.
+- **Изменить** next to an item opens its price mode, chance and range/variation in the right panel. Valid edits update that item in the draft automatically; saving the window validates pending fields. Use the persistent stock checkbox to include/exclude it. Batch parameters still require the explicit bulk action.
 - Bulk actions affect selected goods among the currently shown results. Hidden selections cannot accidentally be changed by a filtered action.
 
 Recommended-price mode uses `recommended price × (1 + adjustment/100) × (1 ± variation/100)`, rounded to whole credits. A recommended price of 100, +25% adjustment and ±15% variation gives **106–144**. A Hub merchant inherits its planet adjustment unless it has its own override. Fixed ranges ignore those adjustments. Availability chance and the daily price remain independent, seeded by the existing destination/campaign/day mechanism; this change does not change the backend's existing calendar selection.
@@ -24,11 +25,11 @@ The editor previews configured ranges and the unweighted mean of enabled items' 
 
 ## Templates and copying
 
-**World Config → Шаблоны ассортимента** holds reusable assortments. Edit goods/rules in the same window, save the template card, then apply the saved template to any selection of planet terminals and Hub merchants. Recipients list the Hub/map/object identity; repeated NPCs on different maps remain independent.
+**World Config → Шаблоны ассортимента** holds reusable assortments. Edit goods/rules in the same window, then use **Сохранить и применить шаблон к торговцам**. This takes the current validated card draft and saves the template plus any selected planet terminals/Hub merchants together; a separate template-card save is not required. Recipients list the Hub/map/object identity; repeated NPCs on different maps remain independent.
 
 The shared editor also offers **Копировать из торговца**. Copy a saved merchant into a template to distribute it to several destinations, or copy directly into another merchant's draft. Saved legacy fixed rows are copied as fixed settings.
 
-Applying a template/source copies defaults and rules, while retaining the recipient's individual exceptions. Reapplying the same rule IDs updates them without duplicate rules. Templates are copied, not live subscriptions: changing a template later does not silently rewrite merchants. Apply it again when needed. Destination-specific price adjustments are not copied by templates.
+Applying a template/source copies defaults and rules, while retaining the recipient's individual exceptions by default. The World Config recipient window previews configured stock and retained exceptions. Uncheck **Сохранить индивидуальные настройки торговцев** to replace overrides for items covered by the template, while leaving unrelated goods untouched. Reapplying the same rule IDs updates them without duplicate rules. Templates are copied, not live subscriptions: changing a template later does not silently rewrite merchants. Apply it again when needed. Destination-specific price adjustments are not copied by templates.
 
 ## Compatibility and storage
 
@@ -49,3 +50,5 @@ For the repository's JSON sync-server, deploy the updated `sync-server/merchant-
 Tests: `tests/assortments-v171.mjs` checks pricing, daily variation, dynamic/static selection, chance/exclusions, fixed-price precedence, old-assignment adoption/reset, projection cleanup, Node transaction parity, Hub inheritance/stale quotes and mirrors. `tests/assortments-v171.browser.mjs` loads the real renderer/configurator and tests tags/templates, normal persistence, item/merchant agreement, multi-target template application, filtered actions, validation/cancel, orphan retention, detached Hub undo/save failure/retry, a saved Hub purchase, and layout at 1440/980/390 px. Existing Hub editor/dialogue/trade, terminal, category, ambient/chart and full-web walking regressions also pass.
 
 Native Electron, the deployed PocketBase goods hook and production data are not exercised. The hook/executable are not provided in this checkout. No deployment or merge is performed as part of the change.
+
+The v173 regression `tests/assortment-template-v173.browser.mjs` covers direct goods checkboxes, automatic item settings, applying an unsaved current template, preserve/replace modes, atomic local-failure rollback/retry, reopening, actual Hub stacking and a saved merchant purchase. The assortment overlay now paints above the real Hub builder; previous pointer-only tests could click through the inert builder while the shop was visually hidden.

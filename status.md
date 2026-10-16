@@ -5,6 +5,17 @@
 
 
 
+## Template stock persistence, application and Hub overlay repairs (2026-10-16)
+
+Base: main `687cc7e` after PR #48; branch `fix/assortment-template-saves`.
+
+- Confirmed the catalogue checkbox previously changed only an ephemeral batch selection, not saved assortment membership. Added a separate persistent **В ассортименте** checkbox and explicitly labelled the existing temporary **Для массовых действий** selection. Enabled/disabled goods now survive template saves and reopening without an additional bulk-add action.
+- **Изменить** opens the specific item's chance, recommended/fixed price mode and range/variation. Valid input changes update its draft settings automatically, independent of batch selection; final apply validates incomplete edits. Membership remains explicit. Focus is restored after catalogue redraws and Escape closes the top assortment modal even if a redraw removed the active element.
+- World Config previously applied only the saved template entity, ignoring the current form draft. **Сохранить и применить** now validates the current card, saves that template and all chosen destinations in one normal equipment/planets world save, clears its draft after success and rolls back template/destinations on local write failure. A local-save/cloud-failure result is reported without silently reapplying. Recipient preview explains configured stock and preserved manual overrides; an explicit checkbox can replace overrides only for template-covered items. Preservation remains the default.
+- Confirmed the invisible merchant window: its z-index was 120000 while the actual Hub builder used 2147483645. The assortment overlay now uses the higher authoring layer. Prior tests verified pointer interaction through the inert parent and missed paint order; new tests assert relative stacking and inspect the actual Hub screenshot.
+- New real-renderer `assortment-template-v173.browser.mjs` passes direct checkbox save/reopen/disable/re-enable, per-item edits without a secondary apply action, current unsaved-template multi-target save, preserve/replace exceptions, local-failure rollback/retry, actual Hub overlay and a saved merchant purchase. Existing full assortment and checkbox/tag/Hub-scope browser tests plus shared policy/legacy merchant tests pass. Syntax and diff checks pass; screenshot inspected. Native Electron/live server/production data were not tested.
+- Updated `ASSORTMENTS_V171.md` and renderer cache keys. Update desktop source/bundle; this authoring-only fix needs no backend/service restart, DB/schema change or web-player update. Installer remains 1.0.155. No merge, deployment or installer build performed.
+
 ## Checkbox lists, typed tags and multi-value draft preservation (2026-10-16)
 
 Base: main `7ed168c` after PR #47; branch `fix/checkbox-multiselect`.
