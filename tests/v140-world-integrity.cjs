@@ -64,7 +64,8 @@ assert.match(main, /stateBackupFilePath\(\)/);
 
 // Snapshot writes are section-scoped. A World Config equipment save may update
 // equipment only, while routine/profile saves preserve the authoritative world.
-assert.match(renderer, /worldSections:\s*\[this\.selectedType\]/);
+assert.match(renderer, /const worldSections\s*=\s*options\.worldSections\s*\|\|\s*\[this\.selectedType\]/);
+assert.match(renderer, /world-config-save',\s*\{\s*silent:\s*true,\s*worldSections\s*\}/);
 assert.match(renderer, /worldSections:\s*\['players'\]/);
 assert.match(main, /status:\s*'world-section-reset-protected'/);
 assert.match(main, /const worldSections = gmWrite[\s\S]*?: \[\];/);

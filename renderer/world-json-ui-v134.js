@@ -54,7 +54,9 @@
     const current=sectionEntries(type);
     const incomingIds=new Set(entries.map(entity=>entity.id));
     for(const entity of current){
-      if(mode==='replace'||incomingIds.has(entity.id))Configurator.removeEntity(type,entity.id);
+      // Map inserts replace records by ID. Removing an updated skill would also strip
+      // prerequisites and owned skills from other records before reinserting it.
+      if((mode==='replace'&&!incomingIds.has(entity.id))||(WORLD_SECTIONS[type].arrayKey&&incomingIds.has(entity.id)))Configurator.removeEntity(type,entity.id);
     }
     for(const entity of entries)Configurator.insertEntity(type,copy(entity));
     if(type==='equipment'&&entries[0]?.type)Configurator.equipmentCategoryV1052=String(entries[0].type);
@@ -85,6 +87,17 @@
     return failures;
   }
 
+  const mediaKeys=new Set(['image','imageLocal','imageStoragePath','imageData','imageUrl','imageURL']);
+  function sameImportedData(expected,actual){
+    if(Array.isArray(expected))return Array.isArray(actual)&&expected.length===actual.length&&expected.every((value,index)=>sameImportedData(value,actual[index]));
+    if(expected&&typeof expected==='object')return Boolean(actual&&typeof actual==='object')&&Object.keys(expected).filter(key=>!mediaKeys.has(key)).every(key=>sameImportedData(expected[key],actual[key]));
+    return expected===actual;
+  }
+  function verifySection(type,expectedPayload,actualPayload){
+    const expected=Codec.sectionEntries(type,WORLD_SECTIONS,expectedPayload),actual=Codec.sectionEntries(type,WORLD_SECTIONS,actualPayload||{}),byId=new Map(actual.map(entry=>[entry.id,entry]));
+    return actual.length===expected.length&&expected.every(entry=>byId.has(entry.id)&&sameImportedData(entry,byId.get(entry.id)));
+  }
+
   async function persistImport(type,entries,mode,oldIds){
     if(type==='combatScenes'){
       const result=await Combat.saveJsonScenesV133();
@@ -95,6 +108,7 @@
     const result=await window.electronAPI.saveWorldSection(type,nextSnapshot[type]);
     if(!result?.ok)throw new Error(result?.message||'Не удалось записать раздел мира');
     const loaded=await window.electronAPI.loadWorldData();
+    if(loaded?.ok&&loaded.world&&!verifySection(type,nextSnapshot[type],loaded.world[type]))throw new Error('Запись импорта не подтверждена: перечитанный раздел отличается от импортированного');
     const savedWorld=loaded?.ok&&loaded.world?loaded.world:nextSnapshot;
     worldData=savedWorld;
     applyWorldData(savedWorld);
@@ -106,11 +120,12 @@
     try{
       Sync.markLocalDirty(type==='players'?'WORLD_CONFIG_PLAYER_JSON_IMPORT':'WORLD_CONFIG_JSON_IMPORT');
       await Persistence.save(App.state);
-      cloudResult=await Sync.pushCurrentSnapshot('world-config-json-import',{silent:true});
+      cloudResult=await Sync.pushCurrentSnapshot('world-config-json-import',{silent:true,worldSections:[type]});
       App.state=await Persistence.load();
       if(type==='players')mirrorPlayersIntoWorld(App.state);
       App.refreshAfterLocalWrite();
     }catch(error){stateError=[stateError,error.message||String(error)].filter(Boolean).join('; ');cloudResult={ok:false,message:stateError};}
+    if(!verifySection(type,nextSnapshot[type],sectionPayload(type))){stateError=[stateError,'После синхронизации раздел отличается от импортированного. Импорт не подтверждён.'].filter(Boolean).join('; ');}
     return {cloudResult,playerFailures,stateError};
   }
 
@@ -140,9 +155,11 @@
     try{
       changes=applyEntries(type,entries,mode);
       const status=await persistImport(type,entries,mode,changes.oldIds);
+      if(typeof FormDrafts!=='undefined')for(const id of new Set([...entries.map(entry=>entry.id),...(mode==='replace'?changes.oldIds:[])]))FormDrafts.clear(FormDrafts.configKey(type,id));
+      Configurator.searchQuery='';
       Configurator.render();
       const cloudFailed=!status.cloudResult?.ok&&status.cloudResult?.status!=='disabled';
-      if(status.stateError)Toast.show(`Раздел импортирован в файлы мира, но состояние/облако не обновлено: ${status.stateError}`,'err');
+      if(status.stateError)Toast.show(`Импорт не подтверждён полностью: ${status.stateError}`,'err');
       else if(status.playerFailures.length)Toast.show(`Импорт сохранён локально, но ${status.playerFailures.length} профильных записей не синхронизированы.`,'err');
       else if(cloudFailed)Toast.show(`Импорт сохранён локально, но облако не обновлено: ${status.cloudResult?.message||'unknown error'}`,'err');
       else Toast.show(`Импортирован раздел «${WORLD_SECTIONS[type].label}»: ${entries.length} записей`,'ok');
@@ -189,6 +206,6 @@
 
   const renderBeforeJson132=Configurator.render.bind(Configurator);
   Configurator.render=function(){const result=renderBeforeJson132();injectTransferPanel();return result;};
-  window.GRPGWorldJsonTransferV132=Object.freeze({version:'1.0.134',applyEntries,sectionEntries});
+  window.GRPGWorldJsonTransferV132=Object.freeze({version:'1.0.174',applyEntries,sectionEntries});
 })();
 
