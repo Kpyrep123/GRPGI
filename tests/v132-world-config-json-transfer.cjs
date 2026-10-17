@@ -62,12 +62,8 @@ assert.match(feature, /WORLD_CONFIG_JSON_IMPORT/);
 assert.match(feature, /saveWorldSection\(type,nextSnapshot\[type\]\)/);
 assert.match(feature, /writeLocalMirrors:false/);
 assert.match(feature, /Полная замена персонажей должна содержать профиль gm/);
-assert.match(html, /world-json-transfer-v132\.js\?v=1\.0\.134/);
+assert.match(html, /world-json-transfer-v132\.js\?v=[\d.]+/);
+assert.match(html, /world-json-ui-v134\.js\?v=[\d.]+/);
 assert.match(css, /world-json-modal-v132/);
-assert.equal(pkg.version, '1.0.134');
-assert.equal(pkg.buildVersion, '1.0.134.0');
-assert.equal(pkg.build.buildVersion, '1.0.134.0');
-assert.equal(lock.version, '1.0.134');
-assert.equal(lock.packages[''].version, '1.0.134');
 
 console.log('v1.0.132 World Config JSON transfer regression: OK');

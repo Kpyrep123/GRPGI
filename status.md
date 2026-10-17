@@ -1,9 +1,19 @@
 # GRPGI — состояние проекта
 
-Обновлено: 2026-10-16. Версия клиента в `package.json`: **1.0.155**. Модули Хаба используют общие правила/runtime v156 и пространственную модель v157; версия установщика не менялась.
+Обновлено: 2026-10-17. Версия клиента в `package.json`: **1.0.155**. Модули Хаба используют общие правила/runtime v156 и пространственную модель v157; версия установщика не менялась.
 
 
 
+
+## World Config skill JSON import scope and confirmation (2026-10-17)
+
+Base: main `e243049` after PR #49; branch `fix/world-skills-import`.
+
+- Reproduced the reported false success with the supplied `skills(4).json`: valid `SKILLS` map, 32 matching IDs, no missing prerequisite IDs and 8 nonempty Lua scripts. The old importer called `Sync.pushCurrentSnapshot('world-config-json-import',{silent:true})` without `worldSections`. The actual main-process v140 guard had no scope for that reason, retained the remote skills, wrote the old world back locally, and returned a successful snapshot push. The importer then displayed success based on that result. No file-format change is needed.
+- JSON imports now explicitly publish only the imported world section. Local readback and post-sync records are checked against the normalized expected section before a success notice; media/storage fields may legitimately be rewritten by image localization and are excluded from content comparison. A differing reload/cloud result is reported as unconfirmed rather than a successful import. Offline/cloud failures remain distinct from local success.
+- Updating an existing map record no longer calls destructive remove before insert. Skill removal previously cleared prerequisites and owned-skill references for the updated ID. Merge now upserts maps, replace removes only missing IDs, and array sections retain their remove/reinsert behavior. Successful imports clear affected card drafts and the search query so old text/filters do not hide imported records.
+- New `skills-json-import-v174.browser.mjs` loads the real renderer/codec/import UI and real Sync client, with temporary filesystem IPC fixtures and the actual main-process scope/protection functions. Reproduced old false success at base `e243049`; the fix passes both a generated 32-record fixture and the user's actual attachment via an optional local file path. Checked merge/replace, grants/prerequisites/Lua, local+remote persistence/reload, unrelated-section protection, stale card drafts/search, offline/disk failure, dropped local writes, false cloud success and cancellation. The attachment is neither modified nor committed. Existing full World Config form/export/import browser regression, JSON integration/codec, skill-chain and world-integrity checks pass; obsolete static release/call-shape assertions were updated without changing installer metadata. Syntax/diff checks pass. Native Electron and production cloud were not exercised.
+- Update desktop source/bundle and restart the client before retrying the same JSON import. No backend code, server/service restart, DB schema or web-player deployment is required. Installer remains 1.0.155. No merge, deployment or installer build performed.
 
 ## Template stock persistence, application and Hub overlay repairs (2026-10-16)
 
