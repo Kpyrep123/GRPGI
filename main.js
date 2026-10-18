@@ -218,6 +218,15 @@ async function copyPathIfExists(source, target) {
   return true;
 }
 
+// These portable files are derived from the canonical equipment.TRADE_CATALOG.
+// Keeping one storage source preserves existing snapshots and older clients.
+const TRADE_JSON_SECTIONS_V175={tradeTags:['tags','TRADE_TAGS'],assortmentTemplates:['templates','ASSORTMENT_TEMPLATES']};
+async function writeTradeJsonFilesV175(dataDir,equipment={}) {
+  for(const [section,[key,mapKey]] of Object.entries(TRADE_JSON_SECTIONS_V175)) {
+    await writeJsonAtomic(path.join(dataDir,`${section}.json`),{[mapKey]:equipment?.TRADE_CATALOG?.[key]||{}});
+  }
+}
+
 async function exportCampaignBackup() {
   const result = await dialog.showOpenDialog({
     title: 'Выберите папку для резервной копии',
@@ -230,6 +239,8 @@ async function exportCampaignBackup() {
   const backupDir = path.join(targetRoot, backupExportDirName());
   await fs.promises.mkdir(backupDir, { recursive: true });
 
+  // Materialize portable trade sections even for campaigns saved before v175.
+  await readWorldData();
   const copied = [];
   if (await copyPathIfExists(writableWorldDataDir(), path.join(backupDir, 'world-data'))) copied.push('world-data');
   if (await copyPathIfExists(stateFilePath(), path.join(backupDir, path.basename(stateFilePath())))) copied.push('state');
@@ -1486,6 +1497,7 @@ async function readWorldData() {
 
     world[name] = payload;
   }
+  await writeTradeJsonFilesV175(dataDir,world.equipment);
   return { dataDir, world };
 }
 
@@ -1498,6 +1510,7 @@ async function writeWorldSection(sectionName, payload) {
   await localizeLegacyImageDataUrls(payload, sectionName);
   await backupWorldSectionFile(sectionName, file);
   await writeJsonAtomic(file, payload);
+  if(sectionName==='equipment')await writeTradeJsonFilesV175(dataDir,payload);
   return { file, dataDir };
 }
 
@@ -1520,6 +1533,8 @@ async function writeWorldData(worldPayload = {}) {
     await backupWorldSectionFile(name, file);
     await writeJsonAtomic(file, payload ?? {});
   }
+  const equipment=await readJsonIfExists(path.join(dataDir,'equipment.json'));
+  await writeTradeJsonFilesV175(dataDir,equipment);
   return { dataDir };
 }
 
@@ -1527,7 +1542,7 @@ const WORLD_JSON_IMPORT_MAX_BYTES = 64 * 1024 * 1024;
 
 function assertWorldJsonSection(sectionName) {
   const section = String(sectionName || '').trim();
-  if (!WORLD_FILE_NAMES.includes(section)) {
+  if (!WORLD_FILE_NAMES.includes(section)&&!Object.hasOwn(TRADE_JSON_SECTIONS_V175,section)) {
     throw new Error(`Unsupported world section: ${section || '<empty>'}`);
   }
   return section;

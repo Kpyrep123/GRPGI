@@ -1,9 +1,19 @@
 # GRPGI — состояние проекта
 
-Обновлено: 2026-10-17. Версия клиента в `package.json`: **1.0.155**. Модули Хаба используют общие правила/runtime v156 и пространственную модель v157; версия установщика не менялась.
+Обновлено: 2026-10-18. Версия клиента в `package.json`: **1.0.155**. Модули Хаба используют общие правила/runtime v156 и пространственную модель v157; версия установщика не менялась.
 
 
 
+
+## Portable trade tags and assortment templates (2026-10-18)
+
+Base: main `b7b75ce` after PR #50; branch `fix/trade-catalog-json`.
+
+- Tags and assortment templates were virtual World Config categories stored in `equipment.TRADE_CATALOG`. Their section payloads were missing and the main JSON dialog whitelist rejected them, so their visible JSON buttons could not work. Campaign backups already contained the canonical data inside equipment.json, but no separately importable files existed.
+- Added independent `tradeTags.json` (`TRADE_TAGS`) and `assortmentTemplates.json` (`ASSORTMENT_TEMPLATES`) export/import through the existing preview, merge/replace and cancel flow. Template import validates pricing/chance rules before mutation. Only the selected registry is changed; equipment, the sibling registry and merchant assignments are retained. The correct equipment storage/sync scope and local/post-cloud verification are used rather than sending unsupported virtual section names.
+- Desktop materializes the two portable files in its working world-data directory on load/save and refreshes them before copying a campaign backup, including campaigns saved before this update. They are derived interchange copies; equipment.TRADE_CATALOG remains the canonical snapshot source for compatibility with existing clients/cloud. Import these files through their matching World Config categories rather than editing the derived copies in place. Existing campaigns require no migration.
+- Validation: new real-renderer trade JSON regression and actual main-process filesystem/dialog/backup regression pass; existing skills JSON, World Config JSON codec/integration and world-integrity checks pass. Existing full assortment regression passes with a longer interaction timeout and external media disabled in its temporary test harness (the initial 10-second run timed out in this environment). No production data or endpoints used. Native Electron dialogs and live production cloud were not exercised.
+- Apply desktop source/bundle and restart the client. No backend/service restart, web-player deployment, DB schema migration or installer version change is required. Installer remains 1.0.155. No merge, deployment or installer build performed.
 
 ## World Config skill JSON import scope and confirmation (2026-10-17)
 
