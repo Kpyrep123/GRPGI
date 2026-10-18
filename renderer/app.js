@@ -17557,6 +17557,7 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
       activationType,
       name: String(entity.name || entity.title || (skillType === SKILL_TYPE_SPECIALIZATION_V55 ? 'Новая специализация' : 'Новый навык')).trim(),
       category: String(entity.category || 'Общее').trim() || 'Общее',
+      tags: Array.isArray(entity.tags) ? [...new Set(entity.tags.map(String).map(t=>t.trim()).filter(Boolean))] : [],
       description: String(entity.description || entity.summary || entity.body || '').trim(),
       cost: Math.max(0, numberOrFallbackV50(entity.cost ?? entity.pointCost, 1)),
       requiredAbilities,
@@ -17790,6 +17791,7 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
     modal.querySelector('#profile-extra-modal-title-v50').textContent = title;
     modal.querySelector('#profile-extra-modal-kicker-v50').textContent = kicker;
     modal.querySelector('#profile-extra-modal-body-v50').innerHTML = html;
+    modal.classList.toggle('skill-modal176',Boolean(modal.querySelector('[data-skill-catalog176]')));
     modal.classList.add('open');
     return modal;
   }
@@ -18568,6 +18570,7 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
   }
 
   function skillsModalMarkupV50(user) {
+    if(window.GRPGSkillCatalogV176)return '<div data-skill-catalog176></div>';
     user = normalizePlayerProfileV2(user);
     const layout = buildSkillTreeLayoutV51(user);
     const visibleSets = skillTreeVisibleSetsV53(layout);
@@ -18610,7 +18613,7 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
         ${renderThumb(skill, { size: 'md', type: 'skill', glyph: initials(skill.name, 'SK') })}
         <div><b>${esc(skill.name)}</b><div class="small-note">${esc(skill.category || 'Общее')} · ${isSpecializationV55(skill) ? `Специализация · ${Number(skill.cost || 0)} ОУ` : `${Number(skill.cost || 0)} ОУ`}</div></div>
       </div>
-      ${skill.description ? `<div class="profile-skill-detail-description-v52">${esc(skill.description)}</div>` : '<div class="small-note">Описание не задано.</div>'}
+      ${skill.description ? `<div class="profile-skill-detail-description-v52">${window.GRPGSkillCatalogV176?window.GRPGSkillCatalogV176.rich(skill.description):esc(skill.description)}</div>` : '<div class="small-note">Описание не задано.</div>'}
       <div class="section-title">Требования</div>
       ${abilityReqs || skillReqs ? `<ul class="profile-skill-detail-reqs-v52">${abilityReqs}${skillReqs}</ul>` : (isSpecializationV55(skill) ? '<div class="small-note">Это вторичная характеристика персонажа. В дереве она может быть узлом зависимости для других навыков.</div>' : '<div class="small-note">Нет требований.</div>')}
       ${increaseReqs ? `<div class="section-title">Повышает</div><ul class="profile-skill-detail-reqs-v52">${increaseReqs}</ul>` : ''}
@@ -19032,6 +19035,15 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
   }
 
   function bindProfileModalActionsV50(root = document) {
+    const catalog=root.querySelector('[data-skill-catalog176]');
+    if(catalog&&window.GRPGSkillCatalogV176){window.GRPGSkillCatalogV176.mount(catalog,{
+      key:'desktop:'+(App.activeCampaignId||'main')+':'+App.currentUserId,user:()=>normalizePlayerProfileV2(App.state.users[App.currentUserId]||{}),readonly:()=>App.currentUser?.role==='guest',
+      skills:()=>getVisibleSkillTreeItemsV56(normalizePlayerProfileV2(App.state.users[App.currentUserId]||{})),
+      status:skill=>{const r=skillStatusV50(normalizePlayerProfileV2(App.state.users[App.currentUserId]||{}),skill);return {owned:['owned','specialization-owned'].includes(r.state),available:r.ok,gm:r.state==='gm-only',pointsOnly:r.reasons?.length===1&&Number(App.state.users[App.currentUserId]?.skillPoints||0)<Number(skill.cost||0),reasons:r.reasons};},
+      thumb:skill=>renderThumb(skill,{size:'sm',type:'skill',glyph:initials(skill.name,'SK')}),
+      learn:learnSkillV50,upgrade:upgradeAbilityV51,error:message=>Toast.show(message,'err')
+    });return;}
+
     root.querySelectorAll('.profile-learn-skill-btn-v50').forEach(button => {
       if (button.dataset.boundV50 === '1') return;
       button.dataset.boundV50 = '1';

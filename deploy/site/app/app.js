@@ -3277,7 +3277,7 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
     tip.innerHTML = `
       <div class="web-skill-tip-head"><b>${esc(skill.name || skill.id)}</b><span>${spec ? `Специализация${specValue ? ` · ур. ${specValue}` : ''}` : 'Навык'}</span></div>
       ${skill.category ? `<div class="web-skill-tip-cat">${esc(skill.category)}</div>` : ''}
-      ${skill.description ? `<div class="web-skill-tip-desc">${esc(skill.description)}</div>` : '<div class="web-skill-tip-desc muted">Описание не задано.</div>'}
+      ${skill.description ? `<div class="web-skill-tip-desc">${window.GRPGSkillCatalogV176?window.GRPGSkillCatalogV176.rich(skill.description):esc(skill.description)}</div>` : '<div class="web-skill-tip-desc muted">Описание не задано.</div>'}
       <div class="web-skill-tip-meta">
         <span class="pill">Стоимость: ${Number(skill.cost || 1)}</span>
         ${owned ? '<span class="pill ok">Изучено</span>' : reasons.length ? `<span class="pill warn">Требуется: ${esc(reasons.join(', '))}</span>` : '<span class="pill ok">Доступно</span>'}
@@ -3456,6 +3456,15 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
       <button class="chip-btn ${profileTab === 'skills' ? 'active' : ''}" type="button" data-action="profile-tab" data-tab="skills">Навыки · ${Number(player.skillPoints || 0)} очк.</button>
     </div>`;
     if (profileTab === 'skills') {
+      if(window.GRPGSkillCatalogV176){
+        setTopbar('Навыки','Каталог и зависимости');hideWebSkillTipEl();root.innerHTML=`${tabsRow}<div data-skill-catalog176></div>`;
+        window.GRPGSkillCatalogV176.mount(root.querySelector('[data-skill-catalog176]'),{
+          key:'web:'+(App.session?.campaignId||App.config?.campaignId||'main')+':'+player.id,user:()=>currentPlayer(),skills:()=>visibleSkills(),readonly:()=>isGuestSession(),
+          status:skill=>{const p=currentPlayer(),owned=playerOwnsSkill(p,skill),reasons=skillRequirementReasons(p,skill),gm=skillDependsOnGloryV58(skill);return {owned,available:!owned&&!reasons.length&&!isGuestSession(),gm,pointsOnly:reasons.length===1&&Number(p.skillPoints||0)<Number(skill.cost??1),reasons:isGuestSession()?['Гость не может менять профиль']:reasons};},
+          learn:upgradeSkill,upgrade:upgradeAbility,
+          thumb:skill=>renderEntityThumb(skill),error:message=>notify(message,'err')
+        });return;
+      }
       setTopbar('Навыки', 'Древо навыков и характеристик — как в настольном интерфейсе');
       hideWebSkillTipEl();
       root.innerHTML = `${tabsRow}${renderWebSkillTree(player)}`;
