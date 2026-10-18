@@ -11,6 +11,11 @@
   let transferBusy=false;
 
   function sectionPayload(type){return Configurator.buildPayload(type);}
+  function storageSection(type){return WORLD_SECTIONS[type].storageSection||type;}
+  function payloadFromWorld(type,world){
+    if(type==='tradeTags'||type==='assortmentTemplates')return {[WORLD_SECTIONS[type].mapKey]:world?.equipment?.TRADE_CATALOG?.[type==='tradeTags'?'tags':'templates']||{}};
+    return world?.[type];
+  }
   function sectionEntries(type){return Codec.sectionEntries(type,WORLD_SECTIONS,sectionPayload(type));}
 
   function validatePlayerImport(entries,mode){
@@ -105,10 +110,11 @@
       return {cloudResult:{ok:true,status:'disabled'},playerFailures:[],stateError:''};
     }
     const nextSnapshot=buildWorldSnapshot();
-    const result=await window.electronAPI.saveWorldSection(type,nextSnapshot[type]);
+    const storage=storageSection(type),expected=payloadFromWorld(type,nextSnapshot);
+    const result=await window.electronAPI.saveWorldSection(storage,nextSnapshot[storage]);
     if(!result?.ok)throw new Error(result?.message||'Не удалось записать раздел мира');
     const loaded=await window.electronAPI.loadWorldData();
-    if(loaded?.ok&&loaded.world&&!verifySection(type,nextSnapshot[type],loaded.world[type]))throw new Error('Запись импорта не подтверждена: перечитанный раздел отличается от импортированного');
+    if(loaded?.ok&&loaded.world&&!verifySection(type,expected,payloadFromWorld(type,loaded.world)))throw new Error('Запись импорта не подтверждена: перечитанный раздел отличается от импортированного');
     const savedWorld=loaded?.ok&&loaded.world?loaded.world:nextSnapshot;
     worldData=savedWorld;
     applyWorldData(savedWorld);
@@ -120,12 +126,12 @@
     try{
       Sync.markLocalDirty(type==='players'?'WORLD_CONFIG_PLAYER_JSON_IMPORT':'WORLD_CONFIG_JSON_IMPORT');
       await Persistence.save(App.state);
-      cloudResult=await Sync.pushCurrentSnapshot('world-config-json-import',{silent:true,worldSections:[type]});
+      cloudResult=await Sync.pushCurrentSnapshot('world-config-json-import',{silent:true,worldSections:[storage]});
       App.state=await Persistence.load();
       if(type==='players')mirrorPlayersIntoWorld(App.state);
       App.refreshAfterLocalWrite();
     }catch(error){stateError=[stateError,error.message||String(error)].filter(Boolean).join('; ');cloudResult={ok:false,message:stateError};}
-    if(!verifySection(type,nextSnapshot[type],sectionPayload(type))){stateError=[stateError,'После синхронизации раздел отличается от импортированного. Импорт не подтверждён.'].filter(Boolean).join('; ');}
+    if(!verifySection(type,expected,sectionPayload(type))){stateError=[stateError,'После синхронизации раздел отличается от импортированного. Импорт не подтверждён.'].filter(Boolean).join('; ');}
     return {cloudResult,playerFailures,stateError};
   }
 
@@ -143,6 +149,10 @@
     if(!file?.ok)throw new Error(file?.message||'Не удалось открыть JSON');
     if(file.canceled)return;
     const entries=Codec.sectionEntries(type,WORLD_SECTIONS,file.payload);
+    if(type==='tradeTags'||type==='assortmentTemplates')for(const entry of entries){
+      if(typeof entry.name!=='string'||!entry.name.trim())throw new Error('У тега или шаблона должно быть название');
+      if(type==='assortmentTemplates')window.GRPGMerchantCatalogV170.validatePolicy(entry.policy);
+    }
     const summary=Codec.summarize(type,WORLD_SECTIONS,sectionPayload(type),entries);
     const mode=await chooseImportMode(type,file.fileName,summary);
     if(mode==='cancel')return;
@@ -206,6 +216,6 @@
 
   const renderBeforeJson132=Configurator.render.bind(Configurator);
   Configurator.render=function(){const result=renderBeforeJson132();injectTransferPanel();return result;};
-  window.GRPGWorldJsonTransferV132=Object.freeze({version:'1.0.174',applyEntries,sectionEntries});
+  window.GRPGWorldJsonTransferV132=Object.freeze({version:'1.0.175',applyEntries,sectionEntries});
 })();
 

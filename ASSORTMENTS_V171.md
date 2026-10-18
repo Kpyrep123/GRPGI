@@ -52,3 +52,12 @@ Tests: `tests/assortments-v171.mjs` checks pricing, daily variation, dynamic/sta
 Native Electron, the deployed PocketBase goods hook and production data are not exercised. The hook/executable are not provided in this checkout. No deployment or merge is performed as part of the change.
 
 The v173 regression `tests/assortment-template-v173.browser.mjs` covers direct goods checkboxes, automatic item settings, applying an unsaved current template, preserve/replace modes, atomic local-failure rollback/retry, reopening, actual Hub stacking and a saved merchant purchase. The assortment overlay now paints above the real Hub builder; previous pointer-only tests could click through the inert builder while the shop was visually hidden.
+
+
+## Экспорт и импорт тегов и шаблонов (v175)
+
+В World Config откройте «Теги» или «Шаблоны ассортимента» и нажмите «ЭКСПОРТ JSON» / «ИМПОРТ JSON». Экспортируются все сохранённые записи выбранного раздела. При импорте доступны объединение по ID, полная замена только этого раздела и отмена. Цены, шансы, правила и ручные исключения шаблонов сохраняются. Назначенные торговцам ассортименты при импорте шаблонов автоматически не меняются: примените импортированный шаблон к нужным торговцам обычной кнопкой.
+
+Отдельные файлы `tradeTags.json` и `assortmentTemplates.json` появляются в рабочей папке `world-data` и в новой резервной копии кампании. Для переноса шаблонов с правилами по тегам экспортируйте и импортируйте оба раздела, сначала теги. Снаряжение переносится своим экспортом; ID товаров и тегов должны совпадать. Файл шаблонов не содержит сами товары.
+
+Для совместимости с существующей синхронизацией источник данных остаётся внутри `equipment.json` → `TRADE_CATALOG`. Два новых файла — автоматически обновляемые копии для переноса, а не дополнительная независимая база. Их следует импортировать через World Config: ручное редактирование копии в рабочей папке не меняет кампанию. В старых бэкапах теги и шаблоны можно найти в `equipment.json` → `TRADE_CATALOG.tags` / `.templates`; после обновления приложение создаст отдельные копии при загрузке или бэкапе. Сервер перезапускать не нужно.

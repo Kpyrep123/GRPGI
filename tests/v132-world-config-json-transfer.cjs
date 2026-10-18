@@ -59,7 +59,7 @@ assert.match(preload, /exportWorldSectionJson/);
 assert.match(preload, /importWorldSectionJson/);
 assert.match(feature, /JSON_IMPORT_PREVIEW/);
 assert.match(feature, /WORLD_CONFIG_JSON_IMPORT/);
-assert.match(feature, /saveWorldSection\(type,nextSnapshot\[type\]\)/);
+assert.match(feature, /saveWorldSection\(storage,nextSnapshot\[storage\]\)/);
 assert.match(feature, /writeLocalMirrors:false/);
 assert.match(feature, /Полная замена персонажей должна содержать профиль gm/);
 assert.match(html, /world-json-transfer-v132\.js\?v=[\d.]+/);

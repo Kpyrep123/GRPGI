@@ -18,6 +18,11 @@ const snapshotBefore=buildWorldSnapshot;buildWorldSnapshot=function(){const resu
 WORLD_SECTIONS.tradeTags={label:'Теги',mapKey:'TRADE_TAGS',listKey:'TRADE_TAG_LIST'};
 WORLD_SECTIONS.assortmentTemplates={label:'Шаблоны ассортимента',mapKey:'ASSORTMENT_TEMPLATES',listKey:'ASSORTMENT_TEMPLATE_LIST'};
 const collection=type=>type==='tradeTags'?catalog.tags:catalog.templates;
+// Portable sections share equipment storage; never submit virtual names to sync.
+for(const type of ['tradeTags','assortmentTemplates'])WORLD_SECTIONS[type].storageSection='equipment';
+const payloadBefore=Configurator.buildPayload.bind(Configurator);
+Configurator.buildPayload=function(type){return virtual(type)?{[WORLD_SECTIONS[type].mapKey]:clone(collection(type))}:payloadBefore(type);};
+
 for(const method of ['getItems','insertEntity','removeEntity']){
  const before=Configurator[method].bind(Configurator);
  Configurator[method]=function(type,...args){if(!virtual(type))return before(type,...args);const records=collection(type);if(method==='getItems')return Object.values(records).sort((a,b)=>a.name.localeCompare(b.name,'ru'));if(method==='insertEntity')records[args[0].id]=args[0];else delete records[args[0]];};
