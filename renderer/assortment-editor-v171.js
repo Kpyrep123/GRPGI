@@ -154,7 +154,7 @@ function applyTemplateToDestinations(template){
 
 const renderWithTemplates=Configurator.render.bind(Configurator);Configurator.render=function(...args){const result=renderWithTemplates(...args);if(this.selectedType==='assortmentTemplates'){const form=document.getElementById('config-editor-form');if(form){const button=document.createElement('button');button.type='button';button.className='secondary';button.textContent='СОХРАНИТЬ И ПРИМЕНИТЬ ШАБЛОН К ТОРГОВЦАМ';button.dataset.applyDestinations171='';button.onclick=()=>{try{applyTemplateToDestinations(this.collectEntity('assortmentTemplates',form,new FormData(form)));}catch(error){Toast.show(error.message,'err');}};form.append(button);}}return result;};
 document.addEventListener('grpg-create-tag172',event=>{
- const {select,name}=event.detail;if(!select.matches('[data-allow-tag-create172]'))return;
+ const {select,name}=event.detail;if(!select.matches('[data-allow-tag-create172]')||select.matches('[data-skill-tags176]'))return;
  if(App.currentUser?.role!=='gm'){event.detail.error='Создание тегов доступно ведущему';return;}
  const clean=String(name||'').trim().replace(/\s+/g,' ');if(!clean||clean.length>80){event.detail.error='Название тега: от 1 до 80 символов';return;}
  const normalized=v=>v.normalize('NFKC').toLocaleLowerCase(),existing=Object.values(catalog.tags).find(t=>normalized(t.name)===normalized(clean));

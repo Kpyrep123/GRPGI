@@ -1,9 +1,19 @@
 # GRPGI — состояние проекта
 
-Обновлено: 2026-10-18. Версия клиента в `package.json`: **1.0.155**. Модули Хаба используют общие правила/runtime v156 и пространственную модель v157; версия установщика не менялась.
+Обновлено: 2026-10-19. Версия клиента в `package.json`: **1.0.155**. Модули Хаба используют общие правила/runtime v156 и пространственную модель v157; версия установщика не менялась.
 
 
 
+
+## Player skill catalogue, dependency view and skill tags (2026-10-19)
+
+Base: main `6a18757` after PR #51; branch `feat/skill-catalog-v176`.
+
+- Replaced the active desktop/web skill-tree presentation with one mirrored `skill-catalog-v176` component: fullscreen desktop profile modal, searchable catalogue, multi-tag checkbox filters, availability/owned/direct-ability/general filters, availability/name/cost sorting and an in-place description/purchase panel. Independent skills have no synthetic ability parent. Legacy category, treePos, prerequisites, purchase rules, Lua and ownership are retained.
+- Dependency view shows selected ancestors/descendants and the extra prerequisites of descendants, all visible prerequisite edges and deterministic ID-stable dependency-level layout. It ignores catalogue filters intentionally, supports pan/zoom/fit/selected focus/reset, reports cycles without modifying data, and avoids leaking hidden prerequisite names. View state survives profile rerenders for the same player. Existing skill and ability purchase/confirmation/revalidation/sync paths are reused; Glory remains DM-controlled.
+- Added multi-value typed skill tags to World Config with the shared checkbox picker, case-insensitive reuse and form-draft preservation; they are stored as strings in each skill, not in the trade registry. They round-trip through normal skills snapshots/JSON/backup. Empty-tag legacy records remain valid. Added safe rich description rendering for paragraphs and basic HTML, unsafe content removal, and authoring preview without modifying the stored description. Added amber/metal styling, panel entry and catalogue rearrangement animations, reduced-motion support, responsive filters/detail layout and mirrored desktop/web entry points.
+- Validation: new pure dependency/tag/mirror regression and actual desktop/web browser regression with 121 visible skills, hidden-record filtering, full multi-parent edges, standalone skills, filters, HTML/plain paragraphs and script/protocol removal, desktop purchase/unlock, WC draft/saved tags and JSON, real web mutation success/failure rollback, responsive bounds and reduced motion. Existing skill-chain edit, JSON codec and world-integrity regressions pass. Screenshots inspected; native Electron and live production services were not exercised. See `SKILLS_V176.md` for usage/deployment.
+- Apply desktop source/bundle and restart the client; run Deploy Web for browser players. No server/service restart, DB/schema migration or installer version change. Installer remains 1.0.155. No merge, deployment or installer build performed.
 
 ## Portable trade tags and assortment templates (2026-10-18)
 
