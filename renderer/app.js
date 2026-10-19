@@ -23428,6 +23428,7 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
     return 'technological';
   }
   function creationCostV1066(entity = {}) {
+    entity = entity || {};
     return clamp(Math.max(0, Number(entity.creationCost ?? entity.characterCreationCost ?? 0)), 0, CHARACTER_CREATION_BUDGET_V1066);
   }
   function creationOptionAvailableV1066(entity = {}, campaign = null) {
@@ -23554,6 +23555,7 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
       budget.classList.toggle('over-budget', remaining < 0);
     }
     if (submit) submit.disabled = remaining < 0;
+    window.GRPGRegistrationLoadoutV179?.refresh(form);
   }
   function refreshRegistrationChoicesV1066(form) {
     if (!form) return;
@@ -23580,11 +23582,14 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
     if (!selection.geographic || !creationOptionAvailableV1066(selection.geographic, selection.campaign)) return { ok: false, message: 'Выберите доступное происхождение.', ...selection };
     if (selection.equipment.some(item => !item.availableAsStarting || !creationOptionAvailableV1066(item, selection.campaign))) return { ok: false, message: 'Список стартового снаряжения изменился. Выберите предметы заново.', ...selection };
     if (selection.total > CHARACTER_CREATION_BUDGET_V1066) return { ok: false, message: `Превышен бюджет создания: ${selection.total} / ${CHARACTER_CREATION_BUDGET_V1066}.`, ...selection };
-    const starterLayout = window.GRPGInventoryV1067?.buildLayout?.(window.GRPGCharacterGrantsV178.apply({ socialOriginId: selection.profession.id, geographicOriginId: selection.geographic.id, inventorySize: 12, carryWeightMax: 12, equipmentSlots: { primaryWeapon: '', secondaryWeapon: '', armor: '' }, implantSlotCount: 0, implantSlots: [], inventory: selection.equipmentIds.map(itemId => ({ itemId, qty: 1, positions: [] })) }, window.GRPGCharacterGrantWorldV178()));
-    if (starterLayout?.weight > 12 + 1e-9) return { ok: false, message: `Стартовое снаряжение слишком тяжёлое: ${starterLayout.weight.toFixed(1)} / 12.`, ...selection };
-    if (starterLayout?.overflow?.length) return { ok: false, message: 'Стартовое снаряжение не помещается в стандартный инвентарь на 12 клеток.', ...selection };
-    return { ok: true, ...selection };
+    const loadout = window.GRPGRegistrationLoadoutV179?.player(form);
+    const starterLayout = loadout ? window.GRPGInventoryV113.layout(loadout) : null;
+    if (!starterLayout) return {ok:false,message:'Не удалось подготовить стартовый инвентарь.',...selection};
+    if(starterLayout.weight > starterLayout.user.carryWeightMax + 1e-9) return {ok:false,message:`Стартовое снаряжение слишком тяжёлое: ${starterLayout.weight.toFixed(1)} / ${starterLayout.user.carryWeightMax}.`,...selection};
+    if(starterLayout.overflow.length) return {ok:false,message:'Стартовое снаряжение не помещается в инвентарь. Проверьте экипировку и рюкзак.',...selection};
+    return {ok:true,...selection,loadout};
   }
+
   function registrationMarkupV1052() {
     const campaigns = availableCampaignRowsV1052();
     const preferredCampaignId = String(App.activeCampaignId || localStorage.getItem('grpg-login-campaign-v1049') || '').trim();
@@ -23628,7 +23633,7 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
     if (!open || !panel || open.dataset.boundV1052 === '1') return;
     if (panel.parentElement !== document.body) document.body.appendChild(panel);
     open.dataset.boundV1052 = '1';
-    open.addEventListener('click', () => { panel.innerHTML = registrationMarkupV1052(); panel.hidden = false; document.body.classList.add('registration-open-v1054'); });
+    open.addEventListener('click', () => { panel.innerHTML = registrationMarkupV1052(); panel.hidden = false; document.body.classList.add('registration-open-v1054'); window.GRPGRegistrationLoadoutV179?.refresh(panel.querySelector('form')); });
     panel.addEventListener('click', event => {
       const equipmentSelect = event.target?.closest?.('[data-registration-equipment-select-v1072]');
       if (equipmentSelect) {
@@ -23675,7 +23680,7 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
           approvalStatus: 'pending', applicationSubmittedAt: new Date().toISOString(), campaignIds: [campaignId], socialOriginId: creation.profession.id, geographicOriginId: creation.geographic.id, allowCrossCampaignDirectMessages: false,
           creationPointsSpent: creation.total, startingEquipmentIds: creation.equipmentIds,
           credits: 0, stats: { hpCurrent: 10, hpMax: 10, shieldCurrent: 0, shieldMax: 0, energyCurrent: 1, energyMax: 1, baseArmorClass: 10 }, abilities: Object.fromEntries(ABILITIES_V1052.map(row => [row.key, 0])), abilityBase: Object.fromEntries(ABILITIES_V1052.map(row => [row.key, 0])),
-          equipmentSlots: { primaryWeapon: '', secondaryWeapon: '', armor: '' }, installedImplantIds: [], inventory: creation.equipmentIds.map(itemId => ({ itemId, qty: 1 })), social: { npcIds: [], orgs: [], reputation: [] }, currentPlanetId: '', relatedArticleIds: []
+          equipmentSlots: { primaryWeapon: '', secondaryWeapon: '', armor: '' }, installedImplantIds: [], inventory: creation.equipmentIds.map(itemId => ({ itemId, qty: 1 })), social: { npcIds: [], orgs: [], reputation: [] }, currentPlanetId: '', relatedArticleIds: [], ...window.GRPGRegistrationLoadoutV179.payload(creation.loadout)
         });
         if (!window.electronAPI?.submitCharacterApplication) throw new Error('Установите версию 1.0.93 и серверный модуль анкет');
         const submitted = await window.electronAPI.submitCharacterApplication({ player_id: id, player, updatedBy: Sync.config?.deviceLabel || 'desktop-registration', clientUpdatedAt: new Date().toISOString() });
@@ -23693,6 +23698,14 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
   const __finishLoadV1052 = applyWorldData;
   applyWorldData = function(payload = {}) { const result = __finishLoadV1052(payload); bindRegistrationV1052(); return result; };
   bindRegistrationV1052();
+  window.GRPGRegistrationBridgeV179 = {
+    formSelector:'#registration-form-v1052', selection:creationSelectionV1066,
+    world:()=>window.GRPGCharacterGrantWorldV178(),
+    normalize:p=>normalizePlayerProfileV2(p),
+    layout:p=>window.GRPGInventoryV113.layout(p),
+    item:id=>EQUIPMENT[id] ? normalizeEquipmentItemV2(EQUIPMENT[id]) : null,
+    thumb:item=>renderThumb(item,{size:'md',type:'item',glyph:initials(item.name||item.id)})
+  };
 
   // v1.0.61: a geographic origin can grant visibility to real WC planets and their systems.
   const __isEntityVisibleV1061 = isEntityVisible;
