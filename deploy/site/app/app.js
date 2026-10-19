@@ -3457,7 +3457,7 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
     </div>`;
     if (profileTab === 'skills') {
       if(window.GRPGSkillCatalogV176){
-        setTopbar('Навыки','Каталог и зависимости');hideWebSkillTipEl();root.innerHTML=`${tabsRow}<div data-skill-catalog176></div>`;
+        setTopbar('Навыки','Радиальное дерево навыков');hideWebSkillTipEl();root.innerHTML=`${tabsRow}<div data-skill-catalog176></div>`;
         window.GRPGSkillCatalogV176.mount(root.querySelector('[data-skill-catalog176]'),{
           key:'web:'+(App.session?.campaignId||App.config?.campaignId||'main')+':'+player.id,user:()=>currentPlayer(),skills:()=>visibleSkills(),readonly:()=>isGuestSession(),
           status:skill=>{const p=currentPlayer(),owned=playerOwnsSkill(p,skill),reasons=skillRequirementReasons(p,skill),gm=skillDependsOnGloryV58(skill);return {owned,available:!owned&&!reasons.length&&!isGuestSession(),gm,pointsOnly:reasons.length===1&&Number(p.skillPoints||0)<Number(skill.cost??1),reasons:isGuestSession()?['Гость не может менять профиль']:reasons};},
