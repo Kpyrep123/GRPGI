@@ -951,3 +951,9 @@
     animation: none !important;
   }
 }
+
+.r177-ability-panel { position:absolute; z-index:12; top:16px; right:16px; width:min(360px,calc(100% - 32px)); max-height:calc(100% - 32px); overflow:auto; padding:20px; border:1px solid #507991; border-radius:16px; background:#111c29f5; box-shadow:0 20px 70px #0009; animation:r177-slide .2s ease-out; }
+.r177-ability-panel p {color:#9daebd;font-size:12px;line-height:1.5;}
+.r177-ability-panel[hidden] {display:none;}
+
+@media (prefers-reduced-motion: reduce) {.r177-ability-panel {animation:none;}}

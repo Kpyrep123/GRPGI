@@ -1,9 +1,20 @@
 # GRPGI — состояние проекта
 
-Обновлено: 2026-10-19. Версия клиента в `package.json`: **1.0.155**. Модули Хаба используют общие правила/runtime v156 и пространственную модель v157; версия установщика не менялась.
+Обновлено: 2026-10-19. Версия клиента в `package.json`: **1.0.155**. Модули Хаба используют общие правила/runtime v156 и пространственную модель v157 с непрерывной навигацией v178; версия установщика не менялась.
 
 
 
+
+## Automatic character grants, characteristic upgrades and continuous Hub navigation (2026-10-19)
+
+Base: main `7f915b2` after PR #53; branch `feat/character-grants-hub-navigation`.
+
+- Dependent common skills inherit the predecessor's sector; common-only chains are grouped with children below parents, while independent skills keep compact rows. Added an explicit characteristic-upgrade panel accessible from the toolbar and centre nodes, reusing existing point/confirmation/conflict rules.
+- Added the World Config **Базовый** flag with retroactive, point-free ownership in desktop/web normalization and combat action lookup. Profession/origin cards grant existing skills, define private skills directly (activation, image, rich description, modifiers/Lua), and issue starting items. Private IDs are collision-safe and excluded from the ordinary global skill editor. Form drafts retain custom rows and multiple selections. Existing origin JSON sections and backups carry the new fields.
+- Added a per-source/item player receipt ledger to prevent starter goods respawning after consumption or reload. Normal reads apply grants immediately; ordinary queued writes persist them. Desktop partial writes include grants/receipts atomically with the edit, including first consumption. Web mutations and registration submissions include grants; registration capacity checks count origin goods too. Existing items can enter overflow; changing an already issued quantity does not top up stock.
+- Hub uses exact pixel destinations, swept circular collision and obstacle detours, configurable character width (default 40 px), continuous token/vision animation and full-route queued saves. Smooth radial/ray-cast fog uses RLE exploration memory and migrates old hex memory. Player DOM omits walls and grid; the DM still sees/edit walls, with independent movement/sight flags. Failed saves restore the confirmed position/fog and stop the route.
+- Passed v178 grants/geometry/browser/desktop queue checks, characteristic purchases on both clients, origin draft/save/JSON export, small-gap and rotated-object/door tests, full web wall detour with real mutation queue, fog alpha/occlusion and failed-step rollback. Existing radial, skill-chain, JSON import, desktop/web sync and world integrity regressions are retained. Screenshots inspected. No production service or native Electron/PocketBase exercised.
+- See `CHARACTER_GRANTS_HUB_V178.md`. Update/restart the desktop and Deploy Web; no backend schema/service or stock-service restart. Installer remains 1.0.155. No merge, deployment or installer build performed.
 
 ## Radial player skill trees and a separate common-skill bank (2026-10-19)
 

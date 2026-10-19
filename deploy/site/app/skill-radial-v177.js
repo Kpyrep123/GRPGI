@@ -26,26 +26,25 @@
       if (memo.has(id)) return memo.get(id);
       if (stack.has(id) || !by.has(id)) return "common";
       const s = by.get(id);
-      if (s.treeBranch === "common" || branchIds.has(s.treeBranch)) {
+      if (branchIds.has(s.treeBranch)) {
         memo.set(id, s.treeBranch);
         return s.treeBranch;
       }
+      stack.add(id);
+      const parents = C.requirements(s)
+        .filter((p) => by.has(p))
+        .sort();
+      const inherited = parents.map((p) => visit(p, new Set(stack)));
       const direct = branches.find((b) =>
         (s.requiredAbilities || []).some(
           (r) => r.key === b.id && Number(r.value) > 0,
         ),
       );
-      if (direct) {
-        memo.set(id, direct.id);
-        return direct.id;
-      }
-      stack.add(id);
-      const parent = C.requirements(s)
-        .filter((p) => by.has(p))
-        .sort()
-        .map((p) => visit(p, new Set(stack)))
-        .find((b) => b !== "common");
-      const value = parent || "common";
+      const value = parents.length
+        ? inherited.find((b) => b !== "common") || "common"
+        : s.treeBranch === "common"
+          ? "common"
+          : direct?.id || "common";
       memo.set(id, value);
       return value;
     }
@@ -144,28 +143,71 @@
     const generals = skills.filter(
         (s) => assignment.get(String(s.id)) === "common",
       ),
+      generalBy = new Map(generals.map((s) => [String(s.id), s])),
       top = C.layout(generals),
-      rows = new Map();
+      visited = new Set();
     for (const id of top.cyclic) cycles.add(id);
-    for (const s of generals) {
-      const depth = Math.round((top.positions.get(String(s.id)).y - 32) / 148);
-      if (!rows.has(depth)) rows.set(depth, []);
-      rows.get(depth).push(s);
-    }
-    let rowIndex = 0;
-    for (const [depth, row] of [...rows].sort((a, b) => a[0] - b[0])) {
-      row.sort((a, b) => String(a.id).localeCompare(String(b.id)));
-      row.forEach((s, i) => {
-        const pos = {
-          x: 44 + (i % 3) * 86,
-          y: 42 + (rowIndex + Math.floor(i / 3)) * 112,
-          branch: "common",
-          depth,
-        };
-        positions.set(String(s.id), pos);
-        common.push(String(s.id));
+    let y = 42;
+    const standalone = generals
+      .filter(
+        (s) =>
+          !C.requirements(s).some((id) => generalBy.has(id)) &&
+          !generals.some((other) =>
+            C.requirements(other).includes(String(s.id)),
+          ),
+      )
+      .sort((a, b) => String(a.id).localeCompare(String(b.id)));
+    standalone.forEach((s, i) => {
+      const id = String(s.id);
+      visited.add(id);
+      positions.set(id, {
+        x: 44 + (i % 3) * 86,
+        y: 42 + Math.floor(i / 3) * 112,
+        branch: "common",
+        depth: 0,
       });
-      rowIndex += Math.ceil(row.length / 3);
+      common.push(id);
+    });
+    if (standalone.length) y += Math.ceil(standalone.length / 3) * 112 + 28;
+
+    for (const rootId of [...generalBy.keys()].sort()) {
+      if (visited.has(rootId)) continue;
+      const component = [],
+        pending = [rootId];
+      while (pending.length) {
+        const id = pending.pop();
+        if (visited.has(id)) continue;
+        visited.add(id);
+        component.push(id);
+        const links = [
+          ...C.requirements(generalBy.get(id)),
+          ...generals
+            .filter((s) => C.requirements(s).includes(id))
+            .map((s) => String(s.id)),
+        ];
+        for (const link of links)
+          if (generalBy.has(link) && !visited.has(link)) pending.push(link);
+      }
+      const rows = new Map();
+      for (const id of component) {
+        const depth = Math.round((top.positions.get(id).y - 32) / 148);
+        if (!rows.has(depth)) rows.set(depth, []);
+        rows.get(depth).push(id);
+      }
+      for (const [depth, row] of [...rows].sort((a, b) => a[0] - b[0])) {
+        row.sort();
+        row.forEach((id, i) => {
+          positions.set(id, {
+            x: 150 + ((i % 3) - (Math.min(row.length, 3) - 1) / 2) * 86,
+            y: y + Math.floor(i / 3) * 112,
+            branch: "common",
+            depth,
+          });
+          common.push(id);
+        });
+        y += Math.ceil(row.length / 3) * 112;
+      }
+      y += 28;
     }
     const edges = skills.flatMap((s) =>
       C.requirements(s)
@@ -176,7 +218,7 @@
       positions,
       assignment,
       common,
-      commonHeight: Math.max(170, rowIndex * 112 + 16),
+      commonHeight: Math.max(170, y + 16),
       edges,
       cycles: [...cycles],
     };
@@ -299,7 +341,7 @@
       refresh();
       const user = adapter.user(),
         commonCount = graph.common.length;
-      host.innerHTML = `<header class="r177-toolbar"><div class="r177-title"><span>РАЗВИТИЕ</span><h2>Дерево навыков</h2></div><div class="r177-search"><input class="input" type="search" data-r177-search value="${escape(state.query)}" placeholder="Найти навык или тег" aria-label="Поиск навыков"><div class="r177-results" data-r177-results></div></div><button type="button" class="ghost" data-r177-filters aria-expanded="${state.filters}">Фильтры</button><button type="button" class="ghost" data-r177-common-toggle aria-expanded="${state.common}">Общие · ${commonCount}</button><strong class="r177-points"><span>${Number(user.skillPoints || 0)}</span> ОУ</strong></header><nav class="r177-branches" aria-label="Ветки навыков"><button type="button" class="ghost" data-r177-branch="">Всё дерево</button>${branches.map((b) => `<button type="button" class="ghost" style="--branch:${b.color}" data-r177-branch="${b.id}"><i></i>${b.name}<small>${skills.filter((s) => graph.assignment.get(String(s.id)) === b.id).length}</small></button>`).join("")}</nav><div class="r177-workspace ${state.common ? "has-common" : ""}"><div class="r177-viewport" tabindex="0" aria-label="Дерево навыков: перетаскивание, колесо для масштаба"><div class="r177-world"><svg class="r177-map-lines" aria-hidden="true"></svg><button class="r177-core" type="button" data-r177-fit title="Показать всё дерево"><span class="r177-core-symbol">✧</span><strong>${escape(user.displayName || "Персонаж")}</strong><small>${skills.filter((s) => statuses.get(String(s.id)).owned).length} / ${skills.length} изучено</small></button>${branches.map((b) => `<button type="button" class="r177-hub" data-r177-branch="${b.id}" style="left:${Math.cos(b.angle) * 182}px;top:${Math.sin(b.angle) * 182}px;--branch:${b.color}"><span>${b.name}</span><b>${Number(user.abilities?.[b.id] || 0)}</b></button>`).join("")}${skills
+      host.innerHTML = `<header class="r177-toolbar"><div class="r177-title"><span>РАЗВИТИЕ</span><h2>Дерево навыков</h2></div><div class="r177-search"><input class="input" type="search" data-r177-search value="${escape(state.query)}" placeholder="Найти навык или тег" aria-label="Поиск навыков"><div class="r177-results" data-r177-results></div></div><button type="button" class="secondary" data-r177-abilities>Характеристики ↑</button><button type="button" class="ghost" data-r177-filters aria-expanded="${state.filters}">Фильтры</button><button type="button" class="ghost" data-r177-common-toggle aria-expanded="${state.common}">Общие · ${commonCount}</button><strong class="r177-points"><span>${Number(user.skillPoints || 0)}</span> ОУ</strong></header><nav class="r177-branches" aria-label="Ветки навыков"><button type="button" class="ghost" data-r177-branch="">Всё дерево</button>${branches.map((b) => `<button type="button" class="ghost" style="--branch:${b.color}" data-r177-branch="${b.id}"><i></i>${b.name}<small>${skills.filter((s) => graph.assignment.get(String(s.id)) === b.id).length}</small></button>`).join("")}</nav><div class="r177-workspace ${state.common ? "has-common" : ""}"><div class="r177-viewport" tabindex="0" aria-label="Дерево навыков: перетаскивание, колесо для масштаба"><div class="r177-world"><svg class="r177-map-lines" aria-hidden="true"></svg><button class="r177-core" type="button" data-r177-fit title="Показать всё дерево"><span class="r177-core-symbol">✧</span><strong>${escape(user.displayName || "Персонаж")}</strong><small>${skills.filter((s) => statuses.get(String(s.id)).owned).length} / ${skills.length} изучено</small></button>${branches.map((b) => `<button type="button" class="r177-hub" data-r177-branch="${b.id}" style="left:${Math.cos(b.angle) * 182}px;top:${Math.sin(b.angle) * 182}px;--branch:${b.color}"><span>${b.name}</span><b>${Number(user.abilities?.[b.id] || 0)}</b></button>`).join("")}${skills
         .filter((s) => graph.assignment.get(String(s.id)) !== "common")
         .map((s) => node(s))
         .join(
@@ -334,7 +376,7 @@
         )
         .join(
           "",
-        )}</select></label><button class="ghost" type="button" data-r177-reset>Сбросить фильтры</button><details><summary>Повысить характеристики</summary>${branches
+        )}</select></label><button class="ghost" type="button" data-r177-reset>Сбросить фильтры</button></section><section class="r177-ability-panel" hidden aria-label="Повысить характеристики"><div class="row"><strong>Характеристики</strong><button class="ghost" type="button" data-r177-abilities>Закрыть</button></div><p>Повышение базового значения на 1 стоит столько ОУ, сколько составит новое значение. Максимум — 5.</p>${branches
         .map((b) => {
           const value = Number(
               (user.abilityBase || user.abilities || {})[b.id] || 0,
@@ -342,7 +384,7 @@
             cost = value + 1;
           return `<div class="r177-upgrade"><span>${b.name}: ${value}</span><button class="secondary" type="button" data-r177-upgrade="${b.id}" ${adapter.readonly?.() || b.id === "glory" || cost > 5 || cost > Number(user.skillPoints || 0) ? "disabled" : ""}>${b.id === "glory" ? "ДМ" : cost > 5 ? "Макс." : `+1 · ${cost} ОУ`}</button></div>`;
         })
-        .join("")}</details></section></div>`;
+        .join("")}</section></div>`;
       workspace = host.querySelector(".r177-workspace");
       viewport = host.querySelector(".r177-viewport");
       world = host.querySelector(".r177-world");
@@ -597,7 +639,7 @@
         branch = branches.find((b) => b.id === p.branch);
       pane.classList.toggle("r177-enter", lastSelected !== state.selected);
       lastSelected = state.selected;
-      pane.innerHTML = `<header><span class="r177-detail-thumb">${thumb(s)}</span><div><span>${branch?.name || "Общие навыки"}</span><h3>${escape(s.name)}</h3><small>${labels[st.state]} · ${{active:'Активный',passive:'Пассивный',reaction:'Реакция'}[s.activationType]||'Пассивный'}</small></div><button type="button" class="ghost" data-r177-close aria-label="Закрыть описание">×</button></header><div class="r177-detail-body"><div class="r177-tags">${C.tags(
+      pane.innerHTML = `<header><span class="r177-detail-thumb">${thumb(s)}</span><div><span>${branch?.name || "Общие навыки"}</span><h3>${escape(s.name)}</h3><small>${labels[st.state]} · ${{ active: "Активный", passive: "Пассивный", reaction: "Реакция" }[s.activationType] || "Пассивный"}</small></div><button type="button" class="ghost" data-r177-close aria-label="Закрыть описание">×</button></header><div class="r177-detail-body"><div class="r177-tags">${C.tags(
         s.tags,
       )
         .map((t) => `<span>${escape(t)}</span>`)
@@ -683,6 +725,12 @@
           state.common = !state.common;
           render();
         }
+        if (b.hasAttribute("data-r177-abilities")) {
+          const panel = host.querySelector(".r177-ability-panel");
+          panel.hidden = !panel.hidden;
+        }
+        if (b.classList.contains("r177-hub"))
+          host.querySelector(".r177-ability-panel").hidden = false;
         if (b.hasAttribute("data-r177-filters")) {
           state.filters = !state.filters;
           host.querySelector(".r177-filter-panel").hidden = !state.filters;
@@ -737,7 +785,10 @@
       };
       let drag;
       viewport.onpointerdown = (e) => {
-        if ((e.target.closest("button") && e.button !== 1) || (e.button !== 0 && e.button !== 1))
+        if (
+          (e.target.closest("button") && e.button !== 1) ||
+          (e.button !== 0 && e.button !== 1)
+        )
           return;
         drag = { x: e.clientX, y: e.clientY, camera: { ...state.camera } };
         viewport.setPointerCapture(e.pointerId);

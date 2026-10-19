@@ -2654,6 +2654,14 @@ const PlayerSync = {
     }
     const basePlayer=core.clone(options.basePlayer || this.projectedPlayerV135(playerId));
     const intended=core.clean(patch);
+    // Materialize automatic grants with the same queued write as inventory changes.
+    // Use the granted baseline ledger before applying a consumption/removal patch.
+    if(window.GRPGCharacterGrantsV178 && window.GRPGCharacterGrantWorldV178){
+      const G=window.GRPGCharacterGrantsV178,world=window.GRPGCharacterGrantWorldV178();
+      const granted=G.apply(basePlayer,world),effective=G.apply({...granted,...intended},world);
+      Object.assign(intended,{skills:effective.skills,inventory:effective.inventory||[],characterGrants178:effective.characterGrants178});
+    }
+
         // Flush unsent combat resources with the next player write.
         // Otherwise rebuilding the optimistic profile would discard local damage/ammo.
         const local=App.state.users[playerId];
@@ -17555,6 +17563,7 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
       skillType,
       type: skillType,
       activationType,
+      isBasic: entity.isBasic === true,
       name: String(entity.name || entity.title || (skillType === SKILL_TYPE_SPECIALIZATION_V55 ? 'Новая специализация' : 'Новый навык')).trim(),
       category: String(entity.category || 'Общее').trim() || 'Общее',
       treeBranch: ['auto','common','strength','dexterity','intelligence','endurance','will','glory'].includes(entity.treeBranch) ? entity.treeBranch : 'auto',
@@ -17668,7 +17677,7 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
   }
 
   function getVisibleSkillsV50(user = App.currentUser) {
-    return sortEntitiesForList(Object.values(SKILLS_V50 || {}).filter(item => isEntityVisible(item, user)));
+    return sortEntitiesForList(Object.values(SKILLS_V50 || {}).filter(item => item.isBasic === true || isEntityVisible(item, user)));
   }
 
   function getVisibleLearnableSkillsV55(user = App.currentUser) {
@@ -17680,7 +17689,8 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
   }
 
   function getVisibleSkillTreeItemsV56(user = App.currentUser) {
-    return sortEntitiesForList(getVisibleSkillsV50(user).filter(item => isLearnableSkillV55(item) || isSpecializationV55(item)));
+    const own = window.GRPGCharacterGrantsV178 && window.GRPGCharacterGrantWorldV178 ? window.GRPGCharacterGrantsV178.ownedDefinitions(user || {}, window.GRPGCharacterGrantWorldV178()) : [];
+    return sortEntitiesForList([...getVisibleSkillsV50(user).filter(item => isLearnableSkillV55(item) || isSpecializationV55(item)), ...own]);
   }
 
   function isSkillRequirementMetV56(user, skillId) {
@@ -23570,7 +23580,7 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
     if (!selection.geographic || !creationOptionAvailableV1066(selection.geographic, selection.campaign)) return { ok: false, message: 'Выберите доступное происхождение.', ...selection };
     if (selection.equipment.some(item => !item.availableAsStarting || !creationOptionAvailableV1066(item, selection.campaign))) return { ok: false, message: 'Список стартового снаряжения изменился. Выберите предметы заново.', ...selection };
     if (selection.total > CHARACTER_CREATION_BUDGET_V1066) return { ok: false, message: `Превышен бюджет создания: ${selection.total} / ${CHARACTER_CREATION_BUDGET_V1066}.`, ...selection };
-    const starterLayout = window.GRPGInventoryV1067?.buildLayout?.({ inventorySize: 12, carryWeightMax: 12, equipmentSlots: { primaryWeapon: '', secondaryWeapon: '', armor: '' }, implantSlotCount: 0, implantSlots: [], inventory: selection.equipmentIds.map(itemId => ({ itemId, qty: 1, positions: [] })) });
+    const starterLayout = window.GRPGInventoryV1067?.buildLayout?.(window.GRPGCharacterGrantsV178.apply({ socialOriginId: selection.profession.id, geographicOriginId: selection.geographic.id, inventorySize: 12, carryWeightMax: 12, equipmentSlots: { primaryWeapon: '', secondaryWeapon: '', armor: '' }, implantSlotCount: 0, implantSlots: [], inventory: selection.equipmentIds.map(itemId => ({ itemId, qty: 1, positions: [] })) }, window.GRPGCharacterGrantWorldV178()));
     if (starterLayout?.weight > 12 + 1e-9) return { ok: false, message: `Стартовое снаряжение слишком тяжёлое: ${starterLayout.weight.toFixed(1)} / 12.`, ...selection };
     if (starterLayout?.overflow?.length) return { ok: false, message: 'Стартовое снаряжение не помещается в стандартный инвентарь на 12 клеток.', ...selection };
     return { ok: true, ...selection };

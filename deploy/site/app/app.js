@@ -1167,7 +1167,7 @@
       version: 1,
       updatedBy: payload.updated_by || config.deviceLabel || 'web-registration',
       clientUpdatedAt: payload.client_updated_at || now,
-      playerJson: composePlayerJsonFromSegments(payload)
+      playerJson: applyGrants178(composePlayerJsonFromSegments(payload))
     };
     const response = await pbFetch(config, '/api/grpgi/character-applications/submit', { method: 'POST', json: body });
     const normalized = normalizePlayerRow(response?.row || null);
@@ -1298,7 +1298,8 @@
   }
 
   function currentPlayer() {
-    return App.data.players.get(App.session?.userId || '') || null;
+    const p = App.data.players.get(App.session?.userId || '');
+    return p ? applyGrants178(p) : null;
   }
 
   function currentPlanet() {
@@ -2946,7 +2947,8 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
   }
 
   function visibleSkills() {
-    return Array.from(App.data.skills.values()).filter(skill => visibleForPlayer(skill, App.session?.userId));
+    const owned = new Set(currentPlayer()?.skills || []);
+    return Array.from(App.data.skills.values()).filter(skill => skill.originOnly178 ? owned.has(skill.id) : skill.isBasic === true || visibleForPlayer(skill, App.session?.userId));
   }
 
   function playerOwnsSkill(player, skill) {
@@ -4550,7 +4552,7 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
   function creationSelectionWebV1066(form){const campaignId=String(form?.elements?.campaignId?.value||'');const campaign=campaignV1049(campaignId);const socialId=String(form?.querySelector('[name="socialOriginId"]:checked')?.value||'');const geoId=String(form?.querySelector('[name="geographicOriginId"]:checked')?.value||'');const profession=socialOriginsV1052().get(socialId)||null;const geographic=geographicOriginsV1052().get(geoId)||null;const equipmentIds=Array.from(new Set(Array.from(form?.querySelectorAll('[name="startingEquipmentIds"]:checked')||[]).map(n=>String(n.value)).filter(Boolean)));const equipment=equipmentIds.map(id=>App.data.items.get(id)).filter(Boolean);const total=creationCostWebV1066(profession)+creationCostWebV1066(geographic)+equipment.reduce((sum,item)=>sum+creationCostWebV1066(item),0);return{campaign,profession,geographic,equipment,equipmentIds,total};}
   function updateCreationBudgetWebV1066(form){if(!form)return;const selection=creationSelectionWebV1066(form);const node=form.querySelector('[data-creation-budget-v1066]');const submit=form.querySelector('[type="submit"]');const remaining=CHARACTER_CREATION_BUDGET_V1066-selection.total;form.querySelectorAll('[data-registration-equipment-card-v1072]').forEach(card=>{const input=card.querySelector('[name="startingEquipmentIds"]');card.setAttribute('aria-pressed',String(Boolean(input?.checked)));});if(node){node.textContent=`Потрачено: ${selection.total} / ${CHARACTER_CREATION_BUDGET_V1066} · ${remaining>=0?`Осталось: ${remaining}`:`ПЕРЕРАСХОД: ${Math.abs(remaining)}`}`;node.classList.toggle('over-budget',remaining<0);}if(submit)submit.disabled=remaining<0;}
   function refreshRegistrationChoicesWebV1066(form){if(!form)return;const campaign=campaignV1049(String(form.elements?.campaignId?.value||''))||availableCampaignsV1049()[0]||null;const prevSocial=form.querySelector('[name="socialOriginId"]:checked')?.value||'';const prevGeo=form.querySelector('[name="geographicOriginId"]:checked')?.value||'';const prevItems=new Set(Array.from(form.querySelectorAll('[name="startingEquipmentIds"]:checked')).map(n=>n.value));const p=form.querySelector('[data-registration-professions-v1066]'),g=form.querySelector('[data-registration-origins-v1066]'),e=form.querySelector('[data-registration-equipment-v1066]');if(p)p.innerHTML=registrationOriginCardsWebV1066(socialOriginsV1052(),'socialOriginId','profession',campaign);if(g)g.innerHTML=registrationOriginCardsWebV1066(geographicOriginsV1052(),'geographicOriginId','geographic',campaign);if(e)e.innerHTML=startingEquipmentCardsWebV1066(campaign);if(prevSocial){const x=form.querySelector(`[name="socialOriginId"][value="${CSS.escape(prevSocial)}"]`);if(x)x.checked=true;}if(prevGeo){const x=form.querySelector(`[name="geographicOriginId"][value="${CSS.escape(prevGeo)}"]`);if(x)x.checked=true;}prevItems.forEach(id=>{const x=form.querySelector(`[name="startingEquipmentIds"][value="${CSS.escape(id)}"]`);if(x)x.checked=true;});updateCreationBudgetWebV1066(form);}
-  function validateRegistrationSelectionWebV1066(form){const sel=creationSelectionWebV1066(form);if(!sel.campaign||sel.campaign.availableNow===false)return{ok:false,message:'Кампания недоступна.',...sel};if(!sel.profession||!creationOptionAvailableWebV1066(sel.profession,sel.campaign))return{ok:false,message:'Выберите доступную профессию.',...sel};if(!sel.geographic||!creationOptionAvailableWebV1066(sel.geographic,sel.campaign))return{ok:false,message:'Выберите доступное происхождение.',...sel};if(sel.equipment.some(item=>!(item.availableAsStarting===true||String(item.availableAsStarting||'').toLowerCase()==='true')||!creationOptionAvailableWebV1066(item,sel.campaign)))return{ok:false,message:'Список стартового снаряжения изменился. Выберите предметы заново.',...sel};if(sel.total>CHARACTER_CREATION_BUDGET_V1066)return{ok:false,message:`Превышен бюджет создания: ${sel.total} / ${CHARACTER_CREATION_BUDGET_V1066}.`,...sel};const starter=buildInventoryLayoutWebV1067({inventorySize:12,carryWeightMax:12,equipmentSlots:{primaryWeapon:'',secondaryWeapon:'',armor:''},implantSlotCount:0,implantSlots:[],inventory:sel.equipmentIds.map(itemId=>({itemId,qty:1,positions:[]}))});if(starter.weight>12+1e-9)return{ok:false,message:`Стартовое снаряжение слишком тяжёлое: ${starter.weight.toFixed(1)} / 12.`,...sel};if(starter.overflow.length)return{ok:false,message:'Стартовое снаряжение не помещается в стандартный инвентарь на 12 клеток.',...sel};return{ok:true,...sel};}
+  function validateRegistrationSelectionWebV1066(form){const sel=creationSelectionWebV1066(form);if(!sel.campaign||sel.campaign.availableNow===false)return{ok:false,message:'Кампания недоступна.',...sel};if(!sel.profession||!creationOptionAvailableWebV1066(sel.profession,sel.campaign))return{ok:false,message:'Выберите доступную профессию.',...sel};if(!sel.geographic||!creationOptionAvailableWebV1066(sel.geographic,sel.campaign))return{ok:false,message:'Выберите доступное происхождение.',...sel};if(sel.equipment.some(item=>!(item.availableAsStarting===true||String(item.availableAsStarting||'').toLowerCase()==='true')||!creationOptionAvailableWebV1066(item,sel.campaign)))return{ok:false,message:'Список стартового снаряжения изменился. Выберите предметы заново.',...sel};if(sel.total>CHARACTER_CREATION_BUDGET_V1066)return{ok:false,message:`Превышен бюджет создания: ${sel.total} / ${CHARACTER_CREATION_BUDGET_V1066}.`,...sel};const starter=buildInventoryLayoutWebV1067(applyGrants178({socialOriginId:sel.profession.id,geographicOriginId:sel.geographic.id,inventorySize:12,carryWeightMax:12,equipmentSlots:{primaryWeapon:'',secondaryWeapon:'',armor:''},implantSlotCount:0,implantSlots:[],inventory:sel.equipmentIds.map(itemId=>({itemId,qty:1,positions:[]}))}));if(starter.weight>12+1e-9)return{ok:false,message:`Стартовое снаряжение слишком тяжёлое: ${starter.weight.toFixed(1)} / 12.`,...sel};if(starter.overflow.length)return{ok:false,message:'Стартовое снаряжение не помещается в стандартный инвентарь на 12 клеток.',...sel};return{ok:true,...sel};}
   function registrationMarkupV1052(){
     const campaigns=availableCampaignsV1049();const preferred=String(App.ui?.selectedCampaignId||selectedCampaignV1049()||'');const campaign=campaigns.find(c=>String(c.id)===preferred)||campaigns[0]||null;
     return `<div class="registration-window-v1054" role="dialog" aria-modal="true" aria-labelledby="register-title-v1054"><div class="registration-card-v1052"><div class="registration-sticky-head-v1054 section-head"><div><div class="eyebrow">АНКЕТА ПЕРСОНАЖА</div><div class="section-title" id="register-title-v1054">Регистрация нового персонажа</div><div class="muted">Бюджет создания — максимум ${CHARACTER_CREATION_BUDGET_V1066} очков. Профессия, происхождение и стартовые предметы складываются.</div></div><button class="ghost-btn" type="button" id="register-close-v1052">Закрыть</button></div>
@@ -6042,6 +6044,21 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
     if (App.ui.profileTab !== 'skills') window.GRPGProfileSheetV142?.layoutWeb($('#screen-profile'), normalizeInventoryPlayerWebV1067(currentPlayer() || {}));
     window.GRPGProfileSheetV142?.restoreInventory(host,previous);
     if(previous && document.scrollingElement)document.scrollingElement.scrollTop=scroll;
+    return result;
+  };
+
+  function applyGrants178(raw) { return window.GRPGCharacterGrantsV178?.apply(raw, grantWorld178()) || raw; }
+  function grantWorld178() {
+    return {skills:{SKILLS:Object.fromEntries(App.data.skills)},equipment:{EQUIPMENT:Object.fromEntries(App.data.items)},socialOrigins:{SOCIAL_ORIGINS:Object.fromEntries(App.data.socialOrigins || [])},geographicOrigins:{GEOGRAPHIC_ORIGINS:Object.fromEntries(App.data.geographicOrigins || [])}};
+  }
+  const normalizeBeforeGrants178 = normalizePlayerWeb120;
+  normalizePlayerWeb120 = raw => normalizeBeforeGrants178(applyGrants178(raw));
+  const compileBeforeGrants178 = compileData;
+  compileData = function(...args) {
+    const result = compileBeforeGrants178(...args);
+    for(const [id,s] of App.data.skills) if(s.originOnly178) App.data.skills.delete(id);
+    for(const s of (window.GRPGCharacterGrantsV178?.definitions(grantWorld178()) || [])) App.data.skills.set(s.id,normalizeSkillWeb120(s));
+    for(const [id,p] of App.data.players) App.data.players.set(id,normalizePlayerWeb120(p));
     return result;
   };
 
