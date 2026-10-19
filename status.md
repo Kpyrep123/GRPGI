@@ -1,9 +1,19 @@
 # GRPGI — состояние проекта
 
-Обновлено: 2026-10-19. Версия клиента в `package.json`: **1.0.155**. Модули Хаба используют общие правила/runtime v156 и пространственную модель v157 с непрерывной навигацией v178; версия установщика не менялась.
+Обновлено: 2026-10-20. Версия клиента в `package.json`: **1.0.155**. Модули Хаба используют общие правила/runtime v156 и пространственную модель v157 с непрерывной навигацией v178; версия установщика не менялась.
 
 
 
+
+## Registration skill grants and movable starting loadout (2026-10-20)
+
+Base: main `d2df4ac` after PR #54; branch `feat/registration-loadout-v179`.
+
+- Registration now previews basic, origin/profession and private skills with sources and safe rich descriptions. Profession/origin cards list their included skills and starting goods before selection. The shared desktop/web preview combines purchased and granted equipment with quantities, images, stackable/text entries and the actual five-column profile layout.
+- Newly selected compatible weapons, armor and backpacks auto-equip in the four existing slots. Mouse drag/drop, tap/click selection and keyboard actions support slot changes, compatible swaps and grid placement. Invalid types, occupied cells and out-of-bounds positions are rejected; removing a backpack respects the remaining weight/space. Manual unequipping and positions survive unrelated selection changes. Changing campaign/origin removes obsolete draft benefits without accumulating grant quantities.
+- Registration validates the shown loadout using effective backpack/origin/skill capacity and sends its inventory positions, equipment, skills and grant receipts. A strict loadout-field projection preserves the registration-generated identity, password, campaign, budget and pending approval. Original base capacity is retained to avoid compounding bonuses. Fixed the pre-existing null creation-cost access when no origin/profession has been selected.
+- New real desktop/web registration browser regression passes benefit previews, safe descriptions, existing item selection modal, slot auto-equipment, backpack modifiers, actual drag and keyboard movement, quantity/stack handling, swap/collision/type rejection, backpack removal checks, manual unequip preservation, overweight recovery, actual application submission/readback/reload, campaign reset and mobile bounds. Shared mirrors/syntax/diff checks and existing v178 grant/browser/queued-write plus v135 desktop/web synchronization regressions pass. Screenshots inspected; no native Electron/live PocketBase or production deployment performed.
+- See `REGISTRATION_LOADOUT_V179.md`. Update/restart desktop and Deploy Web; no server/backend/schema or stock-service restart. Installer remains 1.0.155. No merge, deployment or installer build performed.
 
 ## Automatic character grants, characteristic upgrades and continuous Hub navigation (2026-10-19)
 
