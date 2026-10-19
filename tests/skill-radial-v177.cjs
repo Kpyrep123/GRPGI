@@ -13,7 +13,7 @@ const skills = [
 const before = JSON.stringify(skills),
   g = R.layout(skills);
 assert.equal(g.assignment.get("free"), "common");
-assert.equal(g.assignment.get("general"), "common");
+assert.equal(g.assignment.get("general"), "strength");
 assert.equal(g.assignment.get("child"), "strength");
 assert.equal(g.assignment.get("manual"), "intelligence");
 assert.equal(g.edges.length, 5);
@@ -26,6 +26,9 @@ assert.ok(
   Math.hypot(g.positions.get("grandchild").x, g.positions.get("grandchild").y) >
     Math.hypot(g.positions.get("child").x, g.positions.get("child").y),
 );
+const generalChain=R.layout([{id:'free'},{id:'next',treeBranch:'common',requiredSkillIds:['free']},{id:'other'}]);
+assert.ok(generalChain.positions.get('next').y>generalChain.positions.get('free').y);
+assert.equal(generalChain.positions.get('next').x,generalChain.positions.get('free').x);
 const dense = R.layout(
   Array.from({ length: 60 }, (_, i) => ({
     id: "x" + i,
@@ -54,5 +57,5 @@ for (const f of ["skill-radial-v177.js", "skill-radial-v177.css"])
     fs.readFileSync("deploy/site/app/" + f, "utf8"),
   );
 console.log(
-  "PASS: radial branches/inheritance/manual common/standalone, multi-parent edges, cycle handling, deterministic non-mutating layout, dense node separation and shared mirrors",
+  "PASS: radial branches/inheritance/dependent common/standalone, multi-parent edges, cycle handling, deterministic non-mutating layout, dense node separation and shared mirrors",
 );

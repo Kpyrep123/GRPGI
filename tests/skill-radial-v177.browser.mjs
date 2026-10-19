@@ -308,7 +308,7 @@ try {
   await host.locator('.r177-detail [data-r177-result="s5"]').click();
   await page.waitForFunction(
     () =>
-      !!document.querySelector('.r177-cross-lines [data-r177-edge="s5|s65"]'),
+      !!document.querySelector('.r177-map-lines [data-r177-edge="s5|s65"]'),
   );
   await host.locator("[data-r177-close]").click();
   await host.locator("[data-r177-fit]").last().click();

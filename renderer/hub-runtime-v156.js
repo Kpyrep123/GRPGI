@@ -27,12 +27,12 @@
     }
     function refresh(){const p=B.currentPlayer(),planet=B.currentPlanet();if(!p||!C.isHub(planet)){ctx=null;return null;}const hub=C.hubOf(planet),state=C.stateFor(p,planet,hub);ctx={playerId:p.id,planet,hub,state,map:hub.maps.find(m=>m.id===state.mapId)};return ctx;}
     function objectsHtml(p){const {map,state}=ctx,sight=map.fogEnabled?S.visibleCells(map,state,p):null;
-      return map.objects.filter(o=>o.type!=='spawn'&&C.visible(o,p,state)&&S.inSight(map,state,p,o,sight)).map(o=>{
+      return map.objects.filter(o=>o.type!=='spawn'&&o.type!=='wall'&&C.visible(o,p,state)&&S.inSight(map,state,p,o,sight)).map(o=>{
       const unit=C.kind(o)==='unit',size=Math.max(24,+o.width||48),open=state.objectStates[o.id]==='open';
       return `<button class="hub-object-v153 ${unit?'hub-unit-v156':''} ${open?'hub-door-open-v156':''}" data-object="${esc(o.id)}" aria-label="${esc(o.name||'Объект')}" title="${esc(o.name||'Объект')}" data-type="${esc(o.type)}" style="left:${+o.x||0}px;top:${+o.y||0}px;width:${unit?size:Math.max(24,+o.width||90)}px;height:${unit?size:Math.max(24,+o.height||70)}px;z-index:${Math.max(1,Math.min(90,+o.zIndex||1))};transform:rotate(${+o.rotation||0}deg)">${o.image?`<img src="${esc(o.image)}" alt="" draggable="false">`:`<span>${esc(o.name||'Объект')}${o.type==='door'?(open?' · Открыта':' · Закрыта'):''}</span>`}</button>`;
     }).join('');
     }
-    function mapHtml(p){const {map,state}=ctx;return `<div class="hub-map-v153" data-runtime-map style="width:${map.width}px;height:${map.height}px;${map.background?`background-image:url('${esc(map.background)}')`:''}">${S.gridMarkup(map)}${S.wallsMarkup(map)}<canvas class="hub-fog-v157" data-fog></canvas><svg class="hub-route-v160" data-route viewBox="0 0 ${map.width} ${map.height}" aria-hidden="true"></svg>${objectsHtml(p)}<div class="hub-player-v153" style="left:${state.x}px;top:${state.y}px">${p.image?`<img src="${esc(p.image)}" alt="${esc(p.displayName||'Персонаж')}">`:`<span>${esc(p.avatarGlyph||(p.displayName||p.id||'?')[0].toUpperCase())}</span>`}</div></div>`;}
+    function mapHtml(p){const {map,state}=ctx;return `<div class="hub-map-v153" data-runtime-map style="width:${map.width}px;height:${map.height}px;${map.background?`background-image:url('${esc(map.background)}')`:''}">${S.gridMarkup(map)}${S.wallsMarkup(map)}<canvas class="hub-fog-v157" data-fog></canvas><svg class="hub-route-v160" data-route viewBox="0 0 ${map.width} ${map.height}" aria-hidden="true"></svg>${objectsHtml(p)}<div class="hub-player-v153" style="left:${state.x}px;top:${state.y}px;width:${window.GRPGHubFreeV178?window.GRPGHubFreeV178.radius(map)*2:40}px;height:${window.GRPGHubFreeV178?window.GRPGHubFreeV178.radius(map)*2:40}px">${p.image?`<img src="${esc(p.image)}" alt="${esc(p.displayName||'Персонаж')}">`:`<span>${esc(p.avatarGlyph||(p.displayName||p.id||'?')[0].toUpperCase())}</span>`}</div></div>`;}
     function closeInteraction(){interactionId=null;B.root()?.querySelector('[data-interaction-popover]')?.remove();B.root()?.querySelectorAll('[data-object].selected').forEach(n=>n.classList.remove('selected'));}
     function positionInteraction(){
       const root=B.root(),menu=root?.querySelector('[data-interaction-popover]'),camera=root?.querySelector('.hub-camera-v164'),object=Array.from(root?.querySelectorAll('[data-object]')||[]).find(n=>n.dataset.object===interactionId);
@@ -83,7 +83,7 @@
       cameraCleanup?.();workspaceCleanup?.();interactionId=null;epoch++;walking=false;
       const root=B.root();if(!root)return; if(!refresh()){root.innerHTML='<div class="hub-empty-v153">Персонаж сейчас не находится в хабе.</div>';return;}
       B.activate?.();const p=B.currentPlayer();
-      root.innerHTML=`<div class="hub-shell-v153"><div class="hub-camera-v164"><div class="hub-map-wrap-v153 hub-camera-wrap-v164"><div class="hub-map-stage-v164">${mapHtml(p)}</div></div><div class="hub-camera-controls-v164" data-camera-controls><button class="secondary" data-camera-out aria-label="Отдалить камеру">−</button><span data-camera-scale>100%</span><button class="secondary" data-camera-in aria-label="Приблизить камеру">+</button><button class="secondary" data-camera-center>К ПЕРСОНАЖУ</button></div></div><aside class="hub-panel-v153"><div class="hub-card-v153"><h3>${esc(ctx.planet.name)}</h3><div>${esc(ctx.map.name)}</div></div><div class="hub-card-v153" data-info>Колесо — масштаб; перетаскивание левой или средней кнопкой — камера; короткий щелчок — движение. Взаимодействие в пределах 2 гексов. Стены перекрывают путь и обзор; туман раскрывается после каждого шага.</div><div class="hub-card-v153"><button class="secondary" data-stocks>ОТКРЫТЬ БИРЖУ</button></div></aside></div>`;
+      root.innerHTML=`<div class="hub-shell-v153"><div class="hub-camera-v164"><div class="hub-map-wrap-v153 hub-camera-wrap-v164"><div class="hub-map-stage-v164">${mapHtml(p)}</div></div><div class="hub-camera-controls-v164" data-camera-controls><button class="secondary" data-camera-out aria-label="Отдалить камеру">−</button><span data-camera-scale>100%</span><button class="secondary" data-camera-in aria-label="Приблизить камеру">+</button><button class="secondary" data-camera-center>К ПЕРСОНАЖУ</button></div></div><aside class="hub-panel-v153"><div class="hub-card-v153"><h3>${esc(ctx.planet.name)}</h3><div>${esc(ctx.map.name)}</div></div><div class="hub-card-v153" data-info>Колесо — масштаб; перетаскивание левой или средней кнопкой — камера; короткий щелчок — движение. Взаимодействие — на близкой дистанции. Персонаж огибает препятствия; туман раскрывается во время движения.</div><div class="hub-card-v153"><button class="secondary" data-stocks>ОТКРЫТЬ БИРЖУ</button></div></aside></div>`;
       root.onkeydown=e=>{if(e.key==='Escape')closeInteraction();};
       root.onclick=e=>{if(!e.target.closest('[data-object],[data-interaction-popover],[data-camera-controls]'))closeInteraction();};
       root.querySelectorAll('[data-object]').forEach(el=>el.onclick=e=>{e.stopPropagation();select(el.dataset.object);});
@@ -109,13 +109,16 @@
       const points=[ctx.state,...route].map(p=>p.x+','+p.y).join(' '),last=route[route.length-1];
       overlay.innerHTML=`<polyline points="${points}"/>${route.map(p=>`<circle cx="${p.x}" cy="${p.y}" r="4"/>`).join('')}<polygon points="${S.polygon(ctx.map,last)}"/>`;
     }
-    function animateStep(token,destination){
-      return new Promise(resolve=>{let done=false,timer;const finish=e=>{if(e&&e.target!==token)return;if(done)return;done=true;clearTimeout(timer);token.removeEventListener('transitionend',finish);resolve();};token.addEventListener('transitionend',finish);timer=setTimeout(finish,180);token.style.left=destination.x+'px';token.style.top=destination.y+'px';});
+    function animateStep(token,destination,from,mapNode,atState,atMap,player){
+      if(!window.GRPGHubFreeV178)return new Promise(resolve=>{token.style.left=destination.x+'px';token.style.top=destination.y+'px';setTimeout(resolve,180);});
+      const duration=Math.max(60,Math.hypot(destination.x-from.x,destination.y-from.y)/300*1000),before=token.style.transition,start=performance.now();
+      token.style.transition='none';
+      return new Promise(resolve=>{function frame(now){const t=Math.min(1,(now-start)/duration),x=from.x+(destination.x-from.x)*t,y=from.y+(destination.y-from.y)*t;token.style.left=x+'px';token.style.top=y+'px';if(mapNode.isConnected)S.drawFog(mapNode.querySelector('[data-fog]'),atMap,{...atState,x,y},player);if(t<1&&mapNode.isConnected)requestAnimationFrame(frame);else {token.style.transition=before;resolve();}}requestAnimationFrame(frame);});
     }
     function resetToken(token,at){const transition=token.style.transition;token.style.transition='none';token.style.left=at.x+'px';token.style.top=at.y+'px';token.getBoundingClientRect();token.style.transition=transition;}
     async function walk(x,y){
       if(walking||!refresh())return;const currentEpoch=epoch,playerId=ctx.playerId,planetId=ctx.planet.id,mapId=ctx.map.id,root=B.root(),mapNode=root.querySelector('[data-runtime-map]');
-      const route=S.path(ctx.map,ctx.state,x,y);if(!route.length){const target=S.nearest(ctx.map,x,y),here=S.hex(ctx.map,ctx.state.x,ctx.state.y);if(target&&S.distance(here,target))B.notify('Нет доступного пути к этому гексу','err');return;}
+      const route=S.path(ctx.map,ctx.state,x,y);if(!route.length){const target=S.nearest(ctx.map,x,y),here=S.hex(ctx.map,ctx.state.x,ctx.state.y);if(target&&S.distance(here,target))B.notify('Нет доступного пути к этой точке','err');return;}
       closeInteraction();walking=true;drawRoute(mapNode,route);mapNode.classList.add('hub-walking-v157');root.querySelector('[data-info]').textContent='Движение…';
       const active=()=>epoch===currentEpoch&&B.isActive()&&B.currentPlayer()?.id===playerId&&B.currentPlanet()?.id===planetId&&mapNode.isConnected;
       try{
@@ -123,8 +126,8 @@
           if(!active())break;const from={x:ctx.state.x,y:ctx.state.y};
           const token=mapNode.querySelector('.hub-player-v153');
           const save=transact((p,s,h)=>{if(s.mapId!==mapId||Math.hypot(s.x-from.x,s.y-from.y)>1)throw new Error('Положение персонажа изменилось. Выберите путь заново.');S.step(h.maps.find(m=>m.id===mapId),s,p,destination);},null);
-          const animation=animateStep(token,destination);
-          try{await Promise.all([save,animation]);}catch(e){await animation;if(active())resetToken(token,from);throw e;}
+          const animation=animateStep(token,destination,from,mapNode,structuredClone(ctx.state),ctx.map,B.currentPlayer());
+          try{await Promise.all([save,animation]);}catch(e){await animation;if(active()){resetToken(token,from);S.drawFog(mapNode.querySelector('[data-fog]'),ctx.map,ctx.state,B.currentPlayer());}throw e;}
           if(!active())break;drawRoute(mapNode,route.slice(routeIndex+1));S.drawFog(mapNode.querySelector('[data-fog]'),ctx.map,ctx.state,B.currentPlayer());
           // Replace visible objects without rebuilding the terrain or interrupting the player animation.
           const fresh=document.createElement('div');fresh.innerHTML=objectsHtml(B.currentPlayer());
@@ -132,7 +135,7 @@
           const wrap=mapNode.closest('.hub-map-wrap-v153'),scale=cameras.get(C.key(playerId,planetId,mapId))?.scale||1,tx=destination.x*scale,ty=destination.y*scale;if(tx<wrap.scrollLeft+50||tx>wrap.scrollLeft+wrap.clientWidth-50||ty<wrap.scrollTop+50||ty>wrap.scrollTop+wrap.clientHeight-50)wrap.scrollTo({left:tx-wrap.clientWidth/2,top:ty-wrap.clientHeight/2,behavior:'smooth'});
         }
       }catch(e){B.notify(e.message,'err');}
-      finally{if(epoch===currentEpoch){walking=false;drawRoute(mapNode,[]);mapNode.classList.remove('hub-walking-v157');if(active())root.querySelector('[data-info]').textContent='Выберите объект или следующий гекс.';}}
+      finally{if(epoch===currentEpoch){walking=false;drawRoute(mapNode,[]);mapNode.classList.remove('hub-walking-v157');if(active())root.querySelector('[data-info]').textContent='Выберите объект или точку назначения.';}}
     }
 
     function objectNow(id,p,s,h){const o=h.maps.find(m=>m.id===s.mapId)?.objects.find(o=>o.id===id);if(!o||!C.visible(o,p,s))throw new Error('Объект недоступен');S.assertObject(h,o,p,s);return o;}

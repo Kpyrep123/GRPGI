@@ -675,7 +675,7 @@
     return {defenseBonus,damageReduction,category,coverBonus:coverArmorClass,baseArmorClass,shieldArmorClass,coverArmorClass,baseAbsorption,armorAbsorption,shieldAbsorption,coverAbsorption,absorptionSources:{base:baseAbsorption,armor:armorAbsorption,shield:shieldAbsorption,cover:coverAbsorption}};
   }
   function entityForToken(token) {
-    if (token?.playerId) return App.state?.users?.[token.playerId] || PLAYER_TEMPLATES?.[token.playerId] || null;
+    if (token?.playerId) { const p = App.state?.users?.[token.playerId] || PLAYER_TEMPLATES?.[token.playerId]; return p ? normalizePlayerProfileV2(p) : null; }
     if (token?.npcId) return Data.getNpc?.(token.npcId) || null;
     if (token?.faunaId) return Data.getFauna?.(token.faunaId) || FAUNA?.[token.faunaId] || null;
     if (token?.equipmentItemId) return equipmentItem105(token.equipmentItemId);
