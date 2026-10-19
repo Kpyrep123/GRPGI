@@ -3,6 +3,11 @@
   "use strict";
   if (typeof Configurator === "undefined") return;
   const C = window.GRPGSkillCatalogV176;
+  const branchOptions = [
+    ["auto", "Автоматически по условиям"],
+    ["common", "Общие · отдельно от дерева"],
+    ...(window.GRPGSkillRadialV177?.branches || []).map((b) => [b.id, b.name]),
+  ];
   const all = () => Object.values(window.GRPGSkillModelV50.records),
     allTags = () => C.tags(all().flatMap((s) => s.tags || []));
   const render = Configurator.renderSkillEditor.bind(Configurator);
@@ -26,12 +31,22 @@
         "afterend",
         '<details><summary>Предпросмотр описания</summary><div class="sc-rich176" data-skill-preview176></div></details>',
       );
+    form
+      .querySelector('[name="category"]')
+      ?.closest(".field")
+      ?.insertAdjacentHTML(
+        "afterend",
+        `<div class="field"><label>Ветка дерева<select class="select" name="treeBranch177">${branchOptions.map(([id, name]) => `<option value="${id}" ${id === (entity.treeBranch || "auto") ? "selected" : ""}>${name}</option>`).join("")}</select></label><div class="small-note">Только размещение: не добавляет требований к изучению. При «Автоматически» учитываются характеристики и предыдущие навыки.</div></div>`,
+      );
     return box.innerHTML;
   };
   const collect = Configurator.collectEntity.bind(Configurator);
   Configurator.collectEntity = function (type, form, fd = new FormData(form)) {
     const result = collect(type, form, fd);
-    if (type === "skills") result.tags = C.tags(fd.getAll("skillTags176"));
+    if (type === "skills") {
+      result.tags = C.tags(fd.getAll("skillTags176"));
+      result.treeBranch = fd.get("treeBranch177") || "auto";
+    }
     return result;
   };
   document.addEventListener("grpg-create-tag172", (event) => {

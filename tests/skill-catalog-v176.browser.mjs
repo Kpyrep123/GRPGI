@@ -100,6 +100,10 @@ try {
   page.setDefaultTimeout(30000);
   await page.route("**/*", async (route) => {
     const url = new URL(route.request().url());
+    // Retired catalogue remains a compatibility fallback. The active radial UI
+    // has its own full renderer/web regression in skill-radial-v177.browser.mjs.
+    if (url.pathname.endsWith("/skill-radial-v177.js"))
+      return route.fulfill({ body: "", contentType: "text/javascript" });
     if (serverRow && url.pathname === "/api/grpgi/players/mutate") {
       if (failNext) {
         failNext = false;

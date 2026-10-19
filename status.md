@@ -5,6 +5,15 @@
 
 
 
+## Radial player skill trees and a separate common-skill bank (2026-10-19)
+
+Base: main `f4415e1` after PR #52; branch `feat/radial-skills-v177`.
+
+- Replaced the active catalogue/document-column presentation with a shared radial map: central character core, six coloured characteristic sectors, round icon nodes, stable branching sub-lanes, highlighted requirements/owned/available states and a separate scrollable common-skill bank. The default scale prioritises readable nearby nodes; sector navigation and fit/focus/pan/pointer-centred zoom provide overview and detail. Descriptions appear as animated temporary overlays, not a permanent column. Tags/search/filters, safe HTML and the existing purchase/ability upgrade paths remain available. Narrow screens and reduced motion are supported.
+- Added `treeBranch` placement (`auto`, `common`, or a characteristic) to World Config, the desktop normalizer and skill serialization. Auto uses direct characteristic requirements, then a predecessor's branch, otherwise common. Explicit placement adds no purchase requirements. Layout preserves actual prerequisite edges, including common↔radial connections, multiple parents and cross-sector dependencies; hidden record names are not exposed. Old IDs, requirements, Lua, ownership, tags and treePos are retained. Layout is view-only and detects rather than repairs cycles.
+- New pure radial layout test covers deterministic inheritance/manual placement, common/standalone skills, multi-parent/cycle handling, dense node separation and mirrored files. Actual desktop/web browser regression covers six sectors and side bank, no active catalogue columns, search/focus/filter/pan/zoom, HTML details, learning/unlock, WC branch save/JSON/reload, cross-bank connections, real web mutation failure rollback, guests, narrow bounds and reduced motion. The v176 browser test now explicitly suppresses the radial module to verify only the retained fallback; new v177 tests exercise the primary UI. Existing skills JSON import, skill-chain edit and integrity regressions are retained. Screenshots inspected; no native Electron or production endpoints exercised.
+- See `SKILLS_V177.md`. Apply desktop source/bundle and restart the client; Deploy Web for browser players. No backend/service restart, database migration or installer version change. Installer remains 1.0.155. No merge, deployment or installer build performed.
+
 ## Player skill catalogue, dependency view and skill tags (2026-10-19)
 
 Base: main `6a18757` after PR #51; branch `feat/skill-catalog-v176`.

@@ -17557,6 +17557,7 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
       activationType,
       name: String(entity.name || entity.title || (skillType === SKILL_TYPE_SPECIALIZATION_V55 ? 'Новая специализация' : 'Новый навык')).trim(),
       category: String(entity.category || 'Общее').trim() || 'Общее',
+      treeBranch: ['auto','common','strength','dexterity','intelligence','endurance','will','glory'].includes(entity.treeBranch) ? entity.treeBranch : 'auto',
       tags: Array.isArray(entity.tags) ? [...new Set(entity.tags.map(String).map(t=>t.trim()).filter(Boolean))] : [],
       description: String(entity.description || entity.summary || entity.body || '').trim(),
       cost: Math.max(0, numberOrFallbackV50(entity.cost ?? entity.pointCost, 1)),
