@@ -15,6 +15,8 @@ Manual equipment and positions survive unrelated selection changes. Only newly a
 
 Submission validates the same preview, including capacity from the equipped backpack, instead of checking a separate unequipped 12-cell bag. Only loadout fields are copied into the application: inventory/positions, slots, skills, grant receipts and base/derived capacity fields. The new character ID, name, password, campaign, budget, photo and pending approval remain controlled by the existing registration flow. The resulting application reloads with the chosen arrangement and no duplicate starting goods. Nothing is written before the usual application submission.
 
+**v180 correction:** `seed` explicitly calls `GRPGCharacterGrantsV178.startingLoadout`. The normal profile `apply` path grants skills only and cannot add starting equipment to existing characters. Registration previews, final quantities, slots and receipt submission stay intact.
+
 Also fixed a pre-existing null access in the creation budget when a profession/origin has not yet been chosen.
 
 ## Deployment

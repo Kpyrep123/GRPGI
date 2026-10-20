@@ -47,7 +47,7 @@ const raw = {
     inventory: [{ itemId: "kit", qty: 1, positions: [{ x: 0, y: 0 }] }],
   },
   before = JSON.stringify(raw),
-  p = G.apply(raw, world);
+  p = G.startingLoadout(raw, world);
 assert.equal(JSON.stringify(raw), before);
 assert.equal(p.skillPoints, 7);
 assert.equal(p.inventory[0].qty, 4);

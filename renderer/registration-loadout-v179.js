@@ -94,7 +94,7 @@
         positions: [],
       })),
     };
-    return root.GRPGCharacterGrantsV178.apply(base, world);
+    return root.GRPGCharacterGrantsV178.startingLoadout(base, world);
   }
   function reconcile(selection, world, previous, api) {
     const fresh = seed(selection, world),

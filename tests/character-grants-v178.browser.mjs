@@ -307,11 +307,11 @@ try {
   assert.equal(
     await page.evaluate(
       () =>
-        normalizePlayerProfileV2(App.state.users.p).inventory.find(
-          (i) => i.itemId === "kit",
-        ).qty,
+        normalizePlayerProfileV2(App.state.users.p).inventory
+          .filter((i) => i.itemId === "kit")
+          .reduce((sum, i) => sum + i.qty, 0),
     ),
-    2,
+    0,
   );
   assert.equal(
     await page.evaluate((id) => Data.getSkill(id).luaEnabled, privateId),
@@ -433,7 +433,7 @@ try {
     ),
     2,
   );
-  // Full web client: effective grants and real mutation persistence, including consumed starter goods.
+  // Full web client: effective grants and real mutation persistence, without retroactive starting goods.
   await page.goto("https://web176.test/index.html", {
     waitUntil: "domcontentloaded",
   });
@@ -488,8 +488,8 @@ try {
   assert.ok(serverRow.playerJson.skills.includes("basic178"));
   assert.ok(serverRow.playerJson.skills.includes(privateId));
   assert.equal(
-    serverRow.playerJson.inventory.find((i) => i.itemId === "kit").qty,
-    2,
+    serverRow.playerJson.inventory.filter((i) => i.itemId === "kit").reduce((sum, i) => sum + i.qty, 0),
+    0,
   );
   assert.equal(serverRow.playerJson.skillPoints, 8);
   await page.evaluate(() =>
@@ -504,7 +504,7 @@ try {
   assert.deepEqual(serverRow.playerJson.inventory, []);
   assert.deepEqual(errors, []);
   console.log(
-    "PASS: desktop/web retroactive basics, owned private skills and combat metadata; WC multiple skill grants, draft restoration and JSON export; visible characteristic upgrades through real mutation queue; consumed starter goods stay consumed",
+    "PASS: desktop/web retroactive basics, owned private skills and combat metadata; WC multiple skill grants, draft restoration and JSON export; visible characteristic upgrades through real mutation queue; existing profiles receive no retroactive starting goods",
   );
 } finally {
   await browser.close();

@@ -5,6 +5,16 @@
 
 
 
+## Starting equipment restricted to new registration drafts (2026-10-20)
+
+Base: main `ae50dab` after PR #55; branch `fix/registration-only-starting-items`.
+
+- Fixed the unintended retroactive equipment handout: the shared profile normalizer used the same grant function as registration, so any old profile without item receipts received its origin/profession goods on read/edit/sync. Ordinary `apply` calls now grant skills only. Missing receipts, empty inventories, origin changes and newly configured starting goods no longer trigger equipment issuance.
+- Registration alone calls the explicit `startingLoadout` initializer from the shared draft seed. It still combines selected purchases and current origin/profession items, retains source receipts, and hands the prepared inventory/positions/slots to the existing submission flow. Basic and profession/origin skill grants remain retroactive. Existing owned items and receipts are preserved.
+- Updated cache keys, grant documentation and earlier tests that had asserted the unintended retroactive equipment behavior. Added `tests/character-grants-v180.cjs` for legacy profiles with absent/empty/partial receipts, repeated normalization/reload, edits/deletion, changed origins/catalogues, selected registration goods, explicit initializer idempotence, retained skill grants and mirrored scripts.
+- Validation: executed the actual changed shared grant module and registration seed with both pure regression assertion bodies in the available JavaScript runtime; checked shared copies and parsed changed shared scripts. The execution host is unavailable this turn: Node, happy-dom, browser, native Electron and live cloud regressions could not be rerun. Earlier browser/queue test expectations were updated but are not reported as run here.
+- Update/restart desktop and Deploy Web, then refresh browsers. No backend/schema or service restart; installer remains 1.0.155. No merge, deployment or automatic inventory cleanup performed.
+
 ## Registration skill grants and movable starting loadout (2026-10-20)
 
 Base: main `d2df4ac` after PR #54; branch `feat/registration-loadout-v179`.
