@@ -44,7 +44,8 @@
       })),
     );
   }
-  function apply(raw = {}, world = {}) {
+  // Profile normalization may grant skills, but never registration-only items.
+  function apply(raw = {}, world = {}, options = {}) {
     const p = clone(raw),
       ids = new Set(p.skills || []),
       ledger = new Set(p.characterGrants178?.items || []),
@@ -57,6 +58,7 @@
         if (get(source(world, "skills", "SKILLS"), id)) ids.add(String(id));
       for (const s of origin.grantedSkills || [])
         ids.add(inlineId(section, origin.id, s.id));
+      if (options.startingItems !== true) continue;
       for (const entry of origin.startingItems || []) {
         const id = String(entry.itemId || ""),
           qty = Math.max(1, Math.min(999, Math.trunc(Number(entry.qty) || 1))),
@@ -77,11 +79,15 @@
     };
     return p;
   }
+  // Only the registration draft initializer opts into starting equipment.
+  function startingLoadout(raw = {}, world = {}) {
+    return apply(raw, world, { startingItems: true });
+  }
   function ownedDefinitions(player, world) {
     const ids = new Set(apply(player, world).skills);
     return definitions(world).filter((s) => ids.has(s.id));
   }
-  const api = { apply, origins, definitions, ownedDefinitions, inlineId };
+  const api = { apply, startingLoadout, origins, definitions, ownedDefinitions, inlineId };
   root.GRPGCharacterGrantsV178 = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof window !== "undefined" ? window : globalThis);

@@ -67,15 +67,16 @@ w.electronAPI.patchPlayer=async request=>{
 w.electronAPI.pushPlayer=w.electronAPI.patchPlayer;
 incoming(server);
 try {
+ assert.equal(run('normalizePlayerProfileV2(App.state.users.p).inventory.length'),0);
  await run(`PlayerSync.pushPlayerPatch('p',{inventory:[]},{rerender:false})`);
  assert.equal(server.player.inventory.length,0);
  assert.ok(server.player.skills.includes('basic178'));
- assert.equal(server.player.characterGrants178.items.length,1);
+ assert.equal(server.player.characterGrants178.items.length,0);
  incoming(server);
  assert.equal(run('normalizePlayerProfileV2(App.state.users.p).inventory.length'),0);
- // Reload and an unrelated edit must retain the consumed-item receipt.
+ // Legacy profiles have no item receipt: reads/writes must not issue starter goods.
  await run(`PlayerSync.pushPlayerPatch('p',{displayName:'После выдачи'},{rerender:false})`);
  incoming(server);assert.equal(run('App.state.users.p.inventory.length'),0);
  assert.equal(server.player.skillPoints,3);
- console.log('PASS: real desktop sync queue atomically persists retroactive skills and the starter ledger with first consumption; reload and unrelated edits cannot respawn consumed goods');
+ console.log('PASS: real desktop sync queue persists automatic skills without issuing starting items to legacy profiles; empty inventories stay empty across reloads and unrelated edits');
 }finally{w.happyDOM.cancelAsync();w.close();fs.rmSync(scratch,{recursive:true,force:true});}
