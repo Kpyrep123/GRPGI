@@ -7,7 +7,7 @@
   const audio = new Audio('./assets/audio/web_ambient.m4a');
   audio.loop = true;
   audio.preload = 'none';
-  audio.volume = 0.15;
+  audio.volume = 0.05;
   let muted = false, pending = false, unavailable = false;
   try { muted = localStorage.getItem(key) === 'true'; } catch {}
   function render() {
