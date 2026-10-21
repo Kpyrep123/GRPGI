@@ -1,9 +1,18 @@
 # GRPGI — состояние проекта
 
-Обновлено: 2026-10-21. Версия клиента в `package.json`: **1.0.155**. Модули Хаба используют общие правила/runtime v156 и пространственную модель v157 с непрерывной навигацией v178; версия установщика не менялась.
+Обновлено: 2026-10-22. Версия клиента в `package.json`: **1.0.155**. Модули Хаба используют общие правила/runtime v156 и пространственную модель v157 с непрерывной навигацией v178; версия установщика не менялась.
 
 
 
+
+## Web inventory stability, quieter ambient, desktop Hub layers and WC favorites (2026-10-22)
+
+- Web ambient music now plays at 5% instead of 15%; gesture start, mute preference, retry and missing-media behavior are unchanged. Bumped script cache keys.
+- Fixed the inventory slot expansion during pending web writes: the optimistic inventory-only renderer replaced the compact character-sheet panel with raw slot markup and waited for server confirmation to restore its layout. It now groups equipment/implants and builds the compact bag layout synchronously, using a shared `layoutInventory` helper, and restores unchanged grid nodes immediately. Desktop/web shared profile-sheet modules remain identical.
+- Desktop fullscreen Hub now uses the same 4000 stacking level as other fullscreen modules instead of inheriting the web Hub's 48. It appears above main-screen dock/title controls; dialogs keep their existing layers.
+- World Config rows have accessible star buttons with persistent selected state. Favorites sort first in each section; unpinning restores ordinary list order, search still filters normally. Personal preferences are stored locally per DM and campaign, survive restart and are separate from world JSON/export. Pinning reorders only the list DOM, preserving the current entity selection, form node and unsaved edits. ID changes remap the pin; deletion removes it. Player views have no pin controls.
+- Validation: new actual Chromium regression `tests/ui-polish-v182.browser.mjs` passes favorite mouse/keyboard toggling, ordering/unpinning, search, unsaved draft/form preservation, reload, campaign/user/type isolation and ID remap/delete; verifies Hub hit-testing above the dock. Real web equip actions for weapons, armor and backpacks preserve exact slot widths across animation frames while a mocked server response is held; a rejected unequip restores confirmed state and compact layout at 390px width. Existing v181 retirement/Hub-builder/Combat-display browser regression, v135 web write-queue tests, inventory-action and profile-sheet checks, v180 starter-item regressions and updated ambient/chart tests pass. Syntax, shared-file parity and diff checks pass. Native Electron and production services not exercised.
+- Apply/restart the updated desktop client, Deploy Web, then refresh browser clients. No backend/schema/service restart; installer stays 1.0.155. No merge or deployment performed.
 
 ## Retired ships, missiles, sensors and region/city mechanics (2026-10-21)
 

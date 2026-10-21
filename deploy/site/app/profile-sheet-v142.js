@@ -34,6 +34,13 @@
     compactInventory(inventory);
     decorateAbilities(host);
   }
+  // Also used by optimistic inventory-only renders before the server replies.
+  function layoutInventory(card) {
+    if (!card) return;
+    const slots=card.querySelector('.web-inventory-slots-v1067,.inventory-equipment-slots-v1067');
+    if (slots) groupSlots(slots);
+    compactInventory(card);
+  }
   function groupSlots(host) {
     if (host.querySelector('.character-sheet-gear-v142')) return;
     const equipment = document.createElement('div'); equipment.className = 'character-sheet-gear-v142';
@@ -201,5 +208,5 @@
     for(const attr of Array.from(next.attributes))previous.grid.setAttribute(attr.name,attr.value);
     previous.grid.replaceChildren(...next.childNodes);next.replaceWith(previous.grid);
   }
-  root.GRPGProfileSheetV142 = Object.freeze({layoutWeb, layoutDesktop, captureInventory, restoreInventory});
+  root.GRPGProfileSheetV142 = Object.freeze({layoutWeb, layoutDesktop, layoutInventory, captureInventory, restoreInventory});
 })(window);

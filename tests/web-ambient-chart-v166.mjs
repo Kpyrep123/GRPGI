@@ -17,10 +17,10 @@ function setup({saved=false, blocked=false, rejection=''}={}) {
   return {audio,attributes,classes,store,gesture,click,events,button};
 }
 const flush=()=>new Promise(resolve=>setImmediate(resolve));
-const normal=setup();assert.equal(normal.audio.volume,.15);assert.equal(normal.audio.loop,true);assert.equal(normal.audio.src,'./assets/audio/web_ambient.m4a');assert.equal(normal.audio.calls,0);
+const normal=setup();assert.equal(normal.audio.volume,.05);assert.equal(normal.audio.loop,true);assert.equal(normal.audio.src,'./assets/audio/web_ambient.m4a');assert.equal(normal.audio.calls,0);
 normal.gesture();normal.gesture();await flush();assert.equal(normal.audio.calls,1);
 normal.click();assert.equal(normal.audio.muted,true);assert.equal(normal.audio.paused,true);assert.equal(normal.attributes['aria-pressed'],'true');assert.equal(normal.store.get('grpg.web.ambientMuted.v166'),'true');
-normal.gesture();await flush();assert.equal(normal.audio.calls,1);normal.click();await flush();assert.equal(normal.audio.calls,2);assert.equal(normal.audio.volume,.15);assert.equal(normal.attributes['aria-pressed'],'false');
+normal.gesture();await flush();assert.equal(normal.audio.calls,1);normal.click();await flush();assert.equal(normal.audio.calls,2);assert.equal(normal.audio.volume,.05);assert.equal(normal.attributes['aria-pressed'],'false');
 const saved=setup({saved:true});saved.gesture();await flush();assert.equal(saved.audio.calls,0);saved.click();await flush();assert.equal(saved.audio.calls,1);
 const denied=setup({rejection:'NotAllowedError'});denied.gesture();await flush();assert.equal(denied.classes.has('is-unavailable'),false);denied.gesture();await flush();assert.equal(denied.audio.calls,2);
 const missing=setup({rejection:'NotSupportedError',blocked:true});missing.gesture();await flush();assert.equal(missing.classes.has('is-unavailable'),true);missing.click();missing.click();await flush();assert.equal(missing.classes.has('is-unavailable'),false);

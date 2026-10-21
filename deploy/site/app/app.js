@@ -5786,7 +5786,13 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
     if(App.ui.screen!=='profile')return;
     if(inventoryChangedWeb120(before,next)){
       const panel=document.querySelector('#screen-profile .web-profile-inventory-v1067');
-      if(panel){panel.outerHTML=webInventoryPanelV1067(next);return;}
+      if(panel){
+        const host=document.querySelector('#screen-profile'),sheet=window.GRPGProfileSheetV142,previous=sheet?.captureInventory(host);
+        panel.outerHTML=webInventoryPanelV1067(next);
+        sheet?.layoutInventory(host.querySelector('.web-profile-inventory-v1067'));
+        sheet?.restoreInventory(host,previous);
+        return;
+      }
     }
     renderCurrentScreen();
   }

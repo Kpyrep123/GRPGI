@@ -5225,10 +5225,13 @@ const Configurator = {
     const previousSideScroll = root.querySelector('.config-side')?.scrollTop || 0;
     const previousListScroll = root.querySelector('.config-entity-list')?.scrollTop || 0;
     const types = Object.entries(WORLD_SECTIONS);
+    const favorites=window.GRPGConfigFavoritesV182;
+    favorites?.configure({enabled:App.currentUser?.role==='gm',userId:App.currentUser?.id || App.currentUserId,campaignId:App.activeCampaignId || Sync.config?.campaignId || 'main'});
     const rawItems = this.getItems(this.selectedType);
+    const itemOrder=new Map(rawItems.map((item,index)=>[String(item.id),index]));
     const search = String(this.searchQuery || '').trim().toLowerCase();
     const matchesSearch = item => configSearchMatchV1061(item, this.selectedType, search).matched;
-    const items = rawItems.filter(matchesSearch);
+    const items = favorites?.sort(rawItems.filter(matchesSearch),this.selectedType) || rawItems.filter(matchesSearch);
     if (this.selectedId && !items.some(item => item.id === this.selectedId)) this.selectedId = items[0]?.id || null;
     if (!items.length) this.selectedId = null;
     if (!this.selectedId && items.length) this.selectedId = items[0].id;
@@ -5260,7 +5263,7 @@ const Configurator = {
               const secondary = matchedAttribute || (this.selectedType === 'systems'
                 ? [getSystemLabel(item) && getSystemLabel(item) !== item.name ? getSystemLabel(item) : '', item.id].filter(Boolean).join(' · ')
                 : item.id);
-              return `<div class="player-chip config-chip ${item.id === this.selectedId ? 'active' : ''}" data-config-id="${esc(item.id)}">${renderThumb(item, { size: 'xs', type: this.selectedType === 'equipment' ? 'item' : this.selectedType.slice(0,-1), glyph: item.avatarGlyph || initials(primary || item.id) })}<div><b>${esc(primary)}</b><div class="subtle" style="margin-top:4px">${esc(secondary)}</div></div></div>`;
+              return `<div class="player-chip config-chip ${item.id === this.selectedId ? 'active' : ''}" data-config-id="${esc(item.id)}" data-config-order-v182="${itemOrder.get(String(item.id))}">${renderThumb(item, { size: 'xs', type: this.selectedType === 'equipment' ? 'item' : this.selectedType.slice(0,-1), glyph: item.avatarGlyph || initials(primary || item.id) })}<div><b>${esc(primary)}</b><div class="subtle" style="margin-top:4px">${esc(secondary)}</div></div>${App.currentUser?.role==='gm'?'<button type="button" class="config-favorite-v182" data-config-favorite-v182 aria-label="Добавить в избранное" aria-pressed="false">☆</button>':''}</div>`;
             }).join('') : `<div class="subtle">${search ? 'Ничего не найдено' : 'Список пуст'}</div>`}
           </div>
         </div>
@@ -5289,6 +5292,8 @@ const Configurator = {
         this.render();
       });
     });
+
+    favorites?.bind(root.querySelector('.config-entity-list'),this.selectedType);
 
     $('#config-search-input')?.addEventListener('input', event => {
       const field = event.currentTarget;
@@ -5658,6 +5663,7 @@ const Configurator = {
     ];
   },
   cleanupReferences(type, id) {
+    window.GRPGConfigFavoritesV182?.remove(type,id);
     if (type === 'systems') {
       SYSTEMS.forEach(system => {
         system.routes = (system.routes || []).filter(route => route.toId !== id);
@@ -5702,6 +5708,7 @@ const Configurator = {
     }
   },
   remapReferences(type, oldId, newId) {
+    window.GRPGConfigFavoritesV182?.remap(type,oldId,newId);
     if (oldId === newId) return;
     if (type === 'systems') {
       SYSTEMS.forEach(system => {
