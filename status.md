@@ -1,9 +1,16 @@
 # GRPGI — состояние проекта
 
-Обновлено: 2026-10-20. Версия клиента в `package.json`: **1.0.155**. Модули Хаба используют общие правила/runtime v156 и пространственную модель v157 с непрерывной навигацией v178; версия установщика не менялась.
+Обновлено: 2026-10-21. Версия клиента в `package.json`: **1.0.155**. Модули Хаба используют общие правила/runtime v156 и пространственную модель v157 с непрерывной навигацией v178; версия установщика не менялась.
 
 
 
+
+## Retired ships, missiles, sensors and region/city mechanics (2026-10-21)
+
+- Removed the four World Config sections, their dedicated editors, planet/profile entry points, region map simulation (ships, squadrons, fuel, missiles, radar/EW), Region Command Center JS/CSS and second-screen region renderer. Removed their styles and obsolete pointer targets. Systems, planets, Hub authoring/runtime and local combat scenes remain available. Installer stays 1.0.155.
+- Retained a small read-only compatibility adapter: old region/ship/missile/radar JSON sections survive ordinary world snapshots, save/reload and campaign backup flows; backend file/schema support remains to prevent data loss on old campaigns. No legacy simulation, normalizers, event handlers or animation loops are installed. Geographic origins still resolve historical region-to-planet access; their editor now shows the resulting planets directly and saves planet access without the retired region picker.
+- Validation: new real Chromium regression `tests/world-mechanics-retirement-v181.browser.mjs` checks absent sections/runtime/UI, unchanged retired JSON through snapshots/reload, origin editor conversion, Hub builder opening, Combat rendering, and combat second-screen rendering/resizing after a legacy region payload. Existing v178 Hub geometry and full web movement/fog/failed-save regressions, desktop/web character-grant browser checks, desktop queued-sync regression, v137 combat runtime cache regression, v140 world integrity and v180 starter-item regressions pass. Syntax and diff checks pass. The older v128 static combat check reaches its obsolete hardcoded installer-version assertion (expects 1.0.132; current baseline is 1.0.155); its preceding behavior assertions pass. No native Electron/live backend deployment was exercised.
+- Apply the updated desktop sources/bundle and restart the client. Web Hub files and server services are unchanged; no server restart or schema migration is required. No merge, deployment or deletion of existing campaign data performed.
 
 ## Starting equipment restricted to new registration drafts (2026-10-20)
 
