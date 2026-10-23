@@ -2561,6 +2561,10 @@ const PlayerSync = {
     const source = row.player || row.player_json || {};
     const core = window.GRPGPlayerSyncCoreV135;
     const incomingHash = core.canonical({ deleted: Boolean(row.deletedAt || row.deleted_at), player: source });
+    // Cursor overlap and server echoes are common during the 3-second poll.
+    // Skip them before normalization, form refreshes and full-world mirror writes.
+    if (incomingVersion === currentVersion && remoteMeta.contentHash === incomingHash
+        && (this._confirmedV135.has(playerId) || (remoteMeta.deletedAt && !App.state.users[playerId]))) return false;
     if (incomingVersion === currentVersion && currentVersion > 0 && !options.authoritative) {
       const incomingStamp = Date.parse(row.updatedAt || row.updated_at || row.clientUpdatedAt || row.client_updated_at || '');
       const currentStamp = Date.parse(remoteMeta.updatedAt || remoteMeta.clientUpdatedAt || '');
@@ -3042,7 +3046,7 @@ const App = {
     return { ok: true };
   },
   renderLive() {
-    if (this.currentUser) UI.renderProfile();
+    if (this.currentUser && UI.activeModuleId === 'profile') UI.renderProfile();
     if (UI.activeModuleId === 'market') UI.renderMarket();
     if (UI.activeModuleId === 'config') Configurator.render();
     if (UI.activeModuleId === 'sync') Sync.render();
@@ -10413,9 +10417,11 @@ PlayerSync.startPolling = function() {
   this.stopPolling();
   if (!this.shouldIsolateUsersFromSnapshot()) return;
   this.pollTimer = setInterval(() => {
+    if (this._pollInFlightV183 || document.hidden) return;
+    this._pollInFlightV183 = true;
     this.pullUpdates('fast-poll', { silent: true, rerender: !UiSyncGuard.shouldDeferRerender(), limit: 1000 }).catch(error => {
       try { Debug.error('PLAYER_FAST_POLL_FAILED', { message: error?.message || String(error) }); } catch {}
-    });
+    }).finally(() => { this._pollInFlightV183 = false; });
   }, PLAYER_SYNC_POLL_INTERVAL_MS);
 };
 
@@ -10432,9 +10438,10 @@ PlayerSync.pullUpdates = async function(reason = 'manual', options = {}) {
   const since = this.computePullSince(reason, options);
   const res = await window.electronAPI.pullPlayers({ since, limit: options.limit || 500, playerId: options.playerId || null });
   if (!res?.ok) {
+    const previousFailure = meta.lastStatus === 'PULL_FAILED' && meta.lastError === (res?.message || 'PLAYER_PULL_FAILED');
     meta.lastStatus = 'PULL_FAILED';
     meta.lastError = res?.message || 'PLAYER_PULL_FAILED';
-    await Persistence.save(App.state);
+    if (!previousFailure) await Persistence.save(App.state);
     return res;
   }
   const rows = Array.isArray(res.rows) ? res.rows : [];
@@ -10443,15 +10450,11 @@ PlayerSync.pullUpdates = async function(reason = 'manual', options = {}) {
     meta.lastStatus = 'UP_TO_DATE';
     meta.lastError = null;
     meta.lastPulledAt = meta.lastPulledAt || new Date().toISOString();
-    await Persistence.save(App.state);
     return { ...res, rows };
   }
   let changed = false;
   for (const row of rows) {
-    const before = JSON.stringify(App.state?.users?.[String(row.playerId || row.player_id || '')] || null);
-    this.applyRemoteRow(row, { authoritative: true, source: `pull:${reason}` });
-    const after = JSON.stringify(App.state?.users?.[String(row.playerId || row.player_id || '')] || null);
-    if (before !== after) changed = true;
+    if (this.applyRemoteRow(row, { authoritative: true, source: `pull:${reason}` })) changed = true;
   }
   meta.enabled = true;
   meta.lastStatus = 'SYNCED';
@@ -10461,8 +10464,8 @@ PlayerSync.pullUpdates = async function(reason = 'manual', options = {}) {
     if (!latest) return stamp;
     return new Date(stamp || 0).getTime() > new Date(latest || 0).getTime() ? stamp : latest;
   }, meta.lastPulledAt || new Date().toISOString());
-  await App.writeLocalMirrors();
   if (changed) {
+    await App.writeLocalMirrors();
     if (options.rerender !== false) {
       if (UiSyncGuard.shouldDeferRerender()) UiSyncGuard.defer(`player-pull:${reason}`);
       else App.refreshAfterLocalWrite();
@@ -22815,7 +22818,7 @@ function legacyRegionMapsV181() {
     const playerId = String(row.playerId || row.player_id || '').trim();
     const pending=profileInventoryLatestV120.get(playerId);
     if(pending)profileInventoryApplyLocalV120(playerId,pending.patch);
-    if (playerId) wcInventoryRefreshEditorFromPlayerV1069(playerId);
+    if (result && playerId) wcInventoryRefreshEditorFromPlayerV1069(playerId);
     return result;
   };
 

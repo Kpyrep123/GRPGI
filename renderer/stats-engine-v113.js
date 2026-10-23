@@ -614,7 +614,7 @@
         const remote=row.player||row.player_json||{};const localUser=App.state?.users?.[playerId]||PLAYER_TEMPLATES?.[playerId];if(!localUser)continue;
         const keys=['inventory','equipmentSlots','implantSlots','installedImplantIds','inventoryBaseSlots','carryBase','baseImplantSlots','inventorySize','carryWeightMax','implantSlotCount'];
         const patch={};keys.forEach(k=>{if(remote[k]!==undefined)patch[k]=copy(remote[k]);});
-        if(Object.keys(patch).length){PlayerSync.applyRemoteRow(row);const merged=App.state.users[playerId];if(merged)invHashes113.set(playerId,JSON.stringify(inventoryPatch113(merged)));changed=true;}
+        if(Object.keys(patch).length&&PlayerSync.applyRemoteRow(row)){const merged=App.state.users[playerId];if(merged)invHashes113.set(playerId,JSON.stringify(inventoryPatch113(merged)));changed=true;}
         const stamp=row.updatedAt||row.updated_at||null;if(stamp&&(!latest||new Date(stamp).getTime()>new Date(latest).getTime()))latest=stamp;
       }
       inventoryPullSince113=latest||inventoryPullSince113||new Date().toISOString();

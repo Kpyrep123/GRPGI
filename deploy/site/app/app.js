@@ -827,25 +827,19 @@
     $$('.combat-board-viewport').forEach(bindCombatViewport);
   }
 
+  let renderDeferredForCompositionV183 = false;
   function renderActiveScreenSafely() {
     if (App.ui.boot !== 'app') return;
+    if (window.GRPGFocusKeeperV183?.isComposing()) { renderDeferredForCompositionV183 = true; return; }
     const scrollY = window.scrollY || 0;
-    const active = document.activeElement;
-    const focusKey = active?.name === 'body' && App.ui.screen === 'chat' ? App.ui.selectedThreadKey : null;
-    const focusValue = active && active instanceof HTMLTextAreaElement ? active.value : null;
     renderCurrentScreen();
-    requestAnimationFrame(() => {
-      window.scrollTo({ top: scrollY, left: 0, behavior: 'auto' });
-      if (focusKey && focusValue != null) {
-        const next = document.querySelector('#chat-compose-form textarea[name="body"]');
-        if (next && App.ui.selectedThreadKey === focusKey) {
-          next.value = focusValue;
-          next.focus({ preventScroll: true });
-          next.selectionStart = next.selectionEnd = next.value.length;
-        }
-      }
-    });
+    window.scrollTo({ top: scrollY, left: 0, behavior: 'auto' });
   }
+  document.addEventListener('compositionend', () => {
+    if (!renderDeferredForCompositionV183) return;
+    renderDeferredForCompositionV183 = false;
+    queueMicrotask(() => renderActiveScreenSafely());
+  });
 
   function renderAffectedScreens(changed = {}) {
     if (App.ui.boot === 'login') {
@@ -4145,9 +4139,8 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
       if (archiveSearch) {
         App.ui.directArticleIdV1082 = '';
         App.ui.archiveQuery = archiveSearch.value || '';
+        if (event.isComposing || window.GRPGFocusKeeperV183?.isComposing()) { renderDeferredForCompositionV183 = true; return; }
         renderArchive();
-        const next = $('#archive-search-input');
-        if (next) { next.focus(); next.selectionStart = next.selectionEnd = next.value.length; }
         return;
       }
       const textarea = event.target.closest('#chat-compose-form textarea[name="body"]');
@@ -5180,7 +5173,7 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
   const __renderAffectedScreensV1068 = renderAffectedScreens;
   renderAffectedScreens = function(changed = {}) {
     const result = __renderAffectedScreensV1068(changed);
-    if (changed.chat && App.ui.chatMasterOpenV1068 && App.ui.selectedThreadKey) requestAnimationFrame(() => renderWebChatMasterV1068(App.ui.selectedThreadKey));
+    if (changed.chat && App.ui.screen !== 'chat' && App.ui.chatMasterOpenV1068 && App.ui.selectedThreadKey) requestAnimationFrame(() => renderWebChatMasterV1068(App.ui.selectedThreadKey));
     return result;
   };
 
@@ -5363,7 +5356,7 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
   function stockPeriodChangeWebV150(itemId){const rows=stockPeriodRowsWebV150(itemId),quote=liveStockQuoteWebV148(itemId),price=Number(quote?.price||rows.at(-1)?.close||0),start=Number(rows[0]?.open||0);if(!(start>0))return{change:0,percent:0,available:false};const change=price-start;return{change,percent:change/start*100,available:true};}
   function stockPeriodChangeMarkupWebV150(itemId){const value=stockPeriodChangeWebV150(itemId),up=value.change>=0;return`<strong class="${up?'up':'down'}">${up?'▲':'▼'} ${Math.abs(value.percent).toFixed(2)}% · ${signedCreditsWebV1074(value.change)} за ${stockPeriodLabelsWebV150[stockTimeframeWebV148]}</strong>`;}
   function patchStockExchangeWebV149({forceOrders=false}={}){const root=$('#screen-market');if(!root)return;const id=stockSelectionWebV1074?.itemId||'';root.querySelectorAll('[data-web-stock-v1074][data-item-id]').forEach(tile=>{const q=liveStockQuoteWebV148(tile.dataset.itemId);if(!q)return;const price=tile.querySelector('strong'),change=tile.querySelector('small'),period=tile.dataset.itemId===id&&stockPeriodRowsWebV150(id).length?stockPeriodChangeWebV150(id):{change:Number(q.change||0),percent:Number(q.changePercent||0)},up=period.change>=0;tile.classList.remove('up','down','flat');tile.classList.add(stockChangeClassWebV1074(period.change));if(price)price.textContent=formatCredits(q.price);if(change)change.textContent=`${up?'▲':'▼'} ${Math.abs(period.percent).toFixed(2)}% · ${signedCreditsWebV1074(period.change)}${tile.dataset.itemId===id?` за ${stockPeriodLabelsWebV150[stockTimeframeWebV148]}`:''}`;});const selection=root.querySelector('.stock-selection-v1074');if(!selection||!id)return;const old=selection.querySelector('.stock-ta-v148,.stock-chart-empty-v148'),editing=document.activeElement?.closest?.('.stock-orders-v148,.stock-dm-v149');if(old&&!editing)old.outerHTML=stockTechnicalWebV148(id);const orderPanel=selection.querySelector('.stock-orders-v148'),item=App.data.items.get(id);if(item&&orderPanel&&(forceOrders||!editing))orderPanel.outerHTML=stockOrderPanelWebV148(item);const q=liveStockQuoteWebV148(id),box=selection.querySelector('.stock-selection-quote-v1074'),period=stockPeriodChangeWebV150(id);if(q&&box){box.classList.remove('up','down','flat');box.classList.add(stockChangeClassWebV1074(period.change));box.innerHTML=`<span>Серверная цена · ${esc(q.regime||'ожидание')}</span><b>${formatCredits(q.price)}</b><small>Изменение от начала выбранного периода</small>${stockPeriodChangeMarkupWebV150(id)}`;}}
-  function stockTechnicalWebV148(itemId){const rows=stockPeriodRowsWebV150(itemId);if(!rows.length)return'<div class="stock-chart-empty-v148">Сервер накапливает историю котировок…</div>';const values=rows.flatMap(row=>[Number(row.high),Number(row.low)]),rawMin=Math.min(...values),rawMax=Math.max(...values),margin=Math.max(.01,(rawMax-rawMin)*.08),min=Math.max(0,rawMin-margin),max=rawMax+margin,span=Math.max(.01,max-min),w=640,h=180,p=12,step=(w-p*2)/rows.length,y=value=>h-p-((Number(value)-min)/span)*(h-p*2),candles=rows.map((row,index)=>{const x=p+step*(index+.5),up=Number(row.close)>=Number(row.open);return`<g class="${up?'up':'down'}"><line x1="${x}" y1="${y(row.high)}" x2="${x}" y2="${y(row.low)}"/><rect x="${x-Math.max(1,step*.25)}" y="${Math.min(y(row.open),y(row.close))}" width="${Math.max(2,step*.5)}" height="${Math.max(1,Math.abs(y(row.open)-y(row.close)))}"/></g>`;}).join(''),indicator=liveStockQuoteWebV148(itemId)?.indicators||{};return`<div class="stock-ta-v148"><div class="stock-chart-head-v149"><div><b>Динамика цены</b><small>Изменение считается от начала периода</small></div><div class="stock-timeframes-v148">${['1h','3h','6h'].map(value=>`<button type="button" class="secondary ${stockTimeframeWebV148===value?'active':''}" data-web-stock-timeframe-v148="${value}">${stockPeriodLabelsWebV150[value]}</button>`).join('')}</div></div><svg viewBox="0 0 ${w} ${h}">${candles}</svg><div class="stock-legend-v149"><span class="up">■ Рост</span><span class="down">■ Снижение</span>${stockPeriodChangeMarkupWebV150(itemId)}</div><div class="stock-indicators-v148"><span>SMA 5 <b>${indicator.sma5==null?'—':formatCredits(indicator.sma5)}</b></span><span>SMA 20 <b>${indicator.sma20==null?'—':formatCredits(indicator.sma20)}</b></span><span>RSI 14 <b>${indicator.rsi14==null?'—':Number(indicator.rsi14).toFixed(1)}</b></span></div></div>`;}
+  function stockTechnicalWebV148(itemId){const rows=stockPeriodRowsWebV150(itemId);if(!rows.length)return'<div class="stock-chart-empty-v148">Сервер накапливает историю котировок…</div>';const values=rows.flatMap(row=>[Number(row.high),Number(row.low)]),rawMin=Math.min(...values),rawMax=Math.max(...values),margin=Math.max(.01,(rawMax-rawMin)*.08),min=Math.max(0,rawMin-margin),max=rawMax+margin,span=Math.max(.01,max-min),w=760,h=250,l=116,r=16,t=18,b=28,pw=w-l-r,ph=h-t-b,step=pw/rows.length,y=value=>t+(max-Number(value))/span*ph,candles=rows.map((row,index)=>{const x=l+step*(index+.5),up=Number(row.close)>=Number(row.open);return`<g class="${up?'up':'down'}"><line x1="${x}" y1="${y(row.high)}" x2="${x}" y2="${y(row.low)}"/><rect x="${x-Math.max(1,step*.25)}" y="${Math.min(y(row.open),y(row.close))}" width="${Math.max(2,step*.5)}" height="${Math.max(1,Math.abs(y(row.open)-y(row.close)))}"/></g>`;}).join(''),indicator=liveStockQuoteWebV148(itemId)?.indicators||{},grid=Array.from({length:5},(_,i)=>{const value=max-span*i/4,gy=t+ph*i/4;return `<g class="stock-grid-v183"><line x1="${l}" y1="${gy}" x2="${w-r}" y2="${gy}"/><text x="${l-8}" y="${gy+4}">${esc(Number(value).toLocaleString('ru-RU',{minimumFractionDigits:2,maximumFractionDigits:4}))}</text></g>`;}).join('');return`<div class="stock-ta-v148"><div class="stock-chart-head-v149"><div><b>Динамика цены</b><small>Изменение считается от начала периода</small></div><div class="stock-timeframes-v148">${['1h','3h','6h'].map(value=>`<button type="button" class="secondary ${stockTimeframeWebV148===value?'active':''}" data-web-stock-timeframe-v148="${value}">${stockPeriodLabelsWebV150[value]}</button>`).join('')}</div></div><svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" role="img" aria-label="Свечной график с ценовой шкалой">${grid}${candles}</svg><div class="stock-legend-v149"><span class="up">■ Рост</span><span class="down">■ Снижение</span>${stockPeriodChangeMarkupWebV150(itemId)}</div><div class="stock-indicators-v148"><span>SMA 5 <b>${indicator.sma5==null?'—':formatCredits(indicator.sma5)}</b></span><span>SMA 20 <b>${indicator.sma20==null?'—':formatCredits(indicator.sma20)}</b></span><span>RSI 14 <b>${indicator.rsi14==null?'—':Number(indicator.rsi14).toFixed(1)}</b></span></div></div>`;}
   function stockOrderPriceWebV150(order){if(order.status==='filled')return`Исполнено: ${formatCredits(order.fillPrice)}`;if(order.type==='limit')return`Лимит: ${formatCredits(order.limitPrice)}`;if(['stop_loss','take_profit'].includes(order.type))return`Активация: ${formatCredits(order.triggerPrice)}`;if(order.type==='trailing_stop')return`Отклонение: ${Number(order.trailingPercent||0).toFixed(1)}%`;return'По рынку';}
   function stockOrderTimeWebV150(order){const date=new Date(order.filledAt||order.cancelledAt||order.createdAt||0);return Number.isFinite(date.getTime())?date.toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'—';}
   function stockOrderListWebV150(itemId){const rows=(stockExchangeWebV148?.orders||[]).filter(row=>row.itemId===itemId),pending=rows.filter(row=>row.status==='pending'),shown=stockOrderViewWebV150==='active'?pending:rows;return`<div class="stock-order-history-v150"><div class="stock-order-filter-v150"><button class="secondary ${stockOrderViewWebV150==='active'?'active':''}" type="button" data-web-stock-order-view-v150="active">АКТИВНЫЕ · ${pending.length}</button><button class="secondary ${stockOrderViewWebV150==='all'?'active':''}" type="button" data-web-stock-order-view-v150="all">ВСЕ · ${rows.length}</button></div>${shown.length?shown.map(order=>`<div class="stock-order-row-v150 ${esc(order.status)}"><div><b>${esc(stockOrderTypeLabelsWebV150[order.type]||order.type)} · ${esc(stockOrderIntentLabelsWebV150[order.intent]||order.intent)}</b><span>${Number(order.quantity||0)} шт. · ×${Number(order.leverage||1)} · ${esc(stockOrderPriceWebV150(order))} · ${esc(stockOrderTimeWebV150(order))}</span></div><div><span class="stock-order-status-v150">${esc(stockOrderStatusLabelsWebV150[order.status]||order.status)}</span>${order.status==='pending'?`<button class="secondary" type="button" data-web-stock-cancel-v148="${esc(order.id)}">ОТМЕНИТЬ</button>`:''}</div>${order.message?`<small>${esc(order.message)}</small>`:''}</div>`).join(''):'<div class="stock-chart-empty-v148">Заявок в этом разделе нет.</div>'}</div>`;}
@@ -6074,6 +6067,27 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
     normalize:p=>normalizePlayerWeb120(p),layout:p=>buildInventoryLayoutWebV1067(p),
     item:id=>App.data.items.get(id)||null,thumb:item=>renderEntityThumb(item)
   });
+  document.addEventListener('grpg-edit-restored-v183', () => {
+    document.querySelectorAll('.stock-orders-v148').forEach(panel => {
+      const type=panel.querySelector('[data-web-stock-order-type-v148]');
+      if(type)panel.dataset.orderType=type.value;
+    });
+  });
+  function focusScopeV183() {
+    return JSON.stringify([App.ui.boot,App.session?.userId,App.ui.screen,App.ui.profileTab,App.ui.selectedThreadKey,stockSelectionWebV1074?.itemId,App.ui.selectedCampaignId]);
+  }
+  const keepFocusV183 = fn => function(...args) {
+    return window.GRPGFocusKeeperV183 ? window.GRPGFocusKeeperV183.run(() => fn.apply(this,args),focusScopeV183) : fn.apply(this,args);
+  };
+  renderCurrentScreen=keepFocusV183(renderCurrentScreen);
+  renderLogin=keepFocusV183(renderLogin);
+  renderArchive=keepFocusV183(renderArchive);
+  renderMarket=keepFocusV183(renderMarket);
+  patchStockExchangeWebV149=keepFocusV183(patchStockExchangeWebV149);
+  renderChat=keepFocusV183(renderChat);
+  renderProfile=keepFocusV183(renderProfile);
+  renderWebChatMasterV1068=keepFocusV183(renderWebChatMasterV1068);
+
   init().catch(error => {
     openBoot('login');
     renderLogin();
