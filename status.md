@@ -1,9 +1,17 @@
 # GRPGI — состояние проекта
 
-Обновлено: 2026-10-22. Версия клиента в `package.json`: **1.0.155**. Модули Хаба используют общие правила/runtime v156 и пространственную модель v157 с непрерывной навигацией v178; версия установщика не менялась.
+Обновлено: 2026-10-23. Версия клиента в `package.json`: **1.0.155**. Модули Хаба используют общие правила/runtime v156 и пространственную модель v157 с непрерывной навигацией v178; версия установщика не менялась.
 
 
 
+
+## Idle polling cost, web caret stability and numeric candle scale (2026-10-23)
+
+- Found a concrete three-second desktop hotspot: overlapping player cursors re-applied identical authoritative rows, normalized profiles, refreshed inventory editors and wrote full local world mirrors. Empty polls also serialized application state. Matching confirmed payloads now stop before normalization; only actual accepted changes write mirrors/rerender, empty replies stay in memory, and a repeated identical failure is persisted once. Fast polls no longer overlap or run while the window is hidden. The combat inventory channel now respects the no-change result, and live updates no longer rebuild a hidden profile.
+- Added a web editing-state keeper around current-screen/login/archive/profile/market/chat renders, the separate chat window and stock-panel patches. Same-view replacements restore focused input, draft values in its form, exact text selection/direction, textarea/ancestor scrolling and rich-editor selection synchronously. Session/view/thread/stock navigation does not restore an old view's caret. Conditional stock fields reflect the restored order type. Removed the archive search handler that always moved the caret to the end; background refresh and archive input renders defer during IME composition. Avoided the second chat-window rebuild for the same incoming chat event.
+- Web stock candles now include five descending, localized numeric price ticks and horizontal grid lines, a reserved axis gutter and responsive label styling. Prices show 2–4 decimals, matching the desktop reference, for 1h/3h/6h; chart uses its full available width.
+- Validation: new actual desktop-script regression `tests/idle-player-poll-v183.mjs` verifies 20 identical and 10 empty replies cause zero normalization, mirror writes, state saves or renders; a changed version still applies; combat echoes remain idle and slow polls cannot overlap. New Chromium regression `tests/refresh-focus-v183.browser.mjs` covers repeated incoming archive/chat/market refreshes, backwards selection, mid-string typing, IME, forced stock-panel replacement, multi-field stock drafts, rich-editor selection, view changes and five correctly ordered price ticks on every timeframe/mobile. Existing desktop/web v135 queue/conflict/payment checks, v182 UI browser regression, full web Hub movement/fog/failed-save regression, v137 combat runtime cache, v180 starter-item and ambient/chart tests pass. Syntax and diff checks pass; chart screenshot inspected. This identifies and removes demonstrable periodic work; the user's exact native Electron rhythm was not profiled on their computer and no production service was exercised.
+- Apply/restart the updated desktop client, Deploy Web and refresh browser clients. No backend/schema/service restart; installer stays 1.0.155. No merge or deployment performed.
 
 ## Web inventory stability, quieter ambient, desktop Hub layers and WC favorites (2026-10-22)
 
