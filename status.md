@@ -5,6 +5,14 @@
 
 
 
+## Structured radial skill sequences and explicit basic labels (2026-10-24)
+
+- Replaced ID-first placement with dependency-aware corridors. Same-sector connected sequences are packed together, prerequisites are placed before their continuations, and automatic dependants move radially outward. Independent chains occupy parallel lanes; forks use nearby lanes and merges retain all prerequisite edges. Thematic grouping orders corridors without breaking a real sequence. Existing manual coordinates remain fixed.
+- Prefer a direct radial line for aligned neighbours and a single ring bend for local forks before invoking obstacle detours. The router also avoids the full label area. Unchanged unrelated components retain their cached positions; changing an upstream manual position invalidates automatic dependants across sectors. No skill definitions, logical prerequisites, costs, grants or Lua are rewritten.
+- Replaced the ambiguous “Б” marker with the full “Базовый” label and an automatic-grant explanation in the legend/detail/accessibility text. Fixed the inherited thumbnail rule that had forced this marker into a 43px circle over the portrait. The compact text chip hides at distant zoom. Moved attribute requirements below two-line names to prevent text overlap. Desktop/web modules remain identical; cache keys bumped to 186.
+- Validation: new model regression reproduces reverse-lexical-ID five-skill chains, parallel sequences, forks/merges, outward ordering, short local routes, unchanged unrelated components and fixed/cross-sector manual prerequisites. New Chromium regression exercises both shipped desktop/web maps with 35 skills, samples actual SVG routes against nodes/center, checks full rectangular basic labels and non-overlapping name/requirement text, camera/input preservation and mobile rendering; screenshots inspected. Existing v185 model, WC/JSON/group/dragging/purchase/caret/mobile and 100-node browser regression, plus v177 radial model, pass. Native Electron and the user's campaign dataset were not accessed; the shipped skill catalogue is empty and nonempty fixtures provide the regression coverage.
+- Update/restart the desktop client, Deploy Web and refresh browsers. No backend/schema/service restart; installer stays 1.0.155. No merge or deployment performed.
+
 ## Radial skill constellations v2 / graph authoring (2026-10-24)
 
 - Added a shared visual DAG model with six configurable sector angles: Strength −90°, Dexterity −30°, Intelligence 30°, Will 90°, Glory 150°, Endurance 210°. Glory remains visible and cannot be bought as an attribute. Multiple attribute requirements place skills between sectors; independent/basic/source skills use a neutral area. Visual rings and thematic groups never add purchase requirements; every ID in `requiredSkillIds` remains mandatory.

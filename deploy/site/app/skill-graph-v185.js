@@ -24,36 +24,104 @@ function anchors(skill,by,seen=new Set()){
  return [...new Set(req(skill).flatMap(id=>by.has(id)?anchors(by.get(id),by,new Set(seen)):[]))];
 }
 const cache=new Map(),stable=new Map();
+const structuralKey=s=>[String(s.id),req(s).sort(),s.requiredAbilities,s.treeBranch,s.treePlacement,s.isBasic,s.originOnly178];
+const radiusOf=p=>Math.hypot(p.x,p.y);
 function layout(skills,groups={},config=sectors){
- const signature=JSON.stringify([config,groups,skills.map(s=>[String(s.id),req(s),s.requiredAbilities,s.treeBranch,s.treePos,s.treePlacement,s.isBasic,s.originOnly178]).sort((a,b)=>a[0].localeCompare(b[0]))]);
+ const structure=skills.map(structuralKey).sort((a,b)=>a[0].localeCompare(b[0]));
+ const signature=JSON.stringify([config,groups,structure]);
  if(cache.has(signature))return cache.get(signature);
- const analysis=analyze(skills),positions=new Map(),assignment=new Map(),occupied=config.map(b=>({id:'stat:'+b.id,...polar(182,b.angle),hw:62,hh:42})),groupRegions=[];
- function free(p){return Math.hypot(p.x,p.y)>265&&!occupied.some(o=>Math.abs(o.x-p.x)<o.hw+62&&Math.abs(o.y-p.y)<o.hh+66);}
- const nodeKey=s=>JSON.stringify([s.treePlacement,s.treePos,s.treeBranch,anchors(s,analysis.by),(s.requiredSkillIds||[]),s.isBasic]);
- const stableRows=skills.filter(s=>stable.get(String(s.id))?.key===nodeKey(s));
- for(const s of stableRows){const old=stable.get(String(s.id)).point;occupied.push({id:'stable:'+s.id,...old,hw:62,hh:66});}
- const rows=[...skills].sort((a,b)=>{const pa=placement(a.treePlacement),pb=placement(b.treePlacement);return (pb?.mode==='manual')-(pa?.mode==='manual')||(pa?.order||0)-(pb?.order||0)||String(a.id).localeCompare(String(b.id));});
- for(const s of rows){const id=String(s.id),p=placement(s.treePlacement),stats=anchors(s,analysis.by),vectors=stats.map(k=>config.find(b=>b.id===k)).filter(Boolean);let a=vectors.length?Math.atan2(vectors.reduce((v,b)=>v+Math.sin(b.angle),0),vectors.reduce((v,b)=>v+Math.cos(b.angle),0)):Math.PI;
- if(p?.groupId){let h=0;for(const c of p.groupId)h=(h*31+c.charCodeAt(0))>>>0;a+=((h%9)-4)*.055;}
- a+=rad(p?.angleOffset||0);const depth=analysis.depth.get(id)||0;let radius=350+Math.max(0,Math.floor(p?.ring??(stats.length>1?3:depth+1))-1)*150+(p?.radiusOffset||0),point;
- const previous=stable.get(id);if(previous?.key===nodeKey(s))point={x:previous.point.x,y:previous.point.y};
- const legacy=s.treePos;const manual=p?.mode==='manual';
- if(manual&&Number.isFinite(p.x)&&Number.isFinite(p.y))point={x:p.x,y:p.y};;
- if(!point){for(let step=0;step<3000;step++){const row=Math.floor(step/7),lane=step%7,offset=lane===0?0:Math.ceil(lane/2)*.13*(lane%2?1:-1);point=polar(Math.max(330,radius+row*150),a+offset);if(free(point))break;}}
- const branch=stats.length===1?stats[0]:stats.length>1?'combined':'neutral';positions.set(id,{...point,branch,depth,anchors:stats,groupId:p?.groupId||'',manual});stable.set(id,{key:nodeKey(s),point:{...point}});assignment.set(id,branch);occupied.push({id,...point,hw:62,hh:66});
+ const analysis=analyze(skills),positions=new Map(),assignment=new Map(),groupRegions=[];
+ const metadata=new Map(skills.map(s=>[String(s.id),placement(s.treePlacement)]));
+ const statMap=new Map(skills.map(s=>[String(s.id),anchors(s,analysis.by)]));
+ const bucketOf=id=>[...statMap.get(id)].sort().join('|')||'neutral';
+ const compare=(a,b)=>(metadata.get(a)?.order||0)-(metadata.get(b)?.order||0)||a.localeCompare(b);
+ const children=new Map(skills.map(s=>[String(s.id),[]]));
+ for(const e of analysis.edges)children.get(e.from).push(e.to);
+ // A connected sequence owns a corridor. Thematic groups order corridors but
+ // never split a sequence or create a logical parent.
+ const pending=new Set(analysis.by.keys()),components=[];
+ while(pending.size){
+  const first=[...pending].sort(compare)[0],bucket=bucketOf(first),ids=[],queue=[first];
+  while(queue.length){const id=queue.pop();if(!pending.has(id)||bucketOf(id)!==bucket)continue;pending.delete(id);ids.push(id);
+   for(const next of [...req(analysis.by.get(id)),...children.get(id)])if(analysis.by.has(next)&&bucketOf(next)===bucket&&pending.has(next))queue.push(next);
+  }
+  ids.sort(compare);const local=new Set(ids),primary=new Map(),tree=new Map(ids.map(id=>[id,[]]));
+  for(const id of ids){const parents=req(analysis.by.get(id)).filter(p=>local.has(p)&&(analysis.depth.get(p)||0)<(analysis.depth.get(id)||0)).sort((a,b)=>(analysis.depth.get(b)||0)-(analysis.depth.get(a)||0)||compare(a,b));if(parents.length){primary.set(id,parents[0]);tree.get(parents[0]).push(id);}}
+  for(const row of tree.values())row.sort(compare);
+  const slots=new Map(),levels=new Map(),visited=new Set();let leaf=0;
+  function visit(id,level){if(visited.has(id))return;visited.add(id);levels.set(id,level);const start=leaf,desc=tree.get(id);if(!desc.length)slots.set(id,leaf++);else{desc.forEach(child=>visit(child,level+1));slots.set(id,(start+leaf-1)/2);}}
+  ids.filter(id=>!primary.has(id)).sort(compare).forEach(id=>visit(id,0));ids.forEach(id=>visit(id,0));
+  const ordered=[...ids].sort((a,b)=>(analysis.depth.get(a)||0)-(analysis.depth.get(b)||0)||compare(a,b));
+  for(const id of ordered){const parents=req(analysis.by.get(id)).filter(p=>local.has(p)&&slots.has(p)&&(analysis.depth.get(p)||0)<(analysis.depth.get(id)||0));if(parents.length>1)slots.set(id,parents.reduce((n,p)=>n+slots.get(p),0)/parents.length);else if(parents.length===1&&tree.get(parents[0]).length===1)slots.set(id,slots.get(parents[0]));
+   if(parents.length)levels.set(id,Math.max(...parents.map(p=>levels.get(p)||0))+1);
+  }
+  // Separate siblings at the same depth without shuffling the other layers.
+  const rows=new Map();for(const id of ids){const level=levels.get(id);if(!rows.has(level))rows.set(level,[]);rows.get(level).push(id);}
+  for(const row of rows.values()){row.sort((a,b)=>slots.get(a)-slots.get(b)||compare(a,b));let last=-Infinity;for(const id of row){const slot=Math.max(slots.get(id),last+1);slots.set(id,slot);last=slot;}}
+  const min=Math.min(...slots.values()),width=Math.max(1,Math.ceil(Math.max(...slots.values())-min+1));for(const id of ids)slots.set(id,slots.get(id)-min);
+  const component={ids,local,bucket,primary,tree,slots,levels,width,depth:Math.max(...levels.values()),first:ids[0],group:ids.map(id=>metadata.get(id)?.groupId||'').find(Boolean)||''};
+  component.key=JSON.stringify([config,bucket,ids.map(id=>structuralKey(analysis.by.get(id))).sort((a,b)=>a[0].localeCompare(b[0]))]);components.push(component);
  }
- for(const group of Object.values(groups)){const nodes=[...positions.values()].filter(p=>p.groupId===group.id);if(nodes.length){const xs=nodes.map(p=>p.x),ys=nodes.map(p=>p.y);groupRegions.push({...group,x:Math.min(...xs)-82,y:Math.min(...ys)-94,w:Math.max(...xs)-Math.min(...xs)+164,h:Math.max(...ys)-Math.min(...ys)+180});}}
+ // A moved prerequisite in another sector also invalidates its dependants.
+ // Component membership is included, so adding a fork cannot leave a cached
+ // downstream component inside the newly extended prerequisite corridor.
+ const componentOf=new Map(components.flatMap(c=>c.ids.map(id=>[id,c])));
+ for(const c of components){const upstream=new Set([c]),parts=[];function collect(current){for(const id of current.ids)for(const parent of req(analysis.by.get(id))){const next=componentOf.get(parent);if(next&&!upstream.has(next)){upstream.add(next);parts.push(next.ids.map(id=>structuralKey(analysis.by.get(id))));collect(next);}}}collect(c);c.key=JSON.stringify([c.key,parts.sort((a,b)=>String(a[0]?.[0]).localeCompare(String(b[0]?.[0])))]);}
+ const reserved=config.map(b=>({id:'stat:'+b.id,...polar(182,b.angle),hw:62,hh:42}));
+ const add=(id,point)=>{const stats=statMap.get(id),meta=metadata.get(id),branch=stats.length===1?stats[0]:stats.length>1?'combined':'neutral';positions.set(id,{...point,branch,depth:analysis.depth.get(id)||0,anchors:stats,groupId:meta?.groupId||'',manual:meta?.mode==='manual'});assignment.set(id,branch);reserved.push({id,...point,hw:62,hh:66});};
+ const free=(point,id)=>radiusOf(point)>265&&!reserved.some(o=>o.id!==id&&Math.abs(o.x-point.x)<o.hw+62&&Math.abs(o.y-point.y)<o.hh+66);
+ const reused=new Set();
+ for(const c of components){const saved=stable.get(c.key);if(!saved)continue;for(const id of c.ids)add(id,saved.points.get(id));reused.add(c);}
+ // Explicit pins always take precedence over automatic packing.
+ for(const c of components)if(!reused.has(c))for(const id of c.ids){const p=metadata.get(id);if(p?.mode==='manual'&&Number.isFinite(p.x)&&Number.isFinite(p.y))add(id,{x:p.x,y:p.y});}
+ const buckets=new Map();for(const c of components)if(!reused.has(c)){if(!buckets.has(c.bucket))buckets.set(c.bucket,[]);buckets.get(c.bucket).push(c);}
+ const plans=new Map();
+ for(const [bucket,list] of buckets){
+  list.sort((a,b)=>a.group.localeCompare(b.group)||compare(a.first,b.first));
+  let base=Math.max(650,...components.filter(c=>reused.has(c)&&c.bucket===bucket).flatMap(c=>c.ids.map(id=>radiusOf(positions.get(id))+220)));
+  const bands=[];let band={items:[],width:0,depth:0};
+  for(const c of list){if(band.width&&band.width+c.width>4){bands.push(band);band={items:[],width:0,depth:0};}band.items.push(c);band.width+=c.width;band.depth=Math.max(band.depth,c.depth);if(c.width>=4){bands.push(band);band={items:[],width:0,depth:0};}}
+  if(band.items.length)bands.push(band);
+  for(const band of bands){base=Math.max(base,band.width*175/.84);const step=Math.min(.24,.84/band.width);let offset=0;
+   for(const c of band.items){for(const id of c.ids)plans.set(id,{radius:base+(c.levels.get(id)||0)*180,offset:(offset+c.slots.get(id)-(band.width-1)/2)*step,step,component:c});offset+=c.width;}
+   base+=((band.depth+1)*180)+180;
+  }
+ }
+ const sorted=[...plans.keys()].sort((a,b)=>(analysis.depth.get(a)||0)-(analysis.depth.get(b)||0)||compare(a,b));
+ for(const id of sorted){if(positions.has(id))continue;const p=metadata.get(id),stats=statMap.get(id),plan=plans.get(id),c=plan.component,vectors=stats.map(k=>config.find(b=>b.id===k)).filter(Boolean);
+  let a=vectors.length?Math.atan2(vectors.reduce((v,b)=>v+Math.sin(b.angle),0),vectors.reduce((v,b)=>v+Math.cos(b.angle),0)):Math.PI;
+  const parents=req(analysis.by.get(id)).filter(parent=>positions.has(parent)),localParents=parents.filter(parent=>c.local.has(parent));
+  a+=plan.offset;
+  if(localParents.length===1){const parent=localParents[0],point=positions.get(parent);a=Math.atan2(point.y,point.x)+(c.slots.get(id)-c.slots.get(parent))*plan.step;}
+  else if(localParents.length>1){a=Math.atan2(localParents.reduce((sum,parent)=>sum+Math.sin(Math.atan2(positions.get(parent).y,positions.get(parent).x)),0),localParents.reduce((sum,parent)=>sum+Math.cos(Math.atan2(positions.get(parent).y,positions.get(parent).x)),0));}
+  a+=rad(p?.angleOffset||0);
+  let radius=Math.max(350,plan.radius,parents.length?Math.max(...parents.map(parent=>radiusOf(positions.get(parent))+180)):0);
+  if(p?.ring!=null)radius=Math.max(radius,650+Math.max(0,p.ring-1)*180);
+  radius=Math.max(radius+(p?.radiusOffset||0),parents.length?Math.max(...parents.map(parent=>radiusOf(positions.get(parent))+180)):350);
+  let point=polar(radius,a);while(!free(point,id)&&radius<100000){radius+=180;point=polar(radius,a);}add(id,point);
+ }
+ for(const c of components)stable.set(c.key,{ids:c.ids,points:new Map(c.ids.map(id=>[id,{x:positions.get(id).x,y:positions.get(id).y}]))});
+ if(stable.size>500)for(const key of [...stable.keys()].slice(0,stable.size-500))stable.delete(key);
+ for(const group of Object.values(groups)){const nodes=[...positions.values()].filter(p=>p.groupId===group.id);if(nodes.length){const xs=nodes.map(p=>p.x),ys=nodes.map(p=>p.y);groupRegions.push({...group,x:Math.min(...xs)-82,y:Math.min(...ys)-94,w:Math.max(...xs)-Math.min(...xs)+164,h:Math.max(...ys)-Math.min(...ys)+214});}}
  const graph={...analysis,positions,assignment,common:[],commonHeight:170,groups:groupRegions,routes:new Map(),signature};
- // Route cache is structural and independent of ownership, points and camera.
- for(const [index,e] of graph.edges.entries())graph.routes.set(e.from+'|'+e.to,route(graph,e,index));
+ for(const [index,e] of [...graph.edges].sort((a,b)=>a.from.localeCompare(b.from)||a.to.localeCompare(b.to)).entries())graph.routes.set(e.from+'|'+e.to,route(graph,e,index));
  cache.set(signature,graph);if(cache.size>12)cache.delete(cache.keys().next().value);return graph;
 }
 function route(graph,edge,index=0){
  const start=graph.positions.get(edge.from),end=graph.positions.get(edge.to);if(!start||!end)return '';
- const obstacles=[...graph.positions].filter(([id])=>id!==edge.from&&id!==edge.to).map(([,p])=>({x:p.x,y:p.y,hw:62,hh:66}));
+ const obstacles=[...graph.positions].filter(([id])=>id!==edge.from&&id!==edge.to).map(([,p])=>({x:p.x,y:p.y+30,hw:76,hh:74}));
  const bucket=new Map();for(const o of obstacles){for(let x=Math.floor((o.x-o.hw)/150);x<=Math.floor((o.x+o.hw)/150);x++)for(let y=Math.floor((o.y-o.hh)/150);y<=Math.floor((o.y+o.hh)/150);y++){const k=x+':'+y;if(!bucket.has(k))bucket.set(k,[]);bucket.get(k).push(o);}}
  const clear=p=>Math.hypot(p.x,p.y)>248&&!(bucket.get(Math.floor(p.x/150)+':'+Math.floor(p.y/150))||[]).some(o=>Math.abs(p.x-o.x)<o.hw&&Math.abs(p.y-o.y)<o.hh);
  const sr=Math.hypot(start.x,start.y),er=Math.hypot(end.x,end.y),sa=angle(Math.atan2(start.y,start.x)),ea=angle(Math.atan2(end.y,end.x));
+ // Most edges stay inside their sequence's reserved corridor. Prefer one
+ // radial line or one clean ring bend before considering a general detour.
+ const straightClear=(a,b)=>{const length=Math.hypot(b.x-a.x,b.y-a.y),steps=Math.max(1,Math.ceil(length/8));for(let i=0;i<=steps;i++){const t=i/steps;if(!clear({x:a.x+(b.x-a.x)*t,y:a.y+(b.y-a.y)*t}))return false;}return true;};
+ let delta=ea-sa;if(delta>Math.PI)delta-=TAU;if(delta< -Math.PI)delta+=TAU;
+ if(Math.abs(delta)<1e-7&&straightClear(start,end))return `M${start.x},${start.y} L${end.x},${end.y}`;
+ const arcClear=r=>{const steps=Math.max(1,Math.ceil(Math.abs(delta)*r/8));for(let i=0;i<=steps;i++)if(!clear(polar(r,sa+delta*i/steps)))return false;return true;};
+ const low=Math.min(sr,er)+70,high=Math.max(sr,er)-70;
+ const tracks=[(sr+er)/2+(index%3-1)*6,low,high,(sr+er)/2];
+ for(const r of tracks){if(r<low||r>high||r<270)continue;const a=polar(r,sa),b=polar(r,ea);if(straightClear(start,a)&&arcClear(r)&&straightClear(b,end))return `M${start.x},${start.y} L${a.x},${a.y} A${r},${r} 0 ${Math.abs(delta)>Math.PI?1:0} ${delta>0?1:0} ${b.x},${b.y} L${end.x},${end.y}`;}
  const angles=[...new Set([sa,ea,...Array.from({length:36},(_,i)=>i*TAU/36)])].sort((a,b)=>a-b),radii=[...new Set([sr,er,270,...[...graph.positions.values()].flatMap(p=>{const r=Math.hypot(p.x,p.y);return [Math.max(270,r-88-(index%4)*5),r+88+(index%4)*5];})])].sort((a,b)=>a-b);
  const cols=angles.length,key=(r,a)=>r*cols+a,decode=k=>({r:Math.floor(k/cols),a:k%cols}),point=k=>{const n=decode(k);return polar(radii[n.r],angles[n.a]);},sk=key(radii.indexOf(sr),angles.indexOf(sa)),gk=key(radii.indexOf(er),angles.indexOf(ea));
  const open=new Map([[sk,0]]),cost=new Map([[sk,0]]),came=new Map();let found=false,steps=0;
@@ -64,5 +132,5 @@ function route(graph,edge,index=0){
  const nodes=path.map(k=>decode(k)),simple=[nodes[0]];for(let i=1;i<nodes.length-1;i++){const a=nodes[i-1],b=nodes[i],c=nodes[i+1];if((a.a===b.a&&b.a===c.a)||(a.r===b.r&&b.r===c.r&&Math.sign(angles[b.a]-angles[a.a])===Math.sign(angles[c.a]-angles[b.a])))continue;simple.push(b);}simple.push(nodes[nodes.length-1]);
  let d=`M${start.x},${start.y}`;for(let i=1;i<simple.length;i++){const a=simple[i-1],b=simple[i],p=polar(radii[b.r],angles[b.a]);if(a.r===b.r){let da=angles[b.a]-angles[a.a];if(da>Math.PI)da-=TAU;if(da< -Math.PI)da+=TAU;d+=` A${radii[b.r]},${radii[b.r]} 0 ${Math.abs(da)>Math.PI?1:0} ${da>0?1:0} ${p.x},${p.y}`;}else d+=` L${p.x},${p.y}`;}return d;
 }
-const api={sectors,placement,analyze,anchors,layout,route,requirements:req,clearCache:ids=>{cache.clear();if(Array.isArray(ids))ids.forEach(id=>stable.delete(String(id)));else stable.clear();}};root.GRPGSkillGraphV185=api;if(typeof module!=='undefined'&&module.exports)module.exports=api;
+const api={sectors,placement,analyze,anchors,layout,route,requirements:req,clearCache:ids=>{cache.clear();if(Array.isArray(ids)){const selected=new Set(ids.map(String));for(const [key,c] of stable)if(c.ids.some(id=>selected.has(id)))stable.delete(key);}else stable.clear();}};root.GRPGSkillGraphV185=api;if(typeof module!=='undefined'&&module.exports)module.exports=api;
 })(typeof window!=='undefined'?window:globalThis);
