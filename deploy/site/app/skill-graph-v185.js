@@ -26,6 +26,9 @@ function anchors(skill,by,seen=new Set()){
 const cache=new Map(),stable=new Map(),wholeCache=new Map(),generalStable=new Map();
 const structuralKey=s=>[String(s.id),req(s).sort(),s.requiredAbilities,s.treeBranch,s.treePlacement,s.isBasic,s.originOnly178,s.category];
 const radiusOf=p=>Math.hypot(p.x,p.y);
+// World-space distances include the two-line name and local requirements.
+// Spread only the gaps between occupied lanes, not an extra empty lane.
+const spacing={root:350,level:160,lane:154,span:.9,maxAngle:.44,bandGap:180,generalColumn:160,generalRow:160,generalBand:180,generalGap:160};
 function radialLayout(skills,groups={},config=sectors,contextBy=new Map(skills.map(s=>[String(s.id),s]))){
  const structure=skills.map(structuralKey).sort((a,b)=>a[0].localeCompare(b[0]));
  const signature=JSON.stringify([config,groups,structure,skills.map(s=>[String(s.id),anchors(s,contextBy)]).sort(([a],[b])=>a.localeCompare(b))]);
@@ -68,8 +71,8 @@ function radialLayout(skills,groups={},config=sectors,contextBy=new Map(skills.m
  const componentOf=new Map(components.flatMap(c=>c.ids.map(id=>[id,c])));
  for(const c of components){const upstream=new Set([c]),parts=[];function collect(current){for(const id of current.ids)for(const parent of req(analysis.by.get(id))){const next=componentOf.get(parent);if(next&&!upstream.has(next)){upstream.add(next);parts.push(next.ids.map(id=>structuralKey(analysis.by.get(id))));collect(next);}}}collect(c);c.key=JSON.stringify([c.key,parts.sort((a,b)=>String(a[0]?.[0]).localeCompare(String(b[0]?.[0])))]);}
  const reserved=config.map(b=>({id:'stat:'+b.id,...polar(182,b.angle),hw:62,hh:42}));
- const add=(id,point)=>{const stats=statMap.get(id),meta=metadata.get(id),branch=stats.length===1?stats[0]:stats.length>1?'combined':'neutral';positions.set(id,{...point,branch,depth:analysis.depth.get(id)||0,anchors:stats,groupId:meta?.groupId||'',manual:meta?.mode==='manual'});assignment.set(id,branch);reserved.push({id,...point,hw:62,hh:66});};
- const free=(point,id)=>radiusOf(point)>265&&!reserved.some(o=>o.id!==id&&Math.abs(o.x-point.x)<o.hw+62&&Math.abs(o.y-point.y)<o.hh+66);
+ const add=(id,point)=>{const stats=statMap.get(id),meta=metadata.get(id),branch=stats.length===1?stats[0]:stats.length>1?'combined':'neutral';positions.set(id,{...point,branch,depth:analysis.depth.get(id)||0,anchors:stats,groupId:meta?.groupId||'',manual:meta?.mode==='manual'});assignment.set(id,branch);reserved.push({id,...point,hw:69,hh:75});};
+ const free=(point,id)=>radiusOf(point)>265&&!reserved.some(o=>o.id!==id&&Math.abs(o.x-point.x)<o.hw+69&&Math.abs(o.y-point.y)<o.hh+75);
  const reused=new Set();
  for(const c of components){const saved=stable.get(c.key);if(!saved)continue;for(const id of c.ids)add(id,saved.points.get(id));reused.add(c);}
  // Explicit pins always take precedence over automatic packing.
@@ -78,13 +81,13 @@ function radialLayout(skills,groups={},config=sectors,contextBy=new Map(skills.m
  const plans=new Map();
  for(const [bucket,list] of buckets){
   list.sort((a,b)=>a.group.localeCompare(b.group)||compare(a.first,b.first));
-  let base=Math.max(650,...components.filter(c=>reused.has(c)&&c.bucket===bucket).flatMap(c=>c.ids.map(id=>radiusOf(positions.get(id))+220)));
+  let base=Math.max(spacing.root,...components.filter(c=>reused.has(c)&&c.bucket===bucket).flatMap(c=>c.ids.map(id=>radiusOf(positions.get(id))+spacing.bandGap)));
   const bands=[];let band={items:[],width:0,depth:0};
   for(const c of list){if(band.width&&band.width+c.width>4){bands.push(band);band={items:[],width:0,depth:0};}band.items.push(c);band.width+=c.width;band.depth=Math.max(band.depth,c.depth);if(c.width>=4){bands.push(band);band={items:[],width:0,depth:0};}}
   if(band.items.length)bands.push(band);
-  for(const band of bands){base=Math.max(base,band.width*175/.84);const step=Math.min(.24,.84/band.width);let offset=0;
-   for(const c of band.items){for(const id of c.ids)plans.set(id,{radius:base+(c.levels.get(id)||0)*180,offset:(offset+c.slots.get(id)-(band.width-1)/2)*step,step,component:c});offset+=c.width;}
-   base+=((band.depth+1)*180)+180;
+  for(const band of bands){base=Math.max(base,(band.width-1)*spacing.lane/spacing.span);const step=Math.min(spacing.maxAngle,spacing.span/Math.max(1,band.width-1));let offset=0;
+   for(const c of band.items){for(const id of c.ids)plans.set(id,{radius:base+(c.levels.get(id)||0)*spacing.level,offset:(offset+c.slots.get(id)-(band.width-1)/2)*step,step,component:c});offset+=c.width;}
+   base+=band.depth*spacing.level+spacing.bandGap;
   }
  }
  const sorted=[...plans.keys()].sort((a,b)=>(analysis.depth.get(a)||0)-(analysis.depth.get(b)||0)||compare(a,b));
@@ -95,10 +98,10 @@ function radialLayout(skills,groups={},config=sectors,contextBy=new Map(skills.m
   if(localParents.length===1){const parent=localParents[0],point=positions.get(parent);a=Math.atan2(point.y,point.x)+(c.slots.get(id)-c.slots.get(parent))*plan.step;}
   else if(localParents.length>1){a=Math.atan2(localParents.reduce((sum,parent)=>sum+Math.sin(Math.atan2(positions.get(parent).y,positions.get(parent).x)),0),localParents.reduce((sum,parent)=>sum+Math.cos(Math.atan2(positions.get(parent).y,positions.get(parent).x)),0));}
   a+=rad(p?.angleOffset||0);
-  let radius=Math.max(350,plan.radius,parents.length?Math.max(...parents.map(parent=>radiusOf(positions.get(parent))+180)):0);
-  if(p?.ring!=null)radius=Math.max(radius,650+Math.max(0,p.ring-1)*180);
-  radius=Math.max(radius+(p?.radiusOffset||0),parents.length?Math.max(...parents.map(parent=>radiusOf(positions.get(parent))+180)):350);
-  let point=polar(radius,a);while(!free(point,id)&&radius<100000){radius+=180;point=polar(radius,a);}add(id,point);
+  let radius=Math.max(spacing.root,plan.radius,parents.length?Math.max(...parents.map(parent=>radiusOf(positions.get(parent))+spacing.level)):0);
+  if(p?.ring!=null)radius=Math.max(radius,spacing.root+Math.max(0,p.ring-1)*spacing.level);
+  radius=Math.max(radius+(p?.radiusOffset||0),parents.length?Math.max(...parents.map(parent=>radiusOf(positions.get(parent))+spacing.level)):spacing.root);
+  let point=polar(radius,a);while(!free(point,id)&&radius<100000){radius+=20;point=polar(radius,a);}add(id,point);
  }
  for(const c of components)stable.set(c.key,{ids:c.ids,points:new Map(c.ids.map(id=>[id,{x:positions.get(id).x,y:positions.get(id).y}]))});
  if(stable.size>500)for(const key of [...stable.keys()].slice(0,stable.size-500))stable.delete(key);
@@ -124,24 +127,24 @@ function generalLayout(skills,startX,full){
  const addPin=id=>{const p=placement(by.get(id).treePlacement);if(p?.mode==='manual'&&Number.isFinite(p.x)&&Number.isFinite(p.y)){local.set(id,{x:Math.max(0,p.x-startX),y:p.y});return true;}return false;};
  for(const c of components){const old=generalStable.get(c.key);if(old){for(const id of c.ids)local.set(id,{...old.points.get(id)});saved.add(c);}else c.ids.forEach(addPin);}
  const free=(p,id)=>p.x>=0&&![...local].some(([other,q])=>other!==id&&Math.abs(p.x-q.x)<152&&Math.abs(p.y-q.y)<150);
- let top=local.size?Math.max(...[...local.values()].map(p=>p.y))+220:-350,column=0,bottom=top;
- for(const c of components){if(saved.has(c))continue;const levels=new Map(c.ids.map(id=>[id,side.depth.get(id)||0])),rows=new Map();for(const id of c.ids){const level=levels.get(id);if(!rows.has(level))rows.set(level,[]);rows.get(level).push(id);}const width=Math.max(1,...[...rows.values()].map(r=>r.length));if(column&&column+width>3){top=bottom+220;column=0;}
+ let top=local.size?Math.max(...[...local.values()].map(p=>p.y))+spacing.generalBand:-240,column=0,bottom=top;
+ for(const c of components){if(saved.has(c))continue;const levels=new Map(c.ids.map(id=>[id,side.depth.get(id)||0])),rows=new Map();for(const id of c.ids){const level=levels.get(id);if(!rows.has(level))rows.set(level,[]);rows.get(level).push(id);}const width=Math.max(1,...[...rows.values()].map(r=>r.length));if(column&&column+width>3){top=bottom+spacing.generalBand;column=0;}
   for(const [level,row] of [...rows].sort((a,b)=>a[0]-b[0])){const mean=id=>{const ps=req(by.get(id)).filter(p=>local.has(p));return ps.length?ps.reduce((sum,p)=>sum+local.get(p).x,0)/ps.length:Infinity;};row.sort((a,b)=>mean(a)-mean(b)||(placement(by.get(a).treePlacement)?.order||0)-(placement(by.get(b).treePlacement)?.order||0)||a.localeCompare(b));
-   for(const [i,id] of row.entries()){if(local.has(id))continue;const parents=req(by.get(id)).filter(p=>local.has(p)),y=Math.max(top+level*180,parents.length?Math.max(...parents.map(p=>local.get(p).y+180)):-Infinity);let x=(column+(width-row.length)/2+i)*180;
+   for(const [i,id] of row.entries()){if(local.has(id))continue;const parents=req(by.get(id)).filter(p=>local.has(p)),y=Math.max(top+level*spacing.generalRow,parents.length?Math.max(...parents.map(p=>local.get(p).y+spacing.generalRow)):-Infinity);let x=(column+(width-row.length)/2+i)*spacing.generalColumn;
     if(parents.length&&(row.length===1||parents.length>1))x=parents.reduce((sum,p)=>sum+local.get(p).x,0)/parents.length;
-    let point={x,y};for(let step=0;!free(point,id)&&step<1000;step++)point={x:x+(step+1)*180,y};local.set(id,point);
+    let point={x,y};for(let step=0;!free(point,id)&&step<1000;step++)point={x:x+(step+1)*spacing.generalColumn,y};local.set(id,point);
    }
   }
-  column+=width;bottom=Math.max(bottom,...c.ids.map(id=>local.get(id).y));if(column>=3){top=bottom+220;column=0;}
+  column+=width;bottom=Math.max(bottom,...c.ids.map(id=>local.get(id).y));if(column>=3){top=bottom+spacing.generalBand;column=0;}
  }
  for(const c of components)generalStable.set(c.key,{ids:c.ids,points:new Map(c.ids.map(id=>[id,{...local.get(id)}]))});
  if(generalStable.size>500)for(const key of [...generalStable.keys()].slice(0,generalStable.size-500))generalStable.delete(key);
  return new Map([...local].map(([id,p])=>[id,{x:p.x+startX,y:p.y,branch:'general',depth:full.depth.get(id)||0,anchors:anchors(by.get(id),full.by),groupId:placement(by.get(id).treePlacement)?.groupId||'',manual:placement(by.get(id).treePlacement)?.mode==='manual'}]));
 }
 function layout(skills,groups={},config=sectors){
- const signature=JSON.stringify(['general187',config,groups,skills.map(structuralKey).sort((a,b)=>a[0].localeCompare(b[0]))]);if(wholeCache.has(signature))return wholeCache.get(signature);
+ const signature=JSON.stringify(['compact188',config,groups,skills.map(structuralKey).sort((a,b)=>a[0].localeCompare(b[0]))]);if(wholeCache.has(signature))return wholeCache.get(signature);
  const full=analyze(skills),general=skills.filter(s=>isCommon(s,full.by)),generalIds=new Set(general.map(s=>String(s.id))),radial=radialLayout(skills.filter(s=>!generalIds.has(String(s.id))),groups,config,full.by),positions=new Map(radial.positions),assignment=new Map(radial.assignment);
- const right=Math.max(115,...config.map(b=>Math.cos(b.angle)*182+62),...[...positions.values()].map(p=>p.x+80)),startX=right+240;
+ const right=Math.max(115,...config.map(b=>Math.cos(b.angle)*182+62),...[...positions.values()].map(p=>p.x+80)),startX=right+spacing.generalGap;
  const side=generalLayout(general,startX,full);for(const [id,p] of side){positions.set(id,p);assignment.set(id,'general');}
  const regions=[];for(const g of Object.values(groups))for(const kind of ['radial','general']){const ps=[...positions.values()].filter(p=>p.groupId===g.id&&(p.branch==='general')===(kind==='general'));if(!ps.length)continue;const xs=ps.map(p=>p.x),ys=ps.map(p=>p.y);regions.push({...g,x:Math.min(...xs)-82,y:Math.min(...ys)-94,w:Math.max(...xs)-Math.min(...xs)+164,h:Math.max(...ys)-Math.min(...ys)+214});}
  const area=side.size?{startX,left:startX-100,right:Math.max(...[...side.values()].map(p=>p.x))+100,top:Math.min(...[...side.values()].map(p=>p.y))-160,bottom:Math.max(...[...side.values()].map(p=>p.y))+130}:null;
