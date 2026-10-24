@@ -5,6 +5,13 @@
 
 
 
+## Compact automatic skill layout (2026-10-24)
+
+- Reduced the automatic first-row radius from 650 to 350 world-space pixels and the dependency step from 180 to 160. Parallel lanes reserve only the gaps between occupied lanes, with adaptive angular spacing; four lanes start around 513 instead of 833. New radial bands use a 180-pixel gap after the previous band’s last level instead of an extra empty level. Collision handling advances in 20-pixel increments instead of jumping a full level; label clearance includes the local requirements.
+- General-tree rows and columns now use 160 pixels instead of 180, component bands 180 instead of 220, and its boundary gap 160 instead of 240. It remains to the right of every characteristic branch. Explicit manual coordinates, skill data and purchase logic are preserved. Shared desktop/web model copies are identical and both entry points request model cache version 188.
+- Validation: added v188 regression for compact center/level/lane bounds across all six sectors, multiple parallel five-skill chains, text clearance, complete routing, compact general-tree spacing and stable geometry on status changes. Updated the v186 outward-order assertions for the intended 160-pixel step. Existing v185/v186/v187 graph and v177 radial model regressions pass. Actual Chromium desktop/web regressions pass for structured chains, SVG obstacle sampling, general-tree navigation, WC editing/import/dragging, purchase gating/cost, camera/input preservation and the 100-node/mobile map; screenshots inspected. Native Electron and production services were not exercised.
+- Apply/restart the desktop client, Deploy Web and refresh browsers. No backend/schema/service restart. Installer stays 1.0.155. No merge or deployment performed.
+
 ## Separate general skill tree to the right (2026-10-24)
 
 - General skills now form a separate top-down dependency tree on the same canvas, to the right of the rightmost radial skill/card. Its origin follows the radial map's right boundary, including fixed manual nodes. Local chains, forks, merges and genuine cross-tree requirements retain all edges; no new prerequisites are introduced. Automatic common nodes retain their relative layout on status changes, and manual common nodes imported to the left are displayed inside the right area without rewriting source data.
