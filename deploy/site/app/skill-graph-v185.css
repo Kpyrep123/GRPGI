@@ -1,0 +1,26 @@
+/* Constellation map: requirements, groups and sources are distinct. */
+.r185-group{fill:#7897a407;stroke:#7897a42a;stroke-width:1;pointer-events:none}
+.r185-group-title{fill:#a0b1ba;font-size:18px;letter-spacing:1px;pointer-events:none}
+.r177-map-lines path{stroke-linecap:round;stroke-linejoin:round}
+.r185-has-selection [data-r177-edge]:not(.selected){opacity:.12}
+.r185-has-selection [data-r177-edge].selected{opacity:1;stroke-width:3}
+.r185-req{position:absolute;top:88px;left:50%;transform:translateX(-50%);width:138px;color:#9fa9b5;font-size:9px;line-height:12px;pointer-events:none}
+.zoomed-out .r185-req{display:none}
+.r185-basic{position:absolute;bottom:-4px;left:-4px;border-radius:50%;background:#555e67;color:#fff;padding:1px 5px;font-size:10px}
+.r185-source{display:flex!important;flex-direction:column;width:100%;text-align:left;gap:5px;margin:8px 0;padding:10px!important;background:#151d25!important;border:1px solid #71869a40!important;border-radius:8px}
+.r185-source small,.r185-source-note{color:#b1a78e;font-size:12px}
+.r177-world{transition:transform .18s ease-out}
+.r177-viewport.dragging .r177-world{transition:none}
+.r185-editor-overlay{position:fixed;inset:0;z-index:12500;background:#080d13f7;display:flex;flex-direction:column;padding:16px;gap:12px}
+.r185-editor-overlay>header{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.r185-editor-overlay [data-skill-map185]{flex:1;min-height:0}
+.r185-editor-overlay .radial-skills177{height:100%;min-height:0}
+.r185-placement{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;padding:12px;border:1px solid #71869a40;border-radius:8px}
+.r185-placement label{display:flex;flex-direction:column;gap:6px}
+.r185-warnings{color:#e4b16f;white-space:pre-line}
+@media(prefers-reduced-motion:reduce){.r177-world{transition:none}}
+
+.r177-detail{left:auto;right:14px;background:#131e29;animation-fill-mode:backwards}
+.r177-map-lines [data-r177-edge]{stroke-width:1.4;opacity:.55}
+.r177-map-lines [data-r177-edge].selected{opacity:1;stroke-width:2.4}
+@media(max-width:720px){.r177-detail{left:8px;right:8px;width:auto}}

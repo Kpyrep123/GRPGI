@@ -13,6 +13,7 @@
   function sectionPayload(type){return Configurator.buildPayload(type);}
   function storageSection(type){return WORLD_SECTIONS[type].storageSection||type;}
   function payloadFromWorld(type,world){
+    if(type==='skillGroups')return {SKILL_GROUPS:world?.skills?.SKILL_GROUPS||{}};
     if(type==='tradeTags'||type==='assortmentTemplates')return {[WORLD_SECTIONS[type].mapKey]:world?.equipment?.TRADE_CATALOG?.[type==='tradeTags'?'tags':'templates']||{}};
     return world?.[type];
   }
@@ -100,6 +101,7 @@
   }
   function verifySection(type,expectedPayload,actualPayload){
     const expected=Codec.sectionEntries(type,WORLD_SECTIONS,expectedPayload),actual=Codec.sectionEntries(type,WORLD_SECTIONS,actualPayload||{}),byId=new Map(actual.map(entry=>[entry.id,entry]));
+    if(type==='skills'&&expectedPayload?.SKILL_GROUPS&&!sameImportedData(expectedPayload.SKILL_GROUPS,actualPayload?.SKILL_GROUPS))return false;
     return actual.length===expected.length&&expected.every(entry=>byId.has(entry.id)&&sameImportedData(entry,byId.get(entry.id)));
   }
 
@@ -149,8 +151,8 @@
     if(!file?.ok)throw new Error(file?.message||'Не удалось открыть JSON');
     if(file.canceled)return;
     const entries=Codec.sectionEntries(type,WORLD_SECTIONS,file.payload);
-    if(type==='tradeTags'||type==='assortmentTemplates')for(const entry of entries){
-      if(typeof entry.name!=='string'||!entry.name.trim())throw new Error('У тега или шаблона должно быть название');
+    if(type==='tradeTags'||type==='assortmentTemplates'||type==='skillGroups')for(const entry of entries){
+      if(typeof entry.name!=='string'||!entry.name.trim())throw new Error('У сущности должно быть название');
       if(type==='assortmentTemplates')window.GRPGMerchantCatalogV170.validatePolicy(entry.policy);
     }
     const summary=Codec.summarize(type,WORLD_SECTIONS,sectionPayload(type),entries);
@@ -158,11 +160,13 @@
     if(mode==='cancel')return;
     if(type==='players')validatePlayerImport(entries,mode);
 
+    if(type==='skills'&&window.GRPGSkillGraphV185){const rows=mode==='replace'?entries:Object.values({...Object.fromEntries(sectionEntries(type).map(s=>[s.id,s])),...Object.fromEntries(entries.map(s=>[s.id,s]))});const graph=GRPGSkillGraphV185.analyze(rows);if(graph.cycles.length)throw Error('Цикл зависимостей: '+graph.cycles.join(', '));}
     const beforeSnapshot=copy(buildWorldSnapshot());
     const beforeSection=copy(sectionEntries(type));
     const beforeUsers=copy(App.state.users||{});
     let changes;
     try{
+      if(type==='skills'&&file.payload.SKILL_GROUPS)GRPGSkillAuthoringV185.importGroups(file.payload.SKILL_GROUPS,mode);
       changes=applyEntries(type,entries,mode);
       const status=await persistImport(type,entries,mode,changes.oldIds);
       if(typeof FormDrafts!=='undefined')for(const id of new Set([...entries.map(entry=>entry.id),...(mode==='replace'?changes.oldIds:[])]))FormDrafts.clear(FormDrafts.configKey(type,id));

@@ -17591,6 +17591,8 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
       imageStoragePath: String(entity.imageStoragePath || '').trim(),
       relatedArticleIds: Array.isArray(entity.relatedArticleIds) ? entity.relatedArticleIds.map(String).filter(Boolean) : [],
       visibility: entity.visibility && typeof entity.visibility === 'object' ? { playerIds: Array.isArray(entity.visibility.playerIds) ? entity.visibility.playerIds.map(String) : [] } : { playerIds: [] },
+      ...(entity.treePlacement ? {treePlacement: window.GRPGSkillGraphV185.placement(entity.treePlacement)} : {}),
+      ...(entity.originOnly178 ? {originOnly178:true,originSource178:entity.originSource178||null} : {}),
       treePos: normalizeSkillTreePositionSafeV64(entity.treePos || entity.layout || entity.position || entity.pos)
     };
   }
@@ -17687,7 +17689,7 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
   }
 
   function getVisibleSkillsV50(user = App.currentUser) {
-    return sortEntitiesForList(Object.values(SKILLS_V50 || {}).filter(item => item.isBasic === true || isEntityVisible(item, user)));
+    return sortEntitiesForList(Object.values(SKILLS_V50 || {}).filter(item => item.isBasic === true || (user?.skills||[]).includes(item.id) || isEntityVisible(item, user)));
   }
 
   function getVisibleLearnableSkillsV55(user = App.currentUser) {
@@ -18718,8 +18720,10 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
     const syncRes = await PlayerSync.pushPlayerPatch(current.id, patch, { notice: `${isSpec ? 'Специализация повышена' : 'Навык изучен'}: ${normalizedSkill.name}`, rerender: true });
     if (!syncRes?.ok && syncRes?.status !== 'disabled') Toast.show(`${isSpec ? 'Специализация сохранена' : 'Навык сохранён'} локально, но облако не обновилось: ${syncRes?.message || 'unknown error'}`, 'info');
     const modal = ensureProfileModalV50();
+    const map185=modal.querySelector('[data-skill-catalog176]');
+    if(map185?.__radial177)map185.__radial177.refresh();else {
     modal.querySelector('#profile-extra-modal-body-v50').innerHTML = skillsModalMarkupV50(App.state.users[current.id]);
-    bindProfileModalActionsV50(modal);
+    bindProfileModalActionsV50(modal);}
     UI.renderProfile();
   }
 
@@ -18968,8 +18972,7 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
     const patch={abilityBase:deep(normalized.abilityBase),abilities:deep(normalized.abilities),skillPoints:normalized.skillPoints};
     const syncRes=await PlayerSync.pushPlayerPatch(current.id,patch,{notice:ability.label+' улучшена',rerender:true});
     const modal=ensureProfileModalV50();
-    modal.querySelector('#profile-extra-modal-body-v50').innerHTML=skillsModalMarkupV50(App.state.users[current.id]);
-    bindProfileModalActionsV50(modal);UI.renderProfile();return syncRes;
+    const map185=modal.querySelector('[data-skill-catalog176]');if(map185?.__radial177)map185.__radial177.refresh();else{modal.querySelector('#profile-extra-modal-body-v50').innerHTML=skillsModalMarkupV50(App.state.users[current.id]);bindProfileModalActionsV50(modal);}UI.renderProfile();return syncRes;
   }
 
   function ensureSkillHoverCardV58() {
@@ -19058,6 +19061,7 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
   function bindProfileModalActionsV50(root = document) {
     const catalog=root.querySelector('[data-skill-catalog176]');
     if(catalog&&window.GRPGSkillCatalogV176){window.GRPGSkillCatalogV176.mount(catalog,{
+      groups:()=>window.GRPGSkillAuthoringV185?.groups()||{},source:s=>window.GRPGSkillAuthoringV185?.source(s,App.state.users[App.currentUserId]),
       key:'desktop:'+(App.activeCampaignId||'main')+':'+App.currentUserId,user:()=>normalizePlayerProfileV2(App.state.users[App.currentUserId]||{}),readonly:()=>App.currentUser?.role==='guest',
       skills:()=>getVisibleSkillTreeItemsV56(normalizePlayerProfileV2(App.state.users[App.currentUserId]||{})),
       status:skill=>{const r=skillStatusV50(normalizePlayerProfileV2(App.state.users[App.currentUserId]||{}),skill);return {owned:['owned','specialization-owned'].includes(r.state),available:r.ok,gm:r.state==='gm-only',pointsOnly:r.reasons?.length===1&&Number(App.state.users[App.currentUserId]?.skillPoints||0)<Number(skill.cost||0),reasons:r.reasons};},

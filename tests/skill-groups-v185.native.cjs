@@ -1,0 +1,16 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),os=require('node:os'),vm=require('node:vm');
+const source=fs.readFileSync('main.js','utf8'),temp=fs.mkdtempSync(path.join(os.tmpdir(),'skill185-')),data=path.join(temp,'data'),target=path.join(temp,'exports');fs.mkdirSync(data);fs.mkdirSync(target);
+const equipment={EQUIPMENT:{item:{id:'item',name:'Keep'}},TRADE_CATALOG:{tags:{tag:{id:'tag',name:'Tag'}},templates:{tpl:{id:'tpl',name:'Template',policy:{overrides:{item:{enabled:true,minPrice:4,maxPrice:9,appearanceChance:33}}}}}}};
+const ctx=vm.createContext({fs,path,Buffer,WORLD_FILE_NAMES:['equipment','planets','skills'],mainWindow:null,app:{getVersion:()=> 'test',getPath:()=>temp},dialog:{showOpenDialog:async(...args)=>args.at(-1).title.includes('резервной')?{filePaths:[target]}:{filePaths:[path.join(target,ctx.current+'.json')]},showSaveDialog:async()=>({filePath:path.join(target,ctx.current+'.json')})},writableWorldDataDir:()=>data,ensureWorldDataDir:async()=>data,defaultWorldDataDir:()=>data,stateFilePath:()=>path.join(temp,'state.json'),syncConfigFilePath:()=>path.join(temp,'sync.json'),readMarkersFilePath:()=>path.join(temp,'markers.json'),backupWorldSectionFile:async()=>{},localizeLegacyImageDataUrls:async()=>{},writeJsonAtomic:async(file,payload)=>fs.promises.writeFile(file,JSON.stringify(payload)),readJsonIfExists:async file=>JSON.parse(await fs.promises.readFile(file,'utf8'))});
+vm.runInContext(source.slice(source.indexOf('function backupExportDirName()'),source.indexOf('function worldBackupsDir()')),ctx);
+vm.runInContext(source.slice(source.indexOf('async function writeWorldSection('),source.indexOf('async function resetWorldDataDir()')),ctx);
+ctx.readWorldData=async()=>{await ctx.writeTradeJsonFilesV175(data,JSON.parse(fs.readFileSync(path.join(data,'equipment.json'))));};
+(async()=>{try{
+ const skill={id:'a',name:'Skill',description:'<p>Keep</p>',luaScript:'return 3',cost:2,requiredSkillIds:[],treeBranch:'strength',treePos:{x:500,y:500},treePlacement:{mode:'manual',x:700,y:-400,anchorStats:['strength','endurance'],groupId:'g'}},skills={SKILLS:{a:skill},SKILL_GROUPS:{g:{id:'g',name:'Group',description:'Description'}}};
+ await ctx.writeWorldSection('equipment',equipment);await ctx.writeWorldSection('skills',skills);
+ assert.deepEqual(JSON.parse(fs.readFileSync(path.join(data,'skills.json'))),skills);
+ ctx.current='skillGroups';const payload={SKILL_GROUPS:skills.SKILL_GROUPS};await ctx.exportWorldSectionJson({section:'skillGroups',payload});assert.deepEqual(JSON.parse(JSON.stringify((await ctx.importWorldSectionJson({section:'skillGroups'})).payload)),payload);
+ const backup=await ctx.exportCampaignBackup();assert.equal(backup.ok,true);assert.deepEqual(JSON.parse(fs.readFileSync(path.join(backup.backupDir,'world-data','skills.json'))),skills);
+ await ctx.writeWorldData({equipment,planets:{PLANETS:{}},skills});assert.deepEqual(JSON.parse(fs.readFileSync(path.join(data,'skills.json'))),skills);
+ console.log('PASS native skills/group dialogs, working file, full snapshot write and real campaign-backup copy retain groups, placement, legacy fields and Lua');
+}finally{fs.rmSync(temp,{recursive:true,force:true});}})().catch(error=>{console.error(error);process.exitCode=1;});
