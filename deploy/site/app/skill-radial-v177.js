@@ -29,7 +29,7 @@
         tags: [],
         status: "all",
         branch: "",
-        common: !root.matchMedia?.("(max-width: 720px)").matches,
+        common: false,
         filters: false,
         camera: null,
         commonScroll: 0,
@@ -47,7 +47,6 @@
       viewport,
       workspace,
       world,
-      raf = 0,
       busy = false,
       lastSelected = "",
       mounted = true,renderedSignature185=null;
@@ -59,7 +58,6 @@
         mounted = false;
         abort.abort();
         resize.disconnect();
-        cancelAnimationFrame(raf);
       },
     };
     const readStatus = (s) => {
@@ -82,10 +80,10 @@
     };
     function refresh() {
       skills = adapter.skills().filter(s=>!s.originOnly178||adapter.status(s).owned);
-      if(!state.sourcePreference187&&!skills.some(s=>s.isBasic||s.originOnly178||adapter.source?.(s)))state.common=false;
+
       by = new Map(skills.map((s) => [String(s.id), s]));
       graph = radialLayout(skills,adapter.groups?.());
-      if(state.branch==='general'&&!graph.generalIds?.length)state.branch="";
+      if(state.branch==='general')state.branch="";
       statuses = new Map(skills.map((s) => [String(s.id), readStatus(s)]));
       if (!by.has(state.selected)) state.selected = "";
     }
@@ -111,7 +109,7 @@
         ? adapter.thumb(s)
         : `<span class="r177-glyph">${escape((s.name || "?").slice(0, 2))}</span>`;
     }
-    function node(s, common = false) {
+    function node(s) {
       const id = String(s.id),
         p = graph.positions.get(id),
         st = statuses.get(id),
@@ -119,6 +117,15 @@
         color = b?.color || "#c9b58c",
         major = graph.edges.filter((e) => e.from === id).length > 1;
       return `<button type="button" class="r177-node ${st.state} ${major ? "notable" : ""} ${state.selected === id ? "selected" : ""}" data-r177-node="${escape(id)}" data-branch="${p.branch}" style="left:${p.x}px;top:${p.y}px;--branch:${color}" aria-label="${escape(s.name)} · ${labels[st.state]} · ${Number(s.cost ?? 1)} ОУ${s.isBasic ? ' · Базовый, выдан автоматически' : ''}" aria-pressed="${state.selected === id}" title="${escape(s.name)} · ${labels[st.state]}"><span class="r177-ring">${thumb(s)}${st.owned ? '<i aria-hidden="true">✓</i>' : ""}${s.isBasic?'<small class="r185-basic" title="Автоматически выдан всем персонажам">Базовый</small>':""}</span><span class="r177-name">${escape(s.name)}</span><span class="r185-req" title="Требования к характеристикам">${(s.requiredAbilities||[]).filter(r=>r.value>0).map(r=>`${escape(branches.find(b=>b.id===r.key)?.name||r.key)} ${Number(r.value)}`).join(' · ')}</span></button>`;
+    }
+    function commonCard(s){
+      const id=String(s.id),st=statuses.get(id);
+      return `<button type="button" class="r189-common-card ${st.state}" data-r177-result="${escape(id)}" data-common189="${escape(id)}"><span class="r189-common-thumb">${thumb(s)}</span><span><strong>${escape(s.name)}</strong><small>${escape(s.isBasic?'Базовый · выдан автоматически':adapter.source?.(s)||labels[st.state])}</small><small>${s.isBasic?'Без затрат ОУ':Number(s.cost??1)+' ОУ'}</small></span></button>`;
+    }
+    function commonWindow(){
+      host.querySelector('.r177-common').hidden=!state.common;
+      workspace.classList.toggle('has-common',state.common);
+      host.querySelectorAll('[data-r177-common-toggle]').forEach(b=>b.setAttribute('aria-expanded',String(state.common)));
     }
     function edge(e) {
       const a = graph.positions.get(e.from),
@@ -140,7 +147,7 @@
         host.querySelector('.r177-core small').textContent=skills.filter(s=>statuses.get(String(s.id)).owned).length+' / '+skills.length+' изучено';
         host.querySelectorAll('.r177-hub').forEach(n=>n.querySelector('b').textContent=Number(user.abilities?.[n.dataset.r177Branch]||0));
         host.querySelectorAll('[data-r177-upgrade]').forEach(n=>{const key=n.dataset.r177Upgrade,value=Number((user.abilityBase||user.abilities||{})[key]||0),cost=value+1;n.disabled=!!adapter.readonly?.()||key==='glory'||cost>5||cost>Number(user.skillPoints||0);n.textContent=key==='glory'?'ДМ':cost>5?'Макс.':'+1 · '+cost+' ОУ';n.previousElementSibling.textContent=(branches.find(b=>b.id===key)?.name||key)+': '+value;});
-        workspace.classList.toggle('has-common',state.common);host.querySelector('.r177-common').hidden=!state.common;
+        commonWindow();host.querySelectorAll('[data-common189]').forEach(n=>{const skill=by.get(n.dataset.common189),st=statuses.get(n.dataset.common189);for(const key of ['owned','available','gm','points','locked'])n.classList.toggle(key,key===st.state);n.querySelector('strong').textContent=skill.name;const notes=n.querySelectorAll('small');notes[0].textContent=skill.isBasic?'Базовый · выдан автоматически':adapter.source?.(skill)||labels[st.state];notes[1].textContent=skill.isBasic?'Без затрат ОУ':Number(skill.cost??1)+' ОУ';const imageKey=JSON.stringify([skill.image,skill.imageLocal,skill.imageStoragePath,skill.name]);if(n.dataset.image189!==imageKey){n.querySelector('.r189-common-thumb').innerHTML=thumb(skill);n.dataset.image189=imageKey;}});
         host.querySelector('.r177-filter-panel').hidden=!state.filters;
         const search=host.querySelector('[data-r177-search]');if(search.value!==state.query)search.value=state.query;
         const status=host.querySelector('[data-r177-status]');status.value=state.status;
@@ -148,22 +155,12 @@
         root.GRPGCheckboxPickerV172?.enhance(host);camera();filter();detail();return;
       }
       renderedSignature185=graph.signature;
-      const commonCount = graph.common.length;
-      host.innerHTML = `<header class="r177-toolbar"><div class="r177-title"><span>РАЗВИТИЕ</span><h2>Созвездия навыков</h2></div><div class="r177-search"><input class="input" type="search" data-r177-search value="${escape(state.query)}" placeholder="Найти навык или тег" aria-label="Поиск навыков"><div class="r177-results" data-r177-results></div></div><button type="button" class="secondary" data-r177-abilities>Характеристики ↑</button><button type="button" class="ghost" data-r177-filters aria-expanded="${state.filters}">Фильтры</button><button type="button" class="ghost" data-r177-common-toggle aria-expanded="${state.common}">Источники · ${skills.filter(s=>s.originOnly178||s.isBasic||adapter.source?.(s)).length}</button><strong class="r177-points"><span>${Number(user.skillPoints || 0)}</span> ОУ</strong></header><nav class="r177-branches" aria-label="Ветки навыков"><button type="button" class="ghost" data-r177-branch="">Всё дерево</button>${branches.map((b) => `<button type="button" class="ghost" style="--branch:${b.color}" data-r177-branch="${b.id}"><i></i>${b.name}<small>${skills.filter((s) => (graph.assignment.get(String(s.id)) === b.id||(graph.assignment.get(String(s.id))!=='general'&&graph.positions.get(String(s.id)).anchors.includes(b.id)))).length}</small></button>`).join("")}${graph.generalIds?.length?`<button class="ghost" type="button" data-r177-branch="general">Общие<small>${graph.generalIds.length}</small></button>`:""}${[...new Map(graph.groups.map(g=>[g.id,g])).values()].map(g=>`<button class="ghost" type="button" data-r185-group="${escape(g.id)}" title="${escape(g.description||'')}">${escape(g.name)}</button>`).join('')}</nav><div class="r177-workspace ${state.common ? "has-common" : ""}"><div class="r177-viewport" tabindex="0" aria-label="Дерево навыков: перетаскивание, колесо для масштаба"><div class="r177-world"><svg class="r177-map-lines" aria-hidden="true"></svg><button class="r177-core" type="button" data-r177-fit title="Показать всё дерево"><span class="r177-core-symbol">✧</span><strong>${escape(user.displayName || "Персонаж")}</strong><small>${skills.filter((s) => statuses.get(String(s.id)).owned).length} / ${skills.length} изучено</small></button>${branches.map((b) => `<button type="button" class="r177-hub" data-r177-branch="${b.id}" style="left:${Math.cos(b.angle) * 182}px;top:${Math.sin(b.angle) * 182}px;--branch:${b.color}"><span>${b.name}</span><b>${Number(user.abilities?.[b.id] || 0)}</b></button>`).join("")}${skills
-        .filter((s) => graph.assignment.get(String(s.id)) !== "common")
+      host.innerHTML = `<header class="r177-toolbar"><div class="r177-title"><span>РАЗВИТИЕ</span><h2>Созвездия навыков</h2></div><div class="r177-search"><input class="input" type="search" data-r177-search value="${escape(state.query)}" placeholder="Найти навык или тег" aria-label="Поиск навыков"><div class="r177-results" data-r177-results></div></div><button type="button" class="secondary" data-r177-abilities>Характеристики ↑</button><button type="button" class="ghost" data-r177-filters aria-expanded="${state.filters}">Фильтры</button><button type="button" class="ghost" data-r177-common-toggle aria-expanded="${state.common}">Общие · ${graph.common.length}</button><strong class="r177-points"><span>${Number(user.skillPoints || 0)}</span> ОУ</strong></header><nav class="r177-branches" aria-label="Ветки навыков"><button type="button" class="ghost" data-r177-branch="">Всё дерево</button>${branches.map((b) => `<button type="button" class="ghost" style="--branch:${b.color}" data-r177-branch="${b.id}"><i></i>${b.name}<small>${skills.filter((s) => (graph.assignment.get(String(s.id)) === b.id||(graph.assignment.get(String(s.id))!=='general'&&graph.positions.get(String(s.id)).anchors.includes(b.id)))).length}</small></button>`).join("")}${[...new Map(graph.groups.map(g=>[g.id,g])).values()].map(g=>`<button class="ghost" type="button" data-r185-group="${escape(g.id)}" title="${escape(g.description||'')}">${escape(g.name)}</button>`).join('')}</nav><div class="r177-workspace ${state.common ? "has-common" : ""}"><div class="r177-viewport" tabindex="0" aria-label="Дерево навыков: перетаскивание, колесо для масштаба"><div class="r177-world"><svg class="r177-map-lines" aria-hidden="true"></svg><button class="r177-core" type="button" data-r177-fit title="Показать всё дерево"><span class="r177-core-symbol">✧</span><strong>${escape(user.displayName || "Персонаж")}</strong><small>${skills.filter((s) => statuses.get(String(s.id)).owned).length} / ${skills.length} изучено</small></button>${branches.map((b) => `<button type="button" class="r177-hub" data-r177-branch="${b.id}" style="left:${Math.cos(b.angle) * 182}px;top:${Math.sin(b.angle) * 182}px;--branch:${b.color}"><span>${b.name}</span><b>${Number(user.abilities?.[b.id] || 0)}</b></button>`).join("")}${skills
+        .filter((s) => graph.assignment.get(String(s.id)) !== "general")
         .map((s) => node(s))
         .join(
           "",
-        )}</div></div><aside class="r177-common" ${state.common ? "" : "hidden"} aria-label="Источники способностей"><header><div><span>ВНЕ ВЕТОК</span><h3>Полученные способности</h3></div><button type="button" class="ghost" data-r177-common-toggle aria-label="Свернуть общие навыки">×</button></header><p>Базовые и индивидуально выданные способности</p><div class="r177-common-scroll"><div class="r177-common-canvas" style="min-height:${graph.commonHeight}px"><svg width="260" height="${graph.commonHeight}" aria-hidden="true">${graph.edges
-        .filter(
-          (e) =>
-            graph.assignment.get(e.from) === "common" &&
-            graph.assignment.get(e.to) === "common",
-        )
-        .map(edge)
-        .join(
-          "",
-        )}</svg>${graph.common.map((id) => node(by.get(id), true)).join("")}${skills.filter(s=>s.originOnly178||s.isBasic||adapter.source?.(s)).map(s=>`<button class="r185-source" type="button" data-r177-result="${escape(s.id)}"><strong>${escape(s.name)}</strong><small>${escape(s.isBasic?'Базовый':adapter.source?.(s)||s.originSource178?.name||'Выдано ДМом')}</small></button>`).join('')}</div></div></aside><svg class="r177-cross-lines" aria-hidden="true"></svg><div class="r177-camera-tools"><button type="button" class="ghost" data-r177-zoom="out" aria-label="Уменьшить">−</button><output data-r177-scale></output><button type="button" class="ghost" data-r177-zoom="in" aria-label="Увеличить">+</button><button type="button" class="ghost" data-r177-fit>Вписать</button><button type="button" class="ghost" data-r177-center>К персонажу</button><button type="button" class="ghost" data-r177-focus>К выбранному</button></div><div class="r177-legend"><span class="owned">● Изучено</span><span class="available">◉ Доступно</span><span>○ Закрыто</span><span>Базовый · выдан автоматически</span></div><div class="r177-hint" role="status" data-r177-count></div><aside class="r177-detail" hidden aria-label="Описание навыка"></aside><section class="r177-filter-panel" ${state.filters ? "" : "hidden"}><header><h3>Поиск и фильтры</h3><button class="ghost" type="button" data-r177-filters aria-label="Закрыть фильтры">×</button></header><label>Состояние<select class="select" data-r177-status>${[
+        )}</div></div><aside class="r177-common" ${state.common ? "" : "hidden"} role="dialog" aria-label="Общие навыки"><header><div><span>ВНЕ ВЕТОК</span><h3>Общие навыки</h3></div><button type="button" class="ghost" data-r177-common-toggle aria-label="Закрыть общие навыки">×</button></header><p>Условия изучения указаны в карточке навыка. Все требования обязательны.</p><div class="r177-common-scroll"><div class="r189-common-list">${graph.common.map(id=>commonCard(by.get(id))).join('')||'<p>Общих навыков нет.</p>'}</div></div></aside><div class="r177-camera-tools"><button type="button" class="ghost" data-r177-zoom="out" aria-label="Уменьшить">−</button><output data-r177-scale></output><button type="button" class="ghost" data-r177-zoom="in" aria-label="Увеличить">+</button><button type="button" class="ghost" data-r177-fit>Вписать</button><button type="button" class="ghost" data-r177-center>К персонажу</button><button type="button" class="ghost" data-r177-focus>К выбранному</button></div><div class="r177-legend"><span class="owned">● Изучено</span><span class="available">◉ Доступно</span><span>○ Закрыто</span><span>Базовый · выдан автоматически</span></div><div class="r177-hint" role="status" data-r177-count></div><aside class="r177-detail" hidden aria-label="Описание навыка"></aside><section class="r177-filter-panel" ${state.filters ? "" : "hidden"}><header><h3>Поиск и фильтры</h3><button class="ghost" type="button" data-r177-filters aria-label="Закрыть фильтры">×</button></header><label>Состояние<select class="select" data-r177-status>${[
         ["all", "Все навыки"],
         ["available", "Можно изучить"],
         ["owned", "Изученные"],
@@ -197,11 +194,10 @@
       viewport = host.querySelector(".r177-viewport");
       world = host.querySelector(".r177-world");
       const radial = [...graph.positions.values()].filter(
-          (p) => p.branch !== "common",
+          (p) => p.branch !== "general",
         ),
         extent = Math.max(
           650,
-          ...(graph.generalArea?[Math.abs(graph.generalArea.left)+100,Math.abs(graph.generalArea.right)+100,Math.abs(graph.generalArea.top)+100,Math.abs(graph.generalArea.bottom)+100]:[]),
           ...radial.map((p) => Math.max(Math.abs(p.x), Math.abs(p.y)) + 130),
         ),
         svg = host.querySelector(".r177-map-lines");
@@ -212,7 +208,7 @@
       svg.setAttribute("width", extent * 2);
       svg.setAttribute("height", extent * 2);
       svg.style.cssText = `left:${-extent}px;top:${-extent}px`;
-      svg.innerHTML = `${graph.generalArea?`<g class="r187-general-area"><rect x="${graph.generalArea.left}" y="${graph.generalArea.top}" width="${graph.generalArea.right-graph.generalArea.left}" height="${graph.generalArea.bottom-graph.generalArea.top}" rx="42"/><text x="${graph.generalArea.left+22}" y="${graph.generalArea.top+38}">Общие навыки</text></g>`:''}${branches
+      svg.innerHTML = `${branches
         .map((b) => {
           const r = Math.max(300,...radial.filter(p=>p.branch!=='general'&&(p.branch===b.id||p.anchors.includes(b.id))).map(p=>Math.hypot(p.x,p.y)+120)),
             a = b.angle - 0.46,
@@ -224,8 +220,8 @@
         )}<circle class="r177-orbit" r="105"/><circle class="r177-orbit" r="182"/>${branches.map((b) => `<path class="r177-spoke" style="stroke:${b.color}" d="M${Math.cos(b.angle) * 115},${Math.sin(b.angle) * 115} L${Math.cos(b.angle) * 245},${Math.sin(b.angle) * 245}"/>`).join("")}${graph.groups.map(g=>`<rect class="r185-group" x="${g.x}" y="${g.y}" width="${g.w}" height="${g.h}" rx="70"/><text class="r185-group-title" x="${g.x+20}" y="${g.y+24}">${escape(g.name)}</text>`).join('')}${graph.edges
         .filter(
           (e) =>
-            graph.assignment.get(e.from) !== "common" &&
-            graph.assignment.get(e.to) !== "common",
+            graph.assignment.get(e.from) !== "general" &&
+            graph.assignment.get(e.to) !== "general",
         )
         .map(edge)
         .join("")}`;
@@ -233,7 +229,6 @@
       scroll.scrollTop = state.commonScroll;
       scroll.onscroll = () => {
         state.commonScroll = scroll.scrollTop;
-        crossLines();
       };
       bind();
       C.mount === mount && root.GRPGCheckboxPickerV172?.enhance(host);
@@ -254,12 +249,11 @@
     }
     function pointsForBranch(id) {
       return [...graph.positions]
-        .filter(([key, p]) => p.branch !== "common" && (!id || p.branch === id || (p.branch!=='general'&&p.anchors.includes(id))))
+        .filter(([key, p]) => p.branch !== "general" && (!id || p.branch === id || (p.branch!=='general'&&p.anchors.includes(id))))
         .map(([, p]) => p);
     }
     function fit(id = "",groupId="") {
       const points = pointsForBranch(id).filter(p=>!groupId||p.groupId===groupId);
-      if(graph.generalArea&&(id==='general'||(!id&&!groupId))){const a=graph.generalArea;points.push({x:a.left,y:a.top-24},{x:a.right,y:a.bottom+24});}
       if (!points.length) points.push({ x: -230, y: -230 }, { x: 230, y: 230 });
       if (!id&&!groupId) points.push({ x: -230, y: -230 }, { x: 230, y: 230 });
       const minX = Math.min(...points.map((p) => p.x)) - 100,
@@ -286,7 +280,6 @@
       viewport.classList.toggle("zoomed-out", p.z < 0.52);
       host.querySelector("[data-r177-scale]").textContent =
         Math.round(p.z * 100) + "%";
-      crossLines();
     }
     function zoom(
       factor,
@@ -302,19 +295,20 @@
     function focus(id = state.selected) {
       if (!by.has(id)) return;
       const p = graph.positions.get(id);
-      if (p.branch === "common") {
+      if (p.branch === "general") {
         if (!state.common) {
           state.common = true;
-          render();
+          commonWindow();
         }
         host
-          .querySelector(`[data-r177-node="${CSS.escape(id)}"]`)
+          .querySelector(`[data-common189="${CSS.escape(id)}"]`)
           ?.scrollIntoView({
             block: "nearest",
             inline: "nearest",
             behavior: motion() ? "smooth" : "auto",
           });
       } else {
+        state.common=false;commonWindow();
         state.camera = {
           x: viewport.clientWidth / 2 - p.x,
           y: viewport.clientHeight / 2 - p.y,
@@ -325,56 +319,6 @@
     }
     function motion() {
       return !root.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-    }
-    function crossLines() {
-      cancelAnimationFrame(raf);
-      raf = requestAnimationFrame(() => {
-        if (!mounted || !host.isConnected) return;
-        const overlay = host.querySelector(".r177-cross-lines"),
-          bounds = workspace.getBoundingClientRect(),
-          view = viewport.getBoundingClientRect(),
-          commonBounds = host
-            .querySelector(".r177-common-scroll")
-            .getBoundingClientRect();
-        overlay.setAttribute("viewBox", `0 0 ${bounds.width} ${bounds.height}`);
-        overlay.innerHTML = !state.common
-          ? ""
-          : graph.edges
-              .filter(
-                (e) =>
-                  (graph.assignment.get(e.from) === "common") !==
-                  (graph.assignment.get(e.to) === "common"),
-              )
-              .map((e) => {
-                const a = host
-                    .querySelector(
-                      `[data-r177-node="${CSS.escape(e.from)}"] .r177-ring`,
-                    )
-                    ?.getBoundingClientRect(),
-                  b = host
-                    .querySelector(
-                      `[data-r177-node="${CSS.escape(e.to)}"] .r177-ring`,
-                    )
-                    ?.getBoundingClientRect();
-                if (!a || !b) return "";
-                const visible = (r, isCommon) => {
-                  const clip = isCommon ? commonBounds : view;
-                  return (
-                    r.left >= clip.left &&
-                    r.right <= clip.right &&
-                    r.top >= clip.top &&
-                    r.bottom <= clip.bottom
-                  );
-                };
-                if (
-                  !visible(a, graph.assignment.get(e.from) === "common") ||
-                  !visible(b, graph.assignment.get(e.to) === "common")
-                )
-                  return "";
-                return `<path data-r177-edge="${escape(e.from)}|${escape(e.to)}" class="${state.selected === e.from || state.selected === e.to ? "selected" : ""}" d="M${a.x + a.width / 2 - bounds.x},${a.y + a.height / 2 - bounds.y} L${b.x + b.width / 2 - bounds.x},${b.y + b.height / 2 - bounds.y}"/>`;
-              })
-              .join("");
-      });
     }
     function filter() {
       let count = 0;
@@ -392,6 +336,7 @@
         n.classList.toggle("related", highlighted.has(id));
         n.setAttribute("aria-pressed", String(id === state.selected));
       });
+      host.querySelectorAll('[data-common189]').forEach(n=>{n.hidden=!matches(by.get(n.dataset.common189));if(!n.hidden)count++;n.classList.toggle('selected',n.dataset.common189===state.selected);});
       host.classList.toggle("r185-has-selection",!!state.selected);
       host.querySelectorAll("[data-r177-edge]").forEach((p) => {
         const [from, to] = p.dataset.r177Edge.split("|");
@@ -407,7 +352,7 @@
             state.status !== "all" ||
             state.branch
           ? `Подсвечено: ${count} / ${skills.length}`
-          : "Перетаскивайте поле · колесо — масштаб";
+          : "Перетаскивайте поле · колесо или два пальца — масштаб";
       host
         .querySelectorAll("[data-r177-branch]")
         .forEach((b) =>
@@ -480,6 +425,7 @@
     }
     function choose(id, center = false) {
       state.selected = id;
+      if(graph.assignment.get(String(id))==='general'){state.branch='';state.common=true;commonWindow();}
       state.searchOpen = false;
       state.filters = false;
       host.querySelector(".r177-filter-panel").hidden = true;
@@ -496,6 +442,7 @@
     function bind() {
       host.onclick = (e) => {
         const b = e.target.closest("button");
+        if(e.pointerType==='touch'&&performance.now()<suppressTouchClick)return;
         if(ignoreClick185){ignoreClick185=false;return;}
         if (!b) return;
         if (b.hasAttribute("data-r177-node")) choose(b.dataset.r177Node);
@@ -508,6 +455,7 @@
           filter();
         }
         if (b.hasAttribute("data-r177-branch")) {
+          state.common=false;commonWindow();
           state.branch = b.dataset.r177Branch;
           filter();
           fit(state.branch);
@@ -518,13 +466,14 @@
           filter();
           fit();
         }
-        if (b.hasAttribute("data-r185-group")){state.branch="";filter();fit("",b.dataset.r185Group);}
+        if (b.hasAttribute("data-r185-group")){state.common=false;commonWindow();state.branch="";filter();fit("",b.dataset.r185Group);}
         if (b.hasAttribute("data-r177-focus")) focus();
         if (b.hasAttribute("data-r177-zoom"))
           zoom(b.dataset.r177Zoom === "in" ? 1.2 : 1 / 1.2);
         if (b.hasAttribute("data-r177-common-toggle")) {
-          state.sourcePreference187=true;state.common = !state.common;
-          render();
+          state.common = !state.common;
+          if(state.common){state.branch="";filter();}
+          commonWindow();
         }
         if (b.hasAttribute("data-r177-abilities")) {
           const panel = host.querySelector(".r177-ability-panel");
@@ -564,9 +513,11 @@
       host.onkeydown = (e) => {
         if (
           e.key === "Escape" &&
-          (state.selected || state.filters || state.searchOpen)
+          (state.selected || state.filters || state.searchOpen || state.common)
         ) {
           e.stopPropagation();
+          if(!state.selected)state.common=false;
+          commonWindow();
           state.selected = "";
           state.filters = false;
           state.searchOpen = false;
@@ -584,8 +535,18 @@
         state.tags = [...e.target.selectedOptions].map((o) => o.value);
         filter();
       };
-      let drag,ignoreClick185=false;
+      let drag,ignoreClick185=false,pinch=null,gesture=false,suppressTouchClick=0;
+      const touches=new Map();
+      const pinchStart=()=>{const [a,b]=[...touches.values()],r=viewport.getBoundingClientRect();if(!a||!b)return;const center={x:(a.x+b.x)/2-r.x,y:(a.y+b.y)/2-r.y};pinch={distance:Math.max(1,Math.hypot(a.x-b.x,a.y-b.y)),center,camera:{...state.camera}};drag=null;gesture=true;viewport.classList.add('dragging');};
       viewport.onpointerdown = (e) => {
+        if(e.pointerType==='touch'){
+          touches.set(e.pointerId,{x:e.clientX,y:e.clientY});
+          viewport.setPointerCapture(e.pointerId);
+          if(touches.size>=2){pinchStart();e.preventDefault();return;}
+          // Touches on nodes can still become a pinch; a short tap selects them.
+          drag={x:e.clientX,y:e.clientY,camera:{...state.camera},touch:true,tap:e.target.closest('button')};
+          e.preventDefault();return;
+        }
         const node=e.target.closest('[data-r177-node]');
         if(node&&adapter.move&&e.button===0){const id=node.dataset.r177Node;drag={id,node,x:e.clientX,y:e.clientY,p:{...graph.positions.get(id)}};viewport.setPointerCapture(e.pointerId);e.preventDefault();return;}
         if (
@@ -599,7 +560,15 @@
         e.preventDefault();
       };
       viewport.onpointermove = (e) => {
+        if(touches.has(e.pointerId)){
+          touches.set(e.pointerId,{x:e.clientX,y:e.clientY});
+          if(pinch&&touches.size>=2){
+            const [a,b]=[...touches.values()],r=viewport.getBoundingClientRect(),x=(a.x+b.x)/2-r.x,y=(a.y+b.y)/2-r.y,z=Math.max(.08,Math.min(2.5,pinch.camera.z*Math.hypot(a.x-b.x,a.y-b.y)/pinch.distance)),ratio=z/pinch.camera.z;
+            state.camera={x:x-(pinch.center.x-pinch.camera.x)*ratio,y:y-(pinch.center.y-pinch.camera.y)*ratio,z};camera();e.preventDefault();return;
+          }
+        }
         if (!drag) return;
+        if(drag.touch&&Math.hypot(e.clientX-drag.x,e.clientY-drag.y)>4){drag.moved=true;gesture=true;viewport.classList.add('dragging');}
         if(drag.id){drag.moved=Math.hypot(e.clientX-drag.x,e.clientY-drag.y)>3;drag.point={x:drag.p.x+(e.clientX-drag.x)/state.camera.z,y:drag.p.y+(e.clientY-drag.y)/state.camera.z};drag.node.style.left=drag.point.x+'px';drag.node.style.top=drag.point.y+'px';return;}
         state.camera = {
           ...drag.camera,
@@ -609,7 +578,17 @@
         camera();
       };
       for (const n of ["pointerup", "pointercancel", "lostpointercapture"])
-        viewport.addEventListener(n, () => {
+        viewport.addEventListener(n, (e) => {
+          if(e.pointerType==='touch'){
+            if(!touches.has(e.pointerId))return;
+            const tap=drag?.touch&&!drag.moved&&!gesture&&n==='pointerup'?drag.tap:null;
+            touches.delete(e.pointerId);pinch=null;drag=null;
+            if(touches.size>=2)pinchStart();
+            else if(touches.size===1){const p=[...touches.values()][0];drag={...p,camera:{...state.camera},touch:true,moved:true};}
+            else {viewport.classList.remove('dragging');gesture=false;}
+            suppressTouchClick=performance.now()+700;
+            if(tap)tap.click();return;
+          }
           if(drag?.id&&drag.moved&&n==='pointerup'){adapter.move(drag.id,drag.point);ignoreClick185=true;drag=null;render();}
           drag = null;
           viewport.classList.remove("dragging");

@@ -1,7 +1,7 @@
 /* Deterministic visual graph. No purchase, cost or combat mutations. */
 (function(root){
 'use strict';
-const TAU=Math.PI*2,rad=d=>d*Math.PI/180,polar=(r,a)=>({x:Math.cos(a)*r,y:Math.sin(a)*r}),angle=a=>(a%TAU+TAU)%TAU;
+const rad=d=>d*Math.PI/180,polar=(r,a)=>({x:Math.cos(a)*r,y:Math.sin(a)*r});
 const sectors=[['strength','Сила','#df9567',-90],['dexterity','Ловкость','#64cdb5',-30],['intelligence','Интеллект','#79b9f2',30],['will','Воля','#b69ae8',90],['glory','Слава','#e2bf72',150],['endurance','Выносливость','#8cba75',210]].map(([id,name,color,degrees])=>({id,name,color,degrees,angle:rad(degrees)}));
 const ids=new Set(sectors.map(s=>s.id)),copy=v=>JSON.parse(JSON.stringify(v)),req=s=>{const raw=s.requiredSkillIds||s.prerequisites||[];return [...new Set((Array.isArray(raw)?raw:String(raw).split(/[\s,;]+/)).map(String).filter(Boolean))]};
 function placement(raw){
@@ -23,12 +23,12 @@ function anchors(skill,by,seen=new Set()){
  if(ids.has(skill.treeBranch))return [skill.treeBranch];
  return [...new Set(req(skill).flatMap(id=>by.has(id)?anchors(by.get(id),by,new Set(seen)):[]))];
 }
-const cache=new Map(),stable=new Map(),wholeCache=new Map(),generalStable=new Map();
+const cache=new Map(),stable=new Map(),wholeCache=new Map();
 const structuralKey=s=>[String(s.id),req(s).sort(),s.requiredAbilities,s.treeBranch,s.treePlacement,s.isBasic,s.originOnly178,s.category];
 const radiusOf=p=>Math.hypot(p.x,p.y);
 // World-space distances include the two-line name and local requirements.
 // Spread only the gaps between occupied lanes, not an extra empty lane.
-const spacing={root:350,level:160,lane:154,span:.9,maxAngle:.44,bandGap:180,generalColumn:160,generalRow:160,generalBand:180,generalGap:160};
+const spacing={root:266,level:160,span:.9,maxAngle:.44,bandGap:180};
 function radialLayout(skills,groups={},config=sectors,contextBy=new Map(skills.map(s=>[String(s.id),s]))){
  const structure=skills.map(structuralKey).sort((a,b)=>a[0].localeCompare(b[0]));
  const signature=JSON.stringify([config,groups,structure,skills.map(s=>[String(s.id),anchors(s,contextBy)]).sort(([a],[b])=>a.localeCompare(b))]);
@@ -71,8 +71,8 @@ function radialLayout(skills,groups={},config=sectors,contextBy=new Map(skills.m
  const componentOf=new Map(components.flatMap(c=>c.ids.map(id=>[id,c])));
  for(const c of components){const upstream=new Set([c]),parts=[];function collect(current){for(const id of current.ids)for(const parent of req(analysis.by.get(id))){const next=componentOf.get(parent);if(next&&!upstream.has(next)){upstream.add(next);parts.push(next.ids.map(id=>structuralKey(analysis.by.get(id))));collect(next);}}}collect(c);c.key=JSON.stringify([c.key,parts.sort((a,b)=>String(a[0]?.[0]).localeCompare(String(b[0]?.[0])))]);}
  const reserved=config.map(b=>({id:'stat:'+b.id,...polar(182,b.angle),hw:62,hh:42}));
- const add=(id,point)=>{const stats=statMap.get(id),meta=metadata.get(id),branch=stats.length===1?stats[0]:stats.length>1?'combined':'neutral';positions.set(id,{...point,branch,depth:analysis.depth.get(id)||0,anchors:stats,groupId:meta?.groupId||'',manual:meta?.mode==='manual'});assignment.set(id,branch);reserved.push({id,...point,hw:69,hh:75});};
- const free=(point,id)=>radiusOf(point)>265&&!reserved.some(o=>o.id!==id&&Math.abs(o.x-point.x)<o.hw+69&&Math.abs(o.y-point.y)<o.hh+75);
+ const add=(id,point)=>{const stats=statMap.get(id),meta=metadata.get(id),branch=stats.length===1?stats[0]:stats.length>1?'combined':'neutral';positions.set(id,{...point,branch,depth:analysis.depth.get(id)||0,anchors:stats,groupId:meta?.groupId||'',manual:meta?.mode==='manual'});assignment.set(id,branch);reserved.push({id,x:point.x,y:point.y+30,hw:69,hh:74});};
+ const free=(point,id)=>radiusOf(point)>265&&!reserved.some(o=>o.id!==id&&Math.abs(o.x-point.x)<o.hw+69&&Math.abs(o.y-point.y-30)<o.hh+74);
  const reused=new Set();
  for(const c of components){const saved=stable.get(c.key);if(!saved)continue;for(const id of c.ids)add(id,saved.points.get(id));reused.add(c);}
  // Explicit pins always take precedence over automatic packing.
@@ -85,7 +85,7 @@ function radialLayout(skills,groups={},config=sectors,contextBy=new Map(skills.m
   const bands=[];let band={items:[],width:0,depth:0};
   for(const c of list){if(band.width&&band.width+c.width>4){bands.push(band);band={items:[],width:0,depth:0};}band.items.push(c);band.width+=c.width;band.depth=Math.max(band.depth,c.depth);if(c.width>=4){bands.push(band);band={items:[],width:0,depth:0};}}
   if(band.items.length)bands.push(band);
-  for(const band of bands){base=Math.max(base,(band.width-1)*spacing.lane/spacing.span);const step=Math.min(spacing.maxAngle,spacing.span/Math.max(1,band.width-1));let offset=0;
+  for(const band of bands){const step=Math.min(spacing.maxAngle,spacing.span/Math.max(1,band.width-1));let offset=0;
    for(const c of band.items){for(const id of c.ids)plans.set(id,{radius:base+(c.levels.get(id)||0)*spacing.level,offset:(offset+c.slots.get(id)-(band.width-1)/2)*step,step,component:c});offset+=c.width;}
    base+=band.depth*spacing.level+spacing.bandGap;
   }
@@ -101,7 +101,7 @@ function radialLayout(skills,groups={},config=sectors,contextBy=new Map(skills.m
   let radius=Math.max(spacing.root,plan.radius,parents.length?Math.max(...parents.map(parent=>radiusOf(positions.get(parent))+spacing.level)):0);
   if(p?.ring!=null)radius=Math.max(radius,spacing.root+Math.max(0,p.ring-1)*spacing.level);
   radius=Math.max(radius+(p?.radiusOffset||0),parents.length?Math.max(...parents.map(parent=>radiusOf(positions.get(parent))+spacing.level)):spacing.root);
-  let point=polar(radius,a);while(!free(point,id)&&radius<100000){radius+=20;point=polar(radius,a);}add(id,point);
+  let point=polar(radius,a);while(!free(point,id)&&radius<100000){radius+=4;point=polar(radius,a);}add(id,point);
  }
  for(const c of components)stable.set(c.key,{ids:c.ids,points:new Map(c.ids.map(id=>[id,{x:positions.get(id).x,y:positions.get(id).y}]))});
  if(stable.size>500)for(const key of [...stable.keys()].slice(0,stable.size-500))stable.delete(key);
@@ -118,67 +118,44 @@ function isCommon(skill,by=new Map()){
  if(skill.treeBranch==='common')return true;
  return anchors(skill,by).length===0;
 }
-function generalLayout(skills,startX,full){
- const side=analyze(skills),by=side.by,children=new Map(skills.map(s=>[String(s.id),[]]));
- for(const e of side.edges)children.get(e.from).push(e.to);
- const pending=new Set(by.keys()),components=[];
- while(pending.size){const queue=[[...pending].sort()[0]],ids=[];while(queue.length){const id=queue.pop();if(!pending.delete(id))continue;ids.push(id);for(const n of [...req(by.get(id)),...children.get(id)])if(by.has(n)&&pending.has(n))queue.push(n);}ids.sort();const pins=ids.some(id=>placement(by.get(id).treePlacement)?.mode==='manual');components.push({ids,key:JSON.stringify([ids.map(id=>structuralKey(by.get(id))),pins?startX:null])});}
- components.sort((a,b)=>a.ids[0].localeCompare(b.ids[0]));const local=new Map(),saved=new Set();
- const addPin=id=>{const p=placement(by.get(id).treePlacement);if(p?.mode==='manual'&&Number.isFinite(p.x)&&Number.isFinite(p.y)){local.set(id,{x:Math.max(0,p.x-startX),y:p.y});return true;}return false;};
- for(const c of components){const old=generalStable.get(c.key);if(old){for(const id of c.ids)local.set(id,{...old.points.get(id)});saved.add(c);}else c.ids.forEach(addPin);}
- const free=(p,id)=>p.x>=0&&![...local].some(([other,q])=>other!==id&&Math.abs(p.x-q.x)<152&&Math.abs(p.y-q.y)<150);
- let top=local.size?Math.max(...[...local.values()].map(p=>p.y))+spacing.generalBand:-240,column=0,bottom=top;
- for(const c of components){if(saved.has(c))continue;const levels=new Map(c.ids.map(id=>[id,side.depth.get(id)||0])),rows=new Map();for(const id of c.ids){const level=levels.get(id);if(!rows.has(level))rows.set(level,[]);rows.get(level).push(id);}const width=Math.max(1,...[...rows.values()].map(r=>r.length));if(column&&column+width>3){top=bottom+spacing.generalBand;column=0;}
-  for(const [level,row] of [...rows].sort((a,b)=>a[0]-b[0])){const mean=id=>{const ps=req(by.get(id)).filter(p=>local.has(p));return ps.length?ps.reduce((sum,p)=>sum+local.get(p).x,0)/ps.length:Infinity;};row.sort((a,b)=>mean(a)-mean(b)||(placement(by.get(a).treePlacement)?.order||0)-(placement(by.get(b).treePlacement)?.order||0)||a.localeCompare(b));
-   for(const [i,id] of row.entries()){if(local.has(id))continue;const parents=req(by.get(id)).filter(p=>local.has(p)),y=Math.max(top+level*spacing.generalRow,parents.length?Math.max(...parents.map(p=>local.get(p).y+spacing.generalRow)):-Infinity);let x=(column+(width-row.length)/2+i)*spacing.generalColumn;
-    if(parents.length&&(row.length===1||parents.length>1))x=parents.reduce((sum,p)=>sum+local.get(p).x,0)/parents.length;
-    let point={x,y};for(let step=0;!free(point,id)&&step<1000;step++)point={x:x+(step+1)*spacing.generalColumn,y};local.set(id,point);
-   }
-  }
-  column+=width;bottom=Math.max(bottom,...c.ids.map(id=>local.get(id).y));if(column>=3){top=bottom+spacing.generalBand;column=0;}
- }
- for(const c of components)generalStable.set(c.key,{ids:c.ids,points:new Map(c.ids.map(id=>[id,{...local.get(id)}]))});
- if(generalStable.size>500)for(const key of [...generalStable.keys()].slice(0,generalStable.size-500))generalStable.delete(key);
- return new Map([...local].map(([id,p])=>[id,{x:p.x+startX,y:p.y,branch:'general',depth:full.depth.get(id)||0,anchors:anchors(by.get(id),full.by),groupId:placement(by.get(id).treePlacement)?.groupId||'',manual:placement(by.get(id).treePlacement)?.mode==='manual'}]));
-}
 function layout(skills,groups={},config=sectors){
- const signature=JSON.stringify(['compact188',config,groups,skills.map(structuralKey).sort((a,b)=>a[0].localeCompare(b[0]))]);if(wholeCache.has(signature))return wholeCache.get(signature);
+ const signature=JSON.stringify(['window189',config,groups,skills.map(structuralKey).sort((a,b)=>a[0].localeCompare(b[0]))]);if(wholeCache.has(signature))return wholeCache.get(signature);
  const full=analyze(skills),general=skills.filter(s=>isCommon(s,full.by)),generalIds=new Set(general.map(s=>String(s.id))),radial=radialLayout(skills.filter(s=>!generalIds.has(String(s.id))),groups,config,full.by),positions=new Map(radial.positions),assignment=new Map(radial.assignment);
- const right=Math.max(115,...config.map(b=>Math.cos(b.angle)*182+62),...[...positions.values()].map(p=>p.x+80)),startX=right+spacing.generalGap;
- const side=generalLayout(general,startX,full);for(const [id,p] of side){positions.set(id,p);assignment.set(id,'general');}
- const regions=[];for(const g of Object.values(groups))for(const kind of ['radial','general']){const ps=[...positions.values()].filter(p=>p.groupId===g.id&&(p.branch==='general')===(kind==='general'));if(!ps.length)continue;const xs=ps.map(p=>p.x),ys=ps.map(p=>p.y);regions.push({...g,x:Math.min(...xs)-82,y:Math.min(...ys)-94,w:Math.max(...xs)-Math.min(...xs)+164,h:Math.max(...ys)-Math.min(...ys)+214});}
- const area=side.size?{startX,left:startX-100,right:Math.max(...[...side.values()].map(p=>p.x))+100,top:Math.min(...[...side.values()].map(p=>p.y))-160,bottom:Math.max(...[...side.values()].map(p=>p.y))+130}:null;
- const graph={...full,positions,assignment,common:[],commonHeight:170,generalIds:[...generalIds],generalArea:area,groups:regions,routes:new Map(),signature};for(const [index,e] of [...full.edges].sort((a,b)=>a.from.localeCompare(b.from)||a.to.localeCompare(b.to)).entries())graph.routes.set(e.from+'|'+e.to,route(graph,e,index));
+ // General skills live in a separate catalogue. Coordinates are local list
+ // metadata only; they never enlarge the map or constrain manual radial pins.
+ const common=general.sort((a,b)=>(full.depth.get(String(a.id))||0)-(full.depth.get(String(b.id))||0)||String(a.id).localeCompare(String(b.id))).map(s=>String(s.id));
+ common.forEach((id,index)=>{const s=full.by.get(id);positions.set(id,{x:0,y:index*160,branch:'general',depth:full.depth.get(id)||0,anchors:anchors(s,full.by),groupId:placement(s.treePlacement)?.groupId||'',manual:false});assignment.set(id,'general');});
+ const visualEdges=full.edges.filter(e=>!generalIds.has(e.from)&&!generalIds.has(e.to));
+ const graph={...full,positions,assignment,common,commonHeight:0,generalIds:[...generalIds],generalArea:null,groups:radial.groups,visualEdges,routes:new Map(),signature};
+ for(const [index,e] of [...visualEdges].sort((a,b)=>a.from.localeCompare(b.from)||a.to.localeCompare(b.to)).entries())graph.routes.set(e.from+'|'+e.to,route(graph,e,index));
  wholeCache.set(signature,graph);if(wholeCache.size>12)wholeCache.delete(wholeCache.keys().next().value);return graph;
 }
-function route(graph,edge,index=0){
- const start=graph.positions.get(edge.from),end=graph.positions.get(edge.to);if(!start||!end)return '';
- const obstacles=[...graph.positions].filter(([id])=>id!==edge.from&&id!==edge.to).map(([,p])=>({x:p.x,y:p.y+30,hw:76,hh:74}));
+function route(graph,edge){
+ const start=graph.positions.get(edge.from),end=graph.positions.get(edge.to);if(!start||!end||start.branch==='general'||end.branch==='general')return '';
+ const obstacles=[...graph.positions].filter(([id,p])=>id!==edge.from&&id!==edge.to&&p.branch!=='general').map(([,p])=>({x:p.x,y:p.y+30,hw:76,hh:74}));
  const bucket=new Map();for(const o of obstacles){for(let x=Math.floor((o.x-o.hw)/150);x<=Math.floor((o.x+o.hw)/150);x++)for(let y=Math.floor((o.y-o.hh)/150);y<=Math.floor((o.y+o.hh)/150);y++){const k=x+':'+y;if(!bucket.has(k))bucket.set(k,[]);bucket.get(k).push(o);}}
  const clear=p=>Math.hypot(p.x,p.y)>248&&!(bucket.get(Math.floor(p.x/150)+':'+Math.floor(p.y/150))||[]).some(o=>Math.abs(p.x-o.x)<o.hw&&Math.abs(p.y-o.y)<o.hh);
- const sr=Math.hypot(start.x,start.y),er=Math.hypot(end.x,end.y),sa=angle(Math.atan2(start.y,start.x)),ea=angle(Math.atan2(end.y,end.x));
- // Most edges stay inside their sequence's reserved corridor. Prefer one
- // radial line or one clean ring bend before considering a general detour.
  const straightClear=(a,b)=>{const length=Math.hypot(b.x-a.x,b.y-a.y),steps=Math.max(1,Math.ceil(length/8));for(let i=0;i<=steps;i++){const t=i/steps;if(!clear({x:a.x+(b.x-a.x)*t,y:a.y+(b.y-a.y)*t}))return false;}return true;};
- if(graph.assignment.get(edge.from)==='general'&&graph.assignment.get(edge.to)==='general'){
-  if(Math.abs(start.x-end.x)<1e-7&&straightClear(start,end))return `M${start.x},${start.y} L${end.x},${end.y}`;
-  const direction=Math.sign(end.y-start.y)||1,track=(start.y+end.y)/2+direction*30,a={x:start.x,y:track},b={x:end.x,y:track};if(straightClear(start,a)&&straightClear(a,b)&&straightClear(b,end))return `M${start.x},${start.y} L${a.x},${a.y} L${b.x},${b.y} L${end.x},${end.y}`;
+ // Prefer fewer bends before distance: unobstructed straight, then one elbow.
+ if(straightClear(start,end))return `M${start.x},${start.y} L${end.x},${end.y}`;
+ const elbows=[{x:start.x,y:end.y},{x:end.x,y:start.y}].filter(p=>straightClear(start,p)&&straightClear(p,end)).sort((a,b)=>Math.hypot(a.x-start.x,a.y-start.y)+Math.hypot(end.x-a.x,end.y-a.y)-Math.hypot(b.x-start.x,b.y-start.y)-Math.hypot(end.x-b.x,end.y-b.y));
+ if(elbows.length){const p=elbows[0];return `M${start.x},${start.y} L${p.x},${p.y} L${end.x},${end.y}`;}
+ // For blocked links use an orthogonal visibility grid. Direction is part of
+ // the search state: compare bend counts first, then path length. A shorter
+ // zigzag must never replace an equally clear route with fewer bends.
+ const xs=[...new Set([start.x,end.x,-256,256,...obstacles.flatMap(o=>[o.x-o.hw-6,o.x+o.hw+6])])].sort((a,b)=>a-b),ys=[...new Set([start.y,end.y,-256,256,...obstacles.flatMap(o=>[o.y-o.hh-6,o.y+o.hh+6])])].sort((a,b)=>a-b),cols=xs.length;
+ const indexOf=p=>ys.indexOf(p.y)*cols+xs.indexOf(p.x),point=k=>({x:xs[k%cols],y:ys[Math.floor(k/cols)]}),sk=indexOf(start),goal=indexOf(end),heap=[],cost=new Map(),came=new Map(),segments=new Map();
+ const less=(a,b)=>a.bends<b.bends||(a.bends===b.bends&&a.estimate<b.estimate);
+ const push=v=>{heap.push(v);let i=heap.length-1;while(i){const p=(i-1)>>1;if(!less(heap[i],heap[p]))break;[heap[i],heap[p]]=[heap[p],heap[i]];i=p;}};
+ const pop=()=>{const v=heap[0],last=heap.pop();if(heap.length){heap[0]=last;let i=0;while(true){let j=i,l=i*2+1,r=l+1;if(l<heap.length&&less(heap[l],heap[j]))j=l;if(r<heap.length&&less(heap[r],heap[j]))j=r;if(i===j)break;[heap[i],heap[j]]=[heap[j],heap[i]];i=j;}}return v;};
+ const initial=sk*3;cost.set(initial,{bends:0,length:0});push({key:initial,bends:0,length:0,estimate:Math.abs(end.x-start.x)+Math.abs(end.y-start.y)});let found=null,steps=0;
+ while(heap.length&&steps++<180000){const current=pop(),best=cost.get(current.key);if(best.bends!==current.bends||best.length!==current.length)continue;const node=Math.floor(current.key/3),direction=current.key%3;if(node===goal){found=current.key;break;}const x=node%cols,y=Math.floor(node/cols),p=point(node);
+  for(const [dx,dy,nextDirection] of [[-1,0,1],[1,0,1],[0,-1,2],[0,1,2]]){const nx=x+dx,ny=y+dy;if(nx<0||nx>=cols||ny<0||ny>=ys.length)continue;const next=ny*cols+nx,q=point(next),segmentKey=Math.min(node,next)+':'+Math.max(node,next);if(!segments.has(segmentKey))segments.set(segmentKey,straightClear(p,q));if(!segments.get(segmentKey))continue;
+   const key=next*3+nextDirection,bends=current.bends+(direction&&direction!==nextDirection?1:0),length=current.length+Math.abs(p.x-q.x)+Math.abs(p.y-q.y),old=cost.get(key);if(old&&(old.bends<bends||(old.bends===bends&&old.length<=length)))continue;cost.set(key,{bends,length});came.set(key,current.key);push({key,bends,length,estimate:length+Math.abs(end.x-q.x)+Math.abs(end.y-q.y)});
+  }
  }
- let delta=ea-sa;if(delta>Math.PI)delta-=TAU;if(delta< -Math.PI)delta+=TAU;
- if(Math.abs(delta)<1e-7&&straightClear(start,end))return `M${start.x},${start.y} L${end.x},${end.y}`;
- const arcClear=r=>{const steps=Math.max(1,Math.ceil(Math.abs(delta)*r/8));for(let i=0;i<=steps;i++)if(!clear(polar(r,sa+delta*i/steps)))return false;return true;};
- const low=Math.min(sr,er)+70,high=Math.max(sr,er)-70;
- const tracks=[(sr+er)/2+(index%3-1)*6,low,high,(sr+er)/2];
- for(const r of tracks){if(r<low||r>high||r<270)continue;const a=polar(r,sa),b=polar(r,ea);if(straightClear(start,a)&&arcClear(r)&&straightClear(b,end))return `M${start.x},${start.y} L${a.x},${a.y} A${r},${r} 0 ${Math.abs(delta)>Math.PI?1:0} ${delta>0?1:0} ${b.x},${b.y} L${end.x},${end.y}`;}
- const angles=[...new Set([sa,ea,...Array.from({length:36},(_,i)=>i*TAU/36)])].sort((a,b)=>a-b),radii=[...new Set([sr,er,270,...[...graph.positions.values()].flatMap(p=>{const r=Math.hypot(p.x,p.y);return [Math.max(270,r-88-(index%4)*5),r+88+(index%4)*5];})])].sort((a,b)=>a-b);
- const cols=angles.length,key=(r,a)=>r*cols+a,decode=k=>({r:Math.floor(k/cols),a:k%cols}),point=k=>{const n=decode(k);return polar(radii[n.r],angles[n.a]);},sk=key(radii.indexOf(sr),angles.indexOf(sa)),gk=key(radii.indexOf(er),angles.indexOf(ea));
- const open=new Map([[sk,0]]),cost=new Map([[sk,0]]),came=new Map();let found=false,steps=0;
- const segmentClear=(u,v,arc)=>{const a=decode(u),b=decode(v),p=point(u),q=point(v);let da=angles[b.a]-angles[a.a];if(da>Math.PI)da-=TAU;if(da< -Math.PI)da+=TAU;const length=arc?Math.abs(da)*radii[a.r]:Math.hypot(p.x-q.x,p.y-q.y),n=Math.max(1,Math.ceil(length/16));for(let i=0;i<=n;i++){const t=i/n,pos=arc?polar(radii[a.r],angles[a.a]+da*t):{x:p.x+(q.x-p.x)*t,y:p.y+(q.y-p.y)*t};if(!clear(pos))return false;}return length;};
- while(open.size&&steps++<18000){let k=-1,best=Infinity;for(const [id,f] of open)if(f<best){best=f;k=id;}open.delete(k);if(k===gk){found=true;break;}const n=decode(k),neighbors=[[n.r-1,n.a,false],[n.r+1,n.a,false],[n.r,(n.a+cols-1)%cols,true],[n.r,(n.a+1)%cols,true]];for(const [r,a,arc] of neighbors){if(r<0||r>=radii.length)continue;const nk=key(r,a);if(arc&&(k===sk||nk===gk))continue;const length=segmentClear(k,nk,arc);if(length===false)continue;const next=cost.get(k)+length;if(next>=(cost.get(nk)??Infinity))continue;cost.set(nk,next);came.set(nk,k);const p=point(nk);open.set(nk,next+Math.hypot(p.x-end.x,p.y-end.y));}}
- if(!found)return '';const path=[gk];while(path[0]!==sk)path.unshift(came.get(path[0]));
- // Collapse collinear radial/arc steps, preserving polar bends.
- const nodes=path.map(k=>decode(k)),simple=[nodes[0]];for(let i=1;i<nodes.length-1;i++){const a=nodes[i-1],b=nodes[i],c=nodes[i+1];if((a.a===b.a&&b.a===c.a)||(a.r===b.r&&b.r===c.r&&Math.sign(angles[b.a]-angles[a.a])===Math.sign(angles[c.a]-angles[b.a])))continue;simple.push(b);}simple.push(nodes[nodes.length-1]);
- let d=`M${start.x},${start.y}`;for(let i=1;i<simple.length;i++){const a=simple[i-1],b=simple[i],p=polar(radii[b.r],angles[b.a]);if(a.r===b.r){let da=angles[b.a]-angles[a.a];if(da>Math.PI)da-=TAU;if(da< -Math.PI)da+=TAU;d+=` A${radii[b.r]},${radii[b.r]} 0 ${Math.abs(da)>Math.PI?1:0} ${da>0?1:0} ${p.x},${p.y}`;}else d+=` L${p.x},${p.y}`;}return d;
+ if(found==null)return '';const nodes=[];for(let key=found;key!=null;key=came.get(key))nodes.push(point(Math.floor(key/3)));nodes.reverse();const simple=[nodes[0]];for(let i=1;i<nodes.length-1;i++){const a=nodes[i-1],b=nodes[i],c=nodes[i+1];if((a.x===b.x&&b.x===c.x)||(a.y===b.y&&b.y===c.y))continue;simple.push(b);}simple.push(nodes[nodes.length-1]);return simple.map((p,i)=>`${i?'L':'M'}${p.x},${p.y}`).join(' ');
+
 }
-const api={sectors,placement,analyze,anchors,isCommon,layout,route,requirements:req,clearCache:ids=>{cache.clear();wholeCache.clear();if(Array.isArray(ids)){const selected=new Set(ids.map(String));for(const [key,c] of generalStable)if(c.ids.some(id=>selected.has(id)))generalStable.delete(key);}else generalStable.clear();if(Array.isArray(ids)){const selected=new Set(ids.map(String));for(const [key,c] of stable)if(c.ids.some(id=>selected.has(id)))stable.delete(key);}else stable.clear();}};root.GRPGSkillGraphV185=api;if(typeof module!=='undefined'&&module.exports)module.exports=api;
+const api={sectors,placement,analyze,anchors,isCommon,layout,route,requirements:req,clearCache:ids=>{cache.clear();wholeCache.clear();if(Array.isArray(ids)){const selected=new Set(ids.map(String));for(const [key,c] of stable)if(c.ids.some(id=>selected.has(id)))stable.delete(key);}else stable.clear();}};root.GRPGSkillGraphV185=api;if(typeof module!=='undefined'&&module.exports)module.exports=api;
 })(typeof window!=='undefined'?window:globalThis);
