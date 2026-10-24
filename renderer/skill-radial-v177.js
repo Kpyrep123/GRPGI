@@ -82,8 +82,10 @@
     };
     function refresh() {
       skills = adapter.skills().filter(s=>!s.originOnly178||adapter.status(s).owned);
+      if(!state.sourcePreference187&&!skills.some(s=>s.isBasic||s.originOnly178||adapter.source?.(s)))state.common=false;
       by = new Map(skills.map((s) => [String(s.id), s]));
       graph = radialLayout(skills,adapter.groups?.());
+      if(state.branch==='general'&&!graph.generalIds?.length)state.branch="";
       statuses = new Map(skills.map((s) => [String(s.id), readStatus(s)]));
       if (!by.has(state.selected)) state.selected = "";
     }
@@ -101,7 +103,7 @@
         (state.status === "all" ||
           (state.status === "owned" && r.owned) ||
           (state.status === "available" && r.available)) &&
-        (!state.branch || (graph.assignment.get(String(s.id)) === state.branch||graph.positions.get(String(s.id)).anchors.includes(state.branch)))
+        (!state.branch || (graph.assignment.get(String(s.id)) === state.branch||(graph.assignment.get(String(s.id))!=='general'&&graph.positions.get(String(s.id)).anchors.includes(state.branch))))
       );
     }
     function thumb(s) {
@@ -147,7 +149,7 @@
       }
       renderedSignature185=graph.signature;
       const commonCount = graph.common.length;
-      host.innerHTML = `<header class="r177-toolbar"><div class="r177-title"><span>РАЗВИТИЕ</span><h2>Созвездия навыков</h2></div><div class="r177-search"><input class="input" type="search" data-r177-search value="${escape(state.query)}" placeholder="Найти навык или тег" aria-label="Поиск навыков"><div class="r177-results" data-r177-results></div></div><button type="button" class="secondary" data-r177-abilities>Характеристики ↑</button><button type="button" class="ghost" data-r177-filters aria-expanded="${state.filters}">Фильтры</button><button type="button" class="ghost" data-r177-common-toggle aria-expanded="${state.common}">Источники · ${skills.filter(s=>s.originOnly178||s.isBasic||adapter.source?.(s)).length}</button><strong class="r177-points"><span>${Number(user.skillPoints || 0)}</span> ОУ</strong></header><nav class="r177-branches" aria-label="Ветки навыков"><button type="button" class="ghost" data-r177-branch="">Всё дерево</button>${branches.map((b) => `<button type="button" class="ghost" style="--branch:${b.color}" data-r177-branch="${b.id}"><i></i>${b.name}<small>${skills.filter((s) => (graph.assignment.get(String(s.id)) === b.id||graph.positions.get(String(s.id)).anchors.includes(b.id))).length}</small></button>`).join("")}${graph.groups.map(g=>`<button class="ghost" type="button" data-r185-group="${escape(g.id)}" title="${escape(g.description||'')}">${escape(g.name)}</button>`).join('')}</nav><div class="r177-workspace ${state.common ? "has-common" : ""}"><div class="r177-viewport" tabindex="0" aria-label="Дерево навыков: перетаскивание, колесо для масштаба"><div class="r177-world"><svg class="r177-map-lines" aria-hidden="true"></svg><button class="r177-core" type="button" data-r177-fit title="Показать всё дерево"><span class="r177-core-symbol">✧</span><strong>${escape(user.displayName || "Персонаж")}</strong><small>${skills.filter((s) => statuses.get(String(s.id)).owned).length} / ${skills.length} изучено</small></button>${branches.map((b) => `<button type="button" class="r177-hub" data-r177-branch="${b.id}" style="left:${Math.cos(b.angle) * 182}px;top:${Math.sin(b.angle) * 182}px;--branch:${b.color}"><span>${b.name}</span><b>${Number(user.abilities?.[b.id] || 0)}</b></button>`).join("")}${skills
+      host.innerHTML = `<header class="r177-toolbar"><div class="r177-title"><span>РАЗВИТИЕ</span><h2>Созвездия навыков</h2></div><div class="r177-search"><input class="input" type="search" data-r177-search value="${escape(state.query)}" placeholder="Найти навык или тег" aria-label="Поиск навыков"><div class="r177-results" data-r177-results></div></div><button type="button" class="secondary" data-r177-abilities>Характеристики ↑</button><button type="button" class="ghost" data-r177-filters aria-expanded="${state.filters}">Фильтры</button><button type="button" class="ghost" data-r177-common-toggle aria-expanded="${state.common}">Источники · ${skills.filter(s=>s.originOnly178||s.isBasic||adapter.source?.(s)).length}</button><strong class="r177-points"><span>${Number(user.skillPoints || 0)}</span> ОУ</strong></header><nav class="r177-branches" aria-label="Ветки навыков"><button type="button" class="ghost" data-r177-branch="">Всё дерево</button>${branches.map((b) => `<button type="button" class="ghost" style="--branch:${b.color}" data-r177-branch="${b.id}"><i></i>${b.name}<small>${skills.filter((s) => (graph.assignment.get(String(s.id)) === b.id||(graph.assignment.get(String(s.id))!=='general'&&graph.positions.get(String(s.id)).anchors.includes(b.id)))).length}</small></button>`).join("")}${graph.generalIds?.length?`<button class="ghost" type="button" data-r177-branch="general">Общие<small>${graph.generalIds.length}</small></button>`:""}${[...new Map(graph.groups.map(g=>[g.id,g])).values()].map(g=>`<button class="ghost" type="button" data-r185-group="${escape(g.id)}" title="${escape(g.description||'')}">${escape(g.name)}</button>`).join('')}</nav><div class="r177-workspace ${state.common ? "has-common" : ""}"><div class="r177-viewport" tabindex="0" aria-label="Дерево навыков: перетаскивание, колесо для масштаба"><div class="r177-world"><svg class="r177-map-lines" aria-hidden="true"></svg><button class="r177-core" type="button" data-r177-fit title="Показать всё дерево"><span class="r177-core-symbol">✧</span><strong>${escape(user.displayName || "Персонаж")}</strong><small>${skills.filter((s) => statuses.get(String(s.id)).owned).length} / ${skills.length} изучено</small></button>${branches.map((b) => `<button type="button" class="r177-hub" data-r177-branch="${b.id}" style="left:${Math.cos(b.angle) * 182}px;top:${Math.sin(b.angle) * 182}px;--branch:${b.color}"><span>${b.name}</span><b>${Number(user.abilities?.[b.id] || 0)}</b></button>`).join("")}${skills
         .filter((s) => graph.assignment.get(String(s.id)) !== "common")
         .map((s) => node(s))
         .join(
@@ -199,6 +201,7 @@
         ),
         extent = Math.max(
           650,
+          ...(graph.generalArea?[Math.abs(graph.generalArea.left)+100,Math.abs(graph.generalArea.right)+100,Math.abs(graph.generalArea.top)+100,Math.abs(graph.generalArea.bottom)+100]:[]),
           ...radial.map((p) => Math.max(Math.abs(p.x), Math.abs(p.y)) + 130),
         ),
         svg = host.querySelector(".r177-map-lines");
@@ -209,9 +212,9 @@
       svg.setAttribute("width", extent * 2);
       svg.setAttribute("height", extent * 2);
       svg.style.cssText = `left:${-extent}px;top:${-extent}px`;
-      svg.innerHTML = `${branches
+      svg.innerHTML = `${graph.generalArea?`<g class="r187-general-area"><rect x="${graph.generalArea.left}" y="${graph.generalArea.top}" width="${graph.generalArea.right-graph.generalArea.left}" height="${graph.generalArea.bottom-graph.generalArea.top}" rx="42"/><text x="${graph.generalArea.left+22}" y="${graph.generalArea.top+38}">Общие навыки</text></g>`:''}${branches
         .map((b) => {
-          const r = extent * 0.98,
+          const r = Math.max(300,...radial.filter(p=>p.branch!=='general'&&(p.branch===b.id||p.anchors.includes(b.id))).map(p=>Math.hypot(p.x,p.y)+120)),
             a = b.angle - 0.46,
             c = b.angle + 0.46;
           return `<path class="r177-sector" fill="${b.color}" d="M0,0 L${Math.cos(a) * r},${Math.sin(a) * r} A${r},${r} 0 0 1 ${Math.cos(c) * r},${Math.sin(c) * r} Z"/>`;
@@ -251,11 +254,12 @@
     }
     function pointsForBranch(id) {
       return [...graph.positions]
-        .filter(([key, p]) => p.branch !== "common" && (!id || p.branch === id || p.anchors.includes(id)))
+        .filter(([key, p]) => p.branch !== "common" && (!id || p.branch === id || (p.branch!=='general'&&p.anchors.includes(id))))
         .map(([, p]) => p);
     }
     function fit(id = "",groupId="") {
       const points = pointsForBranch(id).filter(p=>!groupId||p.groupId===groupId);
+      if(graph.generalArea&&(id==='general'||(!id&&!groupId))){const a=graph.generalArea;points.push({x:a.left,y:a.top-24},{x:a.right,y:a.bottom+24});}
       if (!points.length) points.push({ x: -230, y: -230 }, { x: 230, y: 230 });
       if (!id&&!groupId) points.push({ x: -230, y: -230 }, { x: 230, y: 230 });
       const minX = Math.min(...points.map((p) => p.x)) - 100,
@@ -417,7 +421,7 @@
               .slice(0, 12)
               .map(
                 (s) =>
-                  `<button type="button" data-r177-result="${escape(s.id)}"><strong>${escape(s.name)}</strong><small>${graph.assignment.get(String(s.id)) === "common" ? "Общие" : branches.find((b) => b.id === graph.assignment.get(String(s.id)))?.name}</small></button>`,
+                  `<button type="button" data-r177-result="${escape(s.id)}"><strong>${escape(s.name)}</strong><small>${["common","general"].includes(graph.assignment.get(String(s.id))) ? "Общие" : branches.find((b) => b.id === graph.assignment.get(String(s.id)))?.name || "Сочетания"}</small></button>`,
               )
               .join("") || "<p>Навыки не найдены</p>"
           : "";
@@ -433,7 +437,7 @@
         branch = branches.find((b) => b.id === p.branch);
       pane.classList.toggle("r177-enter", lastSelected !== state.selected);
       lastSelected = state.selected;
-      pane.innerHTML = `<header><span class="r177-detail-thumb">${thumb(s)}</span><div><span>${branch?.name || "Общие навыки"}</span><h3>${escape(s.name)}</h3><small>${escape(s.category||'Общие')} · </small><small>${labels[st.state]} · ${{ active: "Активный", passive: "Пассивный", reaction: "Реакция" }[s.activationType] || "Пассивный"}</small></div><button type="button" class="ghost" data-r177-close aria-label="Закрыть описание">×</button></header><div class="r177-detail-body"><div class="r177-tags">${C.tags(
+      pane.innerHTML = `<header><span class="r177-detail-thumb">${thumb(s)}</span><div><span>${p.branch==='general'?"Общие навыки":branch?.name||(p.branch==='combined'?"Сочетания характеристик":"Ветки характеристик")}</span><h3>${escape(s.name)}</h3><small>${escape(s.category||'Общие')} · </small><small>${labels[st.state]} · ${{ active: "Активный", passive: "Пассивный", reaction: "Реакция" }[s.activationType] || "Пассивный"}</small></div><button type="button" class="ghost" data-r177-close aria-label="Закрыть описание">×</button></header><div class="r177-detail-body"><div class="r177-tags">${C.tags(
         s.tags,
       )
         .map((t) => `<span>${escape(t)}</span>`)
@@ -519,7 +523,7 @@
         if (b.hasAttribute("data-r177-zoom"))
           zoom(b.dataset.r177Zoom === "in" ? 1.2 : 1 / 1.2);
         if (b.hasAttribute("data-r177-common-toggle")) {
-          state.common = !state.common;
+          state.sourcePreference187=true;state.common = !state.common;
           render();
         }
         if (b.hasAttribute("data-r177-abilities")) {

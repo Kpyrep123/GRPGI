@@ -25,3 +25,6 @@
 .r177-map-lines [data-r177-edge]{stroke-width:1.4;opacity:.55}
 .r177-map-lines [data-r177-edge].selected{opacity:1;stroke-width:2.4}
 @media(max-width:720px){.r177-detail{left:8px;right:8px;width:auto}}
+
+.r187-general-area rect{fill:#8899aa06;stroke:#8a9baa40;stroke-width:1;stroke-dasharray:5 8;pointer-events:none}
+.r187-general-area text{fill:#bbc9d4;font-size:22px;font-weight:600;pointer-events:none}
