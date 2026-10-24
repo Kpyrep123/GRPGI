@@ -124,7 +124,7 @@
     if (meta.arrayKey) return { [meta.arrayKey]: entries };
     const map = {};
     for (const entity of entries) map[entity.id] = entity;
-    return { [meta.mapKey]: map };
+    return type==='skills'&&isRecord(sectionPayload?.SKILL_GROUPS)?{[meta.mapKey]:map,SKILL_GROUPS:sanitizeJson(sectionPayload.SKILL_GROUPS)}:{ [meta.mapKey]: map };
   }
 
   function summarize(type, sections, currentPayload, importedEntries) {

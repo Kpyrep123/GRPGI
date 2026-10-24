@@ -1357,6 +1357,7 @@
     App.data.items = new Map(Object.entries(world.equipment?.EQUIPMENT || {}).map(([id, value]) => [id, deep(value)]));
     App.data.campaigns = new Map(Object.entries(world.campaigns?.CAMPAIGNS || {}).map(([id, value]) => [id, deep(value)]));
     if (!App.data.campaigns.size) App.data.campaigns.set('main', { id: 'main', name: 'Основная кампания' });
+    App.data.skillGroups185=deep(world.skills?.SKILL_GROUPS||{});
     App.data.skills = new Map(Object.entries(world.skills?.SKILLS || {}).map(([id, value]) => [id, deep(value)]));
     App.data.factions = new Map(Object.entries(world.factions?.FACTIONS || {}).map(([id, value]) => [id, deep(value)]));
     App.data.organizations = new Map(Object.entries(world.organizations?.ORGANIZATIONS || {}).map(([id, value]) => [id, deep(value)]));
@@ -2942,7 +2943,7 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
 
   function visibleSkills() {
     const owned = new Set(currentPlayer()?.skills || []);
-    return Array.from(App.data.skills.values()).filter(skill => skill.originOnly178 ? owned.has(skill.id) : skill.isBasic === true || visibleForPlayer(skill, App.session?.userId));
+    return Array.from(App.data.skills.values()).filter(skill => skill.originOnly178 ? owned.has(skill.id) : owned.has(skill.id) || skill.isBasic === true || visibleForPlayer(skill, App.session?.userId));
   }
 
   function playerOwnsSkill(player, skill) {
@@ -3453,8 +3454,10 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
     </div>`;
     if (profileTab === 'skills') {
       if(window.GRPGSkillCatalogV176){
+        const oldMap185=root.querySelector('[data-skill-catalog176]');if(oldMap185?.__radial177&&oldMap185.dataset.radialIdentity185==='web:'+(App.session?.campaignId||App.config?.campaignId||'main')+':'+player.id){oldMap185.__radial177.refresh();return;}
         setTopbar('Навыки','Радиальное дерево навыков');hideWebSkillTipEl();root.innerHTML=`${tabsRow}<div data-skill-catalog176></div>`;
         window.GRPGSkillCatalogV176.mount(root.querySelector('[data-skill-catalog176]'),{
+          groups:()=>App.data.skillGroups185||{},source:s=>{if(s.isBasic)return 'Базовый';if(s.originSource178)return s.originSource178.name;const p=currentPlayer();return [...Object.values(App.data.socialOrigins instanceof Map?Object.fromEntries(App.data.socialOrigins):App.data.socialOrigins||{}),...Object.values(App.data.geographicOrigins instanceof Map?Object.fromEntries(App.data.geographicOrigins):App.data.geographicOrigins||{})].filter(o=>[p.socialOriginId,p.geographicOriginId].includes(o.id)&&(o.grantedSkillIds||[]).includes(s.id)).map(o=>o.name).join(', ');},
           key:'web:'+(App.session?.campaignId||App.config?.campaignId||'main')+':'+player.id,user:()=>currentPlayer(),skills:()=>visibleSkills(),readonly:()=>isGuestSession(),
           status:skill=>{const p=currentPlayer(),owned=playerOwnsSkill(p,skill),reasons=skillRequirementReasons(p,skill),gm=skillDependsOnGloryV58(skill);return {owned,available:!owned&&!reasons.length&&!isGuestSession(),gm,pointsOnly:reasons.length===1&&Number(p.skillPoints||0)<Number(skill.cost??1),reasons:isGuestSession()?['Гость не может менять профиль']:reasons};},
           learn:upgradeSkill,upgrade:upgradeAbility,

@@ -12,7 +12,7 @@ const skills = [
 ];
 const before = JSON.stringify(skills),
   g = R.layout(skills);
-assert.equal(g.assignment.get("free"), "common");
+assert.equal(g.assignment.get("free"), "neutral");
 assert.equal(g.assignment.get("general"), "strength");
 assert.equal(g.assignment.get("child"), "strength");
 assert.equal(g.assignment.get("manual"), "intelligence");
@@ -27,8 +27,8 @@ assert.ok(
     Math.hypot(g.positions.get("child").x, g.positions.get("child").y),
 );
 const generalChain=R.layout([{id:'free'},{id:'next',treeBranch:'common',requiredSkillIds:['free']},{id:'other'}]);
-assert.ok(generalChain.positions.get('next').y>generalChain.positions.get('free').y);
-assert.equal(generalChain.positions.get('next').x,generalChain.positions.get('free').x);
+assert.ok(Math.hypot(generalChain.positions.get('next').x,generalChain.positions.get('next').y)>Math.hypot(generalChain.positions.get('free').x,generalChain.positions.get('free').y));
+assert.equal(generalChain.positions.get('next').branch,'neutral');
 const dense = R.layout(
   Array.from({ length: 60 }, (_, i) => ({
     id: "x" + i,

@@ -741,7 +741,7 @@ function normalizeFactionsSectionForSync(section = {}) {
 }
 
 function normalizeSkillsSectionForSync(section = {}) {
-  return normalizeMapListSectionForSync(section, 'SKILLS', 'SKILL_LIST', ['id', 'name', 'title']);
+  return {...normalizeMapListSectionForSync(section, 'SKILLS', 'SKILL_LIST', ['id', 'name', 'title']),...(section.SKILL_GROUPS?{SKILL_GROUPS:JSON.parse(JSON.stringify(section.SKILL_GROUPS))}:{})};
 }
 
 function normalizeCampaignsSectionForSync(section = {}) {
@@ -1542,7 +1542,7 @@ const WORLD_JSON_IMPORT_MAX_BYTES = 64 * 1024 * 1024;
 
 function assertWorldJsonSection(sectionName) {
   const section = String(sectionName || '').trim();
-  if (!WORLD_FILE_NAMES.includes(section)&&!Object.hasOwn(TRADE_JSON_SECTIONS_V175,section)) {
+  if (section!=='skillGroups'&&!WORLD_FILE_NAMES.includes(section)&&!Object.hasOwn(TRADE_JSON_SECTIONS_V175,section)) {
     throw new Error(`Unsupported world section: ${section || '<empty>'}`);
   }
   return section;
