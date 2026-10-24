@@ -28,3 +28,22 @@
 
 .r187-general-area rect{fill:#8899aa06;stroke:#8a9baa40;stroke-width:1;stroke-dasharray:5 8;pointer-events:none}
 .r187-general-area text{fill:#bbc9d4;font-size:22px;font-weight:600;pointer-events:none}
+
+/* General skills are a separate catalogue, with no map or cross-window edges. */
+.radial-skills177 .r177-workspace.has-common .r177-viewport{right:0}
+.radial-skills177 .r177-common{inset:14px;width:min(720px,calc(100% - 28px));height:fit-content;max-height:calc(100% - 28px);margin:auto;z-index:7;background:#101b26;animation:r177-slide .18s ease-out}
+.r189-common-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px;padding:12px}
+.radial-skills177 .r189-common-card{display:flex;align-items:center;gap:12px;min-height:88px;padding:12px;text-align:left;background:#17232e;border:1px solid #64778a66;border-radius:10px;color:#d7e0e8}
+.r189-common-card>span:last-child{display:flex;flex-direction:column;gap:5px;min-width:0}
+.r189-common-card strong{overflow-wrap:anywhere}
+.r189-common-card small{color:#a6b5c2;font-size:12px}
+.r189-common-thumb{display:grid;place-items:center;flex:none;width:44px;height:44px;border-radius:50%;overflow:hidden;border:1px solid #8199ac}
+.r189-common-thumb img{width:100%;height:100%;object-fit:cover}
+.r189-common-card.owned{border-color:#bfab6c}.r189-common-card.available{border-color:#69b6a3}.r189-common-card.selected{outline:2px solid #d2b876}
+.radial-skills177 .r177-detail{z-index:9}
+.r177-common[hidden],.r189-common-card[hidden]{display:none!important}
+@media(max-width:720px){.radial-skills177 .r177-common{inset:8px;width:calc(100% - 16px)}.r189-common-list{grid-template-columns:1fr}}
+
+.radial-skills177 .has-common .r177-camera-tools,.radial-skills177 .has-common .r177-legend,.radial-skills177 .has-common .r177-hint{visibility:hidden}
+
+@media(prefers-reduced-motion:reduce){.radial-skills177 .r177-common{animation:none}}
