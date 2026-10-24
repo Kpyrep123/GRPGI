@@ -4,9 +4,10 @@
 .r177-map-lines path{stroke-linecap:round;stroke-linejoin:round}
 .r185-has-selection [data-r177-edge]:not(.selected){opacity:.12}
 .r185-has-selection [data-r177-edge].selected{opacity:1;stroke-width:3}
-.r185-req{position:absolute;top:88px;left:50%;transform:translateX(-50%);width:138px;color:#9fa9b5;font-size:9px;line-height:12px;pointer-events:none}
+.r185-req{position:absolute;top:104px;left:50%;transform:translateX(-50%);width:138px;color:#9fa9b5;font-size:9px;line-height:12px;pointer-events:none}
 .zoomed-out .r185-req{display:none}
-.r185-basic{position:absolute;bottom:-4px;left:-4px;border-radius:50%;background:#555e67;color:#fff;padding:1px 5px;font-size:10px}
+.radial-skills177 .r177-node .r177-ring > .r185-basic{position:absolute;display:block;left:50%;bottom:-7px;transform:translateX(-50%);width:auto!important;height:auto!important;max-width:none!important;max-height:none!important;min-width:0!important;border-radius:4px!important;overflow:visible;background:#26333f;color:#d5dee5;border:1px solid #687b8b;padding:1px 5px;font-size:9px;line-height:12px;white-space:nowrap;pointer-events:none}
+.radial-skills177 .r177-viewport.zoomed-out .r177-node .r177-ring > .r185-basic{display:none}
 .r185-source{display:flex!important;flex-direction:column;width:100%;text-align:left;gap:5px;margin:8px 0;padding:10px!important;background:#151d25!important;border:1px solid #71869a40!important;border-radius:8px}
 .r185-source small,.r185-source-note{color:#b1a78e;font-size:12px}
 .r177-world{transition:transform .18s ease-out}
