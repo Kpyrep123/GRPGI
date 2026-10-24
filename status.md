@@ -1,9 +1,17 @@
 # GRPGI — состояние проекта
 
-Обновлено: 2026-10-23. Версия клиента в `package.json`: **1.0.155**. Модули Хаба используют общие правила/runtime v156 и пространственную модель v157 с непрерывной навигацией v178; версия установщика не менялась.
+Обновлено: 2026-10-24. Версия клиента в `package.json`: **1.0.155**. Модули Хаба используют общие правила/runtime v156 и пространственную модель v157 с непрерывной навигацией v178; версия установщика не менялась.
 
 
 
+
+## World Config unit sizes and combat footprints (2026-10-24)
+
+- Added a single-choice size field to World Config characters/units, NPCs (including templates), fauna and deployable drones/turrets. Small and Normal occupy 1 hex, Large 3, Huge 7, Massive 12, Colossal 19. Existing entities without a size default to Normal. The 3- and 12-cell footprints use compact connected clusters; 7 and 19 use full hex rings. Size does not add stat bonuses.
+- Combat scenes read size from the WC source, including already placed actors when their source changes. Persisted tokens retain size, occupied geometry and source IDs; fixed fauna source IDs being dropped during scene normalization. Placement checks the entire footprint, movement checks boundaries and obstacles across occupied cells, and combat range, adjacency and explosion hits use the nearest occupied hex. Device placement validates space before consuming inventory.
+- DM and player screens draw the same exact occupied hexes. Empty bounding-box corners do not capture clicks. Footprints stay aligned with the grid while portraits can rotate; movement animation preserves the footprint anchor. Hub navigation is unchanged.
+- Validation: new pure-model regression checks all six counts, connectivity, grid alignment, boundaries, geometry persistence, hit testing, range and identical desktop/web modules. New Chromium regression exercises actual WC authoring/JSON, source-size refresh, scene reload, player display, narrow-corridor rejection, wall detour and real movement cost/commit. Existing v137 combat cache, v147 combat actions/reactions/injuries, v135 synchronization, v183 idle polling, v181 retained mechanics and v178 web Hub regressions pass. Syntax and diff checks pass. Native Electron and production services were not exercised.
+- Update/restart the desktop client to apply. No backend/schema migration or service restart; installer remains 1.0.155. Existing actors enlarged in WC may need DM repositioning if they overlap neighboring actors. No merge or deployment performed.
 
 ## Idle polling cost, web caret stability and numeric candle scale (2026-10-23)
 
