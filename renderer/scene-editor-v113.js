@@ -1379,11 +1379,85 @@
     return list(entity.skills).map(id=>skillForScene118(id)).filter(skill=>skill&&String(skill.skillType||skill.type||'skill')!=='specialization'&&String(skill.activationType||'passive')==='active');
   }
   function renderActiveSkills118(){
-    const rows=activeSkillsForToken118();if(!rows.length)return'';
-    return `<span class="scene-skill-actions-v118"><span>НАВЫКИ</span>${rows.map(skill=>`<button class="secondary scene-skill-action-v118" type="button" data-scene-skill-v118="${html(skill.id)}" title="${html(String(skill.description||'').replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim())}">${html(skill.name||skill.id)}</button>`).join('')}</span>`;
+    const count=activeSkillsForToken118().length;
+    return count?`<button class="secondary" type="button" data-abilities-open192="skills">АКТИВНЫЕ НАВЫКИ · ${count}</button>`:'';
   }
   function activeEquipmentForToken129(token=selectedToken104()){if(!token)return[];return scriptSourcesForToken119(token).filter(source=>source.mode==='active'&&source.kind!=='skill');}
-  function renderActiveEquipment129(){const token=selectedToken104(),rows=activeEquipmentForToken129(token);if(!rows.length)return'';const enabled=Boolean(token&&canCombatAct129(token)&&!actionSpent191(token)&&!token.burstStateV122);return `<span class="scene-skill-actions-v118"><span>СНАРЯЖЕНИЕ</span>${rows.map(source=>`<button class="secondary" type="button" data-scene-equipment-use-v129="${html(source.id)}" ${enabled?'':'disabled'}>${html(source.raw?.activeUseLabel||source.name||'Использовать')}</button>`).join('')}</span>`;}
+  function renderActiveEquipment129(){
+    const count=activeEquipmentForToken129().length;
+    return count?`<button class="secondary" type="button" data-abilities-open192="equipment">СНАРЯЖЕНИЕ · ${count}</button>`:'';
+  }
+  // Detached from the board: normal scene refreshes must not replace search/focus/scroll.
+  let abilityWindow192=null;
+  function abilityText192(value){const node=document.createElement('div');node.innerHTML=(window.GRPGSkillCatalogV176?.rich(value)||html(value)).replace(/<(?:br\b[^>]*|\/(?:p|div|li|h[1-6]|blockquote))>/gi,' ');return String(node.textContent||'').replace(/\s+/g,' ').trim();}
+  function abilityRows192(token,kind){
+    const rows=kind==='equipment'?activeEquipmentForToken129(token).map(source=>({...source.raw,id:source.id,name:source.raw?.activeUseLabel||source.name})):activeSkillsForToken118(token);
+    return [...new Map(rows.map(row=>[String(row.id),row])).values()].sort((a,b)=>String(a.name||a.id).localeCompare(String(b.name||b.id),'ru',{numeric:true}));
+  }
+  function abilityReason192(token){
+    if(!token||num(token.hpCurrent)<=0)return 'Участник не способен действовать';
+    if(operationReason191())return operationReason191();
+    if(!Combat.canActWithToken?.(token))return 'Сейчас не ход этого участника';
+    if(token.burstStateV122)return 'Сначала завершите скорострельную очередь';
+    if(actionSpent191(token))return 'Действие этого участника уже потрачено';
+    return '';
+  }
+  function closeAbilityWindow192(restore=true){
+    const state=abilityWindow192;if(!state)return;
+    abilityWindow192=null;state.overlay.remove();
+    if(restore){const trigger=document.querySelector(`[data-abilities-open192="${state.kind}"]`);trigger?.focus({preventScroll:true});}
+  }
+  function refreshAbilityWindow192(){
+    const state=abilityWindow192;if(!state)return;
+    const token=selectedToken104();
+    if(UI.activeModuleId!=='combat'||Combat.getScene()?.id!==state.sceneId||token?.id!==state.tokenId){closeAbilityWindow192(false);return;}
+    const reason=abilityReason192(token),button=state.overlay.querySelector('[data-ability-use192]');
+    button.disabled=Boolean(reason)||!state.selectedId;
+    state.overlay.querySelector('[data-ability-status192]').textContent=reason||'Применение расходует действие. Результат — по Lua или вручную по описанию.';
+  }
+  function openAbilityWindow192(kind='skills'){
+    if(!Combat.isDm()||operationReason191())return;
+    const token=selectedToken104(),scene=Combat.getScene();if(!token||!scene)return;
+    closeAbilityWindow192(false);
+    const overlay=document.createElement('div');overlay.className='scene-abilities-overlay-v192';
+    overlay.innerHTML=`<section class="scene-abilities-window-v192" role="dialog" aria-modal="true" aria-labelledby="scene-abilities-title192"><header><div><small>${html(token.name)}</small><h2 id="scene-abilities-title192">${kind==='equipment'?'Активное снаряжение':'Активные навыки'}</h2></div><button class="ghost" type="button" data-abilities-close192 aria-label="Закрыть">✕</button></header><label class="scene-abilities-search-v192">Поиск по названию, тегам и описанию<input class="input" type="search" data-abilities-search192 placeholder="Начните вводить…" autocomplete="off"/></label><div class="scene-abilities-count-v192" role="status" data-abilities-count192></div><div class="scene-abilities-body-v192"><nav aria-label="Список способностей" data-abilities-list192></nav><article data-ability-details192></article></div><footer><span data-ability-status192 role="status"></span><button class="primary" type="button" data-ability-use192>ПРИМЕНИТЬ</button></footer></section>`;
+    const state=abilityWindow192={overlay,kind,sceneId:scene.id,tokenId:token.id,selectedId:'',rows:abilityRows192(token,kind)};
+    const detail=overlay.querySelector('[data-ability-details192]'),listNode=overlay.querySelector('[data-abilities-list192]'),search=overlay.querySelector('[data-abilities-search192]');
+    const select=id=>{
+      state.selectedId=id;const row=state.rows.find(r=>String(r.id)===id);
+      for(const button of listNode.querySelectorAll('[data-ability-select192]')){const active=button.dataset.abilitySelect192===id;button.classList.toggle('active',active);button.setAttribute('aria-pressed',String(active));}
+      detail.scrollTop=0;
+      detail.innerHTML=row?`<h3>${html(row.name||row.id)}</h3>${list(row.tags).length?`<p class="scene-ability-tags-v192">${list(row.tags).map(t=>html(t)).join(' · ')}</p>`:''}<div class="sc-rich176">${window.GRPGSkillCatalogV176?.rich(row.description)||html(row.description||'Описание не задано.')}</div>${row.luaEnabled===true&&String(row.luaScript||'').trim()?'':'<p class="scene-ability-manual-v192">Автоматизация не настроена. После применения действие будет потрачено; результат по описанию применяет ДМ.</p>'}`:'<p>Нет подходящих способностей.</p>';
+      refreshAbilityWindow192();
+    };
+    const draw=()=>{
+      const fold=v=>String(v).toLocaleLowerCase('ru').replace(/ё/g,'е'),query=fold(search.value.trim()),matches=state.rows.filter(row=>fold(`${row.name||row.id} ${list(row.tags).join(' ')} ${abilityText192(row.description||'')}`).includes(query));
+      overlay.querySelector('[data-abilities-count192]').textContent=`Найдено: ${matches.length} из ${state.rows.length}`;
+      listNode.innerHTML=matches.map(row=>`<button class="secondary" type="button" data-ability-select192="${html(row.id)}" aria-pressed="false"><b>${html(row.name||row.id)}</b><small>${html(abilityText192(row.description||'').slice(0,110)||'Описание не задано')}</small></button>`).join('')||'<p>Ничего не найдено. Измените запрос.</p>';
+      select(matches.some(row=>String(row.id)===state.selectedId)?state.selectedId:String(matches[0]?.id||''));
+    };
+    search.addEventListener('input',draw);
+    overlay.addEventListener('click',event=>{
+      if(event.target===overlay||event.target.closest('[data-abilities-close192]')){closeAbilityWindow192();return;}
+      const choice=event.target.closest('[data-ability-select192]');if(choice){select(choice.dataset.abilitySelect192);return;}
+      if(event.target.closest('[data-ability-use192]')){
+        // Revalidate against the live actor, not the list captured when the dialog opened.
+        const actor=selectedToken104();refreshAbilityWindow192();if(abilityWindow192!==state||abilityReason192(actor))return;
+        const row=abilityRows192(actor,kind).find(r=>String(r.id)===state.selectedId);if(!row){state.rows=abilityRows192(actor,kind);draw();return;}
+        closeAbilityWindow192(false);void runCommand191(()=>kind==='equipment'?useActiveEquipment129(row.id):useActiveSkill118(row.id));
+      }
+    });
+    overlay.addEventListener('keydown',event=>{
+      if(event.key==='Escape'){event.preventDefault();event.stopImmediatePropagation();closeAbilityWindow192();return;}
+      if(event.key==='Tab'){
+        const nodes=[...overlay.querySelectorAll('button:not(:disabled),input')],first=nodes[0],last=nodes.at(-1);
+        if(event.shiftKey&&document.activeElement===first){event.preventDefault();last?.focus();}
+        else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first?.focus();}
+      }
+      event.stopPropagation();
+    });
+    document.body.appendChild(overlay);draw();search.focus({preventScroll:true});
+  }
   function deviceInventory129(token,type){const owner=tokenInventoryOwner120(token);return list(owner.rows).map(row=>{const item=equipmentItem105(row?.itemId);return item&&String(item.type)===type&&num(row?.qty,0)>0?{...item,ownedQty:Math.trunc(num(row.qty))}:null;}).filter(Boolean);}
   function linkedDrones129(operator,runtime=Combat.getRuntime()){return list(runtime?.tokens).filter(row=>isDroneToken129(row)&&String(row.operatorTokenIdV129)===String(operator?.id)&&num(row.hpCurrent)>0);}
   function renderDeviceActions129(){const token=selectedToken104();if(!token||isDroneToken129(token)||isTurretToken129(token))return'';const turrets=deviceInventory129(token,'turret'),drones=deviceInventory129(token,'drone'),linked=linkedDrones129(token),can=Boolean(Combat.canActWithToken?.(token)&&!actionSpent191(token)&&!token.burstStateV122),freeDroneCommand=Boolean(hasFreeDroneControl129(token)&&!token.freeDroneCommandUsedV129);return `${turrets.length?`<button class="secondary" type="button" data-scene-deploy-v129="turret" ${can?'':'disabled'}>РАЗМЕСТИТЬ ТУРЕЛЬ</button>`:''}${drones.length?`<button class="secondary" type="button" data-scene-deploy-v129="drone" ${can&&linked.length<operatorIntelligence129(token)?'':'disabled'} title="Связано ${linked.length} / ${operatorIntelligence129(token)}">ВЫПУСТИТЬ ДРОНА</button>`:''}${linked.length?`<button class="secondary" type="button" data-scene-command-drone-v129 ${can||freeDroneCommand?'':'disabled'}>КОМАНДА ДРОНУ</button>`:''}`;}
@@ -1624,7 +1698,7 @@
     // Keep board sizing and camera transform in the same JS task as DOM replacement: no one-frame jump to a default frame.
     try{const viewport=document.getElementById('combat-stage-viewport');this.syncViewportBoardFrame?.(scene,viewport);this.applyViewTransform?.(viewport);}catch{}
     broadcastScene104();
-    updateOperation191();
+    updateOperation191();refreshAbilityWindow192();
   };
 
   function addScene104(){
@@ -2785,7 +2859,7 @@
   const openModuleBefore104=UI.openModule.bind(UI);
   UI.openModule=function(id,options={}){if(id==='combat'&&!Combat.isDm()){Toast.show('Сцены доступны только ДМу','info');return;}const leaving=this.activeModuleId==='combat'&&id!=='combat';if(leaving){closeCombatModal119(null);if(local.lua119.pointPicker)cancelAbilityPoint125();void exitCombatStability108();}const result=openModuleBefore104(id,options);if(id==='combat'&&this.activeModuleId==='combat'){keepEditorVisible191();enterCombatStability108();refreshRuntimeSources122(Combat.getSceneIdForView?.());Combat.render?.();}return result;};
   const closeModuleBefore104=UI.closeModule.bind(UI);
-  UI.closeModule=function(...args){const wasCombat=this.activeModuleId==='combat';if(wasCombat){closeCombatModal119(null);if(local.lua119.pointPicker)cancelAbilityPoint125();}let result;local.hidingEditor191=wasCombat;try{result=closeModuleBefore104(...args);}finally{local.hidingEditor191=false;}if(wasCombat){local.preview=null;void exitCombatStability108();}return result;};
+  UI.closeModule=function(...args){const wasCombat=this.activeModuleId==='combat';if(wasCombat){closeAbilityWindow192(false);closeCombatModal119(null);if(local.lua119.pointPicker)cancelAbilityPoint125();}let result;local.hidingEditor191=wasCombat;try{result=closeModuleBefore104(...args);}finally{local.hidingEditor191=false;}if(wasCombat){local.preview=null;void exitCombatStability108();}return result;};
   const updateBootBefore104=App.updateBootView.bind(App);
   App.updateBootView=function(){const result=updateBootBefore104();ensureCombatModuleMarkup();const button=document.getElementById('open-combat');if(button){button.style.display=Combat.isDm()?'grid':'none';button.dataset.label='СЦЕНЫ';}return result;};
   window.addEventListener('focus',()=>{if(UI.activeModuleId==='combat')Combat.refreshPlayerDisplayStatus?.().catch?.(()=>{});});
@@ -2803,6 +2877,10 @@
   });
   document.addEventListener('dragover',event=>{if(event.target.closest?.('#combat-stage')){event.preventDefault();if(event.dataTransfer)event.dataTransfer.dropEffect='copy';}});
   document.addEventListener('drop',event=>{const stage=event.target.closest?.('#combat-stage');if(!stage)return;event.preventDefault();let payload=null;try{let raw=event.dataTransfer?.getData('application/x-grpgi-scene')||event.dataTransfer?.getData('text/plain')||'';if(raw.startsWith('GRPGI_SCENE:'))raw=raw.slice(12);payload=JSON.parse(raw||'{}');}catch{return;}const scene=Combat.getScene();if(!scene)return;const p=scenePointFromEvent(event,stage,scene);if(payload.kind==='asset')placeLibraryAsset104(payload.libraryId,p);if(['player','npc','equipment-unit','fauna-unit'].includes(payload.kind))placeUnit104(payload.kind,payload.entityId,p);if(payload.kind==='zone')placeZone104(payload.shape,p);});
+  window.addEventListener('keydown',event=>{
+    if(!abilityWindow192)return;
+    if(!abilityWindow192.overlay.contains(event.target)){event.preventDefault();event.stopImmediatePropagation();abilityWindow192.overlay.querySelector('input')?.focus();}
+  },true);
   document.addEventListener('pointerdown',startBoardPointer104,true);
   document.addEventListener('pointermove',moveBoardPointer104,true);
   document.addEventListener('pointerup',endBoardPointer104,true);
@@ -2813,6 +2891,7 @@
     if(openButton){event.preventDefault();event.stopImmediatePropagation?.();if(Combat.isDm())UI.openModule('combat');else Toast.show('Сцены доступны только ДМу','info');return;}
     const t=event.target.closest?.('#mod-combat [data-scene-search-v118],#mod-combat button,#mod-combat [data-scene-select-v104],.scene-context-v104 button');
     if(!t){if(local.context&&!event.target.closest('.scene-context-v104'))closeContext104();return;}
+    if(t.dataset.abilitiesOpen192){event.preventDefault();openAbilityWindow192(t.dataset.abilitiesOpen192);return;}
     if(t.hasAttribute('data-battle-mode191')){event.preventDefault();void runCommand191(()=>Combat.setBattleMode191());return;}
     if(t.hasAttribute('data-publish191')){event.preventDefault();void runCommand191(()=>Combat.publishToPlayers191());return;}
     if(t.id==='scene-new-v104'){event.preventDefault();addScene104();return;}
