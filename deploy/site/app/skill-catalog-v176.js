@@ -111,6 +111,35 @@
       ),
     };
   }
+  // Rich descriptions may format their own content, never the surrounding UI.
+  const richStyles = new Set([
+    'color', 'background-color', 'font-size', 'font-weight', 'font-style',
+    'font-family', 'line-height', 'letter-spacing', 'text-align',
+    'text-decoration', 'text-decoration-line', 'text-decoration-color',
+    'text-decoration-style', 'text-indent', 'white-space', 'vertical-align',
+    'margin', 'margin-top', 'margin-right', 'margin-bottom', 'margin-left',
+    'padding', 'padding-top', 'padding-right', 'padding-bottom', 'padding-left',
+    'border', 'border-top', 'border-right', 'border-bottom', 'border-left',
+    'border-width', 'border-style', 'border-color', 'border-radius',
+    'border-top-left-radius', 'border-top-right-radius',
+    'border-bottom-left-radius', 'border-bottom-right-radius',
+    'border-top-width', 'border-right-width', 'border-bottom-width', 'border-left-width',
+    'border-top-style', 'border-right-style', 'border-bottom-style', 'border-left-style',
+    'border-top-color', 'border-right-color', 'border-bottom-color', 'border-left-color'
+  ]);
+  function richStyle(source, target) {
+    // Let the browser parse CSS, then copy only content-formatting declarations.
+    // Do not copy priorities, classes, custom properties, layout or URL values.
+    for (let i = 0; i < source.style.length; i++) {
+      const name = source.style[i], value = source.style.getPropertyValue(name);
+      if (richStyles.has(name) && !/(?:url|image-set|expression|var|env)\s*\(|[\\@<>]/i.test(value))
+        target.style.setProperty(name, value);
+    }
+    // A common shorthand is background:#123; keep just its solid colour.
+    if (!target.style.backgroundColor && source.style.backgroundColor &&
+        !/(?:url|image-set|expression|var|env)\s*\(|[\\@<>]/i.test(source.style.backgroundColor))
+      target.style.backgroundColor = source.style.backgroundColor;
+  }
   function rich(value) {
     const text = String(value || "");
     if (typeof document === "undefined") return esc(text);
@@ -134,6 +163,11 @@
         "I",
         "U",
         "S",
+        "DEL",
+        "INS",
+        "MARK",
+        "SUP",
+        "SUB",
         "UL",
         "OL",
         "LI",
@@ -180,6 +214,7 @@
         return;
       }
       const el = document.createElement(node.tagName.toLowerCase());
+      richStyle(node, el);
       if (node.tagName === "A") {
         const href = node.getAttribute("href") || "";
         if (/^(https?:\/\/|mailto:|#)/i.test(href)) {

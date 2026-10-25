@@ -1,9 +1,16 @@
 # GRPGI — состояние проекта
 
-Обновлено: 2026-10-24. Версия клиента в `package.json`: **1.0.155**. Модули Хаба используют общие правила/runtime v156 и пространственную модель v157 с непрерывной навигацией v178; версия установщика не менялась.
+Обновлено: 2026-10-25. Версия клиента в `package.json`: **1.0.155**. Модули Хаба используют общие правила/runtime v156 и пространственную модель v157 с непрерывной навигацией v178; версия установщика не менялась.
 
 
 
+
+## HTML formatting in skill descriptions (2026-10-25)
+
+- Fixed the shared skill-description renderer stripping every inline style. It now preserves an explicit set of text/block formatting properties: colours, solid backgrounds, font size/weight/style/family, line height, alignment, text decoration, paragraph margins, padding, borders and rounded corners. CSS declarations are parsed by the browser before copying; scripts/events, external resources, custom properties, layout positioning and priority overrides remain excluded.
+- Added explicit scoped defaults for semantic bold/italic/underline/strikethrough and highlighting (`mark`), plus support for `del`, `ins`, `sup` and `sub`. HTML now uses normal whitespace so indentation between tags does not insert extra visual blank lines. Plain text retains paragraphs and single line breaks through the existing generated `p`/`br` conversion. Source descriptions and skill/purchase data are unchanged; WC preview and player details use the same renderer.
+- Validation: new actual Chromium desktop/web/mobile regression checks the requested `div` font-size 11px, line-height 1.45, colour #9EB3C7 and italic, child paragraph margin 5px, semantic bold/italic/underline, coloured spans, highlighted text, solid backgrounds, border/padding/radius, unchanged WC source collection and plain-text paragraphs. It also verifies removal of scripts/events, javascript links, URL styles, custom properties, positioning/sizing and !important. Existing v185 WC/import/dragging/purchase/caret/100-node/mobile browser regression and v176 model/mirror checks pass. Screenshots inspected; syntax/diff checks pass. Native Electron and production services were not exercised.
+- Desktop and deployed web script/CSS copies match; cache keys are 190. Update/restart desktop, Deploy Web and refresh browsers. No backend/schema/service restart; installer stays 1.0.155. No merge or deployment performed.
 
 ## Near-stat skill layout, fewer bends and separate general window (2026-10-24)
 
