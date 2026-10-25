@@ -266,8 +266,13 @@
 .sc-rich176 {
   line-height: 1.65;
   overflow-wrap: anywhere;
-  white-space: pre-line;
+  white-space: normal;
 }
+.sc-rich176 strong,.sc-rich176 b { font-weight:700; }
+.sc-rich176 em,.sc-rich176 i { font-style:italic; }
+.sc-rich176 u,.sc-rich176 ins { text-decoration:underline; }
+.sc-rich176 s,.sc-rich176 del { text-decoration:line-through; }
+.sc-rich176 mark { background:#e2bd6c;color:#14202b;padding:0 2px; }
 .sc-rich176 p {
   margin: 0 0 1em;
 }
