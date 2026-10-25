@@ -650,3 +650,7 @@ body.combat-stability-v108 #gm-dock-btn {
 .combat-token.unit-sized-v184 .unit-footprint-v184 polygon{pointer-events:all}
 .combat-token.unit-sized-v184.selected .unit-footprint-v184 polygon{stroke-width:2.4px}
 .combat-token.unit-sized-v184 .scene-token-loot-v118{pointer-events:auto}
+
+.scene-session-v191{flex:none;padding:8px 12px;background:#15212b;border-bottom:1px solid #ad92574d;color:#cbd9e3;font-size:12px}.scene-session-v191>div{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:3px 0}.scene-session-v191 span{padding:3px 6px;border:1px solid #71869a40;border-radius:4px}.scene-session-v191 [data-operation191]{margin-left:auto;color:#dec58c}.scene-center-v104{min-height:0}
+
+.scene-center-v104{grid-template-rows:auto minmax(0,1fr)}
