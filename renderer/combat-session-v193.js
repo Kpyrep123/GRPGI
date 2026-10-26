@@ -4,7 +4,7 @@
   const copy=value=>value==null?value:JSON.parse(JSON.stringify(value));
   const rows=value=>Array.isArray(value)?value:[];
   const localFields=new Set(['x','y','w','h','rotation','hidden','locked','visibleToPlayers','sharesVisionWithPlayers','showNameToPlayers','blockMovement','blockSight','notes','color']);
-  const budgets=['actionUsed','movedThisTurn','reactionUsedV119','burstStateV122','disengagedV122','freeDroneCommandUsedV129','droneCommandV129'];
+  const budgets=['dashUsedV198','actionUsed','movedThisTurn','reactionUsedV119','burstStateV122','disengagedV122','freeDroneCommandUsedV129','droneCommandV129'];
   function identity(token,mapId){return token.playerId?'player:'+token.playerId:String(token.participantId193||'instance:'+mapId+':'+token.id);}
   function state(token){return Object.fromEntries(Object.entries(copy(token)).filter(([key])=>!localFields.has(key)));}
   function place(actor,token){return {...copy(actor),...Object.fromEntries(Object.entries(copy(token)).filter(([key])=>localFields.has(key)))};}

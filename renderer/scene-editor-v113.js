@@ -160,6 +160,7 @@
     next.attackRange = Math.max(0, num(token.attackRange, 0));
     next.movedThisTurn = Math.max(0, num(token.movedThisTurn, 0));
     next.actionUsed = Boolean(token.actionUsed);
+    next.dashUsedV198 = Boolean(token.dashUsedV198);
     next.initiativeBonus = num(token.initiativeBonus,0);
     next.initiativeOverrideV147 = token.initiativeOverrideV147 === true;
     next.reactionUsedV119 = Boolean(token.reactionUsedV119);
@@ -479,7 +480,7 @@
     const scene=Combat.getScene();
     if(activeMap193()&&runtime.pendingTurnStart193===token.id){
       const startOrder=list(runtime.initiativeOrder).slice(),startIndex=runtime.turnIndex;
-      runtime.pendingTurnStart193='';token.movedThisTurn=0;token.actionUsed=false;token.reactionUsedV119=false;token.disengagedV122=false;token.freeDroneCommandUsedV129=false;
+      runtime.pendingTurnStart193='';token.dashUsedV198=false;token.movedThisTurn=0;token.actionUsed=false;token.reactionUsedV119=false;token.disengagedV122=false;token.freeDroneCommandUsedV129=false;
       const effects={damage:0,effects:[]};await processTimedModifiers122(token,'start',effects);if(num(token.hpCurrent)>0)await runAutomaticHooks119(token,'OnTurnStart',{caster:token,attacker:token,target:token,targets:[token],event:'OnTurnStart'},effects);flushLuaEffects119(effects);Combat.syncInitiative(scene.id,false);
       if(num(token.hpCurrent)<=0)await Combat.nextTurn({allowMissing194:true,ignoreCommand194:true,skipEnd194:true,previousId194:token.id,orderBefore194:startOrder,indexBefore194:startIndex});
     }
@@ -717,14 +718,14 @@
     try{return await fn();}catch(error){console.error('SCENE_COMMAND_V191',error);Toast.show(String(error?.message||error),'err');}
     finally{local.commandBusy191=false;if(UI.activeModuleId==='combat')Combat.render();}
   }
-  const turnFields191=['actionUsed','movedThisTurn','reactionUsedV119','burstStateV122','disengagedV122','freeDroneCommandUsedV129','droneCommandV129'];
+  const turnFields191=['dashUsedV198','actionUsed','movedThisTurn','reactionUsedV119','burstStateV122','disengagedV122','freeDroneCommandUsedV129','droneCommandV129'];
   Combat.setBattleMode191=async function(){
     const scene=this.getScene(),runtime=this.getRuntime();if(!scene||!runtime||!this.isDm())return;
     if(!activeMap193()){Toast.show('Сначала перенесите игровую сцену на эту карту','info');return;}
     if(local.lua119.busy||local.moveBusyV122||local.combatTransactionV120){Toast.show(operationReason191(),'info');return;}
     if(inBattle191(scene)){
       runtime.pausedBudget191=Object.fromEntries(runtime.tokens.map(t=>[t.id,Object.fromEntries(turnFields191.map(k=>[k,clone(t[k])]))]));
-      for(const t of runtime.tokens){t.actionUsed=false;t.movedThisTurn=0;t.burstStateV122=null;t.reactionUsedV119=false;}
+      for(const t of runtime.tokens){t.dashUsedV198=false;t.actionUsed=false;t.movedThisTurn=0;t.burstStateV122=null;t.reactionUsedV119=false;}
       runtime.battleStarted191=true;scene.mode='standard';
     }else if(runtime.battleStarted191){
       for(const t of runtime.tokens){const budget=runtime.pausedBudget191?.[t.id];if(budget)Object.assign(t,clone(budget));}
@@ -736,7 +737,7 @@
       if(!rolls)return;
       resetSession193('battle');
       units.forEach((t,i)=>{t.initiative=rolls[i]+initiativeBonus195(t);t.initiativeOverrideV147=true;t.initiativeBattle193=local.store.session193.battleId;});
-      for(const t of runtime.tokens){t.actionUsed=false;t.movedThisTurn=0;t.reactionUsedV119=false;t.burstStateV122=null;t.disengagedV122=false;t.freeDroneCommandUsedV129=false;t.droneCommandV129=null;}
+      for(const t of runtime.tokens){t.dashUsedV198=false;t.actionUsed=false;t.movedThisTurn=0;t.reactionUsedV119=false;t.burstStateV122=null;t.disengagedV122=false;t.freeDroneCommandUsedV129=false;t.droneCommandV129=null;}
       runtime.battleStarted191=true;scene.mode='combat';this.syncInitiative(scene.id,true);
       const first=this.getCurrentTurnToken();if(first){this.selectedObject={kind:'token',id:first.id};const effects={damage:0,effects:[]};await runAutomaticHooks119(first,'OnTurnStart',{caster:first,attacker:first,target:first,targets:[first],event:'OnTurnStart'},effects);flushLuaEffects119(effects);}
     }
@@ -747,7 +748,8 @@
   Combat.getCurrentTurnToken=function(){const token=activeMap193()&&inBattle191()?currentBefore191():null;return withdrawn194(token)?null:token;};
   function renderSession191(scene,runtime){
     const token=selectedToken104(),mods=list(token?.timedModifiersV122),conditions=token?Object.entries(conditionStateV138(token)).filter(([,v])=>v).map(([k])=>({dying:'Умирает',stabilized:'Стабилизирован',prone:'Лежит',stunned:'Оглушён',grappled:'Захвачен',unconscious:'Без сознания',handsBusy:'Руки заняты'})[k]||k):[];
-    return `<section class="scene-session-v191" aria-label="Режим и ресурсы участника"><div><b>${!activeMap193()?'ПОДГОТОВКА КАРТЫ':inBattle191(scene)?'БОЕВОЙ РЕЖИМ':'ОБЫЧНЫЙ РЕЖИМ'}</b><button class="secondary" type="button" data-battle-mode191>${inBattle191(scene)?'ПРИОСТАНОВИТЬ БОЙ':runtime.battleStarted191?'ПРОДОЛЖИТЬ БОЙ':'НАЧАТЬ БОЙ'}</button><button class="primary" type="button" data-publish191>ПОКАЗАТЬ ИГРОКАМ</button><span>На экране: ${html(COMBAT_SCENES[local.store?.publishedSceneId191]?.name||'ничего не опубликовано')}</span></div><div>${token?`<strong>${html(token.name)}</strong>${withdrawn194(token)?'<span>ВЫВЕДЕН ИЗ БОЯ</span>':''}<span>Действие: ${!inBattle191(scene)?'без лимита':token.actionUsed?'потрачено':'доступно'}</span><span>Реакция: ${token.reactionUsedV119?'потрачена':reactionBlocked195(token)?'недоступна из-за травмы':reactionAvailable195(token)?'доступна':'недоступна'}</span><span>Движение: ${!inBattle191(scene)?'без лимита':Math.max(0,tokenMoveCells(token,scene)-num(token.movedThisTurn))}</span>${injurySeverity129(token)?`<span title="${html(INJURY_LABELS_V129[injurySeverity129(token)])}">ТРАВМА ${injurySeverity129(token)} · проверки −${injuryCheckPenalty129(token)}${injuryDisadvantage129(token)?' · ПОМЕХА':''}</span>`:''}${token.burstStateV122?`<span>Продолжение очереди: выстрел ${token.burstStateV122.nextShot} / ${token.burstStateV122.maxShots} · смен целей ${num(token.burstStateV122.targetSwitches)}</span>`:''}${mods.map(m=>`<span title="До конца хода владельца">${html(m.name||m.id)} · ${m.remainingTurns} ход.</span>`).join('')}${conditions.length?`<span>Состояния: ${html(conditions.join(', '))}</span>`:''}`:'Выберите участника'}<span role="status" data-operation191>${html(operationReason191()||'Готово')}</span></div></section>`;
+    const movement=token?movementState198(token,scene):null;
+    return `<section class="scene-session-v191" aria-label="Режим и ресурсы участника"><div><b>${!activeMap193()?'ПОДГОТОВКА КАРТЫ':inBattle191(scene)?'БОЕВОЙ РЕЖИМ':'ОБЫЧНЫЙ РЕЖИМ'}</b><button class="secondary" type="button" data-battle-mode191>${inBattle191(scene)?'ПРИОСТАНОВИТЬ БОЙ':runtime.battleStarted191?'ПРОДОЛЖИТЬ БОЙ':'НАЧАТЬ БОЙ'}</button><button class="primary" type="button" data-publish191>ПОКАЗАТЬ ИГРОКАМ</button><span>На экране: ${html(COMBAT_SCENES[local.store?.publishedSceneId191]?.name||'ничего не опубликовано')}</span></div><div>${token?`<strong>${html(token.name)}</strong>${withdrawn194(token)?'<span>ВЫВЕДЕН ИЗ БОЯ</span>':''}<span>Действие: ${!inBattle191(scene)?'без лимита':token.actionUsed?'потрачено':'доступно'}</span><span>Реакция: ${token.reactionUsedV119?'потрачена':reactionBlocked195(token)?'недоступна из-за травмы':reactionAvailable195(token)?'доступна':'недоступна'}</span><span>Движение: ${!inBattle191(scene)?'без лимита':movement.remaining}</span>${token.dashUsedV198&&inBattle191(scene)?'<span>РЫВОК · движение ×2</span>':''}${movement.carries?`<span title="Грузоподъёмность в бою: 5 + 2 × Сила и модификаторы">Вес ${movement.weight.toFixed(2)} / ${movement.capacity.toFixed(2)}${movement.factor<1?' · ПЕРЕГРУЗ':''}</span>`:''}${injurySeverity129(token)?`<span title="${html(INJURY_LABELS_V129[injurySeverity129(token)])}">ТРАВМА ${injurySeverity129(token)} · проверки −${injuryCheckPenalty129(token)}${injuryDisadvantage129(token)?' · ПОМЕХА':''}</span>`:''}${token.burstStateV122?`<span>Продолжение очереди: выстрел ${token.burstStateV122.nextShot} / ${token.burstStateV122.maxShots} · смен целей ${num(token.burstStateV122.targetSwitches)}</span>`:''}${mods.map(m=>`<span title="До конца хода владельца">${html(m.name||m.id)} · ${m.remainingTurns} ход.</span>`).join('')}${conditions.length?`<span>Состояния: ${html(conditions.join(', '))}</span>`:''}`:'Выберите участника'}<span role="status" data-operation191>${html(operationReason191()||'Готово')}</span></div></section>`;
   }
   Combat.nextTurn = async function(options={}) {
     const runtime = this.getRuntime();
@@ -761,7 +763,7 @@
     local.lua119.busy=true;
     try{
       const effects={damage:0,effects:[]},previous=list(runtime.tokens).find(token=>String(token.id)===previousId)||null;
-      if(previous&&num(previous.hpCurrent)>0&&!options.skipEnd194){previous.burstStateV122=null;for(const drone of list(runtime.tokens).filter(row=>isDroneToken129(row)&&String(row.operatorTokenIdV129)===String(previous.id))){if(drone.droneCommandV129)drone.droneCommandV129.completed=true;}await runAutomaticHooks119(previous,'OnTurnEnd',{caster:previous,attacker:previous,target:previous,targets:[previous],event:'OnTurnEnd'},effects);await processTimedModifiers122(previous,'end',effects);}
+      if(previous&&num(previous.hpCurrent)>0&&!options.skipEnd194){previous.burstStateV122=null;previous.dashUsedV198=false;for(const drone of list(runtime.tokens).filter(row=>isDroneToken129(row)&&String(row.operatorTokenIdV129)===String(previous.id))){if(drone.droneCommandV129)drone.droneCommandV129.completed=true;}await runAutomaticHooks119(previous,'OnTurnEnd',{caster:previous,attacker:previous,target:previous,targets:[previous],event:'OnTurnEnd'},effects);await processTimedModifiers122(previous,'end',effects);}
       this.syncInitiative?.(this.getSceneIdForView?.(),false);
       const chooseAfter=(order,index)=>{
         const living=new Set(list(runtime.initiativeOrder).map(String));
@@ -778,7 +780,7 @@
       let current=this.getCurrentTurnToken?.(),guard=Math.max(1,list(runtime.tokens).length+1);
       while(current&&guard-->0){
         const startOrder=list(runtime.initiativeOrder).map(String),startIndex=Math.max(0,startOrder.indexOf(String(current.id)));
-        runtime.pendingTurnStart193='';current.movedThisTurn=0;current.actionUsed=false;current.reactionUsedV119=false;current.disengagedV122=false;current.freeDroneCommandUsedV129=false;
+        runtime.pendingTurnStart193='';current.dashUsedV198=false;current.movedThisTurn=0;current.actionUsed=false;current.reactionUsedV119=false;current.disengagedV122=false;current.freeDroneCommandUsedV129=false;
         await processTimedModifiers122(current,'start',effects);
         if(num(current.hpCurrent)>0){await runAutomaticHooks119(current,'OnTurnStart',{caster:current,attacker:current,target:current,targets:[current],event:'OnTurnStart'},effects);if(num(current.hpCurrent)>0)break;}
         appendCombatLog105(runtime,`${current.name} выбывает из инициативы: здоровье равно 0.`);
@@ -1209,13 +1211,43 @@
     if (num(token?.visionRadius, 0) > 0) return Math.max(0, num(token.visionRadius));
     return Math.max(1, num(scene?.visionRadius, COMBAT_DEFAULT_VISION));
   }
-  function tokenMoveCells(token, scene) {
-    if (num(token?.moveRange, 0) > 0) return injurySpeed129(Math.max(0,num(token.moveRange)),token);
-    if (token?.equipmentItemId && ['turret','drone'].includes(String(token.equipmentType || equipmentItem105(token.equipmentItemId)?.type || ''))) {
-      return injurySpeed129(Math.max(0,num(equipmentItem105(token.equipmentItemId)?.unitMoveRange,0)),token);
+  function movementState198(token,scene){
+    const entity=entityForToken(token)||{},mechanical=isDroneToken129(token)||isTurretToken129(token),carries=Boolean(token?.playerId||token?.npcId)&&!mechanical;
+    const computed=window.GRPGStatsV113?.compute?.({...entity,baseStats:{...(entity.baseStats||{}),carryBase:5},carryBase:5},{kind:token?.npcId?'npc':'player',inCombat:true,temporaryModifiers:timedStatModifiers122(token)})||{};
+    let base;
+    if(token?.moveRangeOverrideV122&&num(token.moveRange)>0)base=num(token.moveRange);
+    else if(mechanical)base=num(equipmentItem105(token.equipmentItemId)?.unitMoveRange);
+    else if(computed.values?.movement!=null&&(token?.playerId||token?.npcId))base=num(computed.values.movement);
+    else base=num(token?.moveRange)>0?num(token.moveRange):num(combatConfig(entity).moveRange,DEFAULT_MOVE_WORLD);
+    let weight=0;
+    if(carries){
+      const slots=entity.equipmentSlots||entity.loadout||{},equipped=['primaryWeapon','secondaryWeapon','armor','backpack'].map(key=>slots[key]);if(!slots.primaryWeapon&&slots.weapon)equipped.push(slots.weapon);
+      equipped.push(...list(entity.implantSlots?.length?entity.implantSlots:entity.installedImplantIds));
+      const inventory=list(tokenInventoryOwner120(token).rows),carriedIds=new Set([...inventory.filter(row=>num(row.qty)>0).map(row=>String(row.itemId)),...equipped.filter(Boolean).map(String)]);
+      const ammunition=Object.entries(token.weaponMagazinesV118||entity.weaponMagazines||{}).filter(([id,row])=>carriedIds.has(id)&&row?.ammoTypeId&&num(row.loaded)>0).map(([,row])=>({itemId:row.ammoTypeId,qty:row.loaded}));
+      weight=window.GRPGCombatMovementV198.weight([...inventory,...ammunition],equipped,equipmentItem105);
     }
-    const wc = combatConfig(entityForToken(token) || {});
-    return injurySpeed129(Math.max(0,wc.moveRange??DEFAULT_MOVE_WORLD),token);
+    const speed=injurySpeed129(Math.max(0,base),token),result=window.GRPGCombatMovementV198.resolve({speed,weight,capacity:carries?num(computed.values?.carryCapacity,5+2*num(computed.abilities?.strength)):Number.MAX_SAFE_INTEGER,dash:inBattle191(scene)&&token?.dashUsedV198,spent:token?.movedThisTurn});
+    return {...result,baseSpeed:Math.max(0,base),injuredSpeed:speed,carries};
+  }
+  function tokenMoveCells(token,scene){return movementState198(token,scene).speed;}
+  function tokenMoveBudget198(token,scene){return movementState198(token,scene).budget;}
+  function dashAvailability198(token=selectedToken104()){
+    if(!token||!inBattle191())return{enabled:false,reason:'Рывок доступен в боевом режиме'};
+    if(num(token.hpCurrent)<=0||!canCombatAct129(token)||token.locked)return{enabled:false,reason:'Участник сейчас не может действовать'};
+    if(isDroneToken129(token)||isTurretToken129(token))return{enabled:false,reason:'Рывок устройства требует отдельного правила'};
+    if(token.burstStateV122)return{enabled:false,reason:'Сначала завершите скорострельную очередь'};
+    if(token.dashUsedV198)return{enabled:false,reason:'Рывок уже использован в этом ходу'};
+    if(actionSpent191(token))return{enabled:false,reason:'Действие уже потрачено'};
+    const movement=movementState198(token,Combat.getScene());if(movement.speed<=0)return{enabled:false,reason:'Скорость равна нулю'};
+    return{enabled:true,reason:'Потратить действие: удвоить запас движения хода',token,movement};
+  }
+  function renderDash198(){const state=dashAvailability198();return `<button class="secondary" type="button" data-scene-dash198 ${state.enabled?'':'disabled'} title="${html(state.reason)}">РЫВОК</button>`;}
+  async function dash198(){
+    const state=dashAvailability198();if(!state.enabled){Toast.show(state.reason,'info');return;}
+    const token=state.token;token.actionUsed=true;token.dashUsedV198=true;const movement=movementState198(token,Combat.getScene());
+    appendCombatLog105(Combat.getRuntime(),`${token.name} выполняет Рывок действием: скорость ${movement.speed}, запас ${movement.budget}, уже потрачено ${movement.spent}, осталось ${movement.remaining}.`);
+    local.preview=null;Combat.render();await checkpointCombat120('Рывок',false);
   }
   function tokenAttackCells(token, scene) {
     if (num(token?.attackRange, 0) > 0) return Math.max(0, num(token.attackRange));
@@ -1656,7 +1688,7 @@
       ${inBattle191(scene)&&local.ui.initiativeOpen?renderInitiativePanel112(runtime):''}
       <div class="scene-command-deck-v118">
         <div class="scene-measurebar-v118"><span class="scene-bar-label-v118">ИНСТРУМЕНТЫ</span>${actionButton('select','ВЫБОР')}${actionButton('pan','РУКА')}${actionButton('measure','ЛИНЕЙКА')}${actionButton('circle','КРУГ')}${actionButton('cone','КОНУС')}${actionButton('wall','СТЕНА')}${actionButton('area','ОБЛАСТЬ')}<button class="ghost" type="button" data-scene-action-v104="clear">ОЧИСТИТЬ</button></div>
-        <div class="scene-actionbar-v104 scene-character-actions-v118"><span class="scene-bar-label-v118">ДЕЙСТВИЯ</span>${actionButton('move','ДВИЖЕНИЕ')}${renderPostureAction128()}${actionButton('attack','АТАКА')}${actionButton('grenade','ГРАНАТА')}${renderDisengageAction122()}${renderReloadAction120()}${renderMalfunctionAction122()}${renderBurstFinish122()}${renderSearchAction118()}${renderActiveSkills118()}${renderActiveEquipment129()}${renderDeviceActions129()}${renderActionEquipment105(scene,runtime)}<button class="ghost ${local.ui.initiativeOpen?'active':''}" id="scene-initiative-toggle-v112" type="button">ПОРЯДОК</button><span class="scene-action-spacer-v104"></span><span class="scene-round-v104">${inBattle191(scene)?'Раунд '+Math.max(1,num(runtime.round,1)):'Без инициативы'}</span><button class="primary" id="scene-next-turn-v104" type="button" ${!inBattle191(scene)||operationReason191()?'disabled':''}>СЛЕДУЮЩИЙ ХОД</button></div>
+        <div class="scene-actionbar-v104 scene-character-actions-v118"><span class="scene-bar-label-v118">ДЕЙСТВИЯ</span>${actionButton('move','ДВИЖЕНИЕ')}${renderPostureAction128()}${renderDash198()}${actionButton('attack','АТАКА')}${actionButton('grenade','ГРАНАТА')}${renderDisengageAction122()}${renderReloadAction120()}${renderMalfunctionAction122()}${renderBurstFinish122()}${renderSearchAction118()}${renderActiveSkills118()}${renderActiveEquipment129()}${renderDeviceActions129()}${renderActionEquipment105(scene,runtime)}<button class="ghost ${local.ui.initiativeOpen?'active':''}" id="scene-initiative-toggle-v112" type="button">ПОРЯДОК</button><span class="scene-action-spacer-v104"></span><span class="scene-round-v104">${inBattle191(scene)?'Раунд '+Math.max(1,num(runtime.round,1)):'Без инициативы'}</span><button class="primary" id="scene-next-turn-v104" type="button" ${!inBattle191(scene)||operationReason191()?'disabled':''}>СЛЕДУЮЩИЙ ХОД</button></div>
       </div>
     </div>`;
   }
@@ -1687,7 +1719,7 @@
   function renderDisengageAction122(){const token=selectedToken104(),enabled=Boolean(token&&Combat.canActWithToken?.(token)&&!actionSpent191(token)&&!token.disengagedV122&&!token.burstStateV122);return `<button class="secondary" type="button" data-scene-disengage-v122 ${enabled?'':'disabled'} title="Потратить действие: движение не вызывает атаку по возможности">ОТХОД</button>`;}
   function postureAvailability128(token=selectedToken104()){
     const scene=Combat.getScene();if(!token||!scene)return{enabled:false,cost:0,remaining:0,reason:'Сначала выберите действующего юнита'};
-    const total=Math.max(0,Math.floor(tokenMoveCells(token,scene)+1e-6)),cost=total>0?Math.max(1,Math.ceil(total/2)):0,spent=Math.max(0,Math.floor(num(token.movedThisTurn,0)+1e-6)),remaining=Math.max(0,total-spent);
+    const total=Math.max(0,Math.floor(tokenMoveBudget198(token,scene)+1e-6)),cost=total>0?Math.max(1,Math.ceil(tokenMoveCells(token,scene)/2)):0,spent=Math.max(0,Math.floor(num(token.movedThisTurn,0)+1e-6)),remaining=Math.max(0,total-spent);
     if(!canMechanicalMove108(token))return{enabled:false,cost,remaining,reason:'Сейчас не ход этого юнита'};
     if(token.burstStateV122)return{enabled:false,cost,remaining,reason:'Сначала завершите скорострельную очередь'};
     if(local.moveBusyV122||local.lua119.busy)return{enabled:false,cost,remaining,reason:'Предыдущее боевое действие ещё не завершено'};
@@ -2140,7 +2172,7 @@
   function makeRoutePreview104(point,attack=false){
     const scene=Combat.getScene(),token=selectedToken104();if(!scene||!token)return null;const start=centerOf(token);
     if(attack){const weapon=weaponForToken105(token);if(!weapon)return {kind:'route',mode:'attack',sourceTokenId:token.id,points:[start,start],end:start,limited:true,blocked:true,label:'Нет выбранного оружия'};const max=tokenAttackCells(token,scene),snapped=nearestHexCenter107(scene,point),target=list(Combat.getRuntime(scene.id)?.tokens).find(t=>t.id!==token.id&&window.GRPGUnitSizeV184.contains(t,point.x,point.y)),distance=target?window.GRPGUnitSizeV184.distance(token,target):hexDistancePoints109(scene,start,snapped),rangeEnd=target?snapped:hexEndpointAtRange109(scene,start,snapped,max),end={x:rangeEnd.x,y:rangeEnd.y},limited=distance>Math.floor(max+1e-6),blocked=!limited&&sightSegmentBlocked105(scene,start,end,[token.id]);return {kind:'route',mode:'attack',sourceTokenId:token.id,points:[start,end],end,hexes:Math.min(distance,Math.floor(max+1e-6)),maxHexes:Math.floor(max+1e-6),limited,blocked,label:`${weapon.name||'Выстрел'}: ${hexLabel109(Math.min(distance,max))} / ${hexLabel109(max)}${blocked?' · ЛИНИЯ ОГНЯ БЛОКИРОВАНА':''}`};}
-    if(token.burstStateV122)return {kind:'route',mode:'move',sourceTokenId:token.id,points:[start],end:start,steps:0,cost:0,limited:true,blocked:true,label:'Сначала завершите скорострельную очередь'};if(!canMechanicalMove108(token))return {kind:'route',mode:'move',sourceTokenId:token.id,points:[start],end:start,steps:0,cost:0,limited:true,blocked:true,label:'Выбран не текущий юнит инициативы'};const snappedTarget=nearestHexCenter107(scene,point),path=findHexPath108(scene,start,snappedTarget,token.id),totalMax=Math.max(0,Math.floor(tokenMoveCells(token,scene)+1e-6)),spentCells=Math.max(0,Math.floor(num(token.movedThisTurn,0)+1e-6)),max=inBattle191()?Math.max(0,totalMax-spentCells):Infinity;if(!path){return {kind:'route',mode:'move',sourceTokenId:token.id,points:[start],end:start,steps:0,cost:0,limited:true,blocked:true,label:'Путь заблокирован'};}const cut=truncateHexPath108(path,max),remaining=Math.max(0,max-cut.cost),terrainExtra=Math.max(0,cut.cost-cut.steps),command=activeDroneCommand129(token),operator=command?.returnOnly?operatorForDrone129(token):null,wrongDirection=Boolean(operator&&hexDistancePoints109(scene,cut.end,centerOf(operator))>=hexDistancePoints109(scene,start,centerOf(operator)));return {kind:'route',mode:'move',sourceTokenId:token.id,points:cut.points,end:cut.end,steps:cut.steps,cost:cut.cost,limited:cut.limited||wrongDirection,blocked:wrongDirection,label:wrongDirection?'Без связи дрон может двигаться только к оператору':`Движение: ${hexLabel109(cut.steps)} · стоимость ${cut.cost}${terrainExtra?` (+${terrainExtra} за трудную местность)`:''} / останется ${inBattle191()?remaining:'без лимита'}`};
+    if(token.burstStateV122)return {kind:'route',mode:'move',sourceTokenId:token.id,points:[start],end:start,steps:0,cost:0,limited:true,blocked:true,label:'Сначала завершите скорострельную очередь'};if(!canMechanicalMove108(token))return {kind:'route',mode:'move',sourceTokenId:token.id,points:[start],end:start,steps:0,cost:0,limited:true,blocked:true,label:'Выбран не текущий юнит инициативы'};const snappedTarget=nearestHexCenter107(scene,point),path=findHexPath108(scene,start,snappedTarget,token.id),totalMax=Math.max(0,Math.floor(tokenMoveBudget198(token,scene)+1e-6)),spentCells=Math.max(0,Math.floor(num(token.movedThisTurn,0)+1e-6)),max=inBattle191()?Math.max(0,totalMax-spentCells):Infinity;if(!path){return {kind:'route',mode:'move',sourceTokenId:token.id,points:[start],end:start,steps:0,cost:0,limited:true,blocked:true,label:'Путь заблокирован'};}const cut=truncateHexPath108(path,max),remaining=Math.max(0,max-cut.cost),terrainExtra=Math.max(0,cut.cost-cut.steps),command=activeDroneCommand129(token),operator=command?.returnOnly?operatorForDrone129(token):null,wrongDirection=Boolean(operator&&hexDistancePoints109(scene,cut.end,centerOf(operator))>=hexDistancePoints109(scene,start,centerOf(operator)));return {kind:'route',mode:'move',sourceTokenId:token.id,points:cut.points,end:cut.end,steps:cut.steps,cost:cut.cost,limited:cut.limited||wrongDirection,blocked:wrongDirection,label:wrongDirection?'Без связи дрон может двигаться только к оператору':`Движение: ${hexLabel109(cut.steps)} · стоимость ${cut.cost}${terrainExtra?` (+${terrainExtra} за трудную местность)`:''} / останется ${inBattle191()?remaining:'без лимита'}`};
   }
   function makeGrenadePreview105(point){const scene=Combat.getScene(),token=selectedToken104(),grenade=grenadeForToken105(token);if(!scene||!token||!grenade)return null;const start=centerOf(token),max=grenadeRangeCells105(grenade,scene),snapped=nearestHexCenter107(scene,point),distance=hexDistancePoints109(scene,start,snapped),rangeEnd=hexEndpointAtRange109(scene,start,snapped,max),end={x:rangeEnd.x,y:rangeEnd.y},radiusHexes=Math.max(0,Math.floor(grenadeRadiusCells105(grenade,scene)+1e-6)),radius=radiusHexes*hexStepDistance109(),limited=distance>Math.floor(max+1e-6);return {kind:'grenade',mode:'grenade',sourceTokenId:token.id,start,end,radius,radiusHexes,hexes:Math.min(distance,max),maxHexes:max,limited,itemId:grenade.id,label:`${grenade.name}: бросок ${hexLabel109(Math.min(distance,max))} / ${hexLabel109(max)} · радиус ${hexLabel109(radiusHexes)}`};}
   function tokenTeam122(token={}){return String(token.teamId||token.factionId||(token.playerId?'players':token.npcId?'npcs':token.type||'units'));}
@@ -2185,7 +2217,7 @@
     try{
       let opportunity={alive:true,reactionUsed:false};
       if(inBattle191()&&!token.disengagedV122){opportunity=await resolveOpportunityAttacks122(token,preview.points);if(!opportunity.alive){Combat.render();broadcastScene104();await checkpointCombat120('Сцена: атака по возможности',opportunity.reactionUsed);return;}}
-      if(inBattle191()&&Math.floor(num(preview.cost,preview.steps))>Math.max(0,Math.floor(tokenMoveCells(token,scene)-num(token.movedThisTurn)))){local.preview=null;await checkpointCombat120('Реакции перед движением',opportunity.reactionUsed);Toast.show('После реакции доступного движения недостаточно. Выберите маршрут заново.','info');return;}
+      if(inBattle191()&&Math.floor(num(preview.cost,preview.steps))>Math.max(0,Math.floor(tokenMoveBudget198(token,scene)-num(token.movedThisTurn)))){local.preview=null;await checkpointCombat120('Реакции перед движением',opportunity.reactionUsed);Toast.show('После реакции доступного движения недостаточно. Выберите маршрут заново.','info');return;}
       fitTokenToHex107(token,scene,preview.end);
       token.movedThisTurn=Math.max(0,num(token.movedThisTurn))+Math.max(0,Math.floor(num(preview.cost,preview.steps)));
       local.preview={...preview,effect:'move',movedTokenId:token.id};
@@ -2388,7 +2420,8 @@
       const equipped=equippedEntriesV138(token).map(({slot,item})=>{const state=itemRuntimeStateV138(token,item,slot),magazine=String(item.type)==='weapon'?magazineState118(token,item):{loaded:0,size:0,ammoTypeId:''};return{id:String(item.id),itemId:String(item.id),name:String(item.name||item.id),type:String(item.type||'gear'),slot:String(slot),tags:list(item.tags).map(String),ammo:magazine.loaded,magazineSize:magazine.size,ammoTypeId:magazine.ammoTypeId,durability:state.durability,durabilityMax:state.durabilityMax,broken:state.broken,charges:state.charges,chargesMax:state.chargesMax};});
       const itemIds=unique([...inventory.map(row=>row.itemId),...equipped.map(row=>row.itemId)]);
       const trained=unique([...list(entity.trainedSkills),...list(entity.trained),...Object.entries(entity.skillTraining||{}).filter(([,value])=>value===true||num(value)>0).map(([id])=>id),...Object.entries(entity.skillLevels||{}).filter(([,value])=>num(value)>0).map(([id])=>id)]);
-      const movementTotal=Math.max(0,tokenMoveCells(token,scene)),movementSpent=Math.max(0,num(token.movedThisTurn));
+      const movement=movementState198(token,scene),movementTotal=movement.budget,movementSpent=Math.max(0,num(token.movedThisTurn));
+      stats.movement=movement.speed;if(movement.carries)stats.carryCapacity=movement.capacity;
       return {injuryDegree:injurySeverity129(token),checkPenalty:injuryCheckPenalty129(token),checkDisadvantage:injuryDisadvantage129(token),heavyWeaponRestricted:heavyBlocked195(token),id:String(token.id),name:String(token.name||token.id),kind:token.playerId?'player':token.npcId?'npc':'unit',teamId:String(token.teamId||token.factionId||(token.playerId?'players':token.npcId?'npcs':token.type||'units')),hpCurrent:num(token.hpCurrent),hpMax:num(token.hpMax),x:centerOf(token).x,y:centerOf(token).y,stats,abilities:unique(entity.skills),trained,items:itemIds,inventory,equipped,modifiers:list(token.timedModifiersV122).map(row=>String(row.id)),actionAvailable:!actionSpent191(token)&&canCombatAct129(token),reactionAvailable:reactionAvailable195(token),movementSpent,movementRemaining:Math.max(0,movementTotal-movementSpent),conditions:clone(conditionStateV138(token)),movementMode:String(token.movementModeV138||'ground'),distances:{}};
     });
     rows.forEach(a=>rows.forEach(b=>{a.distances[b.id]=hexDistancePoints109(scene,{x:a.x,y:a.y},{x:b.x,y:b.y});}));
@@ -3225,6 +3258,7 @@
     local.editorObserver191.observe(node,{attributes:true,attributeFilter:['style']});
   }
   const actionEntries194=[
+    [()=>dash198,fn=>dash198=fn,'Рывок'],
     [()=>treatInjury195,fn=>treatInjury195=fn,'Лечение травмы'],
     [()=>commitAttack105,fn=>commitAttack105=fn,'Атака'],[()=>commitGrenade105,fn=>commitGrenade105=fn,'Граната'],[()=>commitMove104,fn=>commitMove104=fn,'Перемещение'],
     [()=>reloadWeapon118,fn=>reloadWeapon118=fn,'Перезарядка'],[()=>useActiveSkill118,fn=>useActiveSkill118=fn,'Активный навык'],[()=>useActiveEquipment129,fn=>useActiveEquipment129=fn,'Активное снаряжение'],
@@ -3292,6 +3326,7 @@
     if(t.dataset.sceneSkillV118){event.preventDefault();void runCommand191(()=>useActiveSkill118(t.dataset.sceneSkillV118));return;}
     if(t.dataset.sceneEquipmentUseV129){event.preventDefault();void runCommand191(()=>useActiveEquipment129(t.dataset.sceneEquipmentUseV129));return;}
     if(t.dataset.sceneDeployV129){event.preventDefault();void runCommand191(()=>beginDeployDevice129(t.dataset.sceneDeployV129));return;}
+    if(t.hasAttribute('data-scene-dash198')){event.preventDefault();void runCommand191(()=>dash198());return;}
     if(t.hasAttribute('data-scene-command-drone-v129')){event.preventDefault();void runCommand191(()=>commandDrone129());return;}
     if(t.hasAttribute('data-scene-treat-injury195')||t.hasAttribute('data-scene-clear-injuries-v129')){event.preventDefault();void runCommand191(()=>treatInjury195());return;}
     if(t.dataset.sceneSearchV118){event.preventDefault();searchNpc118(t.dataset.sceneSearchV118);return;}
