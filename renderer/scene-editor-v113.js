@@ -224,6 +224,114 @@
     return next;
   };
 
+  // A root operation has one durable identity. Retries write its result, never rerun its logic.
+  let operation194=null,recovery194=null,navigation194=null,retrying194=false;
+  const profileFields194=['stats','inventory','equipmentSlots','implantSlots','installedImplantIds','weaponMagazines','itemStateV138','inventoryBaseSlots','carryBase','baseImplantSlots','inventorySize','carryWeightMax','implantSlotCount'];
+  function profiles194(){return Object.fromEntries(Object.entries(App.state?.users||{}).filter(([,u])=>u.role!=='gm').map(([id,u])=>[id,Object.fromEntries(profileFields194.filter(k=>u[k]!==undefined).map(k=>[k,clone(u[k])]))]));}
+  function changedProfiles194(){
+    const before=operation194?.startProfiles||{},current=profiles194();
+    return Object.fromEntries(Object.entries(current).map(([id,profile])=>[id,Object.fromEntries(Object.entries(profile).filter(([key,value])=>JSON.stringify(before[id]?.[key])!==JSON.stringify(value)))]).filter(([,patch])=>Object.keys(patch).length));
+  }
+  function applyProfiles194(profiles){for(const [id,patch] of Object.entries(profiles||{})){if(!App.state.users[id])continue;Object.assign(App.state.users[id],clone(patch));}}
+  function snapshot194(){const store=clone(collectStoreFromRuntime());delete store.operations194;return{store,profiles:profiles194(),selection:clone(Combat.selectedObject)};}
+  function restore194(snapshot){
+    const journal=local.store.operations194,camera=clone(local.cameraRuntime);applyStore(clone(snapshot.store));ensureCombatState().scenes=clone(snapshot.store.runtimes);local.store.runtimes=clone(snapshot.store.runtimes);local.store.operations194=journal;local.cameraRuntime=camera;ensureCombatState().cameraByScene=clone(camera);local.store.cameraByScene=clone(camera);applyProfiles194(snapshot.profiles);Combat.selectedObject=clone(snapshot.selection)||null;local.preview=null;
+  }
+  function journal194(){return local.store.operations194||(local.store.operations194={version:194,active:null,history:[]});}
+  function record194(){return operation194?.record||recovery194||null;}
+  function operationFailure194(error){if(operation194)operation194.error=String(error?.message||error);}
+  function recoverOperation194(){
+    if(operation194||recovery194||!local.loaded)return;
+    const record=local.store?.operations194?.active;if(!record)return;
+    if(record.status==='prepared'){
+      journal194().history=[{id:record.id,label:record.label,status:'cancelled',at:new Date().toISOString(),message:'Незавершённый ввод отменён после перезапуска'},...list(journal194().history)].slice(0,40);journal194().active=null;return;
+    }
+    recovery194=record;
+  }
+  async function writeOperation194(record){
+    journal194().active=record;
+    if(operation194){operation194.allowWrite=true;operation194.pendingPayload=clone(collectStoreFromRuntime());}
+    try{
+      const result=await saveStoreNow();if(result?.ok===false)throw Error(result.message||'Не удалось записать результат операции');
+      if(operation194){operation194.lastDurable=clone(collectStoreFromRuntime());operation194.pendingPayload=null;}
+      return result;
+    }finally{if(operation194)operation194.allowWrite=false;}
+  }
+  async function sealOperation194(label){
+    if(!operation194)return;
+    const op=operation194;op.record.status='intermediate';op.record.stage=String(label);op.record.profiles=changedProfiles194();op.record.profileSaved=false;
+    // A confirmed reaction survives cancellation of the parent. A failed write keeps the same payload for retry.
+    op.boundary=snapshot194();op.confirmed=true;
+    try{await writeOperation194(op.record);}catch(error){op.persistenceFailed=true;recovery194=op.record;throw error;}
+  }
+  async function finishRecord194(record,status){
+    const journal=journal194(),oldHistory=journal.history;
+    journal.history=[{id:record.id,label:record.label,status,stage:record.stage,error:record.error||'',at:new Date().toISOString()},...list(journal.history).filter(r=>r.id!==record.id)].slice(0,40);journal.active=null;
+    try{
+      if(operation194)operation194.allowWrite=true;
+      const saved=await saveStoreNow();if(saved?.ok===false)throw Error(saved.message||'Не удалось завершить запись операции');
+      recovery194=null;
+    }catch(error){journal.active=record;journal.history=oldHistory;recovery194=record;record.error=String(error?.message||error);throw error;}
+    finally{if(operation194)operation194.allowWrite=false;}
+  }
+  async function runOperation194(label,fn,nested=false){
+    if(operation194){if(nested)return fn();Toast.show('Предыдущее действие ещё выполняется','info');return;}
+    recoverOperation194();
+    if(recovery194){Toast.show('Сначала повторите сохранение предыдущего результата','info');return;}
+    const before=snapshot194(),record={id:makeId('operation'),label,status:'prepared',stage:'Проверка и ввод',startedAt:new Date().toISOString(),profiles:{},profileSaved:false};
+    const op=operation194={record,startProfiles:before.profiles,boundary:before,confirmed:false,applied:false,error:'',allowWrite:false,persistenceFailed:false,lastDurable:null,pendingPayload:null};
+    clearTimeout(local.saveTimer);local.saveTimer=0;
+    try{
+      await writeOperation194(record);
+      op.executing=true;const result=op.cancelBeforeExecution?undefined:await fn();
+      if(op.persistenceFailed||recovery194){record.error=op.error||record.error;return result;}
+      if(op.error&&op.applied){restore194(op.boundary);record.profiles=changedProfiles194();record.stage='После подтверждённого шага: '+op.error;}
+      if(!op.applied){restore194(op.boundary);record.status=op.confirmed?'intermediate':'cancelled';record.profiles=changedProfiles194();record.stage=op.error?'Действие прервано: '+op.error:op.confirmed?'Ввод отменён; подтверждённые последствия сохранены':'Ввод отменён';}
+      record.error=op.error;
+      if(op.confirmed&&!op.applied){
+        await writeOperation194(record);const saved=await persistCombatProfiles105('Подтверждённые последствия отменённого действия',{immediate:true});if(saved?.ok===false){recovery194=record;return result;}record.profileSaved=true;
+      }
+      await finishRecord194(record,op.error&&op.confirmed?'partial':op.applied?'applied':op.confirmed?'partial':'cancelled');return result;
+    }catch(error){
+      op.error=String(error?.message||error);
+      if(!op.persistenceFailed&&!recovery194){restore194(op.boundary);record.status=op.confirmed?'intermediate':'cancelled';record.profiles=changedProfiles194();record.error=op.error;try{await finishRecord194(record,op.confirmed?'partial':'cancelled');}catch{}}
+      Toast.show(op.error,'err');
+    }finally{
+      operation194=null;updateOperation191();if(UI.activeModuleId==='combat')Combat.render();
+      if(navigation194&&!recovery194){const next=navigation194;navigation194=null;queueMicrotask(next);}
+    }
+  }
+  async function retryOperation194(){
+    if(retrying194||operation194||!recovery194)return;
+    retrying194=true;const record=recovery194;
+    try{
+      // Restore only battle-owned profile fields; credit grants have their own idempotent receipts.
+      applyProfiles194(record.profiles);
+      if(record.externalJob){
+        const job=record.externalJob,combatProfiles=profiles194();let result;try{result=await window.GRPGCombatAPIv138?.grantCredits?.(job.playerId,job.amount,{operationId:job.id,reason:record.label});}finally{applyProfiles194(combatProfiles);}
+        if(!result?.ok)throw Error(result?.message||'Выдача денег не подтверждена');delete record.externalJob;
+      }
+      await writeOperation194(record);
+      const result=await persistCombatProfiles105('Повтор сохранения боевого результата',{immediate:true});if(result?.ok===false)throw Error(result.message||'Не удалось сохранить профиль');record.profileSaved=true;
+      await finishRecord194(record,record.status==='applied'?'applied':record.status==='cancelled'?'cancelled':'partial');
+    }catch(error){record.error=String(error?.message||error);Toast.show(record.error,'err');}
+    finally{retrying194=false;updateOperation191();if(UI.activeModuleId==='combat')Combat.render();if(navigation194&&!recovery194){const next=navigation194;navigation194=null;queueMicrotask(next);}}
+  }
+  function renderOperation194(){
+    recoverOperation194();const record=record194();
+    if(!record){
+      const last=list(local.store?.operations194?.history).find(r=>r.status==='partial'&&r.error&&!r.acknowledged194);
+      return last?`<div class="scene-operation-v194" role="status"><b>Действие выполнено частично</b><span>${html(last.label+': '+last.error)}. Подтверждённые последствия сохранены; проверьте результат вручную.</span><button class="secondary" type="button" data-operation-ack194="${html(last.id)}">ПОНЯТНО</button></div>`:'';
+    }
+    return `<div class="scene-operation-v194" role="status"><b>${html(record.label)}</b><span>${html(recovery194?'Результат ожидает сохранения. '+(record.error||''):record.stage||'Выполнение')}</span>${recovery194?`<button class="primary" type="button" data-operation-retry194 ${retrying194?'disabled':''}>${retrying194?'СОХРАНЕНИЕ…':'ПОВТОРИТЬ СОХРАНЕНИЕ'}</button>`:''}</div>`;
+  }
+  function deferNavigation194(fn){
+    if(!operation194&&!recovery194)return false;
+    navigation194=fn;if(operation194&&!operation194.executing)operation194.cancelBeforeExecution=true;if(document.querySelector('.scene-lua-overlay-v119'))closeCombatModal119(null);if(local.lua119.pointPicker)cancelAbilityPoint125();
+    if(recovery194)Toast.show('Перед закрытием сохраните подтверждённый результат','info');return true;
+  }
+  function unloadStore194(){return operation194?.pendingPayload||operation194?.lastDurable||collectStoreFromRuntime();}
+
   const Session193=window.GRPGCombatSessionV193;
   function activeMap193(id=Combat.getSceneIdForView?.()){return !local.store?.session193||local.store.session193.activeMapId===id;}
   function ensureSession193(){
@@ -269,11 +377,38 @@
       if(moving.length){runtime.thinkersV125=[...list(runtime.thinkersV125),...moving.filter(t=>!list(runtime.thinkersV125).some(r=>r.id===t.id))];other.thinkersV125=list(other.thinkersV125).filter(t=>!moving.includes(t));}
     }
   }
+  function memberOut194(token){return list(local.store?.session193?.withdrawn194).includes(String(token?.participantId193||''));}
+  function withdrawn194(token){return inBattle191()&&memberOut194(token);}
+  async function membership194(){
+    const session=ensureSession193(),runtime=Combat.getRuntime();if(!session||!activeMap193())return;
+    const choices=Object.entries(session.participants);if(!choices.length)return;
+    const result=await combatModal119({title:'Состав боя',subtitle:'Вывод и возврат сохраняют HP, патроны, движение, действие и реакцию. Возврат не запускает заново уже начатый ход.',body:`<label class="field">Участник<select class="select" name="member194">${choices.map(([pid,t])=>`<option value="${html(pid)}">${html(t.name||t.id)} · ${list(session.withdrawn194).includes(pid)?'выведен из боя':'в составе'} · ${html(pid.slice(-5))}</option>`).join('')}</select></label><label class="field">Изменение<select class="select" name="membership194"><option value="withdraw">Вывести из боя</option><option value="return">Вернуть в бой</option></select></label>`,confirm:'ПРИМЕНИТЬ',decline:'ОТМЕНИТЬ',read:form=>({pid:form.elements.member194.value,action:form.elements.membership194.value})});
+    if(!result)return;
+    const actor=session.participants[result.pid];if(!actor)return;
+    const values=new Set(list(session.withdrawn194)),wasWithdrawn=values.has(result.pid);
+    if(result.action==='withdraw')values.add(result.pid);else values.delete(result.pid);
+    if(wasWithdrawn===values.has(result.pid))return;
+    const currentId=runtime.initiativeOrder?.[runtime.turnIndex],wasCurrent=currentId===actor.id;
+    session.withdrawn194=[...values];
+    if(result.action==='withdraw'){
+      if(wasCurrent&&inBattle191()){
+        // Keep the old order long enough to finish this actor and select its successor.
+        await Combat.nextTurn({allowMissing194:true,ignoreCommand194:true});
+      }
+      if(runtime.pendingTurnStart193===actor.id)runtime.pendingTurnStart193='';
+    }
+    Combat.syncInitiative(Combat.getScene().id,false);
+    if(result.action==='withdraw'&&wasCurrent&&session.started&&!inBattle191())runtime.pendingTurnStart193=runtime.initiativeOrder[runtime.turnIndex]||'';
+    if(!runtime.initiativeOrder.length){runtime.turnIndex=0;runtime.pendingTurnStart193='';}
+    appendCombatLog105(runtime,`${actor.name}: ${result.action==='withdraw'?'выведен из боя':'возвращён в бой'} без восстановления ресурсов.`);
+    await checkpointCombat120('Изменение состава боя',false);Combat.render();
+  }
+
   function renderLifecycle193(scene,runtime){
     const session=ensureSession193();if(!session)return'';
     const active=activeMap193(),present=new Set(runtime.tokens.map(t=>t.participantId193)),absent=Object.entries(session.participants).filter(([pid])=>!present.has(pid));
     const waiting=active&&inBattle191(scene)&&session.turnTokenId&&!runtime.tokens.some(t=>t.id===runtime.initiativeOrder[runtime.turnIndex]);
-    return `<div class="scene-lifecycle-v193"><span>${active?'Действующая карта':'Подготовка карты'} · игровая сцена ${html(session.narrativeId.slice(-7))}${session.battleId?' · бой '+html(session.battleId.slice(-7)):''}</span>${active?`<button class="secondary" data-lifecycle193="battle" type="button">НОВЫЙ БОЙ</button><button class="secondary" data-lifecycle193="scene" type="button">НОВАЯ ИГРОВАЯ СЦЕНА</button>`:`<button class="primary" data-lifecycle193="transfer" type="button">ПЕРЕНЕСТИ СЮДА ИГРОВУЮ СЦЕНУ</button><span>Сейчас: ${html(COMBAT_SCENES[session.activeMapId]?.name||'—')}</span>`}<button class="secondary" data-lifecycle193="roster" type="button">УЧАСТНИКИ ВНЕ КАРТЫ · ${absent.length}</button>${!active&&selectedToken104()?'<button class="secondary" data-lifecycle193="bind" type="button">СВЯЗАТЬ ВЫБРАННЫЙ ТОКЕН</button>':''}${waiting?'<strong>Текущий участник ещё не размещён на карте. Разместите его через «Участники вне карты» чтобы продолжить бой.</strong>':''}</div>`;
+    return `<div class="scene-lifecycle-v193"><span>${active?'Действующая карта':'Подготовка карты'} · игровая сцена ${html(session.narrativeId.slice(-7))}${session.battleId?' · бой '+html(session.battleId.slice(-7)):''}</span>${active?`<button class="secondary" data-lifecycle193="membership" type="button">СОСТАВ БОЯ</button><button class="secondary" data-lifecycle193="battle" type="button">НОВЫЙ БОЙ</button><button class="secondary" data-lifecycle193="scene" type="button">НОВАЯ ИГРОВАЯ СЦЕНА</button>`:`<button class="primary" data-lifecycle193="transfer" type="button">ПЕРЕНЕСТИ СЮДА ИГРОВУЮ СЦЕНУ</button><span>Сейчас: ${html(COMBAT_SCENES[session.activeMapId]?.name||'—')}</span>`}<button class="secondary" data-lifecycle193="roster" type="button">УЧАСТНИКИ ВНЕ КАРТЫ · ${absent.length}</button>${!active&&selectedToken104()?'<button class="secondary" data-lifecycle193="bind" type="button">СВЯЗАТЬ ВЫБРАННЫЙ ТОКЕН</button>':''}${waiting?'<strong>Текущий участник ещё не размещён на карте. Разместите его через «Участники вне карты» чтобы продолжить бой.</strong>':''}</div>`;
   }
   function participantOptions193(filter=()=>true){
     return Object.entries(ensureSession193()?.participants||{}).filter(([pid,t])=>filter(t,pid)).map(([pid,t])=>`<option value="${html(pid)}">${html(t.name||t.id)} · ${t.playerId?'персонаж':t.equipmentType==='drone'?'дрон':'экземпляр '+html(pid.slice(-5))}</option>`).join('');
@@ -283,6 +418,7 @@
     const scene=Combat.getScene(),runtime=Combat.getRuntime(),session=ensureSession193();if(!scene||!runtime||!session)return;
     if(['transfer','battle','scene'].includes(command)&&Object.values(ensureCombatState().scenes).some(r=>list(r.tokens).some(pendingLootV137))){Toast.show('Сначала завершите передачу добычи','info');return;}
     captureSession193();
+    if(command==='membership'){await membership194();return;}
     if(command==='roster'){
       const present=new Set(runtime.tokens.map(t=>Session193.identity(t,scene.id))),options=participantOptions193((t,pid)=>!present.has(pid));
       if(!options){Toast.show('Все участники уже размещены на карте','info');return;}
@@ -296,29 +432,29 @@
       const pid=await combatModal119({title:'Связать токен с участником',subtitle:'Используйте для того же NPC, заранее поставленного на другой карте. Два разных NPC одного шаблона связывать не нужно.',body:`<label class="field">Экземпляр<select class="select" name="participant193">${options}</select></label>`,confirm:'СВЯЗАТЬ',decline:'ОТМЕНИТЬ',read:form=>form.elements.participant193.value});
       if(!pid)return;const actor=session.participants[pid];if(runtime.tokens.some(t=>t!==token&&Session193.identity(t,scene.id)===pid))throw Error('Этот участник уже есть на карте');
       const backup=clone(collectStoreFromRuntime());Object.assign(token,Session193.place(actor,token));Combat.selectedObject={kind:'token',id:token.id};
-      try{await checkpointCombat120('Связь участника',false);}catch(error){applyStore(backup);throw error;}Combat.render();return;
+      try{await checkpointCombat120('Связь участника',false);}catch(error){if(!recovery194)applyStore(backup);throw error;}Combat.render();return;
     }
     if(command==='transfer'){
       if(activeMap193())return;
-      const newUnits=runtime.tokens.filter(t=>!session.participants[Session193.identity(t,scene.id)]&&num(t.hpCurrent)>0&&!isDroneToken129(t));
+      const newUnits=runtime.tokens.filter(t=>!session.participants[Session193.identity(t,scene.id)]&&num(t.hpCurrent)>0&&!isDroneToken129(t)&&!memberOut194(t));
       const rolls=await combatModal119({title:'Перенести игровую сцену',subtitle:'Сохраняются текущий ход, раунд, расходы и состояния. Отсутствующих участников можно разместить позже. Показ игрокам переключается отдельно.',body:`<p>Из «${html(COMBAT_SCENES[session.activeMapId]?.name)}» в «${html(scene.name)}».</p>${session.started?newUnits.map((t,i)=>`<label class="field">Новый участник: ${html(t.name)} · d20 инициативы<input class="input" type="number" required min="1" max="20" name="join193_${i}"/></label>`).join(''):''}`,confirm:'ПЕРЕНЕСТИ',decline:'ОТМЕНИТЬ',read:form=>session.started?newUnits.map((t,i)=>Number(form.elements['join193_'+i].value)):[]});
       if(!rolls)return;const backup=clone(collectStoreFromRuntime());
       try{
         newUnits.forEach((t,i)=>{if(session.started){t.initiative=num(rolls[i])+num(t.initiativeBonus);t.initiativeOverrideV147=true;t.initiativeBattle193=session.battleId;}});
         scene.mode=Session193.transfer(session,scene.id,runtime);moveFollowers193(runtime);
         Combat.selectedObject=null;local.preview=null;Combat.syncInitiative(scene.id,false);await checkpointCombat120('Перенос игровой сцены',false);
-      }catch(error){applyStore(backup);throw error;}Combat.render();return;
+      }catch(error){if(!recovery194)applyStore(backup);throw error;}Combat.render();return;
     }
     if(!activeMap193())return;
     if(command==='scene'){
       const confirmed=await combatModal119({title:'Новая игровая сцена',subtitle:'Закончить текущий бой и начать новую игровую сцену в обычном режиме. Сбросятся бюджеты хода и явно отмеченные лимиты боя/сцены. HP, травмы, патроны, заряды и поломки сохранятся.',confirm:'НОВАЯ ИГРОВАЯ СЦЕНА',decline:'ОТМЕНИТЬ'});if(!confirmed)return;
-      const backup=clone(collectStoreFromRuntime());try{resetSession193('scene');await checkpointCombat120('Новая игровая сцена',false);}catch(error){applyStore(backup);throw error;}Combat.render();return;
+      const backup=clone(collectStoreFromRuntime());try{resetSession193('scene');await checkpointCombat120('Новая игровая сцена',false);}catch(error){if(!recovery194)applyStore(backup);throw error;}Combat.render();return;
     }
     if(command==='battle'){
-      const units=runtime.tokens.filter(t=>num(t.hpCurrent)>0&&!isDroneToken129(t));if(!units.length){Toast.show('Добавьте участников боя','info');return;}
+      const units=runtime.tokens.filter(t=>num(t.hpCurrent)>0&&!isDroneToken129(t)&&!memberOut194(t));if(!units.length){Toast.show('Добавьте участников боя','info');return;}
       const rolls=await combatModal119({title:'Новый бой',subtitle:'Новая инициатива и бюджеты хода. Реальные ресурсы сохраняются. Введите физические d20; бонус участника прибавляется автоматически.',body:units.map((t,i)=>`<label class="field">${html(t.name)} · бонус ${num(t.initiativeBonus)}<input class="input" type="number" min="1" max="20" required name="initiative191_${i}"/></label>`).join(''),confirm:'НАЧАТЬ НОВЫЙ БОЙ',decline:'ОТМЕНИТЬ',read:form=>units.map((t,i)=>Number(form.elements['initiative191_'+i].value))});
       if(!rolls)return;const backup=clone(collectStoreFromRuntime());
-      try{resetSession193('battle');units.forEach((t,i)=>{t.initiative=num(rolls[i])+num(t.initiativeBonus);t.initiativeOverrideV147=true;t.initiativeBattle193=session.battleId;t.reactionUsedV119=injurySeverity129(t)>=4;});Combat.syncInitiative(scene.id,true);await checkpointCombat120('Новый бой',false);}catch(error){applyStore(backup);throw error;}
+      try{resetSession193('battle');units.forEach((t,i)=>{t.initiative=num(rolls[i])+num(t.initiativeBonus);t.initiativeOverrideV147=true;t.initiativeBattle193=session.battleId;t.reactionUsedV119=injurySeverity129(t)>=4;});Combat.syncInitiative(scene.id,true);await checkpointCombat120('Новый бой',false);}catch(error){if(!recovery194)applyStore(backup);throw error;}
       const first=Combat.getCurrentTurnToken();if(first){Combat.selectedObject={kind:'token',id:first.id};const effects={damage:0,effects:[]};await runAutomaticHooks119(first,'OnTurnStart',{caster:first,attacker:first,target:first,targets:[first],event:'OnTurnStart'},effects);flushLuaEffects119(effects);await checkpointCombat120('Начало хода нового боя',true);}Combat.render();
     }
   }
@@ -338,8 +474,10 @@
   async function beginPlacedTurn193(token,runtime){
     const scene=Combat.getScene();
     if(activeMap193()&&runtime.pendingTurnStart193===token.id){
+      const startOrder=list(runtime.initiativeOrder).slice(),startIndex=runtime.turnIndex;
       runtime.pendingTurnStart193='';token.movedThisTurn=0;token.actionUsed=false;token.reactionUsedV119=injurySeverity129(token)>=4;token.disengagedV122=false;token.freeDroneCommandUsedV129=false;
       const effects={damage:0,effects:[]};await processTimedModifiers122(token,'start',effects);if(num(token.hpCurrent)>0)await runAutomaticHooks119(token,'OnTurnStart',{caster:token,attacker:token,target:token,targets:[token],event:'OnTurnStart'},effects);flushLuaEffects119(effects);Combat.syncInitiative(scene.id,false);
+      if(num(token.hpCurrent)<=0)await Combat.nextTurn({allowMissing194:true,ignoreCommand194:true,skipEnd194:true,previousId194:token.id,orderBefore194:startOrder,indexBefore194:startIndex});
     }
   }
 
@@ -416,6 +554,7 @@
     return local.loading;
   }
   async function saveStoreNow() {
+    if(operation194&&!operation194.allowWrite)return {ok:true,status:'deferred-operation'};
     if (!local.loaded && !local.store) return { ok: false };
     // Capture an immutable revision before entering the asynchronous writer. Otherwise a
     // later shot can mutate the same object while an earlier JSON write is still pending.
@@ -438,6 +577,7 @@
     return saveStoreNow();
   };
   function queueStoreSave() {
+    if(operation194||recovery194)return;
     // Update the authoritative in-memory copy immediately; the disk write remains
     // debounced. This also protects a newly reopened scene from an older async
     // profile/world save that replaces App.state while the window is open.
@@ -447,7 +587,12 @@
   }
   async function checkpointCombat120(reason='Боевое действие',saveProfiles=false) {
     clearTimeout(local.saveTimer); local.saveTimer=0;
-    const sceneResult=await saveStoreNow();
+    const op=operation194;
+    if(op?.error&&!op.persistenceFailed)throw Error(op.error);
+    if(op){op.applied=true;op.record.status='applied';op.record.stage=reason;op.record.profiles=changedProfiles194();op.record.profileSaved=!saveProfiles;}
+    let sceneResult;
+    try{sceneResult=op?await writeOperation194(op.record):await saveStoreNow();}
+    catch(error){if(op){op.persistenceFailed=true;op.record.error=String(error.message||error);recovery194=op.record;}throw error;}
     if(sceneResult?.ok===false)throw new Error(sceneResult?.message||`Не удалось сохранить сцену: ${reason}`);
     let profileResult={ok:true,status:'not-requested'};
     if(saveProfiles){
@@ -456,10 +601,12 @@
         // A completed shot must remain visible and durable in the local scene even
         // when PocketBase is temporarily unavailable. The profile hash is not
         // advanced on failure, therefore the next checkpoint retries the cloud push.
+        if(op){op.persistenceFailed=true;op.record.error=profileResult.message||'Профиль не сохранён';recovery194=op.record;}
         console.error('SCENE_PROFILE_CHECKPOINT_V120_FAILED',profileResult.message||reason);
         Toast.show(`Боевое действие сохранено локально. Облако: ${profileResult.message||'повтор при следующем действии'}`,'err');
       }
     }
+    if(op&&profileResult?.ok!==false){op.record.profileSaved=true;op.boundary=snapshot194();op.confirmed=true;}
     broadcastScene104();
     return {...sceneResult,profileOk:profileResult?.ok!==false,profileResult};
   }
@@ -545,11 +692,14 @@
   function inBattle191(scene=Combat.getScene()){return scene?.mode==='combat';}
   function actionSpent191(token){return inBattle191()&&Boolean(token?.actionUsed);}
   function operationReason191(){
+    if(recovery194)return 'Ожидается сохранение подтверждённого результата';
+    if(operation194&&!operation194.executing)return 'Подготовка и сохранение операции';
     const title=document.querySelector('.scene-lua-overlay-v119 h3')?.textContent;
     if(title)return 'Ожидается решение ДМа: '+title;
     if(local.lua119.pointPicker)return 'Ожидается выбор точки или цели';
     if(local.moveBusyV122)return 'Выполняется перемещение';
     if(local.lua119.busy||local.combatTransactionV120)return 'Выполняется боевое действие';
+    if(operation194)return operation194.record.stage||'Выполняется действие';
     if(local.commandBusy191)return 'Выполняется команда';
     return '';
   }
@@ -574,9 +724,9 @@
       runtime.battleStarted191=true;scene.mode='standard';
     }else if(runtime.battleStarted191){
       for(const t of runtime.tokens){const budget=runtime.pausedBudget191?.[t.id];if(budget)Object.assign(t,clone(budget));}
-      scene.mode='combat';delete runtime.pausedBudget191;
+      scene.mode='combat';delete runtime.pausedBudget191;const pending=this.getCurrentTurnToken();if(pending&&runtime.pendingTurnStart193===pending.id)await beginPlacedTurn193(pending,runtime);
     }else{
-      const units=runtime.tokens.filter(t=>num(t.hpCurrent)>0&&!isDroneToken129(t));
+      const units=runtime.tokens.filter(t=>num(t.hpCurrent)>0&&!isDroneToken129(t)&&!memberOut194(t));
       if(!units.length){Toast.show('Добавьте участников боя','info');return;}
       const rolls=await combatModal119({title:'Начать бой',subtitle:'Введите физические броски инициативы. К каждому прибавляется Воля и модификаторы участника.',body:units.map((t,i)=>`<label class="field">${html(t.name)} · бонус ${num(t.initiativeBonus,t.initiative)}<input class="input" required type="number" min="1" max="20" name="initiative191_${i}"/></label>`).join(''),confirm:'НАЧАТЬ БОЙ',decline:'ОТМЕНИТЬ',read:form=>units.map((t,i)=>Number(form.elements['initiative191_'+i].value))});
       if(!rolls)return;
@@ -589,25 +739,25 @@
     local.preview=null;await checkpointCombat120('Сцена: режим боя',true);this.render();
   };
   const canActBefore191=Combat.canActWithToken.bind(Combat),currentBefore191=Combat.getCurrentTurnToken.bind(Combat);
-  Combat.canActWithToken=function(token){if(!activeMap193())return false;return !inBattle191()?Boolean(token&&this.isDm()&&num(token.hpCurrent)>0):canActBefore191(token);};
-  Combat.getCurrentTurnToken=function(){return activeMap193()&&inBattle191()?currentBefore191():null;};
+  Combat.canActWithToken=function(token){if(withdrawn194(token))return false;if(!activeMap193())return false;return !inBattle191()?Boolean(token&&this.isDm()&&num(token.hpCurrent)>0):canActBefore191(token);};
+  Combat.getCurrentTurnToken=function(){const token=activeMap193()&&inBattle191()?currentBefore191():null;return withdrawn194(token)?null:token;};
   function renderSession191(scene,runtime){
     const token=selectedToken104(),mods=list(token?.timedModifiersV122),conditions=token?Object.entries(conditionStateV138(token)).filter(([,v])=>v).map(([k])=>({dying:'Умирает',stabilized:'Стабилизирован',prone:'Лежит',stunned:'Оглушён',grappled:'Захвачен',unconscious:'Без сознания',handsBusy:'Руки заняты'})[k]||k):[];
-    return `<section class="scene-session-v191" aria-label="Режим и ресурсы участника"><div><b>${!activeMap193()?'ПОДГОТОВКА КАРТЫ':inBattle191(scene)?'БОЕВОЙ РЕЖИМ':'ОБЫЧНЫЙ РЕЖИМ'}</b><button class="secondary" type="button" data-battle-mode191>${inBattle191(scene)?'ПРИОСТАНОВИТЬ БОЙ':runtime.battleStarted191?'ПРОДОЛЖИТЬ БОЙ':'НАЧАТЬ БОЙ'}</button><button class="primary" type="button" data-publish191>ПОКАЗАТЬ ИГРОКАМ</button><span>На экране: ${html(COMBAT_SCENES[local.store?.publishedSceneId191]?.name||'ничего не опубликовано')}</span></div><div>${token?`<strong>${html(token.name)}</strong><span>Действие: ${!inBattle191(scene)?'без лимита':token.actionUsed?'потрачено':'доступно'}</span><span>Реакция: ${token.reactionUsedV119?'потрачена':'доступна'}</span><span>Движение: ${!inBattle191(scene)?'без лимита':Math.max(0,tokenMoveCells(token,scene)-num(token.movedThisTurn))}</span>${token.burstStateV122?`<span>Продолжение очереди: выстрел ${token.burstStateV122.nextShot} / ${token.burstStateV122.maxShots}</span>`:''}${mods.map(m=>`<span title="До конца хода владельца">${html(m.name||m.id)} · ${m.remainingTurns} ход.</span>`).join('')}${conditions.length?`<span>Состояния: ${html(conditions.join(', '))}</span>`:''}`:'Выберите участника'}<span role="status" data-operation191>${html(operationReason191()||'Готово')}</span></div></section>`;
+    return `<section class="scene-session-v191" aria-label="Режим и ресурсы участника"><div><b>${!activeMap193()?'ПОДГОТОВКА КАРТЫ':inBattle191(scene)?'БОЕВОЙ РЕЖИМ':'ОБЫЧНЫЙ РЕЖИМ'}</b><button class="secondary" type="button" data-battle-mode191>${inBattle191(scene)?'ПРИОСТАНОВИТЬ БОЙ':runtime.battleStarted191?'ПРОДОЛЖИТЬ БОЙ':'НАЧАТЬ БОЙ'}</button><button class="primary" type="button" data-publish191>ПОКАЗАТЬ ИГРОКАМ</button><span>На экране: ${html(COMBAT_SCENES[local.store?.publishedSceneId191]?.name||'ничего не опубликовано')}</span></div><div>${token?`<strong>${html(token.name)}</strong>${withdrawn194(token)?'<span>ВЫВЕДЕН ИЗ БОЯ</span>':''}<span>Действие: ${!inBattle191(scene)?'без лимита':token.actionUsed?'потрачено':'доступно'}</span><span>Реакция: ${token.reactionUsedV119?'потрачена':'доступна'}</span><span>Движение: ${!inBattle191(scene)?'без лимита':Math.max(0,tokenMoveCells(token,scene)-num(token.movedThisTurn))}</span>${token.burstStateV122?`<span>Продолжение очереди: выстрел ${token.burstStateV122.nextShot} / ${token.burstStateV122.maxShots}</span>`:''}${mods.map(m=>`<span title="До конца хода владельца">${html(m.name||m.id)} · ${m.remainingTurns} ход.</span>`).join('')}${conditions.length?`<span>Состояния: ${html(conditions.join(', '))}</span>`:''}`:'Выберите участника'}<span role="status" data-operation191>${html(operationReason191()||'Готово')}</span></div></section>`;
   }
-  Combat.nextTurn = async function() {
+  Combat.nextTurn = async function(options={}) {
     const runtime = this.getRuntime();
     if (!runtime) return;
     if(!inBattle191()||!activeMap193())return;
-    if(runtime.initiativeOrder?.length&&!this.getCurrentTurnToken()){Toast.show('Сначала разместите текущего участника на карте','info');return;}
-    if(local.lua119.busy||local.moveBusyV122||local.combatTransactionV120||local.commandBusy191){Toast.show(operationReason191(),'info');return;}
-    const orderBefore=list(runtime.initiativeOrder).map(String),indexBefore=clamp104(runtime.turnIndex,0,Math.max(0,orderBefore.length-1)),previousId=String(orderBefore[indexBefore]||'');
+    if(!options.allowMissing194&&runtime.initiativeOrder?.length&&!this.getCurrentTurnToken()){Toast.show('Сначала разместите текущего участника на карте','info');return;}
+    if(local.lua119.busy||local.moveBusyV122||local.combatTransactionV120||(local.commandBusy191&&!options.ignoreCommand194)){Toast.show(operationReason191(),'info');return;}
+    const orderBefore=options.orderBefore194||list(runtime.initiativeOrder).map(String),indexBefore=options.indexBefore194??clamp104(runtime.turnIndex,0,Math.max(0,orderBefore.length-1)),previousId=String(options.previousId194||orderBefore[indexBefore]||'');
     this.syncInitiative?.(this.getSceneIdForView?.(),false);
-    if (!runtime.initiativeOrder?.length) return;
+    if (!runtime.initiativeOrder?.length){runtime.pendingTurnStart193='';return;}
     local.lua119.busy=true;
     try{
       const effects={damage:0,effects:[]},previous=list(runtime.tokens).find(token=>String(token.id)===previousId)||null;
-      if(previous&&num(previous.hpCurrent)>0){previous.burstStateV122=null;for(const drone of list(runtime.tokens).filter(row=>isDroneToken129(row)&&String(row.operatorTokenIdV129)===String(previous.id))){if(drone.droneCommandV129)drone.droneCommandV129.completed=true;}await runAutomaticHooks119(previous,'OnTurnEnd',{caster:previous,attacker:previous,target:previous,targets:[previous],event:'OnTurnEnd'},effects);await processTimedModifiers122(previous,'end',effects);}
+      if(previous&&num(previous.hpCurrent)>0&&!options.skipEnd194){previous.burstStateV122=null;for(const drone of list(runtime.tokens).filter(row=>isDroneToken129(row)&&String(row.operatorTokenIdV129)===String(previous.id))){if(drone.droneCommandV129)drone.droneCommandV129.completed=true;}await runAutomaticHooks119(previous,'OnTurnEnd',{caster:previous,attacker:previous,target:previous,targets:[previous],event:'OnTurnEnd'},effects);await processTimedModifiers122(previous,'end',effects);}
       this.syncInitiative?.(this.getSceneIdForView?.(),false);
       const chooseAfter=(order,index)=>{
         const living=new Set(list(runtime.initiativeOrder).map(String));
@@ -638,7 +788,7 @@
       this.render();flushLuaEffects119(effects);
       await checkpointCombat120('Сцена: переход хода и Lua',true);
     }catch(error){
-      console.error('SCENE_NEXT_TURN_V120_FAILED',error);
+      operationFailure194(error);console.error('SCENE_NEXT_TURN_V120_FAILED',error);
       Toast.show(`Ход изменён, но контрольное сохранение не выполнено: ${error?.message||error}`,'err');
     }finally{local.lua119.busy=false;updateOperation191();if(UI.activeModuleId==='combat')Combat.render();}
   };
@@ -793,7 +943,7 @@
     return{ok:true,reason:'Связь установлена',distance};
   }
   function activeDroneCommand129(token){if(!isDroneToken129(token))return null;const runtime=Combat.getRuntime(),command=token.droneCommandV129,operator=operatorForDrone129(token,runtime),current=currentTurnToken129(runtime);if(!command||command.completed||!operator||current?.id!==operator.id||Math.trunc(num(command.round))!==Math.trunc(num(runtime?.round)))return null;if(!command.returnOnly&&!droneLinkState129(token,operator).ok)return null;return command;}
-  function canCombatAct129(token){if(!activeMap193())return false;if(!inBattle191())return Boolean(token&&Combat.isDm()&&num(token.hpCurrent)>0);const conditions=conditionStateV138(token||{});if(conditions.stunned||conditions.unconscious||conditions.dying)return false;if(isDroneToken129(token)){const command=activeDroneCommand129(token);return Boolean(command&&!command.returnOnly&&!command.moduleUsed);}return Boolean(Combat.canActWithToken?.(token));}
+  function canCombatAct129(token){if(withdrawn194(token))return false;if(!activeMap193())return false;if(!inBattle191())return Boolean(token&&Combat.isDm()&&num(token.hpCurrent)>0);const conditions=conditionStateV138(token||{});if(conditions.stunned||conditions.unconscious||conditions.dying)return false;if(isDroneToken129(token)){const command=activeDroneCommand129(token);return Boolean(command&&!command.returnOnly&&!command.moduleUsed);}return Boolean(Combat.canActWithToken?.(token));}
   function completeDroneModule129(token){if(!isDroneToken129(token)||!token.droneCommandV129)return;token.droneCommandV129.moduleUsed=true;token.droneCommandV129.completed=true;}
   function tokenDefense105(token) {
     if (!token) return 10;
@@ -1335,6 +1485,7 @@
     return {points,steps:used,cost,limited:used<steps,end:points[points.length-1]||path[0]};
   }
   function canMechanicalMove108(token){
+    if(withdrawn194(token))return false;
     if(!activeMap193())return false;
     if(!inBattle191())return Boolean(token&&!token.locked&&Combat.isDm?.()&&num(token.hpCurrent)>0);
     if(!token||token.locked||!Combat.isDm?.())return false;
@@ -1366,7 +1517,7 @@
     const fallback=(String(token.name||'•').trim().split(/\s+/).slice(0,2).map(v=>v[0]||'').join('').toUpperCase()||'•');
     const searchable=Boolean(token.npcId)&&num(token.hpCurrent,0)<=0;
     const searched=Boolean(token.lootStateV118?.searched);
-    return `<button class="combat-object combat-token scene-token-v104 ${window.GRPGUnitSizeV184.info(token.unitSize).count>1?'unit-sized-v184':''} ${selected?'selected':''} ${currentId===token.id?'turn':''} ${searchable?'is-searchable-v118':''} ${searched?'is-searched-v118':''} ${token.proneV122?'is-prone-v122':''}" type="button" data-scene-kind-v104="token" data-scene-id-v104="${html(token.id)}" style="${objectStyle(token,scene,40)}--token-accent:${html(token.color||'#7df9ff')};">
+    return `<button class="combat-object combat-token scene-token-v104 ${window.GRPGUnitSizeV184.info(token.unitSize).count>1?'unit-sized-v184':''} ${withdrawn194(token)?'is-withdrawn-v194':''} ${selected?'selected':''} ${currentId===token.id?'turn':''} ${searchable?'is-searchable-v118':''} ${searched?'is-searched-v118':''} ${token.proneV122?'is-prone-v122':''}" type="button" data-scene-kind-v104="token" data-scene-id-v104="${html(token.id)}" style="${objectStyle(token,scene,40)}--token-accent:${html(token.color||'#7df9ff')};">
       ${window.GRPGUnitSizeV184.svg(token)}${token.image?`<img src="${html(token.image)}" alt="" style="rotate:${num(token.rotation)}deg" decoding="async" draggable="false"/>`:`<span class="combat-token-fallback" style="rotate:${num(token.rotation)}deg">${html(fallback)}</span>`}<span class="combat-token-name">${html(token.name)}</span>${list(token.timedModifiersV122).length?`<span class="scene-token-effects-v122" title="${html(token.timedModifiersV122.map(row=>`${row.name}: ${row.remainingTurns}`).join('\n'))}">${token.timedModifiersV122.length}</span>`:''}${token.proneV122?`<span class="scene-token-prone-v122">ЛЕЖИТ</span>`:''}${searchable?`<span class="scene-token-loot-v118" data-scene-search-v118="${html(token.id)}" role="button" title="${searched?'Показать найденный лут':'Обыскать NPC'}">${searched?'✓':'⌕'}</span>`:''}<span class="combat-token-hp"><i style="width:${hp}%"></i></span></button>`;
   }
   function assetMarkup(asset,scene){
@@ -1525,6 +1676,7 @@
     return [...new Map(rows.map(row=>[String(row.id),row])).values()].sort((a,b)=>String(a.name||a.id).localeCompare(String(b.name||b.id),'ru',{numeric:true}));
   }
   function abilityReason192(token){
+    if(withdrawn194(token))return 'Участник выведен из боя';
     if(!activeMap193())return 'Подготовка карты: сначала перенесите сюда игровую сцену';
     if(!token||num(token.hpCurrent)<=0)return 'Участник не способен действовать';
     if(operationReason191())return operationReason191();
@@ -1825,7 +1977,7 @@
     const runtime=this.getRuntime(scene.id);
     if(!activeMap193())Session193.project(local.store.session193,scene.id,runtime);
     syncUnitSizes184(scene,runtime);
-    root.innerHTML=`<div class="scene-editor-v104">${renderTop104(scene,runtime)}${renderLeft104()}<main class="scene-center-v104"><div class="scene-session-stack-v193">${renderSession191(scene,runtime)}${renderLifecycle193(scene,runtime)}</div>${renderBoard104(scene,runtime)}</main>${renderInspector104(scene,runtime)}</div>`;
+    root.innerHTML=`<div class="scene-editor-v104">${renderTop104(scene,runtime)}${renderLeft104()}<main class="scene-center-v104"><div class="scene-session-stack-v193">${renderSession191(scene,runtime)}${renderLifecycle193(scene,runtime)}${renderOperation194()}</div>${renderBoard104(scene,runtime)}</main>${renderInspector104(scene,runtime)}</div>`;
     renderedSceneV137=scene.id;
     for(const selector of scrollSelectorsV137){const node=root.querySelector(selector),pos=panelScrollV137.get(scene.id+selector);if(node&&pos){node.scrollTop=pos.top;node.scrollLeft=pos.left;}}
     // Keep board sizing and camera transform in the same JS task as DOM replacement: no one-frame jump to a default frame.
@@ -1929,6 +2081,7 @@
   function saveAssetTemplate104(){const sel=selectedObject104();if(sel?.kind!=='asset')return;const a=sel.obj;const category=local.ui.assetCategory!=='all'&&local.ui.assetCategory!=='favorites'?local.ui.assetCategory:'Общее';local.store.assetLibrary.push(normalizeLibraryAsset({...a,id:makeId('assetlib'),category,favorite:false}));if(!local.store.assetCategories.includes(category))local.store.assetCategories.push(category);queueStoreSave();Toast.show('Ассет сохранён в локальную библиотеку','ok');Combat.render();}
 
   function applyObjectForm104(form){
+    if(recovery194||operation194)return;
     const scene=Combat.getScene(),runtime=Combat.getRuntime(),sel=selectedObject104();if(!scene||!runtime||!sel)return;const fd=new FormData(form),o=sel.obj;
     if(sel.kind==='token'&&!activeMap193()){Toast.show('Ресурсы участника редактируются на действующей карте','info');return;}
     if(sel.kind==='token'){o.name=String(fd.get('name')||o.name);o.hpMax=Math.max(1,num(fd.get('hpMax'),o.hpMax));o.hpCurrent=clamp104(fd.get('hpCurrent'),0,o.hpMax);o.initiative=num(fd.get('initiative'));o.initiativeOverrideV147=true;o.armorClass=Math.max(0,num(fd.get('armorClass'),0));o.defense=Math.max(0,num(fd.get('defense'),0));o.armorClassOverrideV120=o.armorClass>0;o.defenseOverrideV120=o.defense>0;o.visionRange=Math.max(0,num(fd.get('visionRange')));o.moveRange=Math.max(0,num(fd.get('moveRange')));o.attackRange=Math.max(0,num(fd.get('attackRange')));o.visionRangeOverrideV122=o.visionRange>0;o.moveRangeOverrideV122=o.moveRange>0;o.attackRangeOverrideV122=o.attackRange>0;if(fd.has('weaponId'))o.weaponId=String(fd.get('weaponId')||'');if(fd.has('grenadeId'))o.grenadeId=String(fd.get('grenadeId')||'');o.visibleToPlayers=fd.get('visibleToPlayers')==='on';o.sharesVisionWithPlayers=fd.get('sharesVisionWithPlayers')==='on';o.hidden=fd.get('hidden')==='on';setConditionV138(o,'prone',fd.get('proneV122')==='on');setConditionV138(o,'dying',fd.get('conditionDyingV138')==='on');setConditionV138(o,'stabilized',fd.get('conditionStabilizedV138')==='on');setConditionV138(o,'stunned',fd.get('conditionStunnedV138')==='on');setConditionV138(o,'grappled',fd.get('conditionGrappledV138')==='on');setConditionV138(o,'unconscious',fd.get('conditionUnconsciousV138')==='on');setConditionV138(o,'handsBusy',fd.get('conditionHandsBusyV138')==='on');o.movementModeV138=['ground','flight','swim','climb'].includes(String(fd.get('movementModeV138')||''))?String(fd.get('movementModeV138')):'ground';o.locked=fd.get('locked')==='on';o.blockMovement=fd.get('blockMovement')==='on';Combat.syncInitiative(scene.id,false);if(o.playerId){updatePlayerHp105(o);void persistCombatProfiles105('Сцена: ручное изменение HP',{immediate:true});}}
@@ -1964,9 +2117,9 @@
       if(victim)await applyInjuryAfterDamage129(victim,injuryDamage,weapon.name||'Атака по возможности');
       if(result.fumble){if(weapon.isUnarmedV122){setConditionV138(attacker,'prone',true);attacker.reactionUsedV119=true;}else attacker.weaponMalfunctionsV122={...(attacker.weaponMalfunctionsV122||{}),[weapon.id]:true};}
       appendCombatLog105(refs.runtime,`${attacker.name} ${result.hit?'попадает':'промахивается'} атакой по возможности по ${victim?.name||target.name} (−2 к попаданию)${result.hit?`: ${hp.before} → ${hp.after} HP`:''}${result.fumble?' · натуральная 1':''}.`);
-      Combat.syncInitiative(scene.id,false);flushLuaEffects119(state);if(!options.deferCheckpoint)await checkpointCombat120('Сцена: атака по возможности',true);return num(victim?.hpCurrent,0)>0;
+      Combat.syncInitiative(scene.id,false);flushLuaEffects119(state);await sealOperation194('Подтверждена атака по возможности');if(!options.deferCheckpoint)await checkpointCombat120('Сцена: атака по возможности',true);return num(victim?.hpCurrent,0)>0;
     }catch(error){
-      console.error('SCENE_OPPORTUNITY_ATTACK_V122_FAILED',error);
+      operationFailure194(error);console.error('SCENE_OPPORTUNITY_ATTACK_V122_FAILED',error);
       Toast.show(`Атака по возможности не завершена: ${error?.message||error}`,'err');
       return false;
     }finally{finishCombatTransaction120(transaction);}
@@ -1999,7 +2152,7 @@
       await checkpointCombat120(opportunity.reactionUsed?'Сцена: атака по возможности и перемещение':'Сцена: перемещение',opportunity.reactionUsed);
       setTimeout(()=>{if(local.preview?.effect==='move'&&local.preview?.movedTokenId===token.id){local.preview=null;refreshPreviewDom104();}},650);
     }catch(error){
-      console.error('SCENE_MOVE_V122_FAILED',error);
+      operationFailure194(error);console.error('SCENE_MOVE_V122_FAILED',error);
       Toast.show(`Перемещение не завершено: ${error?.message||error}`,'err');
     }finally{local.moveBusyV122=false;updateOperation191();if(UI.activeModuleId==='combat')Combat.render();}
   }
@@ -2012,7 +2165,7 @@
       appendCombatLog105(Combat.getRuntime(),`${token.name} ${token.proneV122?'ложится':'встаёт'}, расходуя ${state.cost} движения.`);
       Combat.render();broadcastScene104();
       await checkpointCombat120(`Сцена: ${token.proneV122?'лечь':'встать'}`,false);
-    }catch(error){console.error('SCENE_POSTURE_V128_FAILED',error);Toast.show(`Смена положения не сохранена: ${error?.message||error}`,'err');}
+    }catch(error){operationFailure194(error);console.error('SCENE_POSTURE_V128_FAILED',error);Toast.show(`Смена положения не сохранена: ${error?.message||error}`,'err');}
     finally{local.moveBusyV122=false;Combat.render();}
   }
   function updatePlayerHp105(token){if(token?.playerId&&App.state?.users?.[token.playerId]){const user=normalizePlayerProfileV2(App.state.users[token.playerId]);user.stats={...(user.stats||{}),hpCurrent:token.hpCurrent,hpMax:Math.max(num(user.stats?.hpMax,0),num(token.hpMax,1))};App.state.users[token.playerId]=user;}}
@@ -2043,7 +2196,7 @@
     const save=async()=>{
       try{
         window.__grpgCombatCheckpointV120=true;
-        try{await Persistence?.save?.(App.state);}finally{window.__grpgCombatCheckpointV120=false;}
+        try{const saved=await Persistence?.save?.(App.state);if(saved?.ok===false)throw Error(saved.message||'Профиль не записан локально');}finally{window.__grpgCombatCheckpointV120=false;}
         await App.writeLocalMirrors?.();
         if(options.immediate){
           const runtime=Combat.getRuntime(),playerIds=unique(list(runtime?.tokens).map(token=>token?.playerId));
@@ -2097,7 +2250,7 @@
       overlay.querySelector('form')?.addEventListener('submit',event=>{event.preventDefault();const form=event.currentTarget;const value=typeof read==='function'?read(form):true;const problem=typeof validate==='function'?validate(value,form):'';if(problem){const note=form.querySelector('[data-lua-modal-error-v119]');if(note)note.textContent=String(problem);else Toast.show(String(problem),'info');return;}closeCombatModal119(value);});
       // The scene renderer replaces #mod-combat. Keeping the decision window under body
       // prevents a harmless board refresh from orphaning this Promise and locking combat.
-      document.body.appendChild(overlay);updateOperation191();
+      document.body.appendChild(overlay);if(operation194)operation194.record.stage='Ожидается ввод: '+title;updateOperation191();
       overlay.querySelector('input,select,button.primary')?.focus({preventScroll:true});
     });
   }
@@ -2292,7 +2445,10 @@
       }else if(kind==='standard_attack'){
         await performLuaStandardAttackV138(command,context,state);
       }else if(kind==='add_credits'){
-        const unit=tokenById119(command.unitId),amount=Math.trunc(num(command.amount));if(!unit?.playerId)throw new Error('AddCredits: деньги можно выдать только персонажу игрока');if(amount<=0)throw new Error('AddCredits: сумма должна быть положительной');const result=await window.GRPGCombatAPIv138?.grantCredits?.(unit.playerId,amount,{operationId:String(command.operationId||'')||undefined,reason:context.sourceName||'Lua'});if(!result?.ok)throw new Error(result?.message||'Не удалось выдать деньги');
+        const unit=tokenById119(command.unitId),amount=Math.trunc(num(command.amount));if(!unit?.playerId)throw new Error('AddCredits: деньги можно выдать только персонажу игрока');if(amount<=0)throw new Error('AddCredits: сумма должна быть положительной');const externalId=String(command.operationId||'')||(operation194?operation194.record.id+':credit:'+String(operation194.externalSeq=(operation194.externalSeq||0)+1):undefined);
+        if(operation194){operation194.record.externalJob={id:externalId,playerId:unit.playerId,amount};const actor=context.caster;if(context.scriptSource?.mode==='reaction'){if(actor)actor.reactionUsedV119=true;}else if(['Активный навык','Активное снаряжение'].includes(operation194.record.label)){const active=selectedToken104();if(active)active.actionUsed=true;}await sealOperation194('Подтверждение внешней выдачи денег');}
+        const combatProfiles=profiles194();let result;try{result=await window.GRPGCombatAPIv138?.grantCredits?.(unit.playerId,amount,{operationId:externalId,reason:context.sourceName||'Lua'});}finally{applyProfiles194(combatProfiles);}if(!result?.ok){if(operation194){operation194.persistenceFailed=true;recovery194=operation194.record;}throw new Error(result?.message||'Не удалось выдать деньги');}
+        if(operation194){delete operation194.record.externalJob;await sealOperation194('Внешняя выдача денег подтверждена');}
       }else if(kind==='show_area'){
         const caster=tokenById119(command.centerId)||tokenById119(command.casterId)||context.caster||context.attacker,start=centerOf(caster||{x:0,y:0,w:0,h:0}),toward=centerOf(context.target||context.targets?.[0]||caster||{x:start.x+1,y:start.y,w:0,h:0}),length=Math.max(0,num(command.length||command.radius,1)),end=hexEndpointAtRange109(scene,start,toward,length),shape=['circle','cone','measure'].includes(String(command.shape))?String(command.shape):'circle';local.preview={kind:shape,sourceTokenId:String(caster?.id||''),start,end,radius:length*hexStepDistance109(),hexes:length,label:`${context.sourceName||'Lua'}: область ${length} гекс.`};
       }else if(kind==='request_targets')requests.push(command);
@@ -2343,20 +2499,20 @@
   }
   async function runAutomaticHooks119(owner,hook,context={},state={damage:num(context.damage),effects:[]}){
     for(const source of automaticSourcesForHook122(owner,hook,context)){
-      try{await runInteractiveLuaHookV138(source,hook,{...context,caster:owner,sourceName:source.name,scriptSource:source,damage:state.damage},state);}catch(error){console.error('SCENE_LUA_AUTOMATIC_V119',error);Toast.show(String(error?.message||error),'err');}
+      try{const execution=await runInteractiveLuaHookV138(source,hook,{...context,caster:owner,sourceName:source.name,scriptSource:source,damage:state.damage},state);if(execution.cancelled&&operation194)throw Error('Ввод отменён');}catch(error){console.error('SCENE_LUA_AUTOMATIC_V119',error);if(operation194)throw error;Toast.show(String(error?.message||error),'err');}
     }
     return state;
   }
   async function chooseReaction119(hook,context={},state={damage:num(context.damage),effects:[]}){
     if(!inBattle191())return state;
     const candidates=[];
-    const sources=list(Combat.getRuntime()?.tokens).filter(token=>num(token.hpCurrent)>0&&!token.reactionUsedV119&&injurySeverity129(token)<4).flatMap(token=>scriptSourcesForToken119(token).filter(row=>row.mode==='reaction'));
+    const sources=list(Combat.getRuntime()?.tokens).filter(token=>num(token.hpCurrent)>0&&!withdrawn194(token)&&!token.reactionUsedV119&&injurySeverity129(token)<4).flatMap(token=>scriptSourcesForToken119(token).filter(row=>row.mode==='reaction'));
     for(const source of sources){try{const result=await runLuaSource119(source,hook,{...context,caster:source.ownerToken,damage:state.damage},'check');if(result.hasHook&&result.eligible)candidates.push(source);}catch(error){console.error('SCENE_LUA_REACTION_CHECK_V119',error);Toast.show(String(error?.message||error),'err');}}
     if(!candidates.length)return state;
     const body=`<div class="scene-lua-participants-v119"><b>${html(context.attacker?.name||'—')}</b><span>→</span><b>${html(context.target?.name||'—')}</b>${num(state.damage)>0?`<strong>Ожидаемый урон: ${num(state.damage)}</strong>`:''}</div><div class="scene-lua-reactions-v119">${candidates.map((source,index)=>`<label><input type="radio" name="reaction" value="${index}" ${index===0?'checked':''}/><span><b>${html(source.reactionLabel||source.name)}</b><small>${html(source.ownerToken?.name||'Юнит')} · ${html(source.name)}</small></span></label>`).join('')}</div>`;
     const choice=await combatModal119({title:'Доступна реакция',subtitle:'ДМ выбирает одну реакцию или отклоняет все',body,confirm:'ИСПОЛЬЗОВАТЬ РЕАКЦИЮ',decline:'ОТКЛОНИТЬ',read:form=>candidates[Math.max(0,Math.trunc(num(form.elements.reaction?.value,0)))]||null});
     if(!choice)return state;
-    try{const executed=await runInteractiveLuaHookV138(choice,hook,{...context,caster:choice.ownerToken,sourceName:choice.name,scriptSource:choice,damage:state.damage},state);if(executed.cancelled){choice.ownerToken.reactionUsedV119=false;return state;}choice.ownerToken.reactionUsedV119=true;appendCombatLog105(Combat.getRuntime(),`${choice.ownerToken.name} использует реакцию «${choice.reactionLabel||choice.name}» (${hook}).`);}catch(error){choice.ownerToken.reactionUsedV119=false;Toast.show(String(error?.message||error),'err');}
+    try{const executed=await runInteractiveLuaHookV138(choice,hook,{...context,caster:choice.ownerToken,sourceName:choice.name,scriptSource:choice,damage:state.damage},state);if(executed.cancelled){choice.ownerToken.reactionUsedV119=false;return state;}choice.ownerToken.reactionUsedV119=true;appendCombatLog105(Combat.getRuntime(),`${choice.ownerToken.name} использует реакцию «${choice.reactionLabel||choice.name}» (${hook}).`);await sealOperation194('Подтверждена реакция: '+(choice.reactionLabel||choice.name));}catch(error){if(operation194)throw error;choice.ownerToken.reactionUsedV119=false;Toast.show(String(error?.message||error),'err');}
     return state;
   }
   async function performLuaStandardAttackV138(command={},parentContext={},parentState={}){
@@ -2369,7 +2525,7 @@
     const baseContext={attacker,target,caster:attacker,targets:[target],weapon,damageType:String(weapon.weaponCategory||'light'),sourceName:`StandardAttack: ${weapon.name||weapon.id}`},declared={damage:0,attackBonus:baseHit,defenseBonus:defense.defenseBonus,effects:[],standardAttackDepthV138:depth+1};await runAutomaticHooks119(attacker,'OnAttackDeclared',baseContext,declared);await chooseReaction119('OnAttackDeclared',baseContext,declared);
     const currentMagazine=magazineState118(attacker,weapon);if(currentMagazine.size>0&&currentMagazine.loaded<shotCost)throw new Error('StandardAttack: после объявления оружие не заряжено');
     const entered=await requestAttackRolls119({attacker,target,weapon,attackBonus:declared.attackBonus,defenseBonus:declared.defenseBonus,damageBonus,attackDisadvantage:(cover.concealment&&!ignoresConcealment122(attacker))||injuryDisadvantage129(attacker),defenseDisadvantage:injuryDisadvantage129(target)});if(!entered)throw new Error('StandardAttack: атака отменена');
-    if(currentMagazine.size>0){currentMagazine.loaded-=shotCost;writeMagazineState118(attacker,weapon,currentMagazine);}
+    if(currentMagazine.size>0){attacker.actionUsed=true;currentMagazine.loaded-=shotCost;writeMagazineState118(attacker,weapon,currentMagazine);}
     const attackContext={...baseContext,attackRoll:entered.attackRoll,defenseRoll:entered.defenseRoll},before={damage:0,attackBonus:declared.attackBonus,defenseBonus:declared.defenseBonus,effects:declared.effects,standardAttackDepthV138:depth+1};await runAutomaticHooks119(attacker,'BeforeAttackStart',attackContext,before);await chooseReaction119('BeforeAttackStart',attackContext,before);
     const result=rules.resolveManualAttack({attackRoll:entered.attackRoll,defenseRoll:entered.defenseRoll,attackBonus:before.attackBonus,defenseBonus:before.defenseBonus,damageRoll:entered.damageRoll,damageBonus,damageReduction:0});let applied=0,absorbed=0,hp={before:num(target.hpCurrent),after:num(target.hpCurrent),applied:0},effects={damage:result.hit?result.damageApplied:0,damagePartsV138:result.hit?[{amount:result.damageApplied,absorptionSource:'all'}]:[],effects:before.effects,standardAttackDepthV138:depth+1};
     if(result.hit){await runAutomaticHooks119(attacker,'OnHit',{...attackContext,hit:true,critical:result.critical,damage:effects.damage},effects);await chooseReaction119('OnHit',{...attackContext,hit:true,critical:result.critical,damage:effects.damage},effects);await runAutomaticHooks119(target,'BeforeDamage',{...attackContext,hit:true,critical:result.critical,damage:effects.damage},effects);await chooseReaction119('BeforeDamage',{...attackContext,hit:true,critical:result.critical,damage:effects.damage},effects);const reduced=applyAbsorptionV138(effects,incomingDefense119(target,weapon.weaponCategory||'light',cover));absorbed=reduced.absorbed;applied=result.defenseCritical?Math.floor(reduced.applied/2):reduced.applied;hp=rules.applyDamage(target,applied);updatePlayerHp105(target);await runAutomaticHooks119(target,'OnTakeDamage',{...attackContext,hit:true,damage:applied},effects);await chooseReaction119('OnTakeDamage',{...attackContext,hit:true,damage:applied},effects);await applyInjuryAfterDamage129(target,hp.applied,weapon.name||'StandardAttack');}
@@ -2380,7 +2536,7 @@
   function consumeInventoryItem129(token,itemId,qty=1){const owner=tokenInventoryOwner120(token),entry=list(owner.rows).find(row=>String(row?.itemId)===String(itemId)),take=Math.max(1,Math.trunc(num(qty,1)));if(!entry||num(entry.qty)<take)return false;entry.qty=Math.max(0,Math.trunc(num(entry.qty))-take);if(Array.isArray(entry.positions))entry.positions=entry.positions.slice(0,entry.qty);if(entry.qty<=0)owner.set(owner.rows.filter(row=>row!==entry));return true;}
   async function deployDeviceAt129(pending,point){const scene=Combat.getScene(),runtime=Combat.getRuntime(),operator=list(runtime?.tokens).find(row=>String(row.id)===String(pending?.operatorTokenId));if(!scene||!runtime||!operator)return;if(!Combat.canActWithToken?.(operator)||actionSpent191(operator)){Toast.show('Ход оператора уже завершён','info');local.ui.pendingPlacement=null;return;}if(hexDistancePoints109(scene,centerOf(operator),nearestHexCenter107(scene,point))>1){Toast.show('Устройство размещается в соседнем гексе','info');return;}const item=deviceInventory129(operator,pending.deviceType).find(row=>String(row.id)===String(pending.entityId));if(!item){Toast.show('Предмет уже отсутствует в инвентаре','err');local.ui.pendingPlacement=null;return;}if(pending.deviceType==='drone'&&linkedDrones129(operator,runtime).length>=operatorIntelligence129(operator)){Toast.show('Достигнут предел связанных дронов','info');local.ui.pendingPlacement=null;return;}const token=createEquipmentUnit105(item.id);if(token)fitTokenToHex107(token,scene,nearestHexCenter107(scene,point));if(!token||!window.GRPGUnitSizeV184.inBounds(token.unitSize,scene,centerOf(token))||window.GRPGUnitSizeV184.probes(token,centerOf(token)).some(p=>movementBlockedAt(scene,p.x,p.y,token.id,0,true))||!consumeInventoryItem129(operator,item.id,1)){Toast.show('Не удалось развернуть устройство','err');return;}token.operatorTokenIdV129=operator.id;token.deployedItemIdV129=item.id;token.sharesVisionWithPlayers=Boolean(operator.playerId);fitTokenToHex107(token,scene,nearestHexCenter107(scene,point));runtime.tokens.push(token);operator.actionUsed=true;local.ui.pendingPlacement=null;Combat.selectedObject={kind:'token',id:token.id};Combat.syncInitiative(scene.id,false);appendCombatLog105(runtime,`${operator.name} ${pending.deviceType==='drone'?'выпускает дрона':'размещает турель'} «${item.name}», расходуя действие.`);Combat.render();await checkpointCombat120('Сцена: размещение устройства',true);}
   async function commandDrone129(){const operator=selectedToken104(),runtime=Combat.getRuntime();if(!operator||!runtime||!Combat.canActWithToken?.(operator)){Toast.show('Команду отдаёт действующий оператор','info');return;}const drones=linkedDrones129(operator,runtime);if(!drones.length){Toast.show('У оператора нет выпущенных дронов','info');return;}const body=`<div class="scene-lua-reactions-v119">${drones.map((drone,index)=>{const link=droneLinkState129(drone,operator);return `<label><input type="radio" name="droneId" value="${html(drone.id)}" ${index===0?'checked':''}/><span><b>${html(drone.name)}</b><small>${html(link.ok?`Связь ${hexLabel109(link.distance)} / 30 гекс.`:`Нет связи: ${link.reason} · доступен безопасный возврат`)}</small></span></label>`;}).join('')}</div>`;const id=await combatModal119({title:'Команда дрону',subtitle:'Один дрон может переместиться и применить один модуль',body,confirm:'ОТДАТЬ КОМАНДУ',decline:'ОТМЕНИТЬ',read:form=>String(form.elements.droneId?.value||'')});const drone=drones.find(row=>String(row.id)===id);if(!drone)return;const link=droneLinkState129(drone,operator),free=link.ok&&hasFreeDroneControl129(operator)&&!operator.freeDroneCommandUsedV129;if(link.ok&&!free&&actionSpent191(operator)){Toast.show('Действие оператора уже потрачено','info');return;}if(link.ok){if(free)operator.freeDroneCommandUsedV129=true;else operator.actionUsed=true;}drone.droneCommandV129={operatorTokenId:operator.id,round:Math.max(1,Math.trunc(num(runtime.round,1))),returnOnly:!link.ok,moduleUsed:false,completed:false};drone.movedThisTurn=0;drone.actionUsed=false;Combat.selectedObject={kind:'token',id:drone.id};local.ui.action='move';appendCombatLog105(runtime,link.ok?`${operator.name} отдаёт команду дрону «${drone.name}»${free?' через имплант без расхода действия':', расходуя действие'}.`:`Дрон «${drone.name}» теряет связь и переходит в безопасный режим возврата к оператору.`);Combat.render();await checkpointCombat120('Сцена: команда дрону',false);}
-  async function useActiveEquipment129(itemId){const runtime=Combat.getRuntime(),token=selectedToken104(),source=activeEquipmentForToken129(token).find(row=>String(row.id)===String(itemId));if(!runtime||!token||!source)return;if(!canCombatAct129(token)||actionSpent191(token)){Toast.show('Активное использование сейчас недоступно','info');return;}if(token.burstStateV122){Toast.show('Сначала завершите скорострельную очередь','info');return;}if(local.lua119.busy)return;local.lua119.busy=true;try{const item=source.raw||equipmentItem105(source.id)||{},state={damage:0,effects:[]},context={caster:token,attacker:token,target:null,targets:[],ability:item,sourceName:source.name,scriptSource:source,inputs:{},targetRequests:{}};const phase=await runInteractiveLuaHookV138(source,'OnAbilityPhaseStart',context,state);if(phase.cancelled)return;Object.assign(context,{inputs:phase.context.inputs,targetRequests:phase.context.targetRequests});refreshPreviewDom104();const requestedIds=unique(Object.values(context.targetRequests||{}).flat()),targets=requestedIds.map(tokenById119).filter(Boolean);context.targets=targets;context.target=targets[0]||null;if(context.target)context.position=centerOf(context.target);const executed=await runInteractiveLuaHookV138(source,'OnAbilityExecuted',context,state);if(executed.cancelled)return;if(!phase.result.hasHook&&!executed.result.hasHook)throw new Error('В скрипте нет OnAbilityPhaseStart или OnAbilityExecuted');if(isDroneToken129(token))completeDroneModule129(token);else token.actionUsed=true;appendCombatLog105(runtime,`${token.name} использует «${item.activeUseLabel||source.name}»${targets.length?` по целям: ${targets.map(row=>row.name).join(', ')}`:''}.`);Combat.render();flushLuaEffects119(state);await checkpointCombat120('Сцена: активное снаряжение',true);}catch(error){console.error('SCENE_ACTIVE_EQUIPMENT_V129',error);Toast.show(String(error?.message||error),'err');}finally{local.lua119.busy=false;updateOperation191();if(UI.activeModuleId==='combat')Combat.render();}}
+  async function useActiveEquipment129(itemId){const runtime=Combat.getRuntime(),token=selectedToken104(),source=activeEquipmentForToken129(token).find(row=>String(row.id)===String(itemId));if(!runtime||!token||!source)return;if(!canCombatAct129(token)||actionSpent191(token)){Toast.show('Активное использование сейчас недоступно','info');return;}if(token.burstStateV122){Toast.show('Сначала завершите скорострельную очередь','info');return;}if(local.lua119.busy)return;local.lua119.busy=true;try{const item=source.raw||equipmentItem105(source.id)||{},state={damage:0,effects:[]},context={caster:token,attacker:token,target:null,targets:[],ability:item,sourceName:source.name,scriptSource:source,inputs:{},targetRequests:{}};const phase=await runInteractiveLuaHookV138(source,'OnAbilityPhaseStart',context,state);if(phase.cancelled)return;Object.assign(context,{inputs:phase.context.inputs,targetRequests:phase.context.targetRequests});refreshPreviewDom104();const requestedIds=unique(Object.values(context.targetRequests||{}).flat()),targets=requestedIds.map(tokenById119).filter(Boolean);context.targets=targets;context.target=targets[0]||null;if(context.target)context.position=centerOf(context.target);const executed=await runInteractiveLuaHookV138(source,'OnAbilityExecuted',context,state);if(executed.cancelled)return;if(!phase.result.hasHook&&!executed.result.hasHook)throw new Error('В скрипте нет OnAbilityPhaseStart или OnAbilityExecuted');if(isDroneToken129(token))completeDroneModule129(token);else token.actionUsed=true;appendCombatLog105(runtime,`${token.name} использует «${item.activeUseLabel||source.name}»${targets.length?` по целям: ${targets.map(row=>row.name).join(', ')}`:''}.`);Combat.render();flushLuaEffects119(state);await checkpointCombat120('Сцена: активное снаряжение',true);}catch(error){operationFailure194(error);console.error('SCENE_ACTIVE_EQUIPMENT_V129',error);Toast.show(String(error?.message||error),'err');}finally{local.lua119.busy=false;updateOperation191();if(UI.activeModuleId==='combat')Combat.render();}}
   async function reloadWeapon118(){
     const initial=reloadAvailability120(),scene=Combat.getScene();
     if(!initial.enabled){Toast.show(initial.reason||'Перезарядка недоступна','info');return;}
@@ -2401,7 +2557,7 @@
       magazine.loaded+=loaded;magazine.ammoTypeId=ammo.id;writeMagazineState118(token,weapon,magazine);token.actionUsed=true;
       appendCombatLog105(runtime,`${token.name} перезаряжает «${weapon.name}» патронами «${ammo.name||ammo.id}»: ${magazine.loaded} / ${magazine.size}. Из запаса израсходовано ${loaded}.`);
       Combat.render();Toast.show('Оружие перезаряжено','ok');await checkpointCombat120('Сцена: перезарядка оружия',true);
-    }catch(error){console.error('SCENE_RELOAD_V120_FAILED',error);Toast.show(String(error?.message||error),'err');}
+    }catch(error){operationFailure194(error);console.error('SCENE_RELOAD_V120_FAILED',error);Toast.show(String(error?.message||error),'err');}
     finally{finishCombatTransaction120(transaction);}
   }
   async function disengage122(){const token=selectedToken104();if(!token||!Combat.canActWithToken?.(token)||actionSpent191(token)||token.burstStateV122)return;token.actionUsed=true;token.disengagedV122=true;appendCombatLog105(Combat.getRuntime(),`${token.name} выполняет Отход: перемещение этого хода не вызывает атаку по возможности.`);Combat.render();await checkpointCombat120('Сцена: Отход',false);}
@@ -2437,7 +2593,7 @@
       const description=String(skill.description||'').replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim();
       appendCombatLog105(runtime,`${token.name} применяет активный навык «${skill.name||skill.id}»${description?`: ${description}`:'.'} Механический результат определяется описанием навыка и применяется ДМом.`);
       Combat.render();Toast.show(`Применён навык: ${skill.name||skill.id}`,'ok');await checkpointCombat120('Сцена: активный навык',false);
-    }catch(error){console.error('SCENE_LUA_SKILL_V119',error);Toast.show(String(error?.message||error),'err');}
+    }catch(error){operationFailure194(error);console.error('SCENE_LUA_SKILL_V119',error);Toast.show(String(error?.message||error),'err');}
     finally{local.lua119.busy=false;updateOperation191();if(UI.activeModuleId==='combat')Combat.render();}
   }
   function lootRows118(value){
@@ -2622,6 +2778,9 @@
       ({attacker,target}=combatTransactionRefs120(transaction));weapon=weaponForToken105(attacker);
       if(!target)throw new Error('Цель больше не находится на сцене');
       if(!weapon||String(weapon.id)!==String(selectedWeapon.id))throw new Error('Выбранное оружие изменилось во время атаки');
+      attacker.actionUsed=true;
+      const plannedContinuation=entered.attackRoll!==1&&shotIndex<maxShots&&(magazine.size===0||magazine.loaded-shotCost>=shotCost);
+      attacker.burstStateV122=plannedContinuation?{weaponId:weapon.id,nextShot:shotIndex+1,maxShots}:null;if(!plannedContinuation)completeDroneModule129(attacker);
       if(magazine.size>0){const currentMagazine=magazineState118(attacker,weapon);if(currentMagazine.loaded<shotCost)throw new Error('Патроны были израсходованы другим действием');currentMagazine.loaded-=shotCost;writeMagazineState118(attacker,weapon,currentMagazine);magazine.loaded=currentMagazine.loaded;magazine.ammoTypeId=currentMagazine.ammoTypeId;}
       const context={attacker,target,caster:attacker,targets:[target],weapon,damageType:String(weapon.weaponCategory||'light'),attackRoll:entered.attackRoll,defenseRoll:entered.defenseRoll,sourceName:weapon.name||'Атака'};
       const beforeState={damage:0,attackBonus:num(declaredState.attackBonus,hitBonus),defenseBonus:num(declaredState.defenseBonus,defense.defenseBonus),effects:declaredState.effects};await runAutomaticHooks119(attacker,'BeforeAttackStart',{...context,damage:0,attackBonus:beforeState.attackBonus,defenseBonus:beforeState.defenseBonus},beforeState);await chooseReaction119('BeforeAttackStart',{...context,damage:0,attackBonus:beforeState.attackBonus,defenseBonus:beforeState.defenseBonus},beforeState);
@@ -2656,7 +2815,7 @@
       local.preview={...local.preview,effect:result.hit?'shot':'miss',targetId:target.id,label:result.hit?`${weapon.name}: ${finalDamage} урона · HP ${hpChange.before} → ${hpChange.after}`:`${weapon.name}: промах · ${result.attackTotal} против ${result.defenseTotal}`};
       Combat.syncInitiative(scene.id,false);Combat.render();flushLuaEffects119(effectState);await checkpointCombat120(result.hit?'Сцена: атака и урон':'Сцена: атака',true);
       setTimeout(()=>{if(['shot','miss'].includes(local.preview?.effect)&&local.preview?.targetId===target.id){local.preview=null;refreshPreviewDom104();}},1100);
-    }catch(error){console.error('SCENE_ATTACK_V119_FAILED',error);Toast.show(String(error?.message||error),'err');}
+    }catch(error){operationFailure194(error);console.error('SCENE_ATTACK_V119_FAILED',error);Toast.show(String(error?.message||error),'err');}
     finally{finishCombatTransaction120(transaction);}
   }
   function consumeGrenade105(token,itemId){
@@ -2688,6 +2847,7 @@
       const entered=await requestDamageRoll119({title:`Граната: ${grenade.name}`,source:attacker,expression:String(grenade.damage||''),damageBonus:num(grenade.damageBonus,0),targets});if(!entered)return;
       refs=combatTransactionRefs120(transaction);attacker=refs.attacker;targets=refs.targets;grenade=grenadeForToken105(attacker);
       if(!grenade||String(grenade.id)!==String(selectedGrenade.id)||!consumeGrenade105(attacker,selectedGrenade.id))throw new Error('Граната отсутствует в инвентаре персонажа');
+      attacker.actionUsed=true;
       const rolledTotal=Math.max(0,Math.round(num(entered.damageRoll)+num(grenade.damageBonus,0))),affected=[],allEffects={effects:[]};
       const incomingCategory=String(grenade.weaponCategory||grenade.damageType||'heavy').toLowerCase();
       let beforeContext={attacker,caster:attacker,target:null,targets,weapon:grenade,damage:rolledTotal,damageType:incomingCategory,hit:true,sourceName:grenade.name};
@@ -2712,7 +2872,7 @@
       local.preview={...preview,effect:'grenade',label:`${grenade.name}: базовый урон ${rolledTotal} · целей ${affected.length}`};
       Combat.syncInitiative(scene.id,false);Combat.render();flushLuaEffects119(allEffects);await checkpointCombat120('Сцена: граната и урон',true);
       setTimeout(()=>{if(local.preview?.effect==='grenade'){local.preview=null;refreshPreviewDom104();}},1300);
-    }catch(error){console.error('SCENE_GRENADE_V119_FAILED',error);Toast.show(String(error?.message||error),'err');}
+    }catch(error){operationFailure194(error);console.error('SCENE_GRENADE_V119_FAILED',error);Toast.show(String(error?.message||error),'err');}
     finally{finishCombatTransaction120(transaction);}
   }
   function beginPan105(event,viewport){
@@ -2725,10 +2885,12 @@
     local.draw={kind:'pan',pointerId:event.pointerId,viewport};
   }
   function startBoardPointer104(event){
+    if(recovery194||(operation194&&!operation194.executing))return;
     if(local.draw?.kind==='asset-transform')return;
     const stage=event.target.closest?.('#combat-stage'),viewport=event.target.closest?.('#combat-stage-viewport');if(!stage)return;const scene=Combat.getScene();if(!scene)return;
     if(local.lua119.pointPicker&&event.button===0){event.preventDefault();event.stopImmediatePropagation();const picker=local.lua119.pointPicker,point=nearestHexCenter107(scene,scenePointFromEvent(event,stage,scene)),caster=tokenById119(picker.casterId),distance=hexDistancePoints109(scene,centerOf(caster||{x:point.x,y:point.y,w:0,h:0}),point);if(distance>picker.castRange){Toast.show(`Точка вне дальности: ${hexLabel109(distance)} при максимуме ${hexLabel109(picker.castRange)}`,'info');return;}local.lua119.pointPicker=null;local.preview={kind:'grenade',sourceTokenId:picker.casterId,start:centerOf(caster||{x:point.x,y:point.y,w:0,h:0}),end:point,radius:Math.max(.08,picker.areaRadius*hexStepDistance109()),hexes:picker.castRange,label:`${picker.label}: точка выбрана`};refreshPreviewDom104();picker.resolve(point);return;}
     if(event.button===1||local.ui.action==='pan'||(local.spaceDown&&event.button===0)){event.preventDefault();beginPan105(event,viewport||stage.closest('#combat-stage-viewport'));return;}
+    if(operation194)return;
     if(event.button!==0)return;const point=scenePointFromEvent(event,stage,scene),object=event.target.closest?.('[data-scene-kind-v104]');
     const assetHandle=event.target.closest?.('[data-asset-transform-v133]');
     if(assetHandle&&local.ui.action==='select'){
@@ -2994,14 +3156,22 @@
     local.editorObserver191=new MutationObserver(()=>{if(UI.activeModuleId==='combat'&&node.style.display==='none')node.style.display='block';});
     local.editorObserver191.observe(node,{attributes:true,attributeFilter:['style']});
   }
+  const actionEntries194=[
+    [()=>commitAttack105,fn=>commitAttack105=fn,'Атака'],[()=>commitGrenade105,fn=>commitGrenade105=fn,'Граната'],[()=>commitMove104,fn=>commitMove104=fn,'Перемещение'],
+    [()=>reloadWeapon118,fn=>reloadWeapon118=fn,'Перезарядка'],[()=>useActiveSkill118,fn=>useActiveSkill118=fn,'Активный навык'],[()=>useActiveEquipment129,fn=>useActiveEquipment129=fn,'Активное снаряжение'],
+    [()=>togglePosture128,fn=>togglePosture128=fn,'Положение'],[()=>disengage122,fn=>disengage122=fn,'Отход'],[()=>finishBurst122,fn=>finishBurst122=fn,'Завершение очереди'],[()=>clearMalfunction122,fn=>clearMalfunction122=fn,'Устранение отказа'],
+    [()=>commandDrone129,fn=>commandDrone129=fn,'Команда дрону'],[()=>deployDeviceAt129,fn=>deployDeviceAt129=fn,'Размещение устройства'],[()=>lifecycleCommand193,fn=>lifecycleCommand193=fn,'Управление игровой сценой'],
+    [()=>placeParticipant193,fn=>placeParticipant193=fn,'Размещение участника'],[()=>Combat.nextTurn,fn=>Combat.nextTurn=fn,'Следующий ход'],[()=>Combat.setBattleMode191,fn=>Combat.setBattleMode191=fn,'Режим боя']
+  ];
+  for(const [get,set,label] of actionEntries194){const original=get();set(function(...args){return runOperation194(label,()=>original.apply(this,args),label==='Следующий ход'&&args[0]?.ignoreCommand194===true);});}
   const openModuleBefore104=UI.openModule.bind(UI);
-  UI.openModule=function(id,options={}){if(id==='combat'&&!Combat.isDm()){Toast.show('Сцены доступны только ДМу','info');return;}const leaving=this.activeModuleId==='combat'&&id!=='combat';if(leaving){closeCombatModal119(null);if(local.lua119.pointPicker)cancelAbilityPoint125();void exitCombatStability108();}const result=openModuleBefore104(id,options);if(id==='combat'&&this.activeModuleId==='combat'){keepEditorVisible191();enterCombatStability108();refreshRuntimeSources122(Combat.getSceneIdForView?.());Combat.render?.();}return result;};
+  UI.openModule=function(id,options={}){if(id!=='combat'&&this.activeModuleId==='combat'&&deferNavigation194(()=>UI.openModule(id,options)))return;if(id==='combat'&&!Combat.isDm()){Toast.show('Сцены доступны только ДМу','info');return;}const leaving=this.activeModuleId==='combat'&&id!=='combat';if(leaving){closeCombatModal119(null);if(local.lua119.pointPicker)cancelAbilityPoint125();void exitCombatStability108();}const result=openModuleBefore104(id,options);if(id==='combat'&&this.activeModuleId==='combat'){keepEditorVisible191();enterCombatStability108();refreshRuntimeSources122(Combat.getSceneIdForView?.());Combat.render?.();}return result;};
   const closeModuleBefore104=UI.closeModule.bind(UI);
-  UI.closeModule=function(...args){const wasCombat=this.activeModuleId==='combat';if(wasCombat){closeAbilityWindow192(false);closeCombatModal119(null);if(local.lua119.pointPicker)cancelAbilityPoint125();}let result;local.hidingEditor191=wasCombat;try{result=closeModuleBefore104(...args);}finally{local.hidingEditor191=false;}if(wasCombat){local.preview=null;void exitCombatStability108();}return result;};
+  UI.closeModule=function(...args){if(this.activeModuleId==='combat'&&deferNavigation194(()=>UI.closeModule(...args)))return;const wasCombat=this.activeModuleId==='combat';if(wasCombat){closeAbilityWindow192(false);closeCombatModal119(null);if(local.lua119.pointPicker)cancelAbilityPoint125();}let result;local.hidingEditor191=wasCombat;try{result=closeModuleBefore104(...args);}finally{local.hidingEditor191=false;}if(wasCombat){local.preview=null;void exitCombatStability108();}return result;};
   const updateBootBefore104=App.updateBootView.bind(App);
   App.updateBootView=function(){const result=updateBootBefore104();ensureCombatModuleMarkup();const button=document.getElementById('open-combat');if(button){button.style.display=Combat.isDm()?'grid':'none';button.dataset.label='СЦЕНЫ';}return result;};
   window.addEventListener('focus',()=>{if(UI.activeModuleId==='combat')Combat.refreshPlayerDisplayStatus?.().catch?.(()=>{});});
-  window.addEventListener('beforeunload',()=>{try{window.electronAPI?.closePlayerDisplay?.();}catch{}try{collectStoreFromRuntime();window.electronAPI?.saveLocalCombatScenes?.(local.store);}catch{}});
+  window.addEventListener('beforeunload',()=>{try{window.electronAPI?.closePlayerDisplay?.();}catch{}try{window.electronAPI?.saveLocalCombatScenes?.(unloadStore194());}catch{}});
 
   const initBefore104=App.init.bind(App);
   App.init=async function(){const result=await initBefore104();await loadLocalStore();ensureCombatModuleMarkup();const button=document.getElementById('open-combat');if(button){button.style.display=Combat.isDm()?'grid':'none';button.dataset.label='СЦЕНЫ';}return result;};
@@ -3029,6 +3199,10 @@
     if(openButton){event.preventDefault();event.stopImmediatePropagation?.();if(Combat.isDm())UI.openModule('combat');else Toast.show('Сцены доступны только ДМу','info');return;}
     const t=event.target.closest?.('#mod-combat [data-scene-search-v118],#mod-combat button,#mod-combat [data-scene-select-v104],.scene-context-v104 button');
     if(!t){if(local.context&&!event.target.closest('.scene-context-v104'))closeContext104();return;}
+    if(t.dataset.operationAck194){event.preventDefault();const row=list(journal194().history).find(r=>r.id===t.dataset.operationAck194);if(row)row.acknowledged194=true;queueStoreSave();Combat.render();return;}
+    if(operation194){event.preventDefault();Toast.show(operationReason191(),'info');return;}
+    if(recovery194&&!t.hasAttribute('data-operation-retry194')){event.preventDefault();Toast.show('Сначала сохраните подтверждённый результат','info');return;}
+    if(t.hasAttribute('data-operation-retry194')){event.preventDefault();void retryOperation194();return;}
     if(t.dataset.lifecycle193){event.preventDefault();void runCommand191(()=>lifecycleCommand193(t.dataset.lifecycle193));return;}
     if(t.dataset.abilitiesOpen192){event.preventDefault();openAbilityWindow192(t.dataset.abilitiesOpen192);return;}
     if(t.hasAttribute('data-battle-mode191')){event.preventDefault();void runCommand191(()=>Combat.setBattleMode191());return;}
@@ -3083,6 +3257,7 @@
   },true);
   document.addEventListener('change',event=>{
     const t=event.target;
+    if((operation194||recovery194)&&t.closest?.('#mod-combat,.scene-context-v104')){event.preventDefault();Toast.show(operationReason191(),'info');return;}
     if(t.dataset.sceneSoundSectionRenameV144){const api=audioApi();if(!api?.renameSection?.(t.dataset.sceneSoundSectionRenameV144,t.value))t.value=api?.findSection(t.dataset.sceneSoundSectionRenameV144)?.name||'';Combat.render();return;}
     if(t.id==='scene-category-filter-v104'){local.ui.sceneCategory=t.value;Combat.render();return;}
     if(t.id==='scene-asset-category-v104'){local.ui.assetCategory=t.value;Combat.render();return;}
@@ -3097,7 +3272,7 @@
   document.addEventListener('submit',event=>{if(event.target.id==='scene-properties-form-v104'){event.preventDefault();applySceneForm104(event.target);return;}if(event.target.matches?.('[data-object-form-v104]')){event.preventDefault();applyObjectForm104(event.target);}},true);
   document.addEventListener('wheel',event=>{const viewport=event.target.closest?.('#combat-stage-viewport');if(viewport){Combat.handleViewWheel?.(event,viewport);}}, {passive:false,capture:true});
   document.addEventListener('pointerdown',event=>{if(local.context&&!event.target.closest('.scene-context-v104'))closeContext104();},true);
-  window.addEventListener('keydown',event=>{if(UI.activeModuleId==='combat'&&['Delete','Backspace'].includes(event.key)&&!event.target.closest?.('input,textarea,select,[contenteditable]')&&selectedObject104()?.kind==='asset'){event.preventDefault();deleteSelected104();return;}if(event.code==='Escape'&&local.lua119.pointPicker){event.preventDefault();cancelAbilityPoint125();return;}if(event.code==='Space'&&UI.activeModuleId==='combat'&&!event.repeat){local.spaceDown=true;document.getElementById('combat-stage-viewport')?.classList.add('space-pan-v105');event.preventDefault();}});
+  window.addEventListener('keydown',event=>{if(UI.activeModuleId==='combat'&&['Delete','Backspace'].includes(event.key)&&!event.target.closest?.('input,textarea,select,[contenteditable]')&&selectedObject104()?.kind==='asset'){event.preventDefault();deleteSelected104();return;}if(event.code==='Escape'&&document.querySelector('.scene-lua-overlay-v119')){event.preventDefault();closeCombatModal119(null);return;}if(event.code==='Escape'&&local.lua119.pointPicker){event.preventDefault();cancelAbilityPoint125();return;}if(event.code==='Space'&&UI.activeModuleId==='combat'&&!event.repeat){local.spaceDown=true;document.getElementById('combat-stage-viewport')?.classList.add('space-pan-v105');event.preventDefault();}});
   window.addEventListener('keyup',event=>{if(event.code==='Space'){local.spaceDown=false;document.getElementById('combat-stage-viewport')?.classList.remove('space-pan-v105');}});
 })();
 

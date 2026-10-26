@@ -82,7 +82,7 @@
     const placed=rows(runtime.tokens),states=new Map(Object.values(session.participants).map(t=>[t.id,t]));
     placed.forEach(t=>states.set(t.id,t));
     let ids=resetTurn?placed.map(t=>t.id):[...new Set([...session.order,...rows(runtime.initiativeOrder),...placed.map(t=>t.id)])];
-    ids=ids.filter(id=>Number(states.get(id)?.hpCurrent)>0&&states.get(id)?.equipmentType!=='drone');
+    ids=ids.filter(id=>Number(states.get(id)?.hpCurrent)>0&&states.get(id)?.equipmentType!=='drone'&&!rows(session.withdrawn194).includes(states.get(id)?.participantId193));
     ids.sort((a,b)=>(Number(states.get(b).initiative)||0)-(Number(states.get(a).initiative)||0)||String(states.get(a).name||'').localeCompare(String(states.get(b).name||''),'ru'));
     runtime.initiativeOrder=ids;runtime.turnIndex=resetTurn?0:Math.max(0,ids.indexOf(current));if(resetTurn)runtime.round=1;
     session.order=ids.slice();session.turnTokenId=ids[runtime.turnIndex]||'';

@@ -672,3 +672,7 @@ body.combat-stability-v108 #gm-dock-btn {
 
 /* v193: game scene lifetime is distinct from map preparation/publication. */
 .scene-session-stack-v193{min-height:0;max-height:36vh;overflow:auto;overscroll-behavior:contain}.scene-lifecycle-v193{display:flex;align-items:center;flex-wrap:wrap;gap:7px;padding:7px 12px;background:#101b25;border-bottom:1px solid #71869a40;font-size:11px;color:#aac1d1}.scene-lifecycle-v193 button{font-size:10px;padding:6px 9px}.scene-lifecycle-v193 strong{width:100%;color:#dfc388;font-size:12px}
+
+.scene-operation-v194{display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:8px 12px;border-bottom:1px solid #b3976266;background:#292418;color:#e0c98f;font-size:12px}.scene-operation-v194 span{flex:1;min-width:160px}.scene-operation-v194 button{font-size:11px}
+.scene-operation-v194{position:sticky;bottom:0;z-index:2}.scene-operation-v194 span{overflow-wrap:anywhere}
+.scene-token-v104.is-withdrawn-v194{opacity:.55;border-style:dashed!important}
