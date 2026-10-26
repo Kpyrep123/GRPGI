@@ -23,3 +23,12 @@ html[data-era-theme="technological"] .galaxy-planet-row{border-color:rgba(176,14
 html[data-era-theme="technological"] .galaxy-planet-row:hover{border-color:#b99358;background:rgba(129,95,49,.20)}
 html[data-era-theme="technological"] .item-fact-v141{border-color:rgba(186,148,86,.4);color:#d9c49d;background:rgba(111,81,40,.12)}
 html[data-era-theme="technological"] .item-modifier-v141{border-color:rgba(205,165,99,.5);background:rgba(133,94,40,.18)}
+/* Web profile item classes are distinct from the desktop inventory classes. */
+html[data-era-theme="technological"] :is(.web-inventory-grid-v1067,.web-inventory-slot-v1067,.web-inventory-cell-v1067,.web-inventory-tile-v1067){border-color:rgba(176,140,81,.35);border-radius:2px}
+html[data-era-theme="technological"] .web-inventory-grid-v1067{background:#0c0b08}
+html[data-era-theme="technological"] .web-inventory-cell-v1067{background:rgba(151,115,63,.045)}
+html[data-era-theme="technological"] .web-inventory-slot-v1067{background:rgba(122,94,50,.055)}
+html[data-era-theme="technological"] .web-inventory-slot-v1067.filled{background:rgba(139,102,53,.12)}
+html[data-era-theme="technological"] .web-inventory-tile-v1067{color:#e1d6c1;background:linear-gradient(155deg,rgba(45,38,27,.98),rgba(13,12,9,.99) 60%);box-shadow:inset 0 1px rgba(226,191,129,.07),0 4px 12px rgba(0,0,0,.35)}
+html[data-era-theme="technological"] .web-inventory-tile-v1067:hover{border-color:#c19b5f;background:linear-gradient(155deg,#4b3b26,#17140e 68%)}
+html[data-era-theme="technological"] :is(.market-shop-tile-v1071,.market-inventory-tile-v1071):is(:hover,.selected){box-shadow:inset 0 0 0 1px rgba(218,177,107,.18),0 7px 22px rgba(0,0,0,.48)}
