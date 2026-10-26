@@ -41,14 +41,17 @@
   }
   function applyDamage(target,amount){
     if(!target||typeof target!=='object')return {before:0,after:0,applied:0};
+    root.GRPGCombatTraumaV195?.ensure(target);
     const before=Math.max(0,number(target.hpCurrent,target.hpMax||0));
     const requested=Math.max(0,integer(Math.round(number(amount,0)),0));
     const after=Math.max(0,before-requested);target.hpCurrent=after;
     if(after<=0){const conditions=target.conditionsV138&&typeof target.conditionsV138==='object'?target.conditionsV138:(target.conditionsV138={});conditions.dying=true;conditions.stabilized=false;conditions.unconscious=true;conditions.prone=true;target.proneV122=true;}
+    root.GRPGCombatTraumaV195?.add(target,before-after);
     return {before,after,applied:before-after};
   }
   function applyHeal(target,amount){
     if(!target||typeof target!=='object')return {before:0,after:0,applied:0};
+    root.GRPGCombatTraumaV195?.ensure(target);
     const before=Math.max(0,number(target.hpCurrent,0)),maximum=Math.max(before,number(target.hpMax,before));
     const after=Math.min(maximum,before+Math.max(0,integer(Math.round(number(amount,0)),0)));target.hpCurrent=after;
     if(after>0){const conditions=target.conditionsV138&&typeof target.conditionsV138==='object'?target.conditionsV138:(target.conditionsV138={});conditions.dying=false;conditions.stabilized=false;conditions.unconscious=false;}

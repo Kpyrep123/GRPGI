@@ -102,6 +102,10 @@ function Unit:IsNPC() return tostring(self.__data.kind or '') == 'npc' end
 function Unit:IsAlive() return self:GetHealth() > 0 end
 function Unit:GetHealth() return __num(self.__data.hpCurrent) end
 function Unit:GetMaxHealth() return __num(self.__data.hpMax) end
+function Unit:GetInjuryDegree() return math.max(0, math.min(5, math.floor(__num(self.__data.injuryDegree)))) end
+function Unit:GetCheckPenalty() return math.max(0, __num(self.__data.checkPenalty)) end
+function Unit:HasCheckDisadvantage() return self.__data.checkDisadvantage == true end
+function Unit:IsHeavyWeaponRestricted() return self.__data.heavyWeaponRestricted == true end
 function Unit:GetStat(name) return __num((self.__data.stats or {})[tostring(name or '')]) end
 function Unit:GetStrength() return self:GetStat('strength') end
 function Unit:GetDexterity() return self:GetStat('dexterity') end
@@ -249,6 +253,7 @@ end
 function Unit:HasCharges(slot, minimum) return self:GetCharges(slot) >= math.max(1, math.floor(__num(minimum, 1))) end
 function Unit:HasModifier(id) return __contains(self.__data.modifiers, id) end
 function Unit:Heal(amount, source) return Heal(source or self, self, amount) end
+function Unit:HealInjury(amount) return HealInjury(self, amount) end
 function Unit:InflictDamage(target, amount) return InflictDamage(self, target, amount) end
 
 local Source = {}
@@ -294,6 +299,12 @@ end
 function Heal(caster, target, amount)
   if __unit(target) == nil then error('Heal: цель не найдена') end
   return __push({ kind = 'heal', casterId = __id(caster), targetId = __id(target), amount = __num(amount) })
+end
+function HealInjury(target, amount)
+  if __unit(target) == nil then error('HealInjury: цель не найдена') end
+  local value = __num(amount)
+  if value <= 0 or value ~= math.floor(value) then error('HealInjury: укажите положительное целое число степеней') end
+  return __push({ kind = 'heal_injury', targetId = __id(target), amount = math.min(5, value) })
 end
 function ReduceDamage(amount) return __push({ kind = 'reduce_damage', amount = __num(amount) }) end
 function AddDamage(amount, spec)

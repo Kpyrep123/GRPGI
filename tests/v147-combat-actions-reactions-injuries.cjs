@@ -15,8 +15,7 @@ assert.match(stats, /applyStatFormula\(base\.initiative,'will','initiative_bonus
 assert.match(scene, /if\(!token\.initiativeOverrideV147\)token\.initiative=token\.initiativeBonus/);
 assert.match(scene, /Combat\.selectedObject=\{kind:'token',id:current\.id\}/);
 
-assert.match(scene, /Math\.ceil\(missing\/maximum\*5\)/);
-assert.match(scene, /automaticHealthV147:true/);
+// Cumulative injuries supersede v147 health-derived injuries; behavior is covered by combat-trauma-v195 tests.
 assert.doesNotMatch(scene, /title:`Травма: \$\{token\.name\}`/);
 
 assert.match(scene, /name="reaction" value="\$\{index\}"/);
@@ -60,5 +59,5 @@ end`;
   const result = await runWorker({ mode: 'execute', hook: 'OnAbilityExecuted', script, input });
   assert.equal(result.ok, true, result.message);
   assert.deepEqual(result.result.commands.map(row => row.kind), ['spend_action', 'restore_action', 'spend_reaction', 'restore_reaction', 'spend_movement', 'restore_movement']);
-  console.log('PASS v147 combat actions, reactions, Will initiative and automatic injuries');
+  console.log('PASS v147 action/reaction Lua compatibility and Will initiative');
 })().catch(error => { console.error(error); process.exitCode = 1; });
