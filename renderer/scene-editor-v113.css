@@ -676,3 +676,4 @@ body.combat-stability-v108 #gm-dock-btn {
 .scene-operation-v194{display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:8px 12px;border-bottom:1px solid #b3976266;background:#292418;color:#e0c98f;font-size:12px}.scene-operation-v194 span{flex:1;min-width:160px}.scene-operation-v194 button{font-size:11px}
 .scene-operation-v194{position:sticky;bottom:0;z-index:2}.scene-operation-v194 span{overflow-wrap:anywhere}
 .scene-token-v104.is-withdrawn-v194{opacity:.55;border-style:dashed!important}
+.scene-injury-note-v195{padding:10px;border:1px solid #c98e6155;border-radius:6px;color:#ebbf91;background:#38261b66;margin:8px 0}
