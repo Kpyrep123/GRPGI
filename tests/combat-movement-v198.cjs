@@ -1,0 +1,14 @@
+'use strict';
+const assert=require('node:assert/strict'),M=require('../renderer/combat-movement-v198.js');
+const items={gun:{mass:2},bag:{mass:1},ammo:{mass:.01},text:{mass:99,textOnlyInventory:true}},get=id=>items[id];
+assert.equal(M.weight([{itemId:'gun',qty:1},{itemId:'bag',qty:1},{itemId:'ammo',qty:50}],['gun','bag'],get),3.5);
+assert.equal(M.weight([{itemId:'gun',qty:1}],['gun','gun'],get),4);
+assert.equal(M.weight([{itemId:'text',qty:50}],[],get),0);
+for(const [weight,speed] of [[0,6],[9,6],[13.5,3],[18,0],[19,0]])assert.equal(M.resolve({speed:6,strength:2,weight}).speed,speed);
+assert.equal(M.resolve({speed:6,strength:2,weight:0,dash:true,spent:2}).remaining,10);
+assert.equal(M.resolve({speed:3,strength:2,weight:13.5,dash:true}).budget,2);
+assert.equal(M.resolve({speed:6,capacity:0,weight:0}).speed,6);
+assert.equal(M.resolve({speed:6,capacity:0,weight:1}).speed,0);
+assert.equal(M.resolve({speed:6,strength:2,weight:18,dash:true,spent:2}).remaining,0);
+assert.equal(M.resolve({speed:6,capacity:12,weight:12}).speed,6);
+console.log('PASS weight ownership/equipment/stack quantities, explicit capacity, overload thresholds/rounding, dash budget and preserved spent movement');
