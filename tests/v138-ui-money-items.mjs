@@ -34,6 +34,6 @@ run('PlayerSync.shouldIsolateUsersFromSnapshot=()=>true;App.state.users.p.credit
 w.electronAPI.patchPlayer=async request=>{requests.push(structuredClone(request));if(!committed)committed=true;if(lost)throw new Error('lost response');return{ok:true,status:'replayed',row:{playerId:'p',player:{...w.App.state.users.p,credits:115}}};};
 result=await w.GRPGCombatAPIv138.grantCredits('p',5,{reason:'remote'});assert.equal(result.ok,false);lost=false;result=await w.GRPGCombatAPIv138.grantCredits('p',5,{reason:'remote'});assert.equal(result.ok,true);assert.equal(new Set(requests.map(row=>row.operationId)).size,1);assert.equal(run('App.state.users.p.credits'),115);
 console.log('PASS lost remote response reuses operation id and reconciles one grant');
-assert.deepEqual(JSON.parse(run('JSON.stringify(normalizePlayerProfileV2({id:"p",itemStateV138:{shield:{durabilityMax:5,durability:0,chargesMax:2,charges:1,broken:true}}}).itemStateV138.shield)')),{itemId:'shield',slot:'',durabilityMax:5,durability:0,chargesMax:2,charges:1,broken:true});
+assert.deepEqual(JSON.parse(run('JSON.stringify(normalizePlayerProfileV2({id:"p",itemStateV138:{shield:{durabilityMax:5,durability:0,chargesMax:2,charges:1,broken:true}}}).itemStateV138.shield)')),{itemId:'shield',slot:'',durabilityMax:5,durability:0,chargesMax:2,charges:1,broken:true,pendingWear197:0});
 console.log('ALL V138 UI MONEY/ITEM CHECKS PASSED');
 await w.happyDOM.abort();

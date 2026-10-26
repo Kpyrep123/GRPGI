@@ -14,7 +14,7 @@
 
   function normalizeItemState(value){
     const source=value&&typeof value==='object'&&!Array.isArray(value)?value:{};
-    return Object.fromEntries(Object.entries(source).map(([id,row])=>[String(id),{itemId:String(row?.itemId||id),slot:String(row?.slot||''),durabilityMax:Math.max(0,integer(row?.durabilityMax,0)),durability:Math.max(0,number(row?.durability,0)),chargesMax:Math.max(0,integer(row?.chargesMax,0)),charges:Math.max(0,integer(row?.charges,0)),broken:Boolean(row?.broken)}]));
+    return Object.fromEntries(Object.entries(source).map(([id,row])=>[String(id),{itemId:String(row?.itemId||id),slot:String(row?.slot||''),durabilityMax:Math.max(0,integer(row?.durabilityMax,0)),durability:Math.max(0,number(row?.durability,0)),chargesMax:Math.max(0,integer(row?.chargesMax,0)),charges:Math.max(0,integer(row?.charges,0)),broken:Boolean(row?.broken),pendingWear197:Math.max(0,integer(row?.pendingWear197,0))}]));
   }
 
   const normalizeEquipmentBefore138=normalizeEquipmentItemV2;
@@ -68,7 +68,7 @@
 
   const renderEquipmentBefore138=Configurator.renderEquipmentEditor.bind(Configurator);
   Configurator.renderEquipmentEditor=function(raw){
-    const item=normalizeEquipmentItemV2(raw),base=renderEquipmentBefore138(item),fields=`<section class="item-state-settings-v138"><div class="section-title">Ресурсы предмета</div><div class="cols2"><div class="field"><label>Максимальная прочность</label><input class="input" type="number" min="0" step="1" name="durabilityMax" value="${item.durabilityMax}"/><div class="small-note">0 — прочность не используется.</div></div><div class="field"><label>Максимум зарядов</label><input class="input" type="number" min="0" step="1" name="chargesMax" value="${item.chargesMax}"/><div class="small-note">0 — заряды не используются.</div></div></div></section>`;
+    const item=normalizeEquipmentItemV2(raw),base=renderEquipmentBefore138(item),fields=`<section class="item-state-settings-v138"><div class="section-title">Ресурсы предмета</div><div class="cols2"><div class="field"><label>Максимальная прочность</label><input class="input" type="number" min="0" step="1" name="durabilityMax" value="${item.durabilityMax}"/><div class="small-note">0 — предел прочности не задан. Натуральная 1 атаки даёт +1 износ; при заданном пределе нулевая прочность означает поломку.</div></div><div class="field"><label>Максимум зарядов</label><input class="input" type="number" min="0" step="1" name="chargesMax" value="${item.chargesMax}"/><div class="small-note">0 — заряды не используются.</div></div></div></section>`;
     return base.replace(/(<button[^>]+type="submit"[^>]*>[^<]*(?:SAVE_ITEM|СОХРАНИТЬ)[^<]*<\/button>)/i,fields+'$1');
   };
   const renderPlayerBefore138=Configurator.renderPlayerEditor.bind(Configurator);
