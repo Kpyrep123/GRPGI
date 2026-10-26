@@ -148,6 +148,9 @@
   }
   normalizeCombatToken = function(token = {}) {
     const next = normalizeTokenBefore104(token);
+    next.participantId193=String(token.participantId193||'');
+    next.initiativeBattle193=String(token.initiativeBattle193||'');
+    next.usage193=clone(token.usage193||{battle:{},scene:{}});
     next.unitSize=window.GRPGUnitSizeV184.normalize(token.unitSize);
     next.footprintV184=token.footprintV184===true;
     next.visibleToPlayers = token.visibleToPlayers !== false;
@@ -221,8 +224,128 @@
     return next;
   };
 
+  const Session193=window.GRPGCombatSessionV193;
+  function activeMap193(id=Combat.getSceneIdForView?.()){return !local.store?.session193||local.store.session193.activeMapId===id;}
+  function ensureSession193(){
+    if(!local.store||!local.loaded)return null;
+    if(local.store.session193?.version===193&&COMBAT_SCENES[local.store.session193.activeMapId])return local.store.session193;
+    const id=local.store.publishedSceneId191&&COMBAT_SCENES[local.store.publishedSceneId191]?local.store.publishedSceneId191:Combat.getSceneIdForView?.();
+    if(!COMBAT_SCENES[id])return null;
+    const runtime=Combat.getRuntime(id);
+    local.store.session193=Session193.create(id,runtime,COMBAT_SCENES[id].mode,makeId);
+    // enterCombatStability rehydrates from this archive immediately after the first render.
+    local.store.runtimes[id]=clone(runtime);
+    return local.store.session193;
+  }
+  function captureSession193(){
+    const session=local.store?.session193;if(!session)return;
+    const runtime=App?.state?.toolState?.[COMBAT_STATE_KEY]?.scenes?.[session.activeMapId];
+    if(runtime)Session193.capture(session,session.activeMapId,runtime,COMBAT_SCENES[session.activeMapId]?.mode||session.mode);
+  }
+  function hydratePlaced193(token,mapId){
+    const session=ensureSession193();if(!session)return;
+    const pid=Session193.identity(token,mapId),actor=session.participants[pid];
+    if(actor)Object.assign(token,Session193.place(actor,token));
+    else if(activeMap193(mapId))Session193.register(session,token,mapId);
+  }
+  function resetSession193(kind){
+    const session=ensureSession193();captureSession193();const oldRound=session.round;Session193.reset(session,kind,makeId);
+    const runtime=Combat.getRuntime(session.activeMapId);
+    for(const token of runtime.tokens){const actor=session.participants[Session193.identity(token,session.activeMapId)];if(actor)Object.assign(token,Session193.place(actor,token));}
+    runtime.initiativeOrder=[];runtime.turnIndex=0;runtime.round=1;runtime.pendingTurnStart193='';runtime.pausedBudget191=null;runtime.battleStarted191=session.started;
+    COMBAT_SCENES[session.activeMapId].mode=session.mode;
+    for(const mapId of list(session.mapIds)){
+      const other=ensureCombatState().scenes[mapId];if(!other)continue;
+      other.thinkersV125=list(other.thinkersV125).filter(t=>t.resetScope193!=='battle'&&(kind!=='scene'||t.resetScope193!=='scene'));
+      // Keep remaining lifetime when a new battle starts its round counter at one.
+      for(const thinker of other.thinkersV125)for(const key of ['createdRound','expiresRound','nextPulseRound','lastPulseRound'])if(num(thinker[key])>0)thinker[key]=Math.max(1,num(thinker[key])+1-oldRound);
+    }
+  }
+  function moveFollowers193(runtime){
+    const ids=new Set(runtime.tokens.map(t=>t.id));
+    for(const other of Object.values(ensureCombatState().scenes)){
+      if(other===runtime)continue;
+      const moving=list(other.thinkersV125).filter(t=>t.followUnitId&&ids.has(t.followUnitId));
+      if(moving.length){runtime.thinkersV125=[...list(runtime.thinkersV125),...moving.filter(t=>!list(runtime.thinkersV125).some(r=>r.id===t.id))];other.thinkersV125=list(other.thinkersV125).filter(t=>!moving.includes(t));}
+    }
+  }
+  function renderLifecycle193(scene,runtime){
+    const session=ensureSession193();if(!session)return'';
+    const active=activeMap193(),present=new Set(runtime.tokens.map(t=>t.participantId193)),absent=Object.entries(session.participants).filter(([pid])=>!present.has(pid));
+    const waiting=active&&inBattle191(scene)&&session.turnTokenId&&!runtime.tokens.some(t=>t.id===runtime.initiativeOrder[runtime.turnIndex]);
+    return `<div class="scene-lifecycle-v193"><span>${active?'Действующая карта':'Подготовка карты'} · игровая сцена ${html(session.narrativeId.slice(-7))}${session.battleId?' · бой '+html(session.battleId.slice(-7)):''}</span>${active?`<button class="secondary" data-lifecycle193="battle" type="button">НОВЫЙ БОЙ</button><button class="secondary" data-lifecycle193="scene" type="button">НОВАЯ ИГРОВАЯ СЦЕНА</button>`:`<button class="primary" data-lifecycle193="transfer" type="button">ПЕРЕНЕСТИ СЮДА ИГРОВУЮ СЦЕНУ</button><span>Сейчас: ${html(COMBAT_SCENES[session.activeMapId]?.name||'—')}</span>`}<button class="secondary" data-lifecycle193="roster" type="button">УЧАСТНИКИ ВНЕ КАРТЫ · ${absent.length}</button>${!active&&selectedToken104()?'<button class="secondary" data-lifecycle193="bind" type="button">СВЯЗАТЬ ВЫБРАННЫЙ ТОКЕН</button>':''}${waiting?'<strong>Текущий участник ещё не размещён на карте. Разместите его через «Участники вне карты» чтобы продолжить бой.</strong>':''}</div>`;
+  }
+  function participantOptions193(filter=()=>true){
+    return Object.entries(ensureSession193()?.participants||{}).filter(([pid,t])=>filter(t,pid)).map(([pid,t])=>`<option value="${html(pid)}">${html(t.name||t.id)} · ${t.playerId?'персонаж':t.equipmentType==='drone'?'дрон':'экземпляр '+html(pid.slice(-5))}</option>`).join('');
+  }
+  async function lifecycleCommand193(command){
+    if(!Combat.isDm()||local.lua119.busy||local.moveBusyV122||local.combatTransactionV120)return;
+    const scene=Combat.getScene(),runtime=Combat.getRuntime(),session=ensureSession193();if(!scene||!runtime||!session)return;
+    if(['transfer','battle','scene'].includes(command)&&Object.values(ensureCombatState().scenes).some(r=>list(r.tokens).some(pendingLootV137))){Toast.show('Сначала завершите передачу добычи','info');return;}
+    captureSession193();
+    if(command==='roster'){
+      const present=new Set(runtime.tokens.map(t=>Session193.identity(t,scene.id))),options=participantOptions193((t,pid)=>!present.has(pid));
+      if(!options){Toast.show('Все участники уже размещены на карте','info');return;}
+      const pid=await combatModal119({title:'Участники вне карты',subtitle:'Выберите сохранённого участника, затем укажите свободное место на карте. Все расходы сохраняются.',body:`<label class="field">Участник<select class="select" name="participant193">${options}</select></label>`,confirm:'ВЫБРАТЬ МЕСТО',decline:'ОТМЕНИТЬ',read:form=>form.elements.participant193.value});
+      if(pid){local.ui.pendingPlacement={kind:'participant193',entityId:pid};Toast.show('Укажите место участника на карте','info');}return;
+    }
+    if(command==='bind'){
+      const token=selectedToken104();if(!token||activeMap193())return;
+      const options=participantOptions193(t=>token.playerId?t.playerId===token.playerId:!t.playerId&&t.npcId===token.npcId&&t.faunaId===token.faunaId&&t.equipmentItemId===token.equipmentItemId);
+      if(!options){Toast.show('Нет сохранённого участника подходящего типа','info');return;}
+      const pid=await combatModal119({title:'Связать токен с участником',subtitle:'Используйте для того же NPC, заранее поставленного на другой карте. Два разных NPC одного шаблона связывать не нужно.',body:`<label class="field">Экземпляр<select class="select" name="participant193">${options}</select></label>`,confirm:'СВЯЗАТЬ',decline:'ОТМЕНИТЬ',read:form=>form.elements.participant193.value});
+      if(!pid)return;const actor=session.participants[pid];if(runtime.tokens.some(t=>t!==token&&Session193.identity(t,scene.id)===pid))throw Error('Этот участник уже есть на карте');
+      const backup=clone(collectStoreFromRuntime());Object.assign(token,Session193.place(actor,token));Combat.selectedObject={kind:'token',id:token.id};
+      try{await checkpointCombat120('Связь участника',false);}catch(error){applyStore(backup);throw error;}Combat.render();return;
+    }
+    if(command==='transfer'){
+      if(activeMap193())return;
+      const newUnits=runtime.tokens.filter(t=>!session.participants[Session193.identity(t,scene.id)]&&num(t.hpCurrent)>0&&!isDroneToken129(t));
+      const rolls=await combatModal119({title:'Перенести игровую сцену',subtitle:'Сохраняются текущий ход, раунд, расходы и состояния. Отсутствующих участников можно разместить позже. Показ игрокам переключается отдельно.',body:`<p>Из «${html(COMBAT_SCENES[session.activeMapId]?.name)}» в «${html(scene.name)}».</p>${session.started?newUnits.map((t,i)=>`<label class="field">Новый участник: ${html(t.name)} · d20 инициативы<input class="input" type="number" required min="1" max="20" name="join193_${i}"/></label>`).join(''):''}`,confirm:'ПЕРЕНЕСТИ',decline:'ОТМЕНИТЬ',read:form=>session.started?newUnits.map((t,i)=>Number(form.elements['join193_'+i].value)):[]});
+      if(!rolls)return;const backup=clone(collectStoreFromRuntime());
+      try{
+        newUnits.forEach((t,i)=>{if(session.started){t.initiative=num(rolls[i])+num(t.initiativeBonus);t.initiativeOverrideV147=true;t.initiativeBattle193=session.battleId;}});
+        scene.mode=Session193.transfer(session,scene.id,runtime);moveFollowers193(runtime);
+        Combat.selectedObject=null;local.preview=null;Combat.syncInitiative(scene.id,false);await checkpointCombat120('Перенос игровой сцены',false);
+      }catch(error){applyStore(backup);throw error;}Combat.render();return;
+    }
+    if(!activeMap193())return;
+    if(command==='scene'){
+      const confirmed=await combatModal119({title:'Новая игровая сцена',subtitle:'Закончить текущий бой и начать новую игровую сцену в обычном режиме. Сбросятся бюджеты хода и явно отмеченные лимиты боя/сцены. HP, травмы, патроны, заряды и поломки сохранятся.',confirm:'НОВАЯ ИГРОВАЯ СЦЕНА',decline:'ОТМЕНИТЬ'});if(!confirmed)return;
+      const backup=clone(collectStoreFromRuntime());try{resetSession193('scene');await checkpointCombat120('Новая игровая сцена',false);}catch(error){applyStore(backup);throw error;}Combat.render();return;
+    }
+    if(command==='battle'){
+      const units=runtime.tokens.filter(t=>num(t.hpCurrent)>0&&!isDroneToken129(t));if(!units.length){Toast.show('Добавьте участников боя','info');return;}
+      const rolls=await combatModal119({title:'Новый бой',subtitle:'Новая инициатива и бюджеты хода. Реальные ресурсы сохраняются. Введите физические d20; бонус участника прибавляется автоматически.',body:units.map((t,i)=>`<label class="field">${html(t.name)} · бонус ${num(t.initiativeBonus)}<input class="input" type="number" min="1" max="20" required name="initiative191_${i}"/></label>`).join(''),confirm:'НАЧАТЬ НОВЫЙ БОЙ',decline:'ОТМЕНИТЬ',read:form=>units.map((t,i)=>Number(form.elements['initiative191_'+i].value))});
+      if(!rolls)return;const backup=clone(collectStoreFromRuntime());
+      try{resetSession193('battle');units.forEach((t,i)=>{t.initiative=num(rolls[i])+num(t.initiativeBonus);t.initiativeOverrideV147=true;t.initiativeBattle193=session.battleId;t.reactionUsedV119=injurySeverity129(t)>=4;});Combat.syncInitiative(scene.id,true);await checkpointCombat120('Новый бой',false);}catch(error){applyStore(backup);throw error;}
+      const first=Combat.getCurrentTurnToken();if(first){Combat.selectedObject={kind:'token',id:first.id};const effects={damage:0,effects:[]};await runAutomaticHooks119(first,'OnTurnStart',{caster:first,attacker:first,target:first,targets:[first],event:'OnTurnStart'},effects);flushLuaEffects119(effects);await checkpointCombat120('Начало хода нового боя',true);}Combat.render();
+    }
+  }
+  async function placeParticipant193(pid,point){
+    const session=ensureSession193(),scene=Combat.getScene(),runtime=Combat.getRuntime(),actor=session?.participants[pid];if(!actor||!scene||!runtime)return;
+    if(runtime.tokens.some(t=>Session193.identity(t,scene.id)===pid)){Toast.show('Участник уже размещён','info');return;}
+    let initiative=null;
+    if(activeMap193()&&session.started&&actor.equipmentType!=='drone'&&num(actor.hpCurrent)>0&&actor.initiativeBattle193!==session.battleId){initiative=await combatModal119({title:'Инициатива участника',subtitle:actor.name||actor.id,body:'<label class="field">Физический d20<input class="input" required type="number" min="1" max="20" name="join193"/></label>',decline:'ОТМЕНИТЬ',read:form=>Number(form.elements.join193.value)});if(initiative===null)return;}
+    const token=normalizeCombatToken({...clone(actor),x:point.x,y:point.y});
+    if(initiative!==null){token.initiative=initiative+num(token.initiativeBonus);token.initiativeOverrideV147=true;token.initiativeBattle193=session.battleId;}fitTokenToHex107(token,scene,nearestHexCenter107(scene,point));
+    if(!window.GRPGUnitSizeV184.inBounds(token.unitSize,scene,centerOf(token))||window.GRPGUnitSizeV184.probes(token,centerOf(token)).some(p=>movementBlockedAt(scene,p.x,p.y,token.id,0,true))){Toast.show('Недостаточно свободного места','info');return;}
+    runtime.tokens.push(token);Combat.selectedObject={kind:'token',id:token.id};local.ui.pendingPlacement=null;if(activeMap193())moveFollowers193(runtime);Combat.syncInitiative(scene.id,false);
+    await beginPlacedTurn193(token,runtime);
+    await checkpointCombat120('Размещение участника',false);Combat.render();
+  }
+
+  async function beginPlacedTurn193(token,runtime){
+    const scene=Combat.getScene();
+    if(activeMap193()&&runtime.pendingTurnStart193===token.id){
+      runtime.pendingTurnStart193='';token.movedThisTurn=0;token.actionUsed=false;token.reactionUsedV119=injurySeverity129(token)>=4;token.disengagedV122=false;token.freeDroneCommandUsedV129=false;
+      const effects={damage:0,effects:[]};await processTimedModifiers122(token,'start',effects);if(num(token.hpCurrent)>0)await runAutomaticHooks119(token,'OnTurnStart',{caster:token,attacker:token,target:token,targets:[token],event:'OnTurnStart'},effects);flushLuaEffects119(effects);Combat.syncInitiative(scene.id,false);
+    }
+  }
+
   function collectStoreFromRuntime() {
     if (!local.store) local.store = blankStore();
+    captureSession193();
     local.store.scenes = Object.fromEntries(Object.entries(COMBAT_SCENES || {}).map(([id, scene]) => [id, normalizeCombatScene(scene)]));
     const combat = App?.state?.toolState?.[COMBAT_STATE_KEY] || null;
     // Persistence intentionally excludes combat from campaign state. While the scene
@@ -432,7 +555,7 @@
   }
   function updateOperation191(){
     const reason=operationReason191(),node=document.querySelector('[data-operation191]');if(node)node.textContent=reason||'Готово';
-    const next=document.getElementById('scene-next-turn-v104');if(next){next.disabled=Boolean(reason)||!inBattle191();next.title=reason;}
+    const next=document.getElementById('scene-next-turn-v104');if(next){next.disabled=Boolean(reason)||!inBattle191()||!activeMap193()||!Combat.getCurrentTurnToken?.();next.title=reason;}
   }
   async function runCommand191(fn){
     if(operationReason191()){Toast.show(operationReason191(),'info');return;}
@@ -443,6 +566,7 @@
   const turnFields191=['actionUsed','movedThisTurn','reactionUsedV119','burstStateV122','disengagedV122','freeDroneCommandUsedV129','droneCommandV129'];
   Combat.setBattleMode191=async function(){
     const scene=this.getScene(),runtime=this.getRuntime();if(!scene||!runtime||!this.isDm())return;
+    if(!activeMap193()){Toast.show('Сначала перенесите игровую сцену на эту карту','info');return;}
     if(local.lua119.busy||local.moveBusyV122||local.combatTransactionV120){Toast.show(operationReason191(),'info');return;}
     if(inBattle191(scene)){
       runtime.pausedBudget191=Object.fromEntries(runtime.tokens.map(t=>[t.id,Object.fromEntries(turnFields191.map(k=>[k,clone(t[k])]))]));
@@ -456,7 +580,8 @@
       if(!units.length){Toast.show('Добавьте участников боя','info');return;}
       const rolls=await combatModal119({title:'Начать бой',subtitle:'Введите физические броски инициативы. К каждому прибавляется Воля и модификаторы участника.',body:units.map((t,i)=>`<label class="field">${html(t.name)} · бонус ${num(t.initiativeBonus,t.initiative)}<input class="input" required type="number" min="1" max="20" name="initiative191_${i}"/></label>`).join(''),confirm:'НАЧАТЬ БОЙ',decline:'ОТМЕНИТЬ',read:form=>units.map((t,i)=>Number(form.elements['initiative191_'+i].value))});
       if(!rolls)return;
-      units.forEach((t,i)=>{t.initiative=rolls[i]+num(t.initiativeBonus,t.initiative);t.initiativeOverrideV147=true;});
+      resetSession193('battle');
+      units.forEach((t,i)=>{t.initiative=rolls[i]+num(t.initiativeBonus,t.initiative);t.initiativeOverrideV147=true;t.initiativeBattle193=local.store.session193.battleId;});
       for(const t of runtime.tokens){t.actionUsed=false;t.movedThisTurn=0;t.reactionUsedV119=injurySeverity129(t)>=4;t.burstStateV122=null;t.disengagedV122=false;t.freeDroneCommandUsedV129=false;t.droneCommandV129=null;}
       runtime.battleStarted191=true;scene.mode='combat';this.syncInitiative(scene.id,true);
       const first=this.getCurrentTurnToken();if(first){this.selectedObject={kind:'token',id:first.id};const effects={damage:0,effects:[]};await runAutomaticHooks119(first,'OnTurnStart',{caster:first,attacker:first,target:first,targets:[first],event:'OnTurnStart'},effects);flushLuaEffects119(effects);}
@@ -464,16 +589,17 @@
     local.preview=null;await checkpointCombat120('Сцена: режим боя',true);this.render();
   };
   const canActBefore191=Combat.canActWithToken.bind(Combat),currentBefore191=Combat.getCurrentTurnToken.bind(Combat);
-  Combat.canActWithToken=function(token){return !inBattle191()?Boolean(token&&this.isDm()&&num(token.hpCurrent)>0):canActBefore191(token);};
-  Combat.getCurrentTurnToken=function(){return inBattle191()?currentBefore191():null;};
+  Combat.canActWithToken=function(token){if(!activeMap193())return false;return !inBattle191()?Boolean(token&&this.isDm()&&num(token.hpCurrent)>0):canActBefore191(token);};
+  Combat.getCurrentTurnToken=function(){return activeMap193()&&inBattle191()?currentBefore191():null;};
   function renderSession191(scene,runtime){
     const token=selectedToken104(),mods=list(token?.timedModifiersV122),conditions=token?Object.entries(conditionStateV138(token)).filter(([,v])=>v).map(([k])=>({dying:'Умирает',stabilized:'Стабилизирован',prone:'Лежит',stunned:'Оглушён',grappled:'Захвачен',unconscious:'Без сознания',handsBusy:'Руки заняты'})[k]||k):[];
-    return `<section class="scene-session-v191" aria-label="Режим и ресурсы участника"><div><b>${inBattle191(scene)?'БОЕВОЙ РЕЖИМ':'ОБЫЧНЫЙ РЕЖИМ'}</b><button class="secondary" type="button" data-battle-mode191>${inBattle191(scene)?'ПРИОСТАНОВИТЬ БОЙ':runtime.battleStarted191?'ПРОДОЛЖИТЬ БОЙ':'НАЧАТЬ БОЙ'}</button><button class="primary" type="button" data-publish191>ПОКАЗАТЬ ИГРОКАМ</button><span>На экране: ${html(COMBAT_SCENES[local.store?.publishedSceneId191]?.name||'ничего не опубликовано')}</span></div><div>${token?`<strong>${html(token.name)}</strong><span>Действие: ${!inBattle191(scene)?'без лимита':token.actionUsed?'потрачено':'доступно'}</span><span>Реакция: ${token.reactionUsedV119?'потрачена':'доступна'}</span><span>Движение: ${!inBattle191(scene)?'без лимита':Math.max(0,tokenMoveCells(token,scene)-num(token.movedThisTurn))}</span>${token.burstStateV122?`<span>Продолжение очереди: выстрел ${token.burstStateV122.nextShot} / ${token.burstStateV122.maxShots}</span>`:''}${mods.map(m=>`<span title="До конца хода владельца">${html(m.name||m.id)} · ${m.remainingTurns} ход.</span>`).join('')}${conditions.length?`<span>Состояния: ${html(conditions.join(', '))}</span>`:''}`:'Выберите участника'}<span role="status" data-operation191>${html(operationReason191()||'Готово')}</span></div></section>`;
+    return `<section class="scene-session-v191" aria-label="Режим и ресурсы участника"><div><b>${!activeMap193()?'ПОДГОТОВКА КАРТЫ':inBattle191(scene)?'БОЕВОЙ РЕЖИМ':'ОБЫЧНЫЙ РЕЖИМ'}</b><button class="secondary" type="button" data-battle-mode191>${inBattle191(scene)?'ПРИОСТАНОВИТЬ БОЙ':runtime.battleStarted191?'ПРОДОЛЖИТЬ БОЙ':'НАЧАТЬ БОЙ'}</button><button class="primary" type="button" data-publish191>ПОКАЗАТЬ ИГРОКАМ</button><span>На экране: ${html(COMBAT_SCENES[local.store?.publishedSceneId191]?.name||'ничего не опубликовано')}</span></div><div>${token?`<strong>${html(token.name)}</strong><span>Действие: ${!inBattle191(scene)?'без лимита':token.actionUsed?'потрачено':'доступно'}</span><span>Реакция: ${token.reactionUsedV119?'потрачена':'доступна'}</span><span>Движение: ${!inBattle191(scene)?'без лимита':Math.max(0,tokenMoveCells(token,scene)-num(token.movedThisTurn))}</span>${token.burstStateV122?`<span>Продолжение очереди: выстрел ${token.burstStateV122.nextShot} / ${token.burstStateV122.maxShots}</span>`:''}${mods.map(m=>`<span title="До конца хода владельца">${html(m.name||m.id)} · ${m.remainingTurns} ход.</span>`).join('')}${conditions.length?`<span>Состояния: ${html(conditions.join(', '))}</span>`:''}`:'Выберите участника'}<span role="status" data-operation191>${html(operationReason191()||'Готово')}</span></div></section>`;
   }
   Combat.nextTurn = async function() {
     const runtime = this.getRuntime();
     if (!runtime) return;
-    if(!inBattle191())return;
+    if(!inBattle191()||!activeMap193())return;
+    if(runtime.initiativeOrder?.length&&!this.getCurrentTurnToken()){Toast.show('Сначала разместите текущего участника на карте','info');return;}
     if(local.lua119.busy||local.moveBusyV122||local.combatTransactionV120||local.commandBusy191){Toast.show(operationReason191(),'info');return;}
     const orderBefore=list(runtime.initiativeOrder).map(String),indexBefore=clamp104(runtime.turnIndex,0,Math.max(0,orderBefore.length-1)),previousId=String(orderBefore[indexBefore]||'');
     this.syncInitiative?.(this.getSceneIdForView?.(),false);
@@ -494,10 +620,11 @@
       // A periodic effect can incapacitate the unit whose turn has just begun.
       // Remove it from initiative immediately and advance to the next living
       // unit without running its OnTurnStart scripts or leaving a dead turn.
+      if(!this.getCurrentTurnToken?.())runtime.pendingTurnStart193=choice.id;
       let current=this.getCurrentTurnToken?.(),guard=Math.max(1,list(runtime.tokens).length+1);
       while(current&&guard-->0){
         const startOrder=list(runtime.initiativeOrder).map(String),startIndex=Math.max(0,startOrder.indexOf(String(current.id)));
-        current.movedThisTurn=0;current.actionUsed=false;current.reactionUsedV119=injurySeverity129(current)>=4;current.disengagedV122=false;current.freeDroneCommandUsedV129=false;
+        runtime.pendingTurnStart193='';current.movedThisTurn=0;current.actionUsed=false;current.reactionUsedV119=injurySeverity129(current)>=4;current.disengagedV122=false;current.freeDroneCommandUsedV129=false;
         await processTimedModifiers122(current,'start',effects);
         if(num(current.hpCurrent)>0){await runAutomaticHooks119(current,'OnTurnStart',{caster:current,attacker:current,target:current,targets:[current],event:'OnTurnStart'},effects);if(num(current.hpCurrent)>0)break;}
         appendCombatLog105(runtime,`${current.name} выбывает из инициативы: здоровье равно 0.`);
@@ -528,6 +655,7 @@
       sourceKind:String(raw.sourceKind||'skill'),
       sourceName:String(raw.sourceName||raw.name||'Thinker'),
       script:String(raw.script||''),
+      resetScope193:['battle','scene'].includes(raw.resetScope193)?raw.resetScope193:'',
       sourceRaw:raw.sourceRaw&&typeof raw.sourceRaw==='object'?clone(raw.sourceRaw):{},
       casterId:String(raw.casterId||''),
       followUnitId:String(raw.followUnitId||''),
@@ -576,6 +704,7 @@
     const runtime=this.getRuntime(sceneId);if(!runtime)return;
     // Never replace runtime.tokens here: active combat actions keep references to these exact objects.
     runtime.tokens.forEach(token=>Object.assign(token,normalizeCombatToken(token)));
+    if(activeMap193(sceneId)&&local.store?.session193){Session193.order(local.store.session193,runtime,resetTurn);return;}
     const currentId=!resetTurn?String(runtime.initiativeOrder?.[Math.max(0,num(runtime.turnIndex,0))]||''):'';
     runtime.initiativeOrder=runtime.tokens.filter(token=>num(token.hpCurrent,0)>0&&!isDroneToken129(token)).sort((a,b)=>(num(b.initiative)-num(a.initiative))||String(a.name||'').localeCompare(String(b.name||''),'ru')).map(token=>token.id);
     if(resetTurn){runtime.turnIndex=0;runtime.round=1;}else if(currentId&&runtime.initiativeOrder.includes(currentId))runtime.turnIndex=runtime.initiativeOrder.indexOf(currentId);else runtime.turnIndex=clamp104(runtime.turnIndex,0,Math.max(0,runtime.initiativeOrder.length-1));
@@ -664,7 +793,7 @@
     return{ok:true,reason:'Связь установлена',distance};
   }
   function activeDroneCommand129(token){if(!isDroneToken129(token))return null;const runtime=Combat.getRuntime(),command=token.droneCommandV129,operator=operatorForDrone129(token,runtime),current=currentTurnToken129(runtime);if(!command||command.completed||!operator||current?.id!==operator.id||Math.trunc(num(command.round))!==Math.trunc(num(runtime?.round)))return null;if(!command.returnOnly&&!droneLinkState129(token,operator).ok)return null;return command;}
-  function canCombatAct129(token){if(!inBattle191())return Boolean(token&&Combat.isDm()&&num(token.hpCurrent)>0);const conditions=conditionStateV138(token||{});if(conditions.stunned||conditions.unconscious||conditions.dying)return false;if(isDroneToken129(token)){const command=activeDroneCommand129(token);return Boolean(command&&!command.returnOnly&&!command.moduleUsed);}return Boolean(Combat.canActWithToken?.(token));}
+  function canCombatAct129(token){if(!activeMap193())return false;if(!inBattle191())return Boolean(token&&Combat.isDm()&&num(token.hpCurrent)>0);const conditions=conditionStateV138(token||{});if(conditions.stunned||conditions.unconscious||conditions.dying)return false;if(isDroneToken129(token)){const command=activeDroneCommand129(token);return Boolean(command&&!command.returnOnly&&!command.moduleUsed);}return Boolean(Combat.canActWithToken?.(token));}
   function completeDroneModule129(token){if(!isDroneToken129(token)||!token.droneCommandV129)return;token.droneCommandV129.moduleUsed=true;token.droneCommandV129.completed=true;}
   function tokenDefense105(token) {
     if (!token) return 10;
@@ -1206,6 +1335,7 @@
     return {points,steps:used,cost,limited:used<steps,end:points[points.length-1]||path[0]};
   }
   function canMechanicalMove108(token){
+    if(!activeMap193())return false;
     if(!inBattle191())return Boolean(token&&!token.locked&&Combat.isDm?.()&&num(token.hpCurrent)>0);
     if(!token||token.locked||!Combat.isDm?.())return false;
     if(isDroneToken129(token))return Boolean(activeDroneCommand129(token));
@@ -1395,6 +1525,7 @@
     return [...new Map(rows.map(row=>[String(row.id),row])).values()].sort((a,b)=>String(a.name||a.id).localeCompare(String(b.name||b.id),'ru',{numeric:true}));
   }
   function abilityReason192(token){
+    if(!activeMap193())return 'Подготовка карты: сначала перенесите сюда игровую сцену';
     if(!token||num(token.hpCurrent)<=0)return 'Участник не способен действовать';
     if(operationReason191())return operationReason191();
     if(!Combat.canActWithToken?.(token))return 'Сейчас не ход этого участника';
@@ -1553,7 +1684,7 @@
     const all=list(COMBAT_SCENE_LIST), categories=unique(all.map(s=>s.category||'Общее'));
     const filtered=local.ui.sceneCategory==='all'?all:all.filter(s=>(s.category||'Общее')===local.ui.sceneCategory);
     const roots=filtered.filter(s=>!s.parentId || !filtered.some(x=>x.id===s.parentId));
-    return `<section class="scene-left-section-v104"><div class="scene-section-head-v104"><b>СЦЕНЫ</b><button class="mini-icon-btn" type="button" id="scene-new-v104" title="Новая сцена">＋</button></div>
+    return `<section class="scene-left-section-v104"><div class="scene-section-head-v104"><b>КАРТЫ</b><button class="mini-icon-btn" type="button" id="scene-new-v104" title="Новая карта">＋</button></div>
       <select class="select compact-v104" id="scene-category-filter-v104"><option value="all">Все категории</option>${categories.map(c=>`<option value="${html(c)}" ${local.ui.sceneCategory===c?'selected':''}>${html(c)}</option>`).join('')}</select>
       <div class="scene-tree-v104">${roots.map(s=>sceneTreeRows(s,0,filtered)).join('')||'<div class="small-note">Сцен пока нет.</div>'}</div></section>`;
   }
@@ -1688,17 +1819,20 @@
     if(!local.loaded){ root.innerHTML='<div class="card pad18">Загрузка локальных сцен…</div>'; loadLocalStore().then(()=>this.render()); return; }
     if(!this.selectedSceneId || !COMBAT_SCENES[this.selectedSceneId]) this.selectedSceneId=COMBAT_SCENE_LIST[0]?.id||null;
     const scene=this.getScene();
-    if(!scene){ root.innerHTML=`<div class="scene-empty-v104"><b>Нет сцен</b><button class="primary" id="scene-new-v104" type="button">СОЗДАТЬ СЦЕНУ</button></div>`; return; }
+    if(!scene){ root.innerHTML=`<div class="scene-empty-v104"><b>Нет карт</b><button class="primary" id="scene-new-v104" type="button">СОЗДАТЬ КАРТУ</button></div>`; return; }
     if(renderedSceneV137)for(const selector of scrollSelectorsV137){const node=root.querySelector(selector);if(node)panelScrollV137.set(renderedSceneV137+selector,{top:node.scrollTop,left:node.scrollLeft});}
+    ensureSession193();
     const runtime=this.getRuntime(scene.id);
+    if(!activeMap193())Session193.project(local.store.session193,scene.id,runtime);
     syncUnitSizes184(scene,runtime);
-    root.innerHTML=`<div class="scene-editor-v104">${renderTop104(scene,runtime)}${renderLeft104()}<main class="scene-center-v104">${renderSession191(scene,runtime)}${renderBoard104(scene,runtime)}</main>${renderInspector104(scene,runtime)}</div>`;
+    root.innerHTML=`<div class="scene-editor-v104">${renderTop104(scene,runtime)}${renderLeft104()}<main class="scene-center-v104"><div class="scene-session-stack-v193">${renderSession191(scene,runtime)}${renderLifecycle193(scene,runtime)}</div>${renderBoard104(scene,runtime)}</main>${renderInspector104(scene,runtime)}</div>`;
     renderedSceneV137=scene.id;
     for(const selector of scrollSelectorsV137){const node=root.querySelector(selector),pos=panelScrollV137.get(scene.id+selector);if(node&&pos){node.scrollTop=pos.top;node.scrollLeft=pos.left;}}
     // Keep board sizing and camera transform in the same JS task as DOM replacement: no one-frame jump to a default frame.
     try{const viewport=document.getElementById('combat-stage-viewport');this.syncViewportBoardFrame?.(scene,viewport);this.applyViewTransform?.(viewport);}catch{}
     broadcastScene104();
     updateOperation191();refreshAbilityWindow192();
+    const modeButton=document.querySelector('[data-battle-mode191]');if(modeButton&&!activeMap193())modeButton.hidden=true;
   };
 
   function addScene104(){
@@ -1707,12 +1841,13 @@
   }
   function deleteScene104(sceneId){
     if(!sceneId||!COMBAT_SCENES[sceneId])return;
+    if(local.store?.session193?.activeMapId===sceneId){Toast.show('Сначала перенесите игровую сцену на другую карту','info');return;}
     if(list(Combat.getRuntime(sceneId)?.tokens).some(pendingLootV137)){Toast.show('Сначала завершите передачу добычи.','info');return;}
     if(!confirm(`Удалить сцену «${COMBAT_SCENES[sceneId].name}»?`))return;
     Object.values(COMBAT_SCENES).forEach(s=>{if(s.parentId===sceneId)s.parentId='';});delete COMBAT_SCENES[sceneId];delete ensureCombatState().scenes[sceneId];delete ensureCombatState().cameraByScene?.[sceneId];delete local.cameraRuntime?.[sceneId];if(local.store?.cameraByScene)delete local.store.cameraByScene[sceneId];sortCombatScenes();Combat.selectedSceneId=COMBAT_SCENE_LIST[0]?.id||null;Combat.selectedObject=null;queueStoreSave();Combat.render();broadcastScene104();
   }
   function duplicateScene104(sceneId){
-    const scene=COMBAT_SCENES[sceneId];if(!scene)return;if(list(Combat.getRuntime(sceneId)?.tokens).some(pendingLootV137)){Toast.show('Сначала завершите передачу добычи.','info');return;}const id=makeId('scene');const copy=normalizeCombatScene({...clone(scene),id,name:`${scene.name} — копия`,parentId:scene.parentId||''});COMBAT_SCENES[id]=copy;ensureCombatState().scenes[id]=clone(ensureCombatRuntime(sceneId));sortCombatScenes();Combat.selectedSceneId=id;queueStoreSave();Combat.render();
+    const scene=COMBAT_SCENES[sceneId];if(!scene)return;if(list(Combat.getRuntime(sceneId)?.tokens).some(pendingLootV137)){Toast.show('Сначала завершите передачу добычи.','info');return;}const id=makeId('scene');const copy=normalizeCombatScene({...clone(scene),id,name:`${scene.name} — копия`,parentId:scene.parentId||''});COMBAT_SCENES[id]=copy;ensureCombatState().scenes[id]=Session193.forkMap(ensureCombatRuntime(sceneId),makeId);sortCombatScenes();Combat.selectedSceneId=id;queueStoreSave();Combat.render();
   }
   async function requestLocalImage104(stem='scene_asset'){
     return new Promise(resolve=>{
@@ -1786,7 +1921,7 @@
   function placeLibraryAsset104(id, point){const lib=local.store.assetLibrary.find(a=>a.id===id),scene=Combat.getScene();if(!lib||!scene){Toast.show('Ассет не найден в локальной библиотеке','err');return;}scene.assets=Array.isArray(scene.assets)?scene.assets:[];const obj=normalizeCombatAsset({...clone(lib),id:makeId('asset'),libraryId:lib.id,x:clamp104(point.x-lib.w/2,0,Math.max(0,scene.width-lib.w)),y:clamp104(point.y-lib.h/2,0,Math.max(0,scene.height-lib.h))});scene.assets.push(obj);Combat.selectedObject={kind:'asset',id:obj.id};local.ui.pendingPlacement=null;queueStoreSave();Combat.render();broadcastScene104();}
   function createEquipmentUnit105(id){const item=equipmentItem105(id);if(!item||!['turret','drone'].includes(item.type))return null;return normalizeCombatToken({id:`token_${item.type}_${item.id}_${Date.now().toString(36)}`,type:item.type,name:item.name||item.id,image:item.image||'',equipmentItemId:item.id,equipmentType:item.type,x:0,y:0,w:1,h:1,hpCurrent:item.unitHp||10,hpMax:item.unitHp||10,initiative:item.unitInitiative||0,armorClass:item.unitArmorClass||10,visionRange:item.unitVisionRange||0,moveRange:item.unitMoveRange||0,attackRange:item.range||0,color:item.type==='drone'?'#b9a7ff':'#ffd078',visibleToPlayers:true,showNameToPlayers:item.showNameToPlayers!==false,sharesVisionWithPlayers:false,blockMovement:true,weaponId:item.id});}
   function createFaunaUnitV146(id){const fauna=Data.getFauna?.(id)||FAUNA?.[id];if(!fauna)return null;const hp=Math.max(1,num(fauna.hpMax??fauna.hp,10));return normalizeCombatToken({id:`token_fauna_${fauna.id}_${Date.now().toString(36)}`,type:'fauna',faunaId:fauna.id,name:fauna.name||fauna.id,image:fauna.image||'',x:0,y:0,w:1,h:1,hpCurrent:hp,hpMax:hp,initiative:num(fauna.initiative),initiativeBonus:num(fauna.initiative),armorClass:Math.max(0,num(fauna.armorClass,10)),defense:Math.max(0,num(fauna.defense)),visionRange:Math.max(0,num(fauna.visionRange,6)),moveRange:Math.max(0,num(fauna.moveRange,6)),attackRange:Math.max(0,num(fauna.attackRange??fauna.range,1)),color:'#c49a63',visibleToPlayers:true,showNameToPlayers:fauna.showNameToPlayers!==false,sharesVisionWithPlayers:false,blockMovement:true});}
-  function placeUnit104(kind,id,point){const scene=Combat.getScene(),runtime=Combat.getRuntime();if(!scene||!runtime)return;let token=kind==='player'?createPlayerCombatToken(id):kind==='npc'?createNpcCombatToken(id):kind==='equipment-unit'?createEquipmentUnit105(id):kind==='fauna-unit'?createFaunaUnitV146(id):null;if(!token){Toast.show('Не удалось создать юнит','err');return;}token=normalizeCombatToken({...token,visibleToPlayers:true});fitTokenToHex107(token,scene,nearestHexCenter107(scene,point));if(!window.GRPGUnitSizeV184.inBounds(token.unitSize,scene,centerOf(token))||window.GRPGUnitSizeV184.probes(token,centerOf(token)).some(p=>movementBlockedAt(scene,p.x,p.y,token.id,0,true))){Toast.show('Для юнита этого размера недостаточно свободных гексов','info');return;}runtime.tokens.push(token);Combat.selectedObject={kind:'token',id:token.id};local.ui.pendingPlacement=null;Combat.syncInitiative(scene.id,false);queueStoreSave();Combat.render();broadcastScene104();}
+  async function placeUnit104(kind,id,point){const scene=Combat.getScene(),runtime=Combat.getRuntime();if(!scene||!runtime)return;let token=kind==='player'?createPlayerCombatToken(id):kind==='npc'?createNpcCombatToken(id):kind==='equipment-unit'?createEquipmentUnit105(id):kind==='fauna-unit'?createFaunaUnitV146(id):null;if(!token){Toast.show('Не удалось создать юнит','err');return;}token=normalizeCombatToken({...token,id:token.playerId?token.id:makeId('token'),visibleToPlayers:true});fitTokenToHex107(token,scene,nearestHexCenter107(scene,point));if(!window.GRPGUnitSizeV184.inBounds(token.unitSize,scene,centerOf(token))||window.GRPGUnitSizeV184.probes(token,centerOf(token)).some(p=>movementBlockedAt(scene,p.x,p.y,token.id,0,true))){Toast.show('Для юнита этого размера недостаточно свободных гексов','info');return;}if(token.playerId&&runtime.tokens.some(t=>t.playerId===token.playerId)){Toast.show('Этот персонаж уже размещён на карте','info');return;}hydratePlaced193(token,scene.id);runtime.tokens.push(token);Combat.selectedObject={kind:'token',id:token.id};local.ui.pendingPlacement=null;Combat.syncInitiative(scene.id,false);if(runtime.pendingTurnStart193===token.id){await beginPlacedTurn193(token,runtime);await checkpointCombat120('Размещение текущего участника',false);}else queueStoreSave();Combat.render();broadcastScene104();}
   function placeZone104(shape,point){const scene=Combat.getScene();if(!scene)return;const dims=shape==='line'?{w:4,h:.5}:shape==='cone'?{w:4,h:4}:shape==='circle'?{w:3,h:3}:{w:3,h:3};const zone=normalizeCombatTemplate({id:makeId('zone'),shape,name:'Зона',label:'',x:point.x-dims.w/2,y:point.y-dims.h/2,w:dims.w,h:dims.h,color:'rgba(255,190,92,.35)',visibleToPlayers:true,blockMovement:false,blockSight:false,points:shape==='wall'?[{x:point.x-1,y:point.y},{x:point.x+1,y:point.y}]:shape==='polygon'?[{x:point.x-1.4,y:point.y-1},{x:point.x+1.4,y:point.y-1},{x:point.x+1.4,y:point.y+1},{x:point.x-1.4,y:point.y+1}]:[]});scene.templates.push(zone);Combat.selectedObject={kind:'zone',id:zone.id};queueStoreSave();Combat.render();broadcastScene104();}
 
   function selectedObject104(){const s=Combat.getScene(),r=Combat.getRuntime();return s&&r?getSelection(s,r):null;}
@@ -1795,6 +1930,7 @@
 
   function applyObjectForm104(form){
     const scene=Combat.getScene(),runtime=Combat.getRuntime(),sel=selectedObject104();if(!scene||!runtime||!sel)return;const fd=new FormData(form),o=sel.obj;
+    if(sel.kind==='token'&&!activeMap193()){Toast.show('Ресурсы участника редактируются на действующей карте','info');return;}
     if(sel.kind==='token'){o.name=String(fd.get('name')||o.name);o.hpMax=Math.max(1,num(fd.get('hpMax'),o.hpMax));o.hpCurrent=clamp104(fd.get('hpCurrent'),0,o.hpMax);o.initiative=num(fd.get('initiative'));o.initiativeOverrideV147=true;o.armorClass=Math.max(0,num(fd.get('armorClass'),0));o.defense=Math.max(0,num(fd.get('defense'),0));o.armorClassOverrideV120=o.armorClass>0;o.defenseOverrideV120=o.defense>0;o.visionRange=Math.max(0,num(fd.get('visionRange')));o.moveRange=Math.max(0,num(fd.get('moveRange')));o.attackRange=Math.max(0,num(fd.get('attackRange')));o.visionRangeOverrideV122=o.visionRange>0;o.moveRangeOverrideV122=o.moveRange>0;o.attackRangeOverrideV122=o.attackRange>0;if(fd.has('weaponId'))o.weaponId=String(fd.get('weaponId')||'');if(fd.has('grenadeId'))o.grenadeId=String(fd.get('grenadeId')||'');o.visibleToPlayers=fd.get('visibleToPlayers')==='on';o.sharesVisionWithPlayers=fd.get('sharesVisionWithPlayers')==='on';o.hidden=fd.get('hidden')==='on';setConditionV138(o,'prone',fd.get('proneV122')==='on');setConditionV138(o,'dying',fd.get('conditionDyingV138')==='on');setConditionV138(o,'stabilized',fd.get('conditionStabilizedV138')==='on');setConditionV138(o,'stunned',fd.get('conditionStunnedV138')==='on');setConditionV138(o,'grappled',fd.get('conditionGrappledV138')==='on');setConditionV138(o,'unconscious',fd.get('conditionUnconsciousV138')==='on');setConditionV138(o,'handsBusy',fd.get('conditionHandsBusyV138')==='on');o.movementModeV138=['ground','flight','swim','climb'].includes(String(fd.get('movementModeV138')||''))?String(fd.get('movementModeV138')):'ground';o.locked=fd.get('locked')==='on';o.blockMovement=fd.get('blockMovement')==='on';Combat.syncInitiative(scene.id,false);if(o.playerId){updatePlayerHp105(o);void persistCombatProfiles105('Сцена: ручное изменение HP',{immediate:true});}}
     if(sel.kind==='token'&&fd.has('linkJammedV129'))o.linkJammedV129=fd.get('linkJammedV129')==='on';
     if(sel.kind==='asset'){o.name=String(fd.get('name')||o.name);o.w=clamp104(fd.get('w'),.25,40);o.h=clamp104(fd.get('h'),.25,40);o.rotation=num(fd.get('rotation'));o.opacity=clamp104(fd.get('opacity'),.05,1);o.coverType=normalizeCoverType120(fd.get('coverType'));const defaults=coverDefaults120(o.coverType);o.coverArmorBonus=Math.max(0,num(fd.get('coverArmorBonus'),defaults.armor));o.coverDefenseBonus=0;o.coverHardness=Math.max(0,num(fd.get('coverHardness'),0));o.coverPenetrable=fd.get('coverPenetrable')==='on';o.blockMovement=fd.get('blockMovement')==='on';o.difficultTerrain=fd.get('difficultTerrain')==='on';o.blockSight=o.coverType==='concealment'?false:((o.coverType==='total'&&!o.coverPenetrable)||fd.get('blockSight')==='on');o.visibleToPlayers=fd.get('visibleToPlayers')==='on';}
@@ -2317,10 +2453,11 @@
   }
   function pendingLootV137(token){return Object.keys(token?.lootStateV118?.pendingTransfersV137||{}).length>0;}
   function transferLootV137(sceneId,tokenId,itemId,playerId){
+    if(!activeMap193(sceneId))return Promise.resolve({ok:false,message:'Участник находится на другой карте'});
     return lootSourceQueueV137.run(JSON.stringify([sceneId,tokenId]),()=>performLootTransferV137(sceneId,tokenId,itemId,playerId));
   }
   async function performLootTransferV137(sceneId,tokenId,itemId,playerId){
-    if(!Combat.isDm())return{ok:false,status:'forbidden'};
+    if(!Combat.isDm()||!activeMap193(sceneId))return{ok:false,status:'forbidden'};
     const key=JSON.stringify([sceneId,tokenId,itemId]);
     if(lootBusyV137.has(key))return{ok:false,status:'busy'};
     const getToken=()=>list(Combat.getRuntime(sceneId)?.tokens).find(token=>token.id===tokenId);
@@ -2428,6 +2565,7 @@
     host.appendChild(overlay);requestAnimationFrame(()=>overlay.classList.add('running'));setTimeout(()=>overlay.classList.add('complete'),780);
   }
   function searchNpc118(tokenId){
+    if(!activeMap193()){Toast.show('Обыск доступен на действующей карте','info');return;}
     const runtime=Combat.getRuntime(),token=list(runtime?.tokens).find(row=>String(row.id)===String(tokenId));if(!runtime||!token?.npcId)return;
     if(num(token.hpCurrent,0)>0){Toast.show('Обыск доступен только для NPC с 0 HP','info');return;}
     if(!token.lootStateV118?.searched){
@@ -2605,7 +2743,7 @@
     }
     const resizeHandle=event.target.closest?.('[data-zone-resize-v107]');
     if(resizeHandle){const zone=list(scene.templates).find(z=>z.id===resizeHandle.dataset.zoneResizeV107);if(zone&&!zone.locked){event.preventDefault();event.stopPropagation();local.draw={kind:'zone-resize',pointerId:event.pointerId,id:zone.id,ox:num(zone.x),oy:num(zone.y),ow:Math.max(.2,num(zone.w,1)),oh:Math.max(.2,num(zone.h,1)),points:clone(zone.points||[])};stage.setPointerCapture?.(event.pointerId);}return;}
-    if(local.ui.pendingPlacement){const p=local.ui.pendingPlacement;if(p.kind==='asset')placeLibraryAsset104(p.libraryId,point);else if(['player','npc','equipment-unit','fauna-unit'].includes(p.kind))placeUnit104(p.kind,p.entityId,point);else if(p.kind==='deploy-device-v129')void deployDeviceAt129(p,point);else if(p.kind==='zone')placeZone104(p.shape,point);return;}
+    if(local.ui.pendingPlacement){const p=local.ui.pendingPlacement;if(p.kind==='participant193'){void runCommand191(()=>placeParticipant193(p.entityId,point));return;}if(p.kind==='asset')placeLibraryAsset104(p.libraryId,point);else if(['player','npc','equipment-unit','fauna-unit'].includes(p.kind))void runCommand191(()=>placeUnit104(p.kind,p.entityId,point));else if(p.kind==='deploy-device-v129')void deployDeviceAt129(p,point);else if(p.kind==='zone')placeZone104(p.shape,point);return;}
     if(local.ui.action==='select'){
       if(object){Combat.selectedObject={kind:object.dataset.sceneKindV104,id:object.dataset.sceneIdV104};const sel=selectedObject104();if(sel&&!sel.obj.locked){local.draw={kind:'drag',pointerId:event.pointerId,start:point,objectKind:sel.kind,id:sel.obj.id,ox:num(sel.obj.x),oy:num(sel.obj.y),points:clone(sel.obj.points||[]),node:object,duplicateRequested:event.shiftKey&&sel.kind==='token',moved:false,sceneId:scene.id};stage.setPointerCapture?.(event.pointerId);}else Combat.render();}
       else{Combat.selectedObject=null;Combat.render();}return;
@@ -2876,7 +3014,7 @@
     const item=event.target.closest?.('[data-scene-drag-v104]');if(!item)return;const payload={kind:item.dataset.sceneDragV104,libraryId:item.dataset.sceneLibraryIdV104||'',entityId:item.dataset.sceneEntityIdV104||'',shape:item.dataset.sceneZoneShapeV104||''};const raw=JSON.stringify(payload);event.dataTransfer?.setData('application/x-grpgi-scene',raw);event.dataTransfer?.setData('text/plain',`GRPGI_SCENE:${raw}`);event.dataTransfer.effectAllowed='copy';
   });
   document.addEventListener('dragover',event=>{if(event.target.closest?.('#combat-stage')){event.preventDefault();if(event.dataTransfer)event.dataTransfer.dropEffect='copy';}});
-  document.addEventListener('drop',event=>{const stage=event.target.closest?.('#combat-stage');if(!stage)return;event.preventDefault();let payload=null;try{let raw=event.dataTransfer?.getData('application/x-grpgi-scene')||event.dataTransfer?.getData('text/plain')||'';if(raw.startsWith('GRPGI_SCENE:'))raw=raw.slice(12);payload=JSON.parse(raw||'{}');}catch{return;}const scene=Combat.getScene();if(!scene)return;const p=scenePointFromEvent(event,stage,scene);if(payload.kind==='asset')placeLibraryAsset104(payload.libraryId,p);if(['player','npc','equipment-unit','fauna-unit'].includes(payload.kind))placeUnit104(payload.kind,payload.entityId,p);if(payload.kind==='zone')placeZone104(payload.shape,p);});
+  document.addEventListener('drop',event=>{const stage=event.target.closest?.('#combat-stage');if(!stage)return;event.preventDefault();let payload=null;try{let raw=event.dataTransfer?.getData('application/x-grpgi-scene')||event.dataTransfer?.getData('text/plain')||'';if(raw.startsWith('GRPGI_SCENE:'))raw=raw.slice(12);payload=JSON.parse(raw||'{}');}catch{return;}const scene=Combat.getScene();if(!scene)return;const p=scenePointFromEvent(event,stage,scene);if(payload.kind==='asset')placeLibraryAsset104(payload.libraryId,p);if(['player','npc','equipment-unit','fauna-unit'].includes(payload.kind))void runCommand191(()=>placeUnit104(payload.kind,payload.entityId,p));if(payload.kind==='zone')placeZone104(payload.shape,p);});
   window.addEventListener('keydown',event=>{
     if(!abilityWindow192)return;
     if(!abilityWindow192.overlay.contains(event.target)){event.preventDefault();event.stopImmediatePropagation();abilityWindow192.overlay.querySelector('input')?.focus();}
@@ -2891,11 +3029,12 @@
     if(openButton){event.preventDefault();event.stopImmediatePropagation?.();if(Combat.isDm())UI.openModule('combat');else Toast.show('Сцены доступны только ДМу','info');return;}
     const t=event.target.closest?.('#mod-combat [data-scene-search-v118],#mod-combat button,#mod-combat [data-scene-select-v104],.scene-context-v104 button');
     if(!t){if(local.context&&!event.target.closest('.scene-context-v104'))closeContext104();return;}
+    if(t.dataset.lifecycle193){event.preventDefault();void runCommand191(()=>lifecycleCommand193(t.dataset.lifecycle193));return;}
     if(t.dataset.abilitiesOpen192){event.preventDefault();openAbilityWindow192(t.dataset.abilitiesOpen192);return;}
     if(t.hasAttribute('data-battle-mode191')){event.preventDefault();void runCommand191(()=>Combat.setBattleMode191());return;}
     if(t.hasAttribute('data-publish191')){event.preventDefault();void runCommand191(()=>Combat.publishToPlayers191());return;}
     if(t.id==='scene-new-v104'){event.preventDefault();addScene104();return;}
-    if(t.dataset.sceneSelectV104){event.preventDefault();if(operationReason191()){Toast.show(operationReason191(),'info');return;}Combat.selectedSceneId=t.dataset.sceneSelectV104;Combat.selectedObject=null;local.preview=null;refreshRuntimeSources122(Combat.selectedSceneId);queueStoreSave();Combat.render();return;}
+    if(t.dataset.sceneSelectV104){event.preventDefault();if(operationReason191()){Toast.show(operationReason191(),'info');return;}closeLootOverlay118();Combat.selectedSceneId=t.dataset.sceneSelectV104;Combat.selectedObject=null;local.preview=null;refreshRuntimeSources122(Combat.selectedSceneId);queueStoreSave();Combat.render();return;}
     if(t.dataset.scenePaletteV104){local.ui.palette=t.dataset.scenePaletteV104;Combat.render();return;}
     if(t.dataset.scenePlaceV105){event.preventDefault();event.stopPropagation();local.ui.pendingPlacement={kind:t.dataset.scenePlaceV105,libraryId:t.dataset.sceneLibraryIdV104||'',entityId:t.dataset.sceneEntityIdV104||'',shape:t.dataset.sceneZoneShapeV104||''};Toast.show('Кликни по карте, чтобы разместить объект','info');return;}
     if(t.id==='scene-import-asset-v104'){importAsset104();return;}
@@ -2911,7 +3050,7 @@
     if(t.dataset.sceneEquipmentUseV129){event.preventDefault();void runCommand191(()=>useActiveEquipment129(t.dataset.sceneEquipmentUseV129));return;}
     if(t.dataset.sceneDeployV129){event.preventDefault();void runCommand191(()=>beginDeployDevice129(t.dataset.sceneDeployV129));return;}
     if(t.hasAttribute('data-scene-command-drone-v129')){event.preventDefault();void runCommand191(()=>commandDrone129());return;}
-    if(t.hasAttribute('data-scene-clear-injuries-v129')){event.preventDefault();const token=selectedToken104();if(token){token.injuriesV129=[];token.reactionUsedV119=false;queueStoreSave();Combat.render();broadcastScene104();}return;}
+    if(t.hasAttribute('data-scene-clear-injuries-v129')){event.preventDefault();if(!activeMap193())return;const token=selectedToken104();if(token){token.injuriesV129=[];token.reactionUsedV119=false;queueStoreSave();Combat.render();broadcastScene104();}return;}
     if(t.dataset.sceneSearchV118){event.preventDefault();searchNpc118(t.dataset.sceneSearchV118);return;}
     if(t.hasAttribute('data-scene-loot-close-v118')){event.preventDefault();closeLootOverlay118();return;}
     if(t.dataset.sceneActionV104){const action=t.dataset.sceneActionV104;local.ui.pendingPlacement=null;if(action==='clear'){local.preview=null;refreshPreviewDom104();return;}if(['move','attack','grenade'].includes(action)){const current=Combat.getCurrentTurnToken?.();const selected=selectedToken104();if(current&&selected?.id!==current.id&&!activeDroneCommand129(selected))Combat.selectedObject={kind:'token',id:current.id};}local.ui.action=action;Combat.render();return;}
@@ -2950,9 +3089,9 @@
     if(t.id==='scene-ambient-v104'){const api=audioApi(),sid=Combat.getScene()?.id,value=String(t.value||'');if(!value)api?.stopAmbient?.(sid);else if(value.startsWith('sound:'))api?.setAmbient?.(sid,value.slice(6));else if(value.startsWith('section:')){const parts=value.split(':');api?.setSectionAmbient?.(sid,parts[1],parts[2]||'sequential');}return;}
     if(t.id==='scene-fog-mode-top-v112'){const scene=Combat.getScene();if(scene){scene.fogMode=['off','cover','objects'].includes(t.value)?t.value:'cover';scene.fogEnabled=scene.fogMode!=='off';queueStoreSave();Combat.render();broadcastScene104();}return;}
     if(t.id==='scene-show-initiative-top-v112'){const scene=Combat.getScene();if(scene){scene.showInitiativeToPlayers=t.checked;queueStoreSave();broadcastScene104();}return;}
-    if(t.id==='scene-weapon-v105'){const token=selectedToken104();if(token){token.weaponId=String(t.value||'');queueStoreSave();Combat.render();broadcastScene104();}return;}
-    if(t.id==='scene-grenade-v105'){const token=selectedToken104();if(token){token.grenadeId=String(t.value||'');queueStoreSave();Combat.render();}return;}
-    if(t.matches?.('[data-context-hp-v104],[data-context-hpmax-v104],[data-context-init-v104]')){const sel=selectedObject104();if(sel?.kind==='token'){const menu=t.closest('.scene-context-v104');sel.obj.hpMax=Math.max(1,num(menu.querySelector('[data-context-hpmax-v104]')?.value,sel.obj.hpMax));sel.obj.hpCurrent=clamp104(menu.querySelector('[data-context-hp-v104]')?.value,0,sel.obj.hpMax);sel.obj.initiative=num(menu.querySelector('[data-context-init-v104]')?.value,sel.obj.initiative);Combat.syncInitiative(Combat.getScene()?.id,false);if(sel.obj.playerId){updatePlayerHp105(sel.obj);void persistCombatProfiles105('Сцена: ручное изменение HP',{immediate:true});}queueStoreSave();broadcastScene104();}return;}
+    if(t.id==='scene-weapon-v105'){if(!activeMap193())return;const token=selectedToken104();if(token){token.weaponId=String(t.value||'');queueStoreSave();Combat.render();broadcastScene104();}return;}
+    if(t.id==='scene-grenade-v105'){if(!activeMap193())return;const token=selectedToken104();if(token){token.grenadeId=String(t.value||'');queueStoreSave();Combat.render();}return;}
+    if(t.matches?.('[data-context-hp-v104],[data-context-hpmax-v104],[data-context-init-v104]')){if(!activeMap193())return;const sel=selectedObject104();if(sel?.kind==='token'){const menu=t.closest('.scene-context-v104');sel.obj.hpMax=Math.max(1,num(menu.querySelector('[data-context-hpmax-v104]')?.value,sel.obj.hpMax));sel.obj.hpCurrent=clamp104(menu.querySelector('[data-context-hp-v104]')?.value,0,sel.obj.hpMax);sel.obj.initiative=num(menu.querySelector('[data-context-init-v104]')?.value,sel.obj.initiative);Combat.syncInitiative(Combat.getScene()?.id,false);if(sel.obj.playerId){updatePlayerHp105(sel.obj);void persistCombatProfiles105('Сцена: ручное изменение HP',{immediate:true});}queueStoreSave();broadcastScene104();}return;}
   },true);
   document.addEventListener('input',event=>{if(event.target.id==='scene-sound-search-v104'){local.ui.soundSearch=event.target.value;clearTimeout(local._soundTimer);local._soundTimer=setTimeout(()=>Combat.render(),120);}if(event.target.id==='scene-unit-search-v104'){local.ui.unitSearch=event.target.value;clearTimeout(local._unitTimer);local._unitTimer=setTimeout(()=>Combat.render(),120);}});
   document.addEventListener('submit',event=>{if(event.target.id==='scene-properties-form-v104'){event.preventDefault();applySceneForm104(event.target);return;}if(event.target.matches?.('[data-object-form-v104]')){event.preventDefault();applyObjectForm104(event.target);}},true);
