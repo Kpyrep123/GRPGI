@@ -111,5 +111,13 @@
     `<span class="pill item-fact-v141 ${row.kind==='modifier'?'item-modifier-v141':''}"><b>${escape(row.label)}:</b> ${escape(row.value)}</span>`).join('');}
   function table(item,options){const rows=facts(item,options);return rows.length
     ? `<div class="archive-equipment-facts-v131 item-facts-v141">${rows.map(row=>`<div class="${row.kind==='modifier'?'item-modifier-v141':''}"><span>${escape(row.label)}</span><b>${escape(row.value)}</b></div>`).join('')}</div>` : '';}
-  return Object.freeze({facts,pills,table});
+  function description(item, fallback='Описание предмета не задано.') {
+    const text=String((typeof item==='string'?item:item?.desc||item?.description||item?.summary)||fallback);
+    if(!text.trim())return '';
+    // Reuse the same formatting allowlist as skill descriptions. Never insert raw HTML.
+    const rich=globalThis.GRPGSkillCatalogV176?.rich;
+    const content=typeof rich==='function'?rich(text):'<p>'+escape(text).replace(/\r\n/g,'\n').split(/\n\s*\n/).join('</p><p>').replace(/\n/g,'<br>')+'</p>';
+    return `<div class="item-rich-description-v201 sc-rich176">${content}</div>`;
+  }
+  return Object.freeze({facts,pills,table,description});
 });

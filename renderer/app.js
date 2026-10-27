@@ -2416,9 +2416,9 @@ window.GRPGInstallGlobalStockExchangeV1074 = function(){
     const item=selected?.itemId?Data.getItem(selected.itemId):null;if(!item)return'<div class="market-selection-empty-v1071">Выберите товар или позицию портфеля.</div>';
     const stock=stockItemV1074(item),buy=selected.source==='market',offer=(buy?rotation.offers:(stock?rotation.quotes:rotation.allOffers)).find(row=>row.itemId===item.id),position=portfolioV1074(user).positions?.[item.id],qty=positionQtyV1074(position),capacity=!stock&&buy?window.GRPGInventoryV1067?.canAddItem?.(user,item.id,1):{ok:true};
     const disabled=!offer||(stock&&!rotation.stockMarketEnabled)||(buy&&Number(user.credits||0)<Number(offer?.price||0))||(buy&&capacity?.ok===false)||(!buy&&stock&&qty<1);
-    if(stock){const history=stockHistoryV1074(item.id,planet,rotation.rotationKey);return `<div class="stock-selection-v1074"><div class="stock-selection-head-v1074">${renderThumb(item,{size:'sm',type:'item',glyph:tickerV1074(item)})}<div><span class="stock-symbol-v1074">${esc(tickerV1074(item))}</span><h2>${esc(item.name||item.id)}</h2><p>${esc(item.desc||item.description||'Описание акции не задано.')}</p></div><div class="stock-selection-quote-v1074 ${changeClassV1074(offer?.change)}"><span>Текущая цена</span><b>${formatCredits(offer?.price||0)}</b><small>Предыдущий день: ${formatCredits(offer?.previousPrice||0)}</small><strong>${offer?.change>=0?'▲':'▼'} ${Math.abs(Number(offer?.changePercent||0)).toFixed(2)}% · ${signedCreditsV1074(offer?.change||0)}</strong></div></div>${sparklineV1074(history)}<div class="stock-position-facts-v1074"><span>В портфеле: <b>${qty} шт.</b></span><span>Известная себестоимость: <b>${formatCredits(position?.costBasis||0)}</b></span><span>Игровой день: <b>${esc(formatLoreDateV1075(rotation.rotationKey, { includeTime:false }))}</b></span></div>${linkedArticlesV1074(item)}${quantityControlsV139({user,item,offer,buy,stock:true,owned:qty,disabled})}</div>`;}
+    if(stock){const history=stockHistoryV1074(item.id,planet,rotation.rotationKey);return `<div class="stock-selection-v1074"><div class="stock-selection-head-v1074">${renderThumb(item,{size:'sm',type:'item',glyph:tickerV1074(item)})}<div><span class="stock-symbol-v1074">${esc(tickerV1074(item))}</span><h2>${esc(item.name||item.id)}</h2>${window.GRPGItemFactsV141.description(item,'Описание акции не задано.')}</div><div class="stock-selection-quote-v1074 ${changeClassV1074(offer?.change)}"><span>Текущая цена</span><b>${formatCredits(offer?.price||0)}</b><small>Предыдущий день: ${formatCredits(offer?.previousPrice||0)}</small><strong>${offer?.change>=0?'▲':'▼'} ${Math.abs(Number(offer?.changePercent||0)).toFixed(2)}% · ${signedCreditsV1074(offer?.change||0)}</strong></div></div>${sparklineV1074(history)}<div class="stock-position-facts-v1074"><span>В портфеле: <b>${qty} шт.</b></span><span>Известная себестоимость: <b>${formatCredits(position?.costBasis||0)}</b></span><span>Игровой день: <b>${esc(formatLoreDateV1075(rotation.rotationKey, { includeTime:false }))}</b></span></div>${linkedArticlesV1074(item)}${quantityControlsV139({user,item,offer,buy,stock:true,owned:qty,disabled})}</div>`;}
     const mass=Number(item.mass??item.weight??1),size=`${Math.max(1,Number(item.inventoryWidth||1))}×${Math.max(1,Number(item.inventoryHeight||1))}`;
-    return `<div class="market-selection-card-v1071">${renderThumb(item,{size:'sm',type:'item',glyph:initials(item.name,'▣')})}<div class="market-selection-details-v1071"><div class="market-selection-heading-v1071"><b>${esc(item.name||item.id)}</b><strong>${buy?'Покупка':'Продажа'}: ${formatCredits(buy?offer?.price||0:offer?.sellPrice||0)}</strong></div><div class="market-selection-facts-v1071"><span class="pill">${esc(item.rarity||'обычный')}</span><span class="pill">Размер ${size}</span><span class="pill">Масса ${mass}</span>${window.GRPGItemFactsV141?.pills(item,{excludeLabels:['Тип','Редкость','Размер','Масса']})||''}</div><p class="market-selection-description-v1071">${esc(item.desc||item.description||'Описание предмета не задано.')}</p></div>${quantityControlsV139({user,item,offer,buy,stock:false,disabled,capacity})}</div>`;
+    return `<div class="market-selection-card-v1071">${renderThumb(item,{size:'sm',type:'item',glyph:initials(item.name,'▣')})}<div class="market-selection-details-v1071"><div class="market-selection-heading-v1071"><b>${esc(item.name||item.id)}</b><strong>${buy?'Покупка':'Продажа'}: ${formatCredits(buy?offer?.price||0:offer?.sellPrice||0)}</strong></div><div class="market-selection-facts-v1071"><span class="pill">${esc(item.rarity||'обычный')}</span><span class="pill">Размер ${size}</span><span class="pill">Масса ${mass}</span>${window.GRPGItemFactsV141?.pills(item,{excludeLabels:['Тип','Редкость','Размер','Масса']})||''}</div><div class="market-selection-description-v1071">${window.GRPGItemFactsV141.description(item)}</div></div>${quantityControlsV139({user,item,offer,buy,stock:false,disabled,capacity})}</div>`;
   }
 
   function renderV1074() {
@@ -4660,7 +4660,7 @@ const UI = {
             ${renderThumb(item, { size: 'lg', type: 'item', glyph: initials(item.name, '▣') })}
             <div>
               <button class="market-link" data-entity="item" data-id="${esc(item.id)}">${esc(item.name)}</button>
-              <div class="subtle" style="margin-top:6px;min-height:36px">${esc(item.desc || 'Нет описания')}</div>
+              <div class="subtle" style="margin-top:6px;min-height:36px">${window.GRPGItemFactsV141.description(item,'Нет описания')}</div>
               <div class="tags" style="margin-top:10px">${(item.tags || []).map(tag => `<span class="tag">${esc(tag)}</span>`).join('')}</div>
             </div>
           </div>
@@ -4920,7 +4920,7 @@ const Wiki = {
             <div class="section-title">Предмет</div>
             <h2 class="mono accent">${esc(entity.name)}</h2>
             <div class="subtle">${esc(entity.type || '')} · ${esc(entity.rarity || '')}</div>
-            <p>${esc(entity.desc || 'Нет описания')}</p>
+            ${window.GRPGItemFactsV141.description(entity,'Нет описания')}
             ${itemHasUsableMechanic(entity) ? `<button class="primary" type="button" id="wiki-use-item-btn">ОТКРЫТЬ МОДУЛЬ ПРЕДМЕТА</button>` : ''}
           </div>
         </div>
@@ -7733,7 +7733,7 @@ UI.renderProfile = function() {
           <div class="small-note" style="margin-bottom:8px">Предметы открывают карточку с описанием и связанными материалами.</div>
           <div class="tags entity-button-row">${this.inventoryMarkup(user.inventory)}</div>
           <div class="section-title" style="margin-top:18px">Импланты</div>
-          <div class="result-stack">${(user.implants || []).map(implant => `<div class="card pad18 profile-implant-card"><div class="data-row"><span class="data-label">${esc(implant.name)}</span><span class="data-value">${Number(implant.energyCost || 0)} EN</span></div><div class="small-note" style="margin-top:8px">${esc(implant.desc || 'Без описания')}</div></div>`).join('') || '<div class="small-note">Нет имплантов</div>'}</div>
+          <div class="result-stack">${(user.implants || []).map(implant => `<div class="card pad18 profile-implant-card"><div class="data-row"><span class="data-label">${esc(implant.name)}</span><span class="data-value">${Number(implant.energyCost || 0)} EN</span></div><div class="small-note" style="margin-top:8px">${window.GRPGItemFactsV141.description(implant,'Без описания')}</div></div>`).join('') || '<div class="small-note">Нет имплантов</div>'}</div>
         </div>
       </div>
 
@@ -23342,7 +23342,7 @@ window.scrollVisibleMessageThreadToBottomV1070 = scrollVisibleMessageThreadToBot
     if (normalized.type === 'implant') facts.push(`Требуемая энергия: ${Number(normalized.energyRequired || 0)}`);
     const tags = Array.isArray(normalized.tags) ? normalized.tags.map(tag => String(tag || '').trim()).filter(Boolean) : [];
     return `<div class="market-selection-facts-v1071">${facts.filter(Boolean).map(fact => `<span class="pill">${esc(fact)}</span>`).join('')}</div>
-      <p class="market-selection-description-v1071">${esc(normalized.desc || normalized.description || normalized.summary || 'Описание предмета не задано.')}</p>
+      <div class="market-selection-description-v1071">${window.GRPGItemFactsV141.description(normalized)}</div>
       <div class="market-selection-requirements-v1071"><b>Требования:</b> ${esc(marketRequirementsTextV1071(normalized))}</div>
       ${tags.length ? `<div class="market-selection-tags-v1071"><b>Категории:</b> ${esc(tags.join(' · '))}</div>` : ''}`;
   }

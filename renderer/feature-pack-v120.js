@@ -227,10 +227,10 @@
       const item=itemById120(node.dataset.itemId||node.dataset.id);if(!item||!api?.itemInfoMarkup)return;
       const compact=node.classList.contains('inventory-tile-v1067')||node.classList.contains('wc-inventory-tile-v1068');
       const infoMarkup=api.itemInfoMarkup(item,user,compact);
-      const description=plain(item.desc||item.description||item.summary);
+      const description=plain(item.desc||item.description||item.summary),richDescription=window.GRPGItemFactsV141.description(item,'');
       const mechanics=[item.weaponSkillId?`Оружейный навык: ${item.weaponSkillId}${Number(item.weaponSkillBonus||0)?` (${Number(item.weaponSkillBonus)>0?'+':''}${Number(item.weaponSkillBonus)} к попаданию)`:''}`:'',item.armorWeightClass==='heavy'?'Тяжёлая броня: без Ловкости к активной защите':'',Number(item.shieldCoverBonus||0)>0?`Физический щит: +${Number(item.shieldCoverBonus)}; не складывается с укрытием`:'',item.shieldDexterityCap!=null?`Предел Ловкости от щита: ${Number(item.shieldDexterityCap)}`:''];
       const title=[item.name,description,...mechanics,...list(item.modifiers).filter(mod=>!(String(mod.op||'add')==='add'&&Number(mod.value||0)===0&&!mod.statRef)).map(api.modifierText)].filter(Boolean).join('\n');
-      const signature=JSON.stringify([String(item.id||''),compact,infoMarkup,description,title]);
+      const signature=JSON.stringify([String(item.id||''),compact,infoMarkup,richDescription,title]);
       const expectedDescription=!compact;
       const hasInfo=Boolean(node.querySelector(':scope > .item-card-info-v118'));
       const hasDescription=Boolean(node.querySelector(':scope > .item-card-description-v120'));
@@ -238,7 +238,7 @@
       node.querySelectorAll(':scope > small,:scope > .item-card-info-v118,:scope > .item-card-description-v120').forEach(child=>child.remove());
       node.dataset.enhancedV118='1';node.classList.add('item-card-v118','item-card-v120');
       node.insertAdjacentHTML('beforeend',infoMarkup);
-      if(!compact)node.insertAdjacentHTML('beforeend',`<div class="item-card-description-v120"${description?'':' aria-hidden="true"'}>${safe(description)}</div>`);
+      if(!compact)node.insertAdjacentHTML('beforeend',`<div class="item-card-description-v120"${description?'':' aria-hidden="true"'}>${richDescription}</div>`);
       node.title=title;
       node.dataset.itemCardSignatureV123=signature;
     });
