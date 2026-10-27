@@ -161,6 +161,9 @@
     next.movedThisTurn = Math.max(0, num(token.movedThisTurn, 0));
     next.actionUsed = Boolean(token.actionUsed);
     next.dashUsedV198 = Boolean(token.dashUsedV198);
+    next.ownTurnV199=Math.max(0,Math.trunc(num(token.ownTurnV199)));
+    next.moraleV199=window.GRPGCombatInstinctV199.effects(token.moraleV199);
+    next.instinctPendingV199=clone(list(token.instinctPendingV199));
     next.initiativeBonus = num(token.initiativeBonus,0);
     next.initiativeOverrideV147 = token.initiativeOverrideV147 === true;
     next.reactionUsedV119 = Boolean(token.reactionUsedV119);
@@ -281,6 +284,7 @@
     if(operation194){if(nested)return fn();Toast.show('Предыдущее действие ещё выполняется','info');return;}
     recoverOperation194();
     if(recovery194){Toast.show('Сначала повторите сохранение предыдущего результата','info');return;}
+    if(label!=='Инстинкт самосохранения'&&pendingInstinct199().length){Toast.show('Сначала завершите ожидающую проверку Инстинкта кнопкой в панели сцены','info');return;}
     const before=snapshot194(),record={id:makeId('operation'),label,status:'prepared',stage:'Проверка и ввод',startedAt:new Date().toISOString(),profiles:{},profileSaved:false};
     const op=operation194={record,startProfiles:before.profiles,boundary:before,confirmed:false,applied:false,error:'',allowWrite:false,persistenceFailed:false,lastDurable:null,pendingPayload:null};
     clearTimeout(local.saveTimer);local.saveTimer=0;
@@ -460,7 +464,7 @@
       const rolls=await combatModal119({title:'Новый бой',subtitle:'Новая инициатива и бюджеты хода. Реальные ресурсы сохраняются. Введите физические d20; бонус участника прибавляется автоматически.',body:units.map((t,i)=>`<label class="field">${html(t.name)} · бонус ${initiativeBonus195(t)}<input class="input" type="number" min="1" max="20" required name="initiative191_${i}"/></label>`).join(''),confirm:'НАЧАТЬ НОВЫЙ БОЙ',decline:'ОТМЕНИТЬ',read:form=>units.map((t,i)=>Number(form.elements['initiative191_'+i].value))});
       if(!rolls)return;const backup=clone(collectStoreFromRuntime());
       try{resetSession193('battle');units.forEach((t,i)=>{t.initiative=num(rolls[i])+initiativeBonus195(t);t.initiativeOverrideV147=true;t.initiativeBattle193=session.battleId;t.reactionUsedV119=false;});Combat.syncInitiative(scene.id,true);await checkpointCombat120('Новый бой',false);}catch(error){if(!recovery194)applyStore(backup);throw error;}
-      const first=Combat.getCurrentTurnToken();if(first){Combat.selectedObject={kind:'token',id:first.id};const effects={damage:0,effects:[]};await runAutomaticHooks119(first,'OnTurnStart',{caster:first,attacker:first,target:first,targets:[first],event:'OnTurnStart'},effects);flushLuaEffects119(effects);await checkpointCombat120('Начало хода нового боя',true);}Combat.render();
+      const first=Combat.getCurrentTurnToken();if(first){startMoraleTurn199(first);Combat.selectedObject={kind:'token',id:first.id};const effects={damage:0,effects:[]};await runAutomaticHooks119(first,'OnTurnStart',{caster:first,attacker:first,target:first,targets:[first],event:'OnTurnStart'},effects);flushLuaEffects119(effects);await checkpointCombat120('Начало хода нового боя',true);}Combat.render();
     }
   }
   async function placeParticipant193(pid,point){
@@ -480,7 +484,7 @@
     const scene=Combat.getScene();
     if(activeMap193()&&runtime.pendingTurnStart193===token.id){
       const startOrder=list(runtime.initiativeOrder).slice(),startIndex=runtime.turnIndex;
-      runtime.pendingTurnStart193='';token.dashUsedV198=false;token.movedThisTurn=0;token.actionUsed=false;token.reactionUsedV119=false;token.disengagedV122=false;token.freeDroneCommandUsedV129=false;
+      runtime.pendingTurnStart193='';startMoraleTurn199(token);token.dashUsedV198=false;token.movedThisTurn=0;token.actionUsed=false;token.reactionUsedV119=false;token.disengagedV122=false;token.freeDroneCommandUsedV129=false;
       const effects={damage:0,effects:[]};await processTimedModifiers122(token,'start',effects);if(num(token.hpCurrent)>0)await runAutomaticHooks119(token,'OnTurnStart',{caster:token,attacker:token,target:token,targets:[token],event:'OnTurnStart'},effects);flushLuaEffects119(effects);Combat.syncInitiative(scene.id,false);
       if(num(token.hpCurrent)<=0)await Combat.nextTurn({allowMissing194:true,ignoreCommand194:true,skipEnd194:true,previousId194:token.id,orderBefore194:startOrder,indexBefore194:startIndex});
     }
@@ -739,7 +743,7 @@
       units.forEach((t,i)=>{t.initiative=rolls[i]+initiativeBonus195(t);t.initiativeOverrideV147=true;t.initiativeBattle193=local.store.session193.battleId;});
       for(const t of runtime.tokens){t.dashUsedV198=false;t.actionUsed=false;t.movedThisTurn=0;t.reactionUsedV119=false;t.burstStateV122=null;t.disengagedV122=false;t.freeDroneCommandUsedV129=false;t.droneCommandV129=null;}
       runtime.battleStarted191=true;scene.mode='combat';this.syncInitiative(scene.id,true);
-      const first=this.getCurrentTurnToken();if(first){this.selectedObject={kind:'token',id:first.id};const effects={damage:0,effects:[]};await runAutomaticHooks119(first,'OnTurnStart',{caster:first,attacker:first,target:first,targets:[first],event:'OnTurnStart'},effects);flushLuaEffects119(effects);}
+      const first=this.getCurrentTurnToken();if(first){startMoraleTurn199(first);this.selectedObject={kind:'token',id:first.id};const effects={damage:0,effects:[]};await runAutomaticHooks119(first,'OnTurnStart',{caster:first,attacker:first,target:first,targets:[first],event:'OnTurnStart'},effects);flushLuaEffects119(effects);}
     }
     local.preview=null;await checkpointCombat120('Сцена: режим боя',true);this.render();
   };
@@ -763,7 +767,7 @@
     local.lua119.busy=true;
     try{
       const effects={damage:0,effects:[]},previous=list(runtime.tokens).find(token=>String(token.id)===previousId)||null;
-      if(previous&&num(previous.hpCurrent)>0&&!options.skipEnd194){previous.burstStateV122=null;previous.dashUsedV198=false;for(const drone of list(runtime.tokens).filter(row=>isDroneToken129(row)&&String(row.operatorTokenIdV129)===String(previous.id))){if(drone.droneCommandV129)drone.droneCommandV129.completed=true;}await runAutomaticHooks119(previous,'OnTurnEnd',{caster:previous,attacker:previous,target:previous,targets:[previous],event:'OnTurnEnd'},effects);await processTimedModifiers122(previous,'end',effects);}
+      if(previous&&num(previous.hpCurrent)>0&&!options.skipEnd194){previous.burstStateV122=null;previous.dashUsedV198=false;for(const drone of list(runtime.tokens).filter(row=>isDroneToken129(row)&&String(row.operatorTokenIdV129)===String(previous.id))){if(drone.droneCommandV129)drone.droneCommandV129.completed=true;}await runAutomaticHooks119(previous,'OnTurnEnd',{caster:previous,attacker:previous,target:previous,targets:[previous],event:'OnTurnEnd'},effects);await processTimedModifiers122(previous,'end',effects);endMoraleTurn199(previous);}
       this.syncInitiative?.(this.getSceneIdForView?.(),false);
       const chooseAfter=(order,index)=>{
         const living=new Set(list(runtime.initiativeOrder).map(String));
@@ -780,7 +784,7 @@
       let current=this.getCurrentTurnToken?.(),guard=Math.max(1,list(runtime.tokens).length+1);
       while(current&&guard-->0){
         const startOrder=list(runtime.initiativeOrder).map(String),startIndex=Math.max(0,startOrder.indexOf(String(current.id)));
-        runtime.pendingTurnStart193='';current.dashUsedV198=false;current.movedThisTurn=0;current.actionUsed=false;current.reactionUsedV119=false;current.disengagedV122=false;current.freeDroneCommandUsedV129=false;
+        runtime.pendingTurnStart193='';startMoraleTurn199(current);current.dashUsedV198=false;current.movedThisTurn=0;current.actionUsed=false;current.reactionUsedV119=false;current.disengagedV122=false;current.freeDroneCommandUsedV129=false;
         await processTimedModifiers122(current,'start',effects);
         if(num(current.hpCurrent)>0){await runAutomaticHooks119(current,'OnTurnStart',{caster:current,attacker:current,target:current,targets:[current],event:'OnTurnStart'},effects);if(num(current.hpCurrent)>0)break;}
         appendCombatLog105(runtime,`${current.name} выбывает из инициативы: здоровье равно 0.`);
@@ -933,7 +937,7 @@
   function reactionBlocked195(token={}){return Trauma195.effects(token).noReaction;}
   function reactionAvailable195(token={}){const state=conditionStateV138(token);return num(token.hpCurrent)>0&&!token.reactionUsedV119&&!reactionBlocked195(token)&&!withdrawn194(token)&&!state.unconscious&&!state.dying&&!state.stunned;}
   function heavyBlocked195(token={}){return Trauma195.effects(token).noHeavyWeapon;}
-  function initiativeBonus195(token={}){return num(token.initiativeBonus,token.initiative)-injuryCheckPenalty129(token);}
+  function initiativeBonus195(token={}){return num(token.initiativeBonus,token.initiative)-checkPenalty199(token);}
   const INJURY_LABELS_V129={1:'лёгкая: −1 к скорости',2:'заметная: −1 ко всем проверкам, −2 к скорости',3:'тяжёлая: половина скорости вверх, нельзя тяжёлое оружие, −1 к проверкам',4:'критическая: половина скорости вниз, нет реакции, −2 к проверкам',5:'смертельная: помеха на проверки, скорость 1, −5 к проверкам'};
   function isHeavyWeapon129(item={}){const value=[item.weaponCategory,item.weightClass,item.name,...list(item.tags)].map(row=>String(row||'').toLowerCase()).join(' ');return item.heavyWeapon===true||/heavy|тяж[её]л/.test(value);}
   function syncTraumaProfile195(token){
@@ -943,6 +947,49 @@
     const before=injurySeverity129(token),result=window.GRPGCombatRulesV119.applyDamage(token,amount);syncTraumaProfile195(token);
     if(result.applied>0&&!Trauma195.mechanical(token))appendCombatLog105(Combat.getRuntime(),`${token.name}: потеря ${result.applied} HP · травма ${before} → ${injurySeverity129(token)} (${source}).`);
     return result;
+  }
+  function moraleEffects199(token){return window.GRPGCombatInstinctV199.effects(token?.moraleV199);}
+  function checkPenalty199(token){return injuryCheckPenalty129(token)+window.GRPGCombatInstinctV199.penalty(token?.moraleV199);}
+  function startMoraleTurn199(token){token.ownTurnV199=Math.max(0,num(token.ownTurnV199))+1;}
+  function endMoraleTurn199(token){const before=moraleEffects199(token);token.moraleV199=window.GRPGCombatInstinctV199.expire(before,token.ownTurnV199);if(before.length!==token.moraleV199.length)appendCombatLog105(Combat.getRuntime(),`${token.name}: завершилось Потрясение/Паника по длительности.`);}
+  function instinctOwners199(){const session=local.store?.session193,actors=new Map(Object.entries(session?.participants||{})),runtime=App?.state?.toolState?.[COMBAT_STATE_KEY]?.scenes?.[session?.activeMapId]||Combat.getRuntime();for(const token of list(runtime?.tokens))actors.set(String(token.participantId193||token.id),token);return [...actors.values()];}
+  function pendingInstinct199(){return instinctOwners199().flatMap(owner=>list(owner.instinctPendingV199).map(packet=>({owner,packet})));}
+  function sourceInstinct199(source,name,origin){const scene=Combat.getScene(),point=origin||source&&centerOf(source);return{participantId:!origin&&source?String(source.participantId193||''):'',tokenId:!origin?String(source?.id||''):'',name:String(origin?name:source?`${source.name||source.id} · ${name||'атака'}`:name||'Источник неизвестен'),mapId:String(scene?.id||''),point:point?{x:num(point.x),y:num(point.y)}:null,key:origin?`${scene?.id}:${name}:${num(origin.x)}:${num(origin.y)}`:String(source?.id||name||'')};}
+  async function resolveInstinct199(owner,packet){
+    packet={...packet,lost:Math.max(0,num(packet.lost)),will:Math.max(0,num(packet.will)),penalty:Math.max(0,num(packet.penalty))};
+    const current=()=>instinctOwners199().find(row=>String(row.participantId193||row.id)===String(owner.participantId193||owner.id))||owner;
+    owner=current();if(!list(owner.instinctPendingV199).some(row=>row.id===packet.id))return;
+    if(num(owner.hpCurrent)<=0||Trauma195.mechanical(owner)){owner.instinctPendingV199=list(owner.instinctPendingV199).filter(row=>row.id!==packet.id);await sealOperation194('Проверка Инстинкта не требуется при 0 HP');return;}
+    const body=`<div class="scene-instinct-note-v199"><b>${html(owner.name)}</b><p>Источник: ${html(packet.source?.name)}. Фактически потеряно HP: ${packet.lost}. Травма уже применена.</p><p>Проверка: d20 + Воля ${packet.will}${packet.penalty?` − штрафы ${packet.penalty}`:''} против ${10+packet.lost}.</p>${packet.disadvantage?'<p>ПОМЕХА: бросьте на столе и введите выбранный d20.</p>':''}<p>Провал: Потрясение. Провал на 5+ или натуральная 1: Паника.</p></div><label class="field">Натуральный d20<input class="input" name="instinctRoll199" type="number" min="1" max="20" step="1" required/></label><p class="small-note">Урон уже сохранён. «Отложить» сохраняет ожидающую проверку, без повторения атаки.</p>`;
+    const roll=await combatModal119({title:'Инстинкт самосохранения',subtitle:'Физический бросок · урон уже применён',body,confirm:'ПРИМЕНИТЬ РЕЗУЛЬТАТ',decline:'ОТЛОЖИТЬ',read:form=>Number(form.elements.instinctRoll199.value)});
+    if(roll===null)throw Error('Проверка Инстинкта отложена. Урон сохранён; завершите проверку отдельной кнопкой.');
+    owner=current();const result=window.GRPGCombatInstinctV199.resolve({...packet,roll});
+    owner.instinctPendingV199=list(owner.instinctPendingV199).filter(row=>row.id!==packet.id);
+    owner.moraleV199=window.GRPGCombatInstinctV199.add(owner.moraleV199,result.kind,packet.source,num(owner.ownTurnV199),packet.id);
+    if(result.kind==='shaken')owner.reactionUsedV119=true;
+    appendCombatLog105(Combat.getRuntime(),`${owner.name}: Инстинкт d20 ${roll} + Воля ${packet.will} − штрафы ${packet.penalty} = ${result.total} против ${result.dc}: ${result.kind==='panic'?'ПАНИКА — ДМ выбирает безопасный уход, падение или укрытие':result.kind==='shaken'?'ПОТРЯСЕНИЕ — проверки −1, доступная реакция потеряна, нельзя приближаться к источнику':'успех'}.`);
+    await sealOperation194('Подтверждён результат Инстинкта');Combat.render();
+  }
+  async function resumeInstinct199(){if(!activeMap193()){Toast.show('Откройте действующую карту для завершения проверки','info');return;}for(const {owner,packet} of pendingInstinct199())await resolveInstinct199(owner,packet);await checkpointCombat120('Завершение проверок Инстинкта',true);}
+  async function applyHit199(token,amount,name,source,options={}){
+    const result=applyDamage195(token,amount,name);updatePlayerHp105(token);
+    const entity=entityForToken(token)||{},computed=window.GRPGStatsV113?.compute?.(entity,{kind:token.npcId?'npc':'player',inCombat:true,temporaryModifiers:timedStatModifiers122(token)})||{},will=Math.max(0,num(computed.abilities?.will));
+    if(!inBattle191()||!window.GRPGCombatInstinctV199.qualifies({lost:result.applied,will,hp:token.hpCurrent,mechanical:Trauma195.mechanical(token)}))return result;
+    const packet={id:makeId('instinct'),lost:result.applied,will,penalty:checkPenalty199(token),disadvantage:injuryDisadvantage129(token),source:sourceInstinct199(source,name,options.origin)};
+    (token.instinctPendingV199||=[]).push(packet);
+    if(!options.defer&&!local.instinctDefer199){await sealOperation194('Урон подтверждён; ожидается Инстинкт');await resolveInstinct199(token,packet);}
+    return result;
+  }
+  function renderMorale199(token){return moraleEffects199(token).map(row=>`<div class="scene-instinct-note-v199 ${row.kind==='panic'?'is-panic':''}"><b>${row.kind==='panic'?'ПАНИКА':'ПОТРЯСЕНИЕ'}</b> · ${html(row.source.name)} · ${row.expires>num(token.ownTurnV199)?'до конца следующего своего хода':'до конца текущего своего хода'}<p>${row.kind==='panic'?'ДМ выбирает доступное безопасное перемещение из линии атаки, падение или разумное укрытие. Избегайте явно самоубийственных действий.':'−1 к атакам и проверкам; нельзя добровольно приближаться к источнику.'}</p></div>`).join('');}
+  function renderInstinct199(){const pending=pendingInstinct199(),token=selectedToken104(),effects=token&&moraleEffects199(token);const content=`${pending.length?`<div class="scene-instinct-note-v199"><b>Ожидает проверки Инстинкта: ${pending.length}</b><button type="button" class="primary" data-instinct-resume199 ${operation194||recovery194||!activeMap193()?'disabled':''} title="Завершить на действующей карте">ЗАВЕРШИТЬ ПРОВЕРКИ</button></div>`:''}${token?renderMorale199(token):''}${effects?.length?'<button type="button" class="secondary" data-morale-clear199>СНЯТЬ СОСТОЯНИЕ ВРУЧНУЮ</button>':''}`;return content?`<div class="scene-instinct-panel-v199">${content}</div>`:'';}
+  async function clearMorale199(){if(!activeMap193())return;const token=selectedToken104();if(!token)return;token.moraleV199=[];appendCombatLog105(Combat.getRuntime(),`${token.name}: ДМ явно снял Потрясение/Панику.`);Combat.render();await checkpointCombat120('Снятие Потрясения/Паники',false);}
+  function approachProblem199(token,points,scene){
+    if(!inBattle191(scene))return '';
+    for(const effect of moraleEffects199(token).filter(row=>row.kind==='shaken')){
+      const source=list(Combat.getRuntime()?.tokens).find(row=>effect.source.participantId?String(row.participantId193)===effect.source.participantId:String(row.id)===effect.source.tokenId),origin=source?centerOf(source):effect.source.mapId===scene?.id?effect.source.point:null;
+      if(!origin)continue;for(let i=1;i<points.length;i++)if(hexDistancePoints109(scene,points[i],origin)<hexDistancePoints109(scene,points[i-1],origin))return `Потрясение: нельзя добровольно приближаться к источнику «${effect.source.name}»`;
+    }
+    return '';
   }
   function editHp195(token,maximum,current){
     Trauma195.ensure(token);const oldHp=num(token.hpCurrent),cap=Math.max(1,num(maximum,token.hpMax));token.hpMax=cap;
@@ -2052,7 +2099,7 @@
     const runtime=this.getRuntime(scene.id);
     if(!activeMap193())Session193.project(local.store.session193,scene.id,runtime);
     syncUnitSizes184(scene,runtime);
-    root.innerHTML=`<div class="scene-editor-v104">${renderTop104(scene,runtime)}${renderLeft104()}<main class="scene-center-v104"><div class="scene-session-stack-v193">${renderSession191(scene,runtime)}${renderLifecycle193(scene,runtime)}${renderOperation194()}</div>${renderBoard104(scene,runtime)}</main>${renderInspector104(scene,runtime)}</div>`;
+    root.innerHTML=`<div class="scene-editor-v104">${renderTop104(scene,runtime)}${renderLeft104()}<main class="scene-center-v104"><div class="scene-session-stack-v193">${renderSession191(scene,runtime)}${renderInstinct199()}${renderLifecycle193(scene,runtime)}${renderOperation194()}</div>${renderBoard104(scene,runtime)}</main>${renderInspector104(scene,runtime)}</div>`;
     renderedSceneV137=scene.id;
     for(const selector of scrollSelectorsV137){const node=root.querySelector(selector),pos=panelScrollV137.get(scene.id+selector);if(node&&pos){node.scrollTop=pos.top;node.scrollLeft=pos.left;}}
     // Keep board sizing and camera transform in the same JS task as DOM replacement: no one-frame jump to a default frame.
@@ -2172,7 +2219,7 @@
   function makeRoutePreview104(point,attack=false){
     const scene=Combat.getScene(),token=selectedToken104();if(!scene||!token)return null;const start=centerOf(token);
     if(attack){const weapon=weaponForToken105(token);if(!weapon)return {kind:'route',mode:'attack',sourceTokenId:token.id,points:[start,start],end:start,limited:true,blocked:true,label:'Нет выбранного оружия'};const max=tokenAttackCells(token,scene),snapped=nearestHexCenter107(scene,point),target=list(Combat.getRuntime(scene.id)?.tokens).find(t=>t.id!==token.id&&window.GRPGUnitSizeV184.contains(t,point.x,point.y)),distance=target?window.GRPGUnitSizeV184.distance(token,target):hexDistancePoints109(scene,start,snapped),rangeEnd=target?snapped:hexEndpointAtRange109(scene,start,snapped,max),end={x:rangeEnd.x,y:rangeEnd.y},limited=distance>Math.floor(max+1e-6),blocked=!limited&&sightSegmentBlocked105(scene,start,end,[token.id]);return {kind:'route',mode:'attack',sourceTokenId:token.id,points:[start,end],end,hexes:Math.min(distance,Math.floor(max+1e-6)),maxHexes:Math.floor(max+1e-6),limited,blocked,label:`${weapon.name||'Выстрел'}: ${hexLabel109(Math.min(distance,max))} / ${hexLabel109(max)}${blocked?' · ЛИНИЯ ОГНЯ БЛОКИРОВАНА':''}`};}
-    if(token.burstStateV122)return {kind:'route',mode:'move',sourceTokenId:token.id,points:[start],end:start,steps:0,cost:0,limited:true,blocked:true,label:'Сначала завершите скорострельную очередь'};if(!canMechanicalMove108(token))return {kind:'route',mode:'move',sourceTokenId:token.id,points:[start],end:start,steps:0,cost:0,limited:true,blocked:true,label:'Выбран не текущий юнит инициативы'};const snappedTarget=nearestHexCenter107(scene,point),path=findHexPath108(scene,start,snappedTarget,token.id),totalMax=Math.max(0,Math.floor(tokenMoveBudget198(token,scene)+1e-6)),spentCells=Math.max(0,Math.floor(num(token.movedThisTurn,0)+1e-6)),max=inBattle191()?Math.max(0,totalMax-spentCells):Infinity;if(!path){return {kind:'route',mode:'move',sourceTokenId:token.id,points:[start],end:start,steps:0,cost:0,limited:true,blocked:true,label:'Путь заблокирован'};}const cut=truncateHexPath108(path,max),remaining=Math.max(0,max-cut.cost),terrainExtra=Math.max(0,cut.cost-cut.steps),command=activeDroneCommand129(token),operator=command?.returnOnly?operatorForDrone129(token):null,wrongDirection=Boolean(operator&&hexDistancePoints109(scene,cut.end,centerOf(operator))>=hexDistancePoints109(scene,start,centerOf(operator)));return {kind:'route',mode:'move',sourceTokenId:token.id,points:cut.points,end:cut.end,steps:cut.steps,cost:cut.cost,limited:cut.limited||wrongDirection,blocked:wrongDirection,label:wrongDirection?'Без связи дрон может двигаться только к оператору':`Движение: ${hexLabel109(cut.steps)} · стоимость ${cut.cost}${terrainExtra?` (+${terrainExtra} за трудную местность)`:''} / останется ${inBattle191()?remaining:'без лимита'}`};
+    if(token.burstStateV122)return {kind:'route',mode:'move',sourceTokenId:token.id,points:[start],end:start,steps:0,cost:0,limited:true,blocked:true,label:'Сначала завершите скорострельную очередь'};if(!canMechanicalMove108(token))return {kind:'route',mode:'move',sourceTokenId:token.id,points:[start],end:start,steps:0,cost:0,limited:true,blocked:true,label:'Выбран не текущий юнит инициативы'};const snappedTarget=nearestHexCenter107(scene,point),path=findHexPath108(scene,start,snappedTarget,token.id),totalMax=Math.max(0,Math.floor(tokenMoveBudget198(token,scene)+1e-6)),spentCells=Math.max(0,Math.floor(num(token.movedThisTurn,0)+1e-6)),max=inBattle191()?Math.max(0,totalMax-spentCells):Infinity;if(!path){return {kind:'route',mode:'move',sourceTokenId:token.id,points:[start],end:start,steps:0,cost:0,limited:true,blocked:true,label:'Путь заблокирован'};}const cut=truncateHexPath108(path,max),remaining=Math.max(0,max-cut.cost),terrainExtra=Math.max(0,cut.cost-cut.steps),command=activeDroneCommand129(token),operator=command?.returnOnly?operatorForDrone129(token):null,wrongDirection=Boolean(operator&&hexDistancePoints109(scene,cut.end,centerOf(operator))>=hexDistancePoints109(scene,start,centerOf(operator)));const moraleProblem=approachProblem199(token,cut.points,scene);if(moraleProblem)return{kind:'route',mode:'move',sourceTokenId:token.id,points:[start],end:start,steps:0,cost:0,limited:true,blocked:true,label:moraleProblem};return {kind:'route',mode:'move',sourceTokenId:token.id,points:cut.points,end:cut.end,steps:cut.steps,cost:cut.cost,limited:cut.limited||wrongDirection,blocked:wrongDirection,label:wrongDirection?'Без связи дрон может двигаться только к оператору':`Движение: ${hexLabel109(cut.steps)} · стоимость ${cut.cost}${terrainExtra?` (+${terrainExtra} за трудную местность)`:''} / останется ${inBattle191()?remaining:'без лимита'}`};
   }
   function makeGrenadePreview105(point){const scene=Combat.getScene(),token=selectedToken104(),grenade=grenadeForToken105(token);if(!scene||!token||!grenade)return null;const start=centerOf(token),max=grenadeRangeCells105(grenade,scene),snapped=nearestHexCenter107(scene,point),distance=hexDistancePoints109(scene,start,snapped),rangeEnd=hexEndpointAtRange109(scene,start,snapped,max),end={x:rangeEnd.x,y:rangeEnd.y},radiusHexes=Math.max(0,Math.floor(grenadeRadiusCells105(grenade,scene)+1e-6)),radius=radiusHexes*hexStepDistance109(),limited=distance>Math.floor(max+1e-6);return {kind:'grenade',mode:'grenade',sourceTokenId:token.id,start,end,radius,radiusHexes,hexes:Math.min(distance,max),maxHexes:max,limited,itemId:grenade.id,label:`${grenade.name}: бросок ${hexLabel109(Math.min(distance,max))} / ${hexLabel109(max)} · радиус ${hexLabel109(radiusHexes)}`};}
   function tokenTeam122(token={}){return String(token.teamId||token.factionId||(token.playerId?'players':token.npcId?'npcs':token.type||'units'));}
@@ -2180,7 +2227,7 @@
   async function resolveOpportunityAttack122(source,target,weapon,options={}){
     const scene=Combat.getScene(),rules=window.GRPGCombatRulesV119,transaction=beginCombatTransaction120('opportunity',scene?.id,source.id,[target.id]);if(!transaction)return num(target.hpCurrent)>0;
     try{
-      let refs=combatTransactionRefs120(transaction),attacker=refs.attacker,victim=refs.target;const entity=entityForToken(attacker)||{},attack=window.GRPGStatsV113?.weaponAttack?.(entity,weapon,{kind:attacker.npcId?'npc':'player',inCombat:true,temporaryModifiers:timedStatModifiers122(attacker)}),hitBonus=num(attack?.bonus??weapon.hitBonus)-2-injuryCheckPenalty129(attacker),damageBonus=num(attack?.damageBonus),defense=incomingDefense119(victim,'melee',null);defense.defenseBonus-=injuryCheckPenalty129(victim);
+      let refs=combatTransactionRefs120(transaction),attacker=refs.attacker,victim=refs.target;const entity=entityForToken(attacker)||{},attack=window.GRPGStatsV113?.weaponAttack?.(entity,weapon,{kind:attacker.npcId?'npc':'player',inCombat:true,temporaryModifiers:timedStatModifiers122(attacker)}),hitBonus=num(attack?.bonus??weapon.hitBonus)-2-checkPenalty199(attacker),damageBonus=num(attack?.damageBonus),defense=incomingDefense119(victim,'melee',null);defense.defenseBonus-=checkPenalty199(victim);
       const declaredContext={attacker,target:victim,caster:attacker,targets:[victim],weapon,damageType:'melee',sourceName:`Атака по возможности: ${weapon.name}`},declared={damage:0,attackBonus:hitBonus,defenseBonus:defense.defenseBonus,effects:[]};await runAutomaticHooks119(attacker,'OnAttackDeclared',declaredContext,declared);await chooseReaction119('OnAttackDeclared',declaredContext,declared);
       const entered=await requestAttackRolls119({attacker,target:victim,weapon,attackBonus:declared.attackBonus,defenseBonus:declared.defenseBonus,damageBonus,attackDisadvantage:injuryDisadvantage129(attacker),defenseDisadvantage:injuryDisadvantage129(victim)});if(!entered)return num(victim.hpCurrent)>0;
       attacker.reactionUsedV119=true;if(entered.attackRoll===1)applyWeaponFumble196(attacker,weapon);
@@ -2188,7 +2235,7 @@
       await runAutomaticHooks119(attacker,'BeforeAttackStart',{...context,attackBonus:pre.attackBonus,defenseBonus:pre.defenseBonus},pre);await chooseReaction119('BeforeAttackStart',{...context,attackBonus:pre.attackBonus,defenseBonus:pre.defenseBonus},pre);
       const result=rules.resolveManualAttack({attackRoll:entered.attackRoll,defenseRoll:entered.defenseRoll,attackBonus:pre.attackBonus,defenseBonus:pre.defenseBonus,damageRoll:entered.damageRoll,damageBonus,damageReduction:0});
       refs=combatTransactionRefs120(transaction);attacker=refs.attacker;victim=refs.target;let finalDamage=result.damageApplied,hp={before:num(victim?.hpCurrent),after:num(victim?.hpCurrent),applied:0},state={damage:result.hit?result.damageApplied:0,damagePartsV138:result.hit?[{amount:result.damageApplied,absorptionSource:'all'}]:[],effects:pre.effects};
-      if(result.hit&&victim){await runAutomaticHooks119(attacker,'OnHit',{...context,attacker,target:victim,damage:state.damage},state);await chooseReaction119('OnHit',{...context,attacker,target:victim,damage:state.damage},state);refs=combatTransactionRefs120(transaction);victim=refs.target;attacker=refs.attacker;if(victim){await runAutomaticHooks119(victim,'BeforeDamage',{...context,attacker,target:victim,damage:state.damage},state);await chooseReaction119('BeforeDamage',{...context,attacker,target:victim,damage:state.damage},state);finalDamage=applyAbsorptionV138(state,incomingDefense119(victim,'melee',null)).applied;if(result.defenseCritical)finalDamage=Math.floor(finalDamage/2);hp=applyDamage195(victim,finalDamage,weapon.name);updatePlayerHp105(victim);const afterContext={...context,attacker,target:victim,damage:finalDamage};await runAutomaticHooks119(victim,'OnTakeDamage',afterContext,state);await chooseReaction119('OnTakeDamage',afterContext,state);refs=combatTransactionRefs120(transaction);victim=refs.target;hp.after=num(victim?.hpCurrent,hp.after);hp.applied=Math.max(0,hp.before-hp.after);if(victim)updatePlayerHp105(victim);}}
+      if(result.hit&&victim){await runAutomaticHooks119(attacker,'OnHit',{...context,attacker,target:victim,damage:state.damage},state);await chooseReaction119('OnHit',{...context,attacker,target:victim,damage:state.damage},state);refs=combatTransactionRefs120(transaction);victim=refs.target;attacker=refs.attacker;if(victim){await runAutomaticHooks119(victim,'BeforeDamage',{...context,attacker,target:victim,damage:state.damage},state);await chooseReaction119('BeforeDamage',{...context,attacker,target:victim,damage:state.damage},state);finalDamage=applyAbsorptionV138(state,incomingDefense119(victim,'melee',null)).applied;if(result.defenseCritical)finalDamage=Math.floor(finalDamage/2);hp=await applyHit199(victim,finalDamage,weapon.name,attacker);updatePlayerHp105(victim);const afterContext={...context,attacker,target:victim,damage:finalDamage};await runAutomaticHooks119(victim,'OnTakeDamage',afterContext,state);await chooseReaction119('OnTakeDamage',afterContext,state);refs=combatTransactionRefs120(transaction);victim=refs.target;hp.after=num(victim?.hpCurrent,hp.after);hp.applied=Math.max(0,hp.before-hp.after);if(victim)updatePlayerHp105(victim);}}
       appendCombatLog105(refs.runtime,`${attacker.name} ${result.hit?'попадает':'промахивается'} атакой по возможности по ${victim?.name||target.name} (−2 к попаданию)${result.hit?`: ${hp.before} → ${hp.after} HP`:''}${result.fumble?' · натуральная 1':''}.`);
       Combat.syncInitiative(scene.id,false);flushLuaEffects119(state);await sealOperation194('Подтверждена атака по возможности');if(!options.deferCheckpoint)await checkpointCombat120('Сцена: атака по возможности',true);return num(victim?.hpCurrent,0)>0;
     }catch(error){
@@ -2217,6 +2264,7 @@
     try{
       let opportunity={alive:true,reactionUsed:false};
       if(inBattle191()&&!token.disengagedV122){opportunity=await resolveOpportunityAttacks122(token,preview.points);if(!opportunity.alive){Combat.render();broadcastScene104();await checkpointCombat120('Сцена: атака по возможности',opportunity.reactionUsed);return;}}
+      const moraleProblem=approachProblem199(token,preview.points,scene);if(moraleProblem){local.preview=null;await checkpointCombat120('Потрясение после реакции',opportunity.reactionUsed);Toast.show(moraleProblem,'info');return;}
       if(inBattle191()&&Math.floor(num(preview.cost,preview.steps))>Math.max(0,Math.floor(tokenMoveBudget198(token,scene)-num(token.movedThisTurn)))){local.preview=null;await checkpointCombat120('Реакции перед движением',opportunity.reactionUsed);Toast.show('После реакции доступного движения недостаточно. Выберите маршрут заново.','info');return;}
       fitTokenToHex107(token,scene,preview.end);
       token.movedThisTurn=Math.max(0,num(token.movedThisTurn))+Math.max(0,Math.floor(num(preview.cost,preview.steps)));
@@ -2422,7 +2470,7 @@
       const trained=unique([...list(entity.trainedSkills),...list(entity.trained),...Object.entries(entity.skillTraining||{}).filter(([,value])=>value===true||num(value)>0).map(([id])=>id),...Object.entries(entity.skillLevels||{}).filter(([,value])=>num(value)>0).map(([id])=>id)]);
       const movement=movementState198(token,scene),movementTotal=movement.budget,movementSpent=Math.max(0,num(token.movedThisTurn));
       stats.movement=movement.speed;if(movement.carries)stats.carryCapacity=movement.capacity;
-      return {injuryDegree:injurySeverity129(token),checkPenalty:injuryCheckPenalty129(token),checkDisadvantage:injuryDisadvantage129(token),heavyWeaponRestricted:heavyBlocked195(token),id:String(token.id),name:String(token.name||token.id),kind:token.playerId?'player':token.npcId?'npc':'unit',teamId:String(token.teamId||token.factionId||(token.playerId?'players':token.npcId?'npcs':token.type||'units')),hpCurrent:num(token.hpCurrent),hpMax:num(token.hpMax),x:centerOf(token).x,y:centerOf(token).y,stats,abilities:unique(entity.skills),trained,items:itemIds,inventory,equipped,modifiers:list(token.timedModifiersV122).map(row=>String(row.id)),actionAvailable:!actionSpent191(token)&&canCombatAct129(token),reactionAvailable:reactionAvailable195(token),movementSpent,movementRemaining:Math.max(0,movementTotal-movementSpent),conditions:clone(conditionStateV138(token)),movementMode:String(token.movementModeV138||'ground'),distances:{}};
+      return {injuryDegree:injurySeverity129(token),checkPenalty:checkPenalty199(token),checkDisadvantage:injuryDisadvantage129(token),heavyWeaponRestricted:heavyBlocked195(token),id:String(token.id),name:String(token.name||token.id),kind:token.playerId?'player':token.npcId?'npc':'unit',teamId:String(token.teamId||token.factionId||(token.playerId?'players':token.npcId?'npcs':token.type||'units')),hpCurrent:num(token.hpCurrent),hpMax:num(token.hpMax),x:centerOf(token).x,y:centerOf(token).y,stats,abilities:unique(entity.skills),trained,items:itemIds,inventory,equipped,modifiers:list(token.timedModifiersV122).map(row=>String(row.id)),actionAvailable:!actionSpent191(token)&&canCombatAct129(token),reactionAvailable:reactionAvailable195(token),movementSpent,movementRemaining:Math.max(0,movementTotal-movementSpent),conditions:clone(conditionStateV138(token)),movementMode:String(token.movementModeV138||'ground'),distances:{}};
     });
     rows.forEach(a=>rows.forEach(b=>{a.distances[b.id]=hexDistancePoints109(scene,{x:a.x,y:a.y},{x:b.x,y:b.y});}));
     return rows;
@@ -2491,7 +2539,7 @@
       }else if(kind==='remove_modifier'){
         const target=tokenById119(command.targetId);if(target){target.timedModifiersV122=list(target.timedModifiersV122).filter(row=>String(row.id)!==String(command.modifierId||''));statsChanged=true;}
       }else if(kind==='damage'||kind==='heal'){
-        const target=tokenById119(command.targetId);if(!target)continue;let amount=Math.max(0,num(command.amount)),absorbed=0;if(kind==='damage'){const defense=incomingDefense119(target,context.damageType||'light'),reduced=applyAbsorptionV138({damage:amount,damagePartsV138:[{amount,absorptionSource:command.absorptionSource,penetration:command.penetration,ignoreAbsorption:command.ignoreAbsorption,ignorePercent:command.ignorePercent}]},defense);amount=reduced.applied;absorbed=reduced.absorbed;}const result=kind==='damage'?applyDamage195(target,amount,context.sourceName||'Lua'):rules?.applyHeal?.(target,amount);updatePlayerHp105(target);appendCombatLog105(runtime,`${context.sourceName||'Lua'}: ${kind==='damage'?'урон':'лечение'} ${target.name} ${num(result?.before)} → ${num(result?.after)}${absorbed?` (поглощено ${absorbed})`:''}.`);
+        const target=tokenById119(command.targetId);if(!target)continue;let amount=Math.max(0,num(command.amount)),absorbed=0;if(kind==='damage'){const defense=incomingDefense119(target,context.damageType||'light'),reduced=applyAbsorptionV138({damage:amount,damagePartsV138:[{amount,absorptionSource:command.absorptionSource,penetration:command.penetration,ignoreAbsorption:command.ignoreAbsorption,ignorePercent:command.ignorePercent}]},defense);amount=reduced.applied;absorbed=reduced.absorbed;}const result=kind==='damage'?(String((context.caster||context.attacker)?.id||'')===String(target.id)?applyDamage195(target,amount,context.sourceName||'Lua'):await applyHit199(target,amount,context.sourceName||'Lua',context.caster||context.attacker)):rules?.applyHeal?.(target,amount);updatePlayerHp105(target);appendCombatLog105(runtime,`${context.sourceName||'Lua'}: ${kind==='damage'?'урон':'лечение'} ${target.name} ${num(result?.before)} → ${num(result?.after)}${absorbed?` (поглощено ${absorbed})`:''}.`);
       }else if(kind==='heal_injury'){
         const target=tokenById119(command.targetId);if(!target)throw Error('HealInjury: цель не найдена');const change=Trauma195.treat(target,command.amount);syncTraumaProfile195(target);appendCombatLog105(runtime,`${context.sourceName||'Lua'}: лечение травмы ${target.name} ${change.before} → ${change.after}.`);
       }else if(kind==='move_to'){
@@ -2559,7 +2607,7 @@
   }
   async function requestLuaNumber119(request={},context={}){
     const min=Number.isFinite(Number(request.min))?Number(request.min):null,max=Number.isFinite(Number(request.max))?Number(request.max):null,initial=Number.isFinite(Number(request.default))?Number(request.default):'';
-    const body=`${injuryReminder195(context.caster)}<div class="scene-lua-participants-v119"><b>${html(context.caster?.name||'Юнит')}</b><span>·</span><b>${html(context.sourceName||'Lua')}</b></div><div class="field"><label>${html(request.label||request.name||'Значение')}</label><input class="input" type="number" step="any" name="luaNumber" ${min!==null?`min="${min}"`:''} ${max!==null?`max="${max}"`:''} value="${initial}" ${request.required!==false?'required':''}/></div><div class="small-note">Введите итог физического броска или другое значение, запрошенное скриптом. Приложение ничего не генерирует.</div>`;
+    const body=`${injuryReminder195(context.caster)}${moraleEffects199(context.caster).length?renderMorale199(context.caster):''}<div class="scene-lua-participants-v119"><b>${html(context.caster?.name||'Юнит')}</b><span>·</span><b>${html(context.sourceName||'Lua')}</b></div><div class="field"><label>${html(request.label||request.name||'Значение')}</label><input class="input" type="number" step="any" name="luaNumber" ${min!==null?`min="${min}"`:''} ${max!==null?`max="${max}"`:''} value="${initial}" ${request.required!==false?'required':''}/></div><div class="small-note">Введите итог физического броска или другое значение, запрошенное скриптом. Приложение ничего не генерирует.</div>`;
     return combatModal119({title:'Ввод значения для навыка',subtitle:request.name||'value',body,confirm:'ПЕРЕДАТЬ В СКРИПТ',decline:'ОТМЕНИТЬ НАВЫК',read:form=>num(form.elements.luaNumber?.value,0)});
   }
   async function runInteractiveLuaHookV138(source,hook,context={},state={damage:num(context.damage),effects:[]}){
@@ -2603,7 +2651,7 @@
     const validateWeapon=()=>{if(weaponMalfunction122(attacker,weapon))throw new Error('StandardAttack: сначала устраните отказ оружия');if(heavyBlocked195(attacker)&&isHeavyWeapon129(weapon))throw Error('StandardAttack: травма 3-й степени запрещает тяжёлое оружие');if(itemBrokenV138(attacker,weapon,selected.slot))throw new Error(`StandardAttack: «${weapon.name||weapon.id}» сломано`);};validateWeapon();
     const distance=window.GRPGUnitSizeV184.distance(attacker,target),range=Math.max(0,num(weapon.range??weapon.attackRange,1)),cover=coverBetween120(scene,centerOf(attacker),centerOf(target));if(distance>Math.floor(range+1e-6))throw new Error(`StandardAttack: цель вне дальности (${hexLabel109(distance)} / ${hexLabel109(range)})`);if(cover.blocksAttack||sightSegmentBlocked105(scene,centerOf(attacker),centerOf(target),[attacker.id,target.id]))throw new Error('StandardAttack: линия огня перекрыта');
     const shotCost=ammoPerShot118(weapon),validateMagazine=()=>{const value=magazineState118(attacker,weapon);if(value.size>0&&value.loaded<shotCost)throw new Error(`StandardAttack: магазин пуст (${value.loaded} / ${value.size})`);return value;};validateMagazine();
-    const entity=entityForToken(attacker)||{},attack=window.GRPGStatsV113?.weaponAttack?.(entity,weapon,{kind:attacker.npcId?'npc':'player',inCombat:true,temporaryModifiers:timedStatModifiers122(attacker)})||{},damageBonus=num(attack.damageBonus),baseHit=num(attack.bonus??weapon.hitBonus)-injuryCheckPenalty129(attacker),defense=incomingDefense119(target,weapon.weaponCategory||'light',cover);defense.defenseBonus-=injuryCheckPenalty129(target);
+    const entity=entityForToken(attacker)||{},attack=window.GRPGStatsV113?.weaponAttack?.(entity,weapon,{kind:attacker.npcId?'npc':'player',inCombat:true,temporaryModifiers:timedStatModifiers122(attacker)})||{},damageBonus=num(attack.damageBonus),baseHit=num(attack.bonus??weapon.hitBonus)-checkPenalty199(attacker),defense=incomingDefense119(target,weapon.weaponCategory||'light',cover);defense.defenseBonus-=checkPenalty199(target);
     const context=extra=>({attacker,target,caster:attacker,targets:[target],weapon,damageType:String(weapon.weaponCategory||'light'),sourceName:`StandardAttack: ${weapon.name||weapon.id}`,...extra});
     const declared={damage:0,attackBonus:baseHit,defenseBonus:defense.defenseBonus,effects:[],standardAttackDepthV138:depth+1};await runAutomaticHooks119(attacker,'OnAttackDeclared',context(),declared);refresh();await chooseReaction119('OnAttackDeclared',context(),declared);refresh();validateWeapon();validateMagazine();
     const entered=await requestAttackRolls119({attacker,target,weapon,attackBonus:declared.attackBonus,defenseBonus:declared.defenseBonus,damageBonus,attackDisadvantage:(cover.concealment&&!ignoresConcealment122(attacker))||injuryDisadvantage129(attacker),defenseDisadvantage:injuryDisadvantage129(target)});if(!entered)throw new Error('StandardAttack: атака отменена');
@@ -2616,7 +2664,7 @@
       const hit={...rolls,hit:true,critical:result.critical};
       await runAutomaticHooks119(attacker,'OnHit',context({...hit,damage:effects.damage}),effects);refresh();await chooseReaction119('OnHit',context({...hit,damage:effects.damage}),effects);refresh();
       await runAutomaticHooks119(target,'BeforeDamage',context({...hit,damage:effects.damage}),effects);refresh();await chooseReaction119('BeforeDamage',context({...hit,damage:effects.damage}),effects);refresh();
-      const reduced=applyAbsorptionV138(effects,incomingDefense119(target,weapon.weaponCategory||'light',cover));absorbed=reduced.absorbed;applied=result.defenseCritical?Math.floor(reduced.applied/2):reduced.applied;hp=applyDamage195(target,applied,weapon.name);updatePlayerHp105(target);
+      const reduced=applyAbsorptionV138(effects,incomingDefense119(target,weapon.weaponCategory||'light',cover));absorbed=reduced.absorbed;applied=result.defenseCritical?Math.floor(reduced.applied/2):reduced.applied;hp=await applyHit199(target,applied,weapon.name,attacker);updatePlayerHp105(target);
       await runAutomaticHooks119(target,'OnTakeDamage',context({...hit,damage:applied}),effects);refresh();await chooseReaction119('OnTakeDamage',context({...hit,damage:applied}),effects);refresh();
     }
     if(command.consumeAction!==false)attacker.actionUsed=true;
@@ -2861,14 +2909,14 @@
       const temporaryModifiers=[...timedStatModifiers122(attacker),...list(ammo?.modifiers).map(mod=>({...mod,sourceId:ammo.id,sourceName:ammo.name||ammo.id,sourceKind:'ammo'}))];
       const attack = window.GRPGStatsV113?.weaponAttack?.(entity, weapon, { kind: attacker.npcId ? 'npc' : 'player', inCombat:true, temporaryModifiers });
       const operator=isDroneToken129(attacker)?operatorForDrone129(attacker):null;
-      const hitBonus = (operator?operatorIntelligence129(operator)+operatorDroneSkill129(operator):num(attack?.bonus??weapon.hitBonus,0))-injuryCheckPenalty129(attacker)+burstPenalty;
+      const hitBonus = (operator?operatorIntelligence129(operator)+operatorDroneSkill129(operator):num(attack?.bonus??weapon.hitBonus,0))-checkPenalty199(attacker)+burstPenalty;
       const damageBonus=num(attack?.damageBonus,0),damageExpression=String(attack?.damage||weapon.damage||'1d6');
-      let cover=initialCover,defense=incomingDefense119(target,weapon.weaponCategory||'light',cover);defense.defenseBonus-=injuryCheckPenalty129(target);const attackDisadvantage=(cover.concealment&&!ignoresConcealment122(attacker))||injuryDisadvantage129(attacker),defenseDisadvantage=injuryDisadvantage129(target);
+      let cover=initialCover,defense=incomingDefense119(target,weapon.weaponCategory||'light',cover);defense.defenseBonus-=checkPenalty199(target);const attackDisadvantage=(cover.concealment&&!ignoresConcealment122(attacker))||injuryDisadvantage129(attacker),defenseDisadvantage=injuryDisadvantage129(target);
       const declaredContext={attacker,target,caster:attacker,targets:[target],weapon,damageType:String(weapon.weaponCategory||'light'),sourceName:weapon.name||'Атака'},declaredState={damage:0,attackBonus:hitBonus,defenseBonus:defense.defenseBonus,effects:[]};
       await runAutomaticHooks119(attacker,'OnAttackDeclared',declaredContext,declaredState);await chooseReaction119('OnAttackDeclared',declaredContext,declaredState);
       ({attacker,target}=combatTransactionRefs120(transaction));weapon=weaponForToken105(attacker);if(!target||!weapon)throw new Error('Атака изменилась во время реакции на объявление');magazine=magazineState118(attacker,weapon);ammo=magazine.size>0?ammoForWeapon118(weapon,magazine):null;if(magazine.size>0&&magazine.loaded<shotCost)throw new Error('После объявления атаки оружие всё ещё не заряжено');
       if(String(weapon.id)!==String(selectedWeapon.id))throw Error('Выбранное оружие изменилось во время реакции');
-      cover=validateShot197(attacker,target,weapon,scene);const updatedDefense=incomingDefense119(target,weapon.weaponCategory||'light',cover);updatedDefense.defenseBonus-=injuryCheckPenalty129(target);declaredState.defenseBonus=num(declaredState.defenseBonus)-defense.defenseBonus+updatedDefense.defenseBonus;defense=updatedDefense;
+      cover=validateShot197(attacker,target,weapon,scene);const updatedDefense=incomingDefense119(target,weapon.weaponCategory||'light',cover);updatedDefense.defenseBonus-=checkPenalty199(target);declaredState.defenseBonus=num(declaredState.defenseBonus)-defense.defenseBonus+updatedDefense.defenseBonus;defense=updatedDefense;
       const entered=await requestAttackRolls119({attacker,target,weapon:{...weapon,damage:damageExpression},attackBonus:num(declaredState.attackBonus,hitBonus),defenseBonus:num(declaredState.defenseBonus,defense.defenseBonus),damageBonus,attackDisadvantage:(cover.concealment&&!ignoresConcealment122(attacker))||injuryDisadvantage129(attacker),defenseDisadvantage:injuryDisadvantage129(target),shotIndex,targetSwitches});if(!entered)return;
       ({attacker,target}=combatTransactionRefs120(transaction));weapon=weaponForToken105(attacker);
       if(!target)throw new Error('Цель больше не находится на сцене');
@@ -2884,7 +2932,7 @@
       ({attacker,target}=combatTransactionRefs120(transaction));
       // A confirmed reaction may move a target after payment. Keep that confirmed boundary, but never shoot through it.
       if(entered.attackRoll!==1)cover=validateShot197(attacker,target,weapon,scene);
-      const rollDefense=incomingDefense119(target,weapon.weaponCategory||'light',cover);rollDefense.defenseBonus-=injuryCheckPenalty129(target);beforeState.defenseBonus=num(beforeState.defenseBonus)-defense.defenseBonus+rollDefense.defenseBonus;defense=rollDefense;
+      const rollDefense=incomingDefense119(target,weapon.weaponCategory||'light',cover);rollDefense.defenseBonus-=checkPenalty199(target);beforeState.defenseBonus=num(beforeState.defenseBonus)-defense.defenseBonus+rollDefense.defenseBonus;defense=rollDefense;
       const result=rules.resolveManualAttack({attackRoll:entered.attackRoll,defenseRoll:entered.defenseRoll,attackBonus:num(beforeState.attackBonus,hitBonus),defenseBonus:num(beforeState.defenseBonus,defense.defenseBonus),damageRoll:entered.damageRoll,damageBonus,damageReduction:0});
       ({attacker,target}=combatTransactionRefs120(transaction));if(!target)throw new Error('Цель больше не находится на сцене');
       let hpChange={before:num(target.hpCurrent),after:num(target.hpCurrent),applied:0},finalDamage=result.damageApplied,absorptionV138={absorbed:0,applied:result.damageApplied};
@@ -2899,7 +2947,7 @@
         await runAutomaticHooks119(target,'BeforeDamage',{...hitContext,damage:effectState.damage},effectState);await chooseReaction119('BeforeDamage',{...hitContext,damage:effectState.damage},effectState);
         ({attacker,target}=combatTransactionRefs120(transaction));if(!target)throw new Error('Цель больше не находится на сцене');
         const finalDefense=incomingDefense119(target,weapon.weaponCategory||'light',cover);absorptionV138=applyAbsorptionV138(effectState,finalDefense);finalDamage=absorptionV138.applied;if(result.defenseCritical)finalDamage=Math.floor(finalDamage/2);
-        hpChange=applyDamage195(target,finalDamage,weapon.name);updatePlayerHp105(target);
+        hpChange=await applyHit199(target,finalDamage,weapon.name,attacker);updatePlayerHp105(target);
         const afterContext={...hitContext,attacker,target,caster:attacker,targets:[target],damage:finalDamage};
         await runAutomaticHooks119(target,'OnTakeDamage',afterContext,effectState);await chooseReaction119('OnTakeDamage',afterContext,effectState);
         ({target}=combatTransactionRefs120(transaction));hpChange.after=num(target?.hpCurrent,hpChange.after);hpChange.applied=Math.max(0,hpChange.before-hpChange.after);if(target){updatePlayerHp105(target);}
@@ -2953,7 +3001,8 @@
       const incomingCategory=String(grenade.weaponCategory||grenade.damageType||'heavy').toLowerCase();
       let beforeContext={attacker,caster:attacker,target:null,targets,weapon:grenade,damage:rolledTotal,damageType:incomingCategory,hit:true,sourceName:grenade.name};
       const preState={damage:rolledTotal,damagePartsV138:[{amount:rolledTotal,absorptionSource:'all'}],effects:declaredState.effects};await runAutomaticHooks119(attacker,'BeforeAttackStart',beforeContext,preState);await chooseReaction119('BeforeAttackStart',{...beforeContext,damage:preState.damage},preState);allEffects.effects=preState.effects;
-      for(const targetId of transaction.targetIds){
+      local.instinctDefer199=Math.max(0,num(local.instinctDefer199))+1;
+      try{for(const targetId of transaction.targetIds){
         refs=combatTransactionRefs120(transaction);attacker=refs.attacker;const target=list(refs.runtime.tokens).find(row=>String(row.id)===String(targetId));if(!target)continue;
         const cover=coverBetween120(refs.scene,impact,centerOf(target)),defense=incomingDefense119(target,incomingCategory,cover);
         const state={damage:preState.damage,damagePartsV138:clone(preState.damagePartsV138),absorptionRulesV138:clone(preState.absorptionRulesV138||{}),effects:allEffects.effects};let context={...beforeContext,attacker,caster:attacker,target,targets:[target],damage:state.damage};
@@ -2961,15 +3010,17 @@
         refs=combatTransactionRefs120(transaction);const currentTarget=list(refs.runtime.tokens).find(row=>String(row.id)===String(targetId));if(!currentTarget)continue;attacker=refs.attacker;context={...context,attacker,caster:attacker,target:currentTarget,targets:[currentTarget]};
         await runAutomaticHooks119(currentTarget,'BeforeDamage',{...context,damage:state.damage},state);await chooseReaction119('BeforeDamage',{...context,damage:state.damage},state);
         refs=combatTransactionRefs120(transaction);const damageTarget=list(refs.runtime.tokens).find(row=>String(row.id)===String(targetId));if(!damageTarget)continue;
-        const reduced=applyAbsorptionV138(state,incomingDefense119(damageTarget,incomingCategory,cover)),finalDamage=reduced.applied,hp=applyDamage195(damageTarget,finalDamage,grenade.name);updatePlayerHp105(damageTarget);
+        const reduced=applyAbsorptionV138(state,incomingDefense119(damageTarget,incomingCategory,cover)),finalDamage=reduced.applied,hp=await applyHit199(damageTarget,finalDamage,grenade.name,refs.attacker,{defer:true,origin:impact});updatePlayerHp105(damageTarget);
         context={...context,attacker:refs.attacker,caster:refs.attacker,target:damageTarget,targets:[damageTarget],damage:finalDamage};
         await runAutomaticHooks119(damageTarget,'OnTakeDamage',context,state);await chooseReaction119('OnTakeDamage',context,state);
         refs=combatTransactionRefs120(transaction);const finalTarget=list(refs.runtime.tokens).find(row=>String(row.id)===String(targetId));const after=num(finalTarget?.hpCurrent,hp.after),applied=Math.max(0,hp.before-after);if(finalTarget){updatePlayerHp105(finalTarget);}
         affected.push({name:finalTarget?.name||damageTarget.name,damage:applied,absorbed:reduced.absorbed,before:hp.before,after,cover:cover.label});allEffects.effects=state.effects;
       }
+      }finally{local.instinctDefer199=Math.max(0,num(local.instinctDefer199)-1);}
       refs=combatTransactionRefs120(transaction);attacker=refs.attacker;attacker.actionUsed=true;
       const affectedText=affected.length?affected.map(row=>`${row.name}: −${row.damage} HP (${row.before} → ${row.after}${row.absorbed?`, защита ${row.absorbed}`:''}${row.cover?`, укрытие ${row.cover}`:''})`).join('; '):'нет целей';
       appendCombatLog105(refs.runtime,`${attacker.name} бросает «${grenade.name}»: введённый урон ${entered.damageRoll}${num(grenade.damageBonus)?` + ${num(grenade.damageBonus)} = ${rolledTotal}`:''}, радиус ${hexLabel109(radiusHexes)}. ${affectedText}.`);
+      if(pendingInstinct199().length){await sealOperation194('Взрыв рассчитан для всех целей; ожидается Инстинкт');for(const {owner,packet} of pendingInstinct199())await resolveInstinct199(owner,packet);}
       local.preview={...preview,effect:'grenade',label:`${grenade.name}: базовый урон ${rolledTotal} · целей ${affected.length}`};
       Combat.syncInitiative(scene.id,false);Combat.render();flushLuaEffects119(allEffects);await checkpointCombat120('Сцена: граната и урон',true);
       setTimeout(()=>{if(local.preview?.effect==='grenade'){local.preview=null;refreshPreviewDom104();}},1300);
@@ -3258,6 +3309,7 @@
     local.editorObserver191.observe(node,{attributes:true,attributeFilter:['style']});
   }
   const actionEntries194=[
+    [()=>resumeInstinct199,fn=>resumeInstinct199=fn,'Инстинкт самосохранения'],[()=>clearMorale199,fn=>clearMorale199=fn,'Снятие Потрясения/Паники'],
     [()=>dash198,fn=>dash198=fn,'Рывок'],
     [()=>treatInjury195,fn=>treatInjury195=fn,'Лечение травмы'],
     [()=>commitAttack105,fn=>commitAttack105=fn,'Атака'],[()=>commitGrenade105,fn=>commitGrenade105=fn,'Граната'],[()=>commitMove104,fn=>commitMove104=fn,'Перемещение'],
@@ -3326,6 +3378,8 @@
     if(t.dataset.sceneSkillV118){event.preventDefault();void runCommand191(()=>useActiveSkill118(t.dataset.sceneSkillV118));return;}
     if(t.dataset.sceneEquipmentUseV129){event.preventDefault();void runCommand191(()=>useActiveEquipment129(t.dataset.sceneEquipmentUseV129));return;}
     if(t.dataset.sceneDeployV129){event.preventDefault();void runCommand191(()=>beginDeployDevice129(t.dataset.sceneDeployV129));return;}
+    if(t.hasAttribute('data-instinct-resume199')){event.preventDefault();void runCommand191(()=>resumeInstinct199());return;}
+    if(t.hasAttribute('data-morale-clear199')){event.preventDefault();void runCommand191(()=>clearMorale199());return;}
     if(t.hasAttribute('data-scene-dash198')){event.preventDefault();void runCommand191(()=>dash198());return;}
     if(t.hasAttribute('data-scene-command-drone-v129')){event.preventDefault();void runCommand191(()=>commandDrone129());return;}
     if(t.hasAttribute('data-scene-treat-injury195')||t.hasAttribute('data-scene-clear-injuries-v129')){event.preventDefault();void runCommand191(()=>treatInjury195());return;}

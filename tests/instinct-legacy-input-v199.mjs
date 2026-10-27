@@ -1,0 +1,2 @@
+// Legacy scenarios exercise other rules: explicitly enter a physical 20 in the new, separately tested form.
+export async function installLegacyInstinctInput199(page){await page.addInitScript(()=>{const observer=new MutationObserver(()=>{for(const input of document.querySelectorAll('input[name="instinctRoll199"]')){if(input.dataset.legacyRoll199)continue;input.dataset.legacyRoll199='yes';input.value='20';input.closest('form').requestSubmit();}});observer.observe(document,{childList:true,subtree:true});});}
