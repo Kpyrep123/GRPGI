@@ -49,7 +49,6 @@
   function publicUnitNameField128(entity={}){return `<label class="consent-line public-unit-name-v128"><input type="checkbox" name="showNameToPlayersV128" ${entity.showNameToPlayers!==false?'checked':''}/><span><b>Показывать имя юнита игрокам</b><small>Если выключено, на втором экране остаётся только изображение или нейтральный маркер. Имя также скрывается из инициативы.</small></span></label>`;}
   function activeEquipmentFields129(item={}){return `<section class="active-equipment-v129"><div class="section-title">Активное использование</div><label class="consent-line"><input type="checkbox" name="activeUseV129" ${item.activeUse?'checked':''}/><span><b>Добавить действие в боевую сцену</b><small>При нажатии выполняются OnAbilityPhaseStart и OnAbilityExecuted из Lua-кода предмета.</small></span></label><div class="field"><label>Название действия</label><input class="input" name="activeUseLabelV129" value="${safe(item.activeUseLabel||'')}" placeholder="Использовать предмет"/></div></section>`;}
   function unitRapidFireField129(item={}){return `<div class="field unit-rapid-fire-v129"><label>Скорострельность (выстрелов за действие)</label><input class="input" type="number" min="1" step="1" name="rapidFireShotsV129" value="${Math.max(1,Math.trunc(Number(item.rapidFireShots||1)))}"/><div class="small-note">Каждый выстрел выбирает свою цель и получает штраф 0, −1, −2…</div></div>`;}
-  function freeDroneControlField129(item={}){return `<label class="consent-line free-drone-control-v129"><input type="checkbox" name="freeDroneControlV129" ${item.freeDroneControl?'checked':''}/><span><b>Управление дроном не тратит действие</b><small>Одна команда дрону за ход оператора становится бесплатной.</small></span></label>`;}
   const renderEquipmentBefore120=Configurator.renderEquipmentEditor.bind(Configurator);
   Configurator.renderEquipmentEditor=function(raw){
     const item=normalizeEquipmentItemV2(raw||{}),markup=renderEquipmentBefore120(item);
@@ -72,7 +71,7 @@
         if(block&&!block.querySelector('[name="showNameToPlayersV128"]'))block.insertAdjacentHTML('beforeend',publicUnitNameField128(item));
       }
       const ammoCost=form?.querySelector('[name="ammoPerShot"]')?.closest('.field')?.querySelector('label');if(ammoCost)ammoCost.textContent='Расход боеприпасов за один выстрел';
-      const implant=form?.querySelector('[data-for-item="implant"]');if(implant&&!implant.querySelector('[name="freeDroneControlV129"]'))implant.insertAdjacentHTML('beforeend',freeDroneControlField129(item));
+      const implant=form?.querySelector('[data-for-item="implant"]');if(implant)implant.insertAdjacentHTML('beforeend','<p class="small-note">Прежний флаг бесплатного управления отключён. Lua-исключения команд будут подключены отдельно.</p>');
       const lua=form?.querySelector('[data-lua-editor-v119]');if(lua&&!form.querySelector('[name="activeUseV129"]'))lua.insertAdjacentHTML('beforebegin',activeEquipmentFields129(item));
       return template.innerHTML;
     }catch(error){console.error('FEATURE_PACK_V120_AMMO_EDITOR',error);return markup;}
@@ -186,7 +185,7 @@
       entity.stackLimit=entity.stackable?Math.max(2,Math.trunc(Number(fd.get('stackLimitV113')||99))):1;
       entity.activeUse=fd.get('activeUseV129')==='on';
       entity.activeUseLabel=text(fd.get('activeUseLabelV129')).slice(0,120);
-      entity.freeDroneControl=itemType==='implant'&&fd.get('freeDroneControlV129')==='on';
+      // Legacy freeDroneControl is retained as data only; device control does not use it.
       if(['turret','drone'].includes(itemType)){
         entity.damage=text(fd.get('damage'));
         entity.range=Math.max(0,Number(fd.get('range')||0));
