@@ -1,0 +1,5 @@
+const assert=require('node:assert/strict'),D=require('../renderer/damage-types-v202.js');
+assert.deepEqual(Object.keys(D.labels),['explosive','kinetic','energy','electric','gas']);
+for(const type of Object.keys(D.labels)){assert.equal(D.effective({damageType:type,weaponCategory:'energy',type:'grenade'}),type);assert.equal(D.normalize(D.label(type)),type);}
+assert.equal(D.effective({type:'grenade'}),'explosive');assert.equal(D.effective({type:'weapon',weaponCategory:'energy'}),'energy');assert.equal(D.effective({type:'weapon',weaponCategory:'heavy'}),'kinetic');assert.equal(D.effective({type:'weapon',damageType:'kinetic',weaponCategory:'energy'}),'kinetic');assert.equal(D.effective({damageType:'energy'},{damageType:'gas'}),'gas');assert.equal(D.effective({damageType:'electric'},{damageType:''}),'electric');assert.equal(D.normalize(' electrical '),'electric');for(const input of ['constructor','__proto__','unknown',''])assert.equal(D.normalize(input),'');
+console.log('PASS canonical types, Russian labels, independent handling categories, legacy defaults, ammunition overrides and invalid keys');

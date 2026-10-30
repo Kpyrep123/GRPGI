@@ -29,6 +29,7 @@
     if(['weapon','turret','drone'].includes(String(next.type||'').toLowerCase()))next.rapidFireShots=Math.max(1,Math.trunc(Number(source.rapidFireShots??source.burstShots??next.rapidFireShots??1)||1));
     next.activeUse=source.activeUse===true||String(source.activeUse||'').toLowerCase()==='true';
     next.activeUseLabel=text(source.activeUseLabel||next.activeUseLabel).slice(0,120);
+    next.damageType=window.GRPGDamageTypesV202.normalize(source.damageType);
     next.freeDroneControl=String(next.type||'').toLowerCase()==='implant'&&(source.freeDroneControl===true||String(source.freeDroneControl||'').toLowerCase()==='true');
     if(['turret','drone'].includes(String(next.type||'').toLowerCase())){
       next.damage=text(source.damage??next.damage);
@@ -72,6 +73,8 @@
       }
       const ammoCost=form?.querySelector('[name="ammoPerShot"]')?.closest('.field')?.querySelector('label');if(ammoCost)ammoCost.textContent='Расход боеприпасов за один выстрел';
       const implant=form?.querySelector('[data-for-item="implant"]');if(implant)implant.insertAdjacentHTML('beforeend','<p class="small-note">Прежний флаг бесплатного управления отключён. Lua-исключения команд будут подключены отдельно.</p>');
+      const damageAnchor202=form?.querySelector('[data-v113-for-item="weapon"]')||form?.querySelector('[data-lua-editor-v119]')||form?.querySelector('button[type="submit"]');
+      if(form&&!form.querySelector('[name="damageTypeV202"]'))(damageAnchor202||form).insertAdjacentHTML(damageAnchor202?'beforebegin':'beforeend',`<div class="field"><label>Тип урона</label><select class="select" name="damageTypeV202"><option value="">По умолчанию / тип оружия для патронов</option>${Object.entries(window.GRPGDamageTypesV202.labels).map(([id,label])=>`<option value="${id}" ${item.damageType===id?'selected':''}>${safe(label)}</option>`).join('')}</select><small>Категория попадания задаётся отдельно. Тип патронов переопределяет тип урона оружия.</small></div>`);
       const lua=form?.querySelector('[data-lua-editor-v119]');if(lua&&!form.querySelector('[name="activeUseV129"]'))lua.insertAdjacentHTML('beforebegin',activeEquipmentFields129(item));
       return template.innerHTML;
     }catch(error){console.error('FEATURE_PACK_V120_AMMO_EDITOR',error);return markup;}
@@ -185,6 +188,7 @@
       entity.stackLimit=entity.stackable?Math.max(2,Math.trunc(Number(fd.get('stackLimitV113')||99))):1;
       entity.activeUse=fd.get('activeUseV129')==='on';
       entity.activeUseLabel=text(fd.get('activeUseLabelV129')).slice(0,120);
+      entity.damageType=window.GRPGDamageTypesV202.normalize(fd.get('damageTypeV202'));
       // Legacy freeDroneControl is retained as data only; device control does not use it.
       if(['turret','drone'].includes(itemType)){
         entity.damage=text(fd.get('damage'));
