@@ -53,7 +53,8 @@
       if(w&&h)add('Размер',`${number(item[w])}×${number(item[h])}`);
       field('Масса',['mass','weight']);
     }
-    if(['weapon','grenade','turret','drone'].includes(type))field('Урон',['damage'],String);
+    if(['weapon','grenade','turret','drone'].includes(type)){field('Урон',['damage'],String);const types=globalThis.GRPGDamageTypesV202;if(types)add('Тип урона',types.label(types.effective(item)));}
+    if(type==='ammo'&&globalThis.GRPGDamageTypesV202?.normalize(item.damageType))add('Тип урона',globalThis.GRPGDamageTypesV202.label(item.damageType));
     if(['weapon','turret','drone'].includes(type)){
       field(hasMod('attack_bonus')?'Базовое попадание':'Попадание',['hitBonus','attackBonus'],signed);
       field('Дальность',['range','attackRange'],value=>`${number(value)} гекс.`);
