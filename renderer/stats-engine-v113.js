@@ -7,8 +7,8 @@
   const VERSION = '1.0.122';
   const PRIMARY = ['strength','dexterity','endurance','intelligence','will','glory'];
   const PRIMARY_LABELS = { strength:'Сила', dexterity:'Ловкость', endurance:'Выносливость', intelligence:'Интеллект', will:'Воля', glory:'Слава' };
-  const WEAPON_STATS = { light:'dexterity', heavy:'endurance', energy:'intelligence', melee:'dexterity' };
-  const WEAPON_LABELS = { light:'Лёгкое', heavy:'Тяжёлое', energy:'Энергетическое', melee:'Ближний бой' };
+  const WEAPON_STATS = window.GRPGWeaponHandlingV203.stats;
+  const WEAPON_LABELS = window.GRPGWeaponHandlingV203.labels;
   const TARGETS = [
     ['strength','Сила'],['dexterity','Ловкость'],['endurance','Выносливость'],['intelligence','Интеллект'],['will','Воля'],['glory','Слава'],
     ['max_hp','Максимальное HP'],['armor_class','Класс брони'],['defense','Защита (снижение урона)'],['initiative_bonus','Бонус инициативы'],
@@ -74,13 +74,13 @@
     if(kind==='has_skill') return arr(entity.skills).map(String).includes(String(mod.conditionValue||''));
     if(kind==='item_equipped'){const id=String(mod.conditionValue||'');return Object.values(entity.equipmentSlots||{}).map(String).includes(id)||arr(entity.implantSlots).map(String).includes(id);}
     if(kind==='hp_below_percent'){const max=Math.max(1,n(stats.hpMax,1));return n(stats.hpCurrent,max)/max*100 < n(mod.conditionValue,50);}
-    if(kind==='incoming_weapon_category') return String(context.incomingWeaponCategory||'')===String(mod.conditionValue||'');
+    if(kind==='incoming_weapon_category') return mod.conditionValue==='energy'?(context.incomingDamageType||context.incomingWeaponCategory)==='energy':String(context.incomingWeaponCategory||'')===String(mod.conditionValue||'');
     return true;
   }
   function scopeMatches(mod, context={}) {
     if (!mod.enabled || !conditionMatches(mod,context)) return false;
     if (mod.scope === 'weapon_id') return String(context.weaponId || '') === String(mod.scopeValue || '');
-    if (mod.scope === 'weapon_category') return String(context.weaponCategory || '') === String(mod.scopeValue || '');
+    if (mod.scope === 'weapon_category') return mod.scopeValue==='energy'?(context.damageType||context.weaponCategory)==='energy':String(context.weaponCategory || '') === String(mod.scopeValue || '');
     return true;
   }
 
@@ -117,9 +117,11 @@
       next.inventoryWidth = Math.max(1, i(raw.inventoryWidth ?? next.inventoryWidth, 1));
       next.inventoryHeight = Math.max(1, i(raw.inventoryHeight ?? next.inventoryHeight, 1));
     }
-    if (next.type === 'weapon') {
+    if (['weapon','drone','turret'].includes(next.type)) {
       const wc = String(raw.weaponCategory || next.weaponCategory || '').trim().toLowerCase();
-      next.weaponCategory = Object.prototype.hasOwnProperty.call(WEAPON_STATS, wc) ? wc : 'light';
+      // Preserve damage classification when retiring the legacy energy handling category.
+      if(wc==='energy'&&!window.GRPGDamageTypesV202.normalize(raw.damageType))next.damageType='energy';
+      next.weaponCategory = window.GRPGWeaponHandlingV203.category({...next,weaponCategory:wc});
       next.hitBonus = n(raw.hitBonus ?? next.hitBonus, 0); // legacy / model-specific static modifier
       next.rapidFireShots = Math.max(1,i(raw.rapidFireShots??raw.burstShots??next.rapidFireShots,1));
       next.weaponSkillId=String(raw.weaponSkillId??next.weaponSkillId??'');
@@ -293,8 +295,8 @@
   function weaponAttack(entity={}, weaponOrId, options={}) {
     const weapon = typeof weaponOrId === 'string' ? equipment(weaponOrId) : normalizeEquipmentItemV2(weaponOrId || {});
     if (!weapon?.id && !weapon?.name) return null;
-    const stats=compute(entity,options), mods=stats.modifiers, context={weaponId:weapon.id,weaponCategory:weapon.weaponCategory||'light'};
-    let stat = WEAPON_STATS[weapon.weaponCategory] || 'dexterity';
+    const stats=compute(entity,options), mods=stats.modifiers, context={weaponId:weapon.id,weaponCategory:window.GRPGWeaponHandlingV203.category(weapon),damageType:options.damageType||window.GRPGDamageTypesV202.effective(weapon)};
+    let stat = window.GRPGWeaponHandlingV203.stat(weapon);
     const replaces=mods.filter(m=>m.target==='weapon_hit_stat'&&m.op==='replace_stat'&&m.statRef&&scopeMatches(m,{...context,entity,...options})).sort((a,b)=>(modifierSpecificity(a)-modifierSpecificity(b))||(a.priority-b.priority));
     if(replaces.length) stat=replaces[replaces.length-1].statRef;
     const detail=[{source:PRIMARY_LABELS[stat]||stat,value:n(stats.abilities[stat]),op:'base'}];
@@ -433,7 +435,7 @@
     html=html.replace(/(<select class="select" name="type">)/,`$1<option value="backpack" ${item.type==='backpack'?'selected':''}>Рюкзаки</option>`);
     const invFields=`<div class="section-title">Инвентарь и свойства</div><div class="cols3"><label class="consent-line"><input type="checkbox" name="stackableV113" ${item.stackable?'checked':''}/><span><b>Можно складывать в стопку</b><small>Одна стопка занимает размер одного предмета, вес считается за всё количество.</small></span></label><div class="field"><label>Максимум в стопке</label><input class="input" type="number" min="2" step="1" name="stackLimitV113" value="${item.stackLimit||99}"/></div><label class="consent-line"><input type="checkbox" name="textOnlyInventoryV113" ${item.textOnlyInventory?'checked':''}/><span><b>Без веса и размера</b><small>Письма, документы и прочие текстовые предметы выводятся отдельным списком.</small></span></label></div>`;
     const weaponSkills=Object.values(Data?.skills||worldData?.skills?.SKILLS||{}).filter(Boolean).sort((a,b)=>String(a.name||a.id).localeCompare(String(b.name||b.id),'ru'));
-    const weaponFields=`<div class="item-specific-v113 ${item.type==='weapon'?'':'hidden'}" data-v113-for-item="weapon"><div class="cols3"><div class="field"><label>Категория попадания</label><select class="select" name="weaponCategoryV113">${Object.entries(WEAPON_LABELS).map(([v,l])=>`<option value="${v}" ${item.weaponCategory===v?'selected':''}>${safe(l)} · ${safe(PRIMARY_LABELS[WEAPON_STATS[v]])}</option>`).join('')}</select></div><div class="field"><label>Оружейный навык</label><select class="select" name="weaponSkillIdV122"><option value="">— не требуется —</option>${weaponSkills.map(skill=>`<option value="${safe(skill.id)}" ${String(skill.id)===item.weaponSkillId?'selected':''}>${safe(skill.name||skill.id)}</option>`).join('')}</select></div><div class="field"><label>Бонус изученного навыка</label><input class="input" type="number" step="1" name="weaponSkillBonusV122" value="${n(item.weaponSkillBonus,0)}"/></div></div><div class="cols3"><div class="field"><label>Скорострельность (выстрелов за действие)</label><input class="input" type="number" min="1" step="1" name="rapidFireShotsV122" value="${item.rapidFireShots||1}"/><div class="small-note">Каждый следующий выстрел получает накопительный штраф −1.</div></div><div class="field"><label>Бонус физического щита</label><input class="input" type="number" min="0" step="1" name="shieldCoverBonusV122" value="${n(item.shieldCoverBonus,0)}"/></div><div class="field"><label>Предел Ловкости от щита</label><input class="input" type="number" min="0" step="1" name="shieldDexterityCapV122" value="${item.shieldDexterityCap??''}" placeholder="без ограничения"/></div></div><div class="small-note">Щит определяется по этому бонусу или тегу «щит». Его бонус не складывается с укрытием.</div></div>`;
+    const weaponFields=`<div class="item-specific-v113 ${item.type==='weapon'?'':'hidden'}" data-v113-for-item="weapon"><div class="cols3"><div class="field"><label>Тип оружия / характеристика попадания</label><select class="select" name="weaponCategoryV113">${Object.entries(WEAPON_LABELS).map(([v,l])=>`<option value="${v}" ${item.weaponCategory===v?'selected':''}>${safe(l)} · ${safe(PRIMARY_LABELS[WEAPON_STATS[v]])}</option>`).join('')}</select></div><div class="field"><label>Оружейный навык</label><select class="select" name="weaponSkillIdV122"><option value="">— не требуется —</option>${weaponSkills.map(skill=>`<option value="${safe(skill.id)}" ${String(skill.id)===item.weaponSkillId?'selected':''}>${safe(skill.name||skill.id)}</option>`).join('')}</select></div><div class="field"><label>Бонус изученного навыка</label><input class="input" type="number" step="1" name="weaponSkillBonusV122" value="${n(item.weaponSkillBonus,0)}"/></div></div><div class="cols3"><div class="field"><label>Скорострельность (выстрелов за действие)</label><input class="input" type="number" min="1" step="1" name="rapidFireShotsV122" value="${item.rapidFireShots||1}"/><div class="small-note">Каждый следующий выстрел получает накопительный штраф −1.</div></div><div class="field"><label>Бонус физического щита</label><input class="input" type="number" min="0" step="1" name="shieldCoverBonusV122" value="${n(item.shieldCoverBonus,0)}"/></div><div class="field"><label>Предел Ловкости от щита</label><input class="input" type="number" min="0" step="1" name="shieldDexterityCapV122" value="${item.shieldDexterityCap??''}" placeholder="без ограничения"/></div></div><div class="small-note">Щит определяется по этому бонусу или тегу «щит». Его бонус не складывается с укрытием.</div></div>`;
     const armorFields=`<div class="item-specific-v113 ${item.type==='armor'?'':'hidden'}" data-v113-for-item="armor"><div class="field"><label>Весовая категория брони</label><select class="select" name="armorWeightClassV122"><option value="light" ${item.armorWeightClass!=='heavy'?'selected':''}>Лёгкая / обычная — Ловкость добавляется</option><option value="heavy" ${item.armorWeightClass==='heavy'?'selected':''}>Тяжёлая — Ловкость не добавляется к защите</option></select></div><label class="consent-line equipment-defense-option-v196"><input type="checkbox" name="armorAllowsDexterityV196" ${item.armorAllowsDexterity?'checked':''}/><span><b>Разрешает Ловкость в тяжёлой броне</b><small>Явное исключение карточки брони для активной защиты.</small></span></label></div>`;
     const backpackFields=`<div class="item-specific-v113 ${item.type==='backpack'?'':'hidden'}" data-v113-for-item="backpack"><div class="small-note">Вместимость и переносимый вес рюкзака задаются универсальными модификаторами ниже, например «Ячейки инвентаря +10».</div></div>`;
     html=html.replace(/<div class="field"><label>Класс брони<\/label><input[^>]*name="armorClass"[^>]*><\/div>/,`<div class="small-note">Класс брони теперь задаётся модификатором «Класс брони». Старые абсолютные значения автоматически мигрируют в бонус относительно прежней базы 10.</div>`);
