@@ -29,7 +29,7 @@
     if(['weapon','turret','drone'].includes(String(next.type||'').toLowerCase()))next.rapidFireShots=Math.max(1,Math.trunc(Number(source.rapidFireShots??source.burstShots??next.rapidFireShots??1)||1));
     next.activeUse=source.activeUse===true||String(source.activeUse||'').toLowerCase()==='true';
     next.activeUseLabel=text(source.activeUseLabel||next.activeUseLabel).slice(0,120);
-    next.damageType=window.GRPGDamageTypesV202.normalize(source.damageType);
+    next.damageType=window.GRPGDamageTypesV202.normalize(source.damageType)||window.GRPGDamageTypesV202.normalize(next.damageType);
     next.freeDroneControl=String(next.type||'').toLowerCase()==='implant'&&(source.freeDroneControl===true||String(source.freeDroneControl||'').toLowerCase()==='true');
     if(['turret','drone'].includes(String(next.type||'').toLowerCase())){
       next.damage=text(source.damage??next.damage);

@@ -5574,12 +5574,13 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
   /* v1.0.122 — desktop-parity inventory, equipment, implants and readable modifiers */
   const WEB118_TARGETS={strength:'Сила',dexterity:'Ловкость',endurance:'Выносливость',intelligence:'Интеллект',will:'Воля',glory:'Слава',max_hp:'Максимальное HP',armor_class:'Класс брони',defense:'Защита',initiative_bonus:'Инициатива',movement:'Движение',vision:'Обзор',inventory_slots:'Ячейки инвентаря',carry_capacity:'Переносимый вес',implant_slots:'Слоты имплантов',social_bonus:'Социальный бонус',attack_bonus:'Попадание',damage_bonus:'Урон',weapon_hit_stat:'Характеристика попадания',weapon_hit_extra_stat:'Дополнительная характеристика попадания'};
   const WEB118_STATS={strength:'Сила',dexterity:'Ловкость',endurance:'Выносливость',intelligence:'Интеллект',will:'Воля',glory:'Слава'};
-  const WEB118_WEAPON_STATS={light:'dexterity',heavy:'endurance',energy:'intelligence',melee:'dexterity'};
+  const WEB118_WEAPON_STATS=window.GRPGWeaponHandlingV203.stats;
   function signedWeb118(value){const n=Number(value||0);return`${n>=0?'+':''}${Number.isInteger(n)?n:n.toFixed(1)}`;}
   function normalizeItemWeb118(raw={}){
     const item=deep(raw||{}),type=String(item.type||'gear').trim().toLowerCase();
     if(['ammunition','патроны','боеприпасы'].includes(type))item.type='ammo';
     else if(['backpack','рюкзак','рюкзаки'].includes(type))item.type='backpack';
+    if(['weapon','drone','turret'].includes(item.type)){if(String(item.weaponCategory||'').trim().toLowerCase()==='energy'&&!window.GRPGDamageTypesV202.normalize(item.damageType))item.damageType='energy';item.weaponCategory=window.GRPGWeaponHandlingV203.category(item);}
     item.ammoTypeId=String(item.ammoTypeId||item.ammunitionId||'');
     item.magazineSize=Math.max(0,Math.trunc(Number(item.magazineSize??item.clipSize??0)||0));
     item.ammoPerShot=Math.max(1,Math.trunc(Number(item.ammoPerShot??item.roundsPerShot??1)||1));
@@ -5605,10 +5606,10 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
     if(condition==='has_skill')return(player.skills||[]).map(String).includes(String(mod.conditionValue||''));
     if(condition==='item_equipped'){const id=String(mod.conditionValue||'');return Object.values(player.equipmentSlots||{}).map(String).includes(id)||(player.implantSlots||[]).map(String).includes(id);}
     if(condition==='hp_below_percent'){const max=Math.max(1,Number(player.stats?.hpMax||1));return Number(player.stats?.hpCurrent??max)/max*100<Number(mod.conditionValue||50);}
-    if(condition==='incoming_weapon_category')return String(context.incomingWeaponCategory||'')===String(mod.conditionValue||'');
+    if(condition==='incoming_weapon_category')return mod.conditionValue==='energy'?(context.incomingDamageType||context.incomingWeaponCategory)==='energy':String(context.incomingWeaponCategory||'')===String(mod.conditionValue||'');
     return true;
   }
-  function modifierScopeWeb118(mod,context={}){if(String(mod?.scope||'global')==='weapon_id')return String(context.weaponId||'')===String(mod.scopeValue||'');if(String(mod?.scope||'global')==='weapon_category')return String(context.weaponCategory||'')===String(mod.scopeValue||'');return true;}
+  function modifierScopeWeb118(mod,context={}){if(String(mod?.scope||'global')==='weapon_id')return String(context.weaponId||'')===String(mod.scopeValue||'');if(String(mod?.scope||'global')==='weapon_category')return mod.scopeValue==='energy'?(context.damageType||context.weaponCategory)==='energy':String(context.weaponCategory||'')===String(mod.scopeValue||'');return true;}
   function modifierSourcesWeb118(player={}){
     const rows=[],push=(source,kind)=>{if(!source)return;(source.modifiers||[]).forEach(mod=>rows.push({...mod,sourceName:source.name||source.displayName||source.id||kind,sourceKind:kind}));if(['profession','origin'].includes(kind)&&source.abilityBonuses)Object.entries(source.abilityBonuses).forEach(([target,value])=>{if(Number(value||0))rows.push({target,op:'add',value:Number(value),scope:'global',condition:'always',enabled:true,sourceName:source.name||source.id||kind,sourceKind:kind});});if(kind==='equipment'&&normalizedItemTypeV1052(source)==='armor'){if(!(source.modifiers||[]).some(mod=>mod.target==='armor_class')&&Number(source.armorClass||0)){const legacy=Number(source.armorClass),bonus=legacy>=5?legacy-10:legacy;if(bonus)rows.push({target:'armor_class',op:'add',value:bonus,scope:'global',condition:'always',enabled:true,sourceName:source.name||source.id||kind,sourceKind:kind});}if(!(source.modifiers||[]).some(mod=>mod.target==='defense')&&Number(source.damageReduction??source.defense??0)>0)rows.push({target:'defense',op:'add',value:Number(source.damageReduction??source.defense),scope:'global',condition:'always',enabled:true,sourceName:source.name||source.id||kind,sourceKind:kind});}};
     push(player,'character');push(App.data.socialOrigins?.get?.(String(player.socialOriginId||'')),'profession');push(App.data.geographicOrigins?.get?.(String(player.geographicOriginId||'')),'origin');
@@ -5678,7 +5679,8 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
     return[target,effect,scopes[mod.scope]?`${scopes[mod.scope]}${mod.scopeValue?` «${mod.scopeValue}»`:''}`:'',conditions[mod.condition]?`${conditions[mod.condition]}${mod.conditionValue?` «${mod.conditionValue}»`:''}`:''].filter(Boolean).join(' · ');
   }
   function weaponAttackWeb118(player,item){
-    const derived=derivedPlayerWeb118(player),category=String(item.weaponCategory||'light'),context={weaponId:item.id,weaponCategory:category,abilities:derived.abilities};let stat=WEB118_WEAPON_STATS[category]||'dexterity';
+    item=normalizeItemWeb118(item);
+    const derived=derivedPlayerWeb118(player),category=window.GRPGWeaponHandlingV203.category(item),context={weaponId:item.id,weaponCategory:category,damageType:window.GRPGDamageTypesV202.effective(item),abilities:derived.abilities};let stat=WEB118_WEAPON_STATS[category];
     const replaces=derived.mods.filter(mod=>mod.target==='weapon_hit_stat'&&mod.op==='replace_stat'&&mod.statRef&&modifierScopeWeb118(mod,context));if(replaces.length)stat=replaces[replaces.length-1].statRef;
     let bonus=Number(derived.abilities[stat]||0)+Number(item.hitBonus||0),damageBonus=0;
     if(item.weaponSkillId&&(player.skills||[]).map(String).includes(String(item.weaponSkillId)))bonus+=Number(item.weaponSkillBonus||0);
