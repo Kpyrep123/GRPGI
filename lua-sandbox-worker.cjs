@@ -2,6 +2,7 @@ const { parentPort } = require('worker_threads');
 const { LuaFactory } = require('wasmoon');
 
 const SUPPORTED_HOOKS = Object.freeze([
+  'OnActionDeclared','OnActionFinished','BeforeAttackRoll','AfterAttackRoll','OnAttackResolved','OnMiss','OnDamageApplied','OnHealApplied','OnMoveStart','OnMoveStep','OnMoveEnd','OnPositionChanged','OnUnitEnter','OnUnitLeave','OnConditionChanged','OnModifierChanged','OnRoundStart','OnRoundEnd','OnBattleStart','OnSceneStart','GetCostMode','GetEventScope',
   'OnAttackDeclared',
   'BeforeAttackStart',
   'OnHit',
@@ -254,7 +255,7 @@ function Unit:HasCharges(slot, minimum) return self:GetCharges(slot) >= math.max
 function Unit:HasModifier(id) return __contains(self.__data.modifiers, id) end
 function Unit:Heal(amount, source) return Heal(source or self, self, amount) end
 function Unit:HealInjury(amount) return HealInjury(self, amount) end
-function Unit:InflictDamage(target, amount) return InflictDamage(self, target, amount) end
+function Unit:InflictDamage(target, amount, spec) return InflictDamage(self, target, amount, spec) end
 
 local Source = {}
 Source.__index = Source
@@ -293,6 +294,7 @@ end
 function InflictDamage(caster, target, damage, spec)
   if __unit(target) == nil then error('InflictDamage: цель не найдена') end
   local row = __damageSpec(spec, 'none')
+  if type(spec) == 'table' and spec.damageType ~= nil then local t=string.lower(tostring(spec.damageType)); if not ({kinetic=true,energy=true,electric=true,explosive=true,gas=true})[t] then error('InflictDamage: неизвестный тип урона') end; row.damageType=t end
   row.kind = 'damage'; row.casterId = __id(caster); row.targetId = __id(target); row.amount = __num(damage)
   return __push(row)
 end
@@ -380,7 +382,7 @@ function ApplyModifier(caster, target, spec)
     end
   end
   if tostring(spec.property or '') ~= '' then effects[#effects + 1] = ModifierEffect(spec.property, spec.value, spec.operation, spec.statRef) end
-  return __push({ kind = 'apply_modifier', sourceId = __id(caster), targetId = target:GetId(), modifierId = tostring(spec.id or spec.name or ''), name = tostring(spec.name or spec.id or 'Lua-модификатор'), duration = math.max(1, math.floor(__num(spec.duration, 1))), effects = effects, onTurnStartDamage = math.max(0, __num(spec.onTurnStartDamage)), onTurnStartHeal = math.max(0, __num(spec.onTurnStartHeal)) })
+  return __push({ kind = 'apply_modifier', sourceId = __id(caster), targetId = target:GetId(), modifierId = tostring(spec.id or spec.name or ''), name = tostring(spec.name or spec.id or 'Lua-модификатор'), duration = math.max(1, math.floor(__num(spec.duration, 1))), effects = effects, onTurnStartDamage = math.max(0, __num(spec.onTurnStartDamage)), onTurnStartHeal = math.max(0, __num(spec.onTurnStartHeal)), stacks204=math.max(1,math.floor(__num(spec.stacks,1))), data204=spec.data or {}, duration204=type(spec.duration)=='table' and spec.duration or nil })
 end
 function RemoveModifier(target, modifierId)
   target = __unit(target)
@@ -478,7 +480,7 @@ function CreateThinker(caster, spec)
     x = __num(position.x),
     y = __num(position.y),
     radius = math.max(0, __num(spec.radius, 1)),
-    durationRounds = math.max(0, math.floor(__num(spec.durationRounds or spec.duration, 1))),
+    durationRounds = type(spec.duration)=='table' and 0 or math.max(0, math.floor(__num(spec.durationRounds or spec.duration, 1))),
     intervalRounds = math.max(1, math.floor(__num(spec.intervalRounds or spec.interval, 1))),
     relation = tostring(spec.relation or 'any'),
     players = spec.players ~= false,
@@ -489,7 +491,9 @@ function CreateThinker(caster, spec)
     visibleToPlayers = spec.visibleToPlayers ~= false,
     blockSight = spec.blockSight == true,
     allowVision = spec.allowVision == true,
-    color = tostring(spec.color or '#7df9ff')
+    color = tostring(spec.color or '#7df9ff'),
+    shape = tostring(spec.shape or 'circle'), width=__num(spec.width,1), height=__num(spec.height,spec.width or 1), length=__num(spec.length,spec.radius or 1), rotation=__num(spec.rotation), angle=__num(spec.angle,60),
+    duration204=type(spec.duration)=='table' and spec.duration or nil, data204=spec.data or {}, events204=spec.events or {}, visualOnly204=spec.visualOnly==true
   })
 end
 function DestroyThinker(thinkerId)
@@ -567,6 +571,208 @@ __SCRIPT_PARAMS = params
 function __resetCommands() __commands = {} end
 function __getCommands() return __commands end
 
+
+-- v204: common queries, planned local writes, resources and typed interactive requests.
+local function __plain204(value, depth)
+  depth = depth or 0
+  if depth > 12 then error('Lua data: превышена глубина') end
+  if type(value)=='table' then
+    if value.__unitId then return value.__unitId end
+    local out={}
+    for k,v in pairs(value) do
+      if type(k)~='string' and type(k)~='number' then error('Lua data: неверный ключ') end
+      if k=='__proto__' or k=='constructor' or k=='prototype' then error('Lua data: запрещённый ключ') end
+      out[k]=__plain204(v,depth+1)
+    end
+    return out
+  end
+  if type(value)=='function' or type(value)=='userdata' or type(value)=='thread' then error('Lua data: нужны сохраняемые значения') end
+  return value
+end
+local function __resourceKey204(key, source)
+  key=tostring(key or '')
+  if key=='' or #key>160 or key=='__proto__' or key=='constructor' or key=='prototype' then error('Некорректный ключ ресурса') end
+  return source and (tostring(source)..'/'..key) or key
+end
+local function __resource204(unit,key)
+  unit=__unit(unit);if not unit then error('Ресурс: юнит не найден') end
+  unit.__data.resources204=unit.__data.resources204 or {}
+  return unit.__data.resources204[tostring(key)]
+end
+function Unit:GetResource(key, source) local r=__resource204(self,__resourceKey204(key,source));return r and __num(r.value) or 0 end
+function Unit:GetResourceMax(key, source) local r=__resource204(self,__resourceKey204(key,source));return r and __num(r.max) or 0 end
+function Unit:HasResource(key,amount,source) return self:GetResource(key,source)>=__num(amount,1) end
+function DefineResource(unit,key,spec)
+  spec=type(spec)=='table' and spec or {};local reset=tostring(spec.reset or 'battle')
+  if not ({turn=true,round=true,battle=true,scene=true,manual=true})[reset] then error('Неизвестная область сброса ресурса') end
+  return __push({kind='define_resource204',unitId=__id(unit),key=__resourceKey204(key,spec.source),max=math.max(0,__num(spec.max,1)),initial=spec.initial and math.max(0,__num(spec.initial)) or nil,reset=reset})
+end
+function SpendResource(unit,key,amount,source) return __push({kind='spend_resource204',unitId=__id(unit),key=__resourceKey204(key,source),amount=math.max(0,__num(amount,1))}) end
+function RestoreResource(unit,key,amount,source) return __push({kind='restore_resource204',unitId=__id(unit),key=__resourceKey204(key,source),amount=amount and math.max(0,__num(amount)) or nil}) end
+function Unit:DefineResource(key,spec) return DefineResource(self,key,spec) end
+function Unit:SpendResource(key,amount,source) return SpendResource(self,key,amount,source) end
+function Unit:RestoreResource(key,amount,source) return RestoreResource(self,key,amount,source) end
+function Source:GetResource(key) return self:GetCaster():GetResource(key,self:GetKind()..':'..self:GetId()) end
+function Source:HasResource(key,amount) return self:GetResource(key)>=__num(amount,1) end
+function Source:DefineResource(key,spec) spec=type(spec)=='table' and spec or {};spec.source=self:GetKind()..':'..self:GetId();return DefineResource(self:GetCaster(),key,spec) end
+function Source:SpendResource(key,amount) return SpendResource(self:GetCaster(),key,amount,self:GetKind()..':'..self:GetId()) end
+function Source:RestoreResource(key,amount) return RestoreResource(self:GetCaster(),key,amount,self:GetKind()..':'..self:GetId()) end
+function Source:GetData(key,fallback) local values=(self.__data.state204 or {});local v=values[tostring(key)];if v==nil then return fallback end;return v end
+function Source:SetData(key,value) return __push({kind='source_data204',unitId=__id(self:GetCaster()),source=self:GetKind()..':'..self:GetId(),key=tostring(key),value=__plain204(value)}) end
+function GetUnit(id) return __unit(id) end
+local Object={};Object.__index=Object
+function Object:GetId() return tostring(self.__data.id) end
+function Object:GetName() return tostring(self.__data.name or self.__data.id) end
+function Object:GetAbsOrigin() return Vector(self.__data.x,self.__data.y) end
+function GetObject(id)
+  if __unit(id) then return __unit(id) end
+  for _,row in ipairs(__input.objects204 or {}) do if tostring(row.id)==tostring(id) then return setmetatable({__data=row},Object) end end
+  return nil
+end
+local function __point204(value)
+  if type(value)=='table' and value.GetAbsOrigin then return value:GetAbsOrigin() end
+  if type(value)=='table' and value.x~=nil and value.y~=nil then return Vector(value.x,value.y) end
+  local u=__unit(value);return u and u:GetAbsOrigin() or nil
+end
+local function __geometry204(kind,a,b,spec)
+  local p,q=__point204(a),__point204(b);if not p or not q then return nil end
+  spec=type(spec)=='table' and spec or {}
+  local key=kind..':'..(type(a)=='table' and a.GetId and a:GetId() or '')..':'..p.x..':'..p.y..':'..(type(b)=='table' and b.GetId and b:GetId() or '')..':'..q.x..':'..q.y..':'..tostring(spec.mode or '')
+  local supplied=(__input.params or {}).geometry204 or {}
+  if supplied[key]~=nil then return supplied[key] end
+  __push({kind='query_geometry204',key=key,query=kind,a={x=p.x,y=p.y,id=type(a)=='table' and a.GetId and a:GetId() or ''},b={x=q.x,y=q.y,id=type(b)=='table' and b.GetId and b:GetId() or ''},mode=tostring(spec.mode or '')})
+  return nil
+end
+function DistanceBetween(a,b,spec)
+  local u,v=__unit(a),__unit(b)
+  if u and v and not (spec and spec.mode=='center') then return __num((u.__data.distances or {})[v:GetId()],999999) end
+  return __geometry204('distance',a,b,spec) or 999999
+end
+function Unit:DistanceTo(other,spec) return DistanceBetween(self,other,spec) end
+function Object:DistanceTo(other,spec) return DistanceBetween(self,other,spec) end
+function GetUnits() return __unitOrder end
+function FindUnits(spec)
+  spec=type(spec)=='table' and spec or {};local p=__point204(spec.position or spec.origin or __source:GetCaster());if not p then return {} end
+  local shape=tostring(spec.shape or 'circle');local key='area:'..shape..':'..p.x..':'..p.y..':'..tostring(spec.radius)..':'..tostring(spec.width)..':'..tostring(spec.height)..':'..tostring(spec.length)..':'..tostring(spec.rotation)..':'..tostring(spec.angle)
+  local supplied=(__input.params or {}).geometry204 or {};local rows=supplied[key]
+  if rows==nil then local row=__plain204(spec);row.x=p.x;row.y=p.y;__push({kind='query_geometry204',query='area',key=key,area=row});return {} end
+  local out={};for _,id in ipairs(rows) do local u=GetUnit(id);if u then out[#out+1]=u end end;return out
+end
+function Unit:HasLineOfSight(other) return __geometry204('sight',self,other)==true end
+function Unit:HasLineOfFire(other) return __geometry204('fire',self,other)==true end
+function Unit:CanSee(other) return __geometry204('visible',self,other)==true end
+function Unit:CanReach(other) return __geometry204('reachable',self,other)==true end
+function Unit:CanAttack(other) return __geometry204('attack',self,other)==true end
+function Unit:IsAdjacent(other) return self:DistanceTo(other)<=1 end
+function Unit:HasItemTag(tag,minimum)
+  local count=0;for _,row in ipairs(self:GetInventory()) do if __contains(row.tags,tag) then count=count+math.max(0,__num(row.qty)) end end
+  return count>=__num(minimum,1)
+end
+function Unit:HasEquippedTag(tag,slot)
+  for _,row in ipairs(self:GetEquippedItems()) do if (slot==nil or tostring(row.slot)==tostring(slot)) and __contains(row.tags,tag) then return true end end
+  return false
+end
+function Unit:GetModifiers() return self.__data.modifierData204 or {} end
+function Unit:GetModifier(id)
+  for _,row in ipairs(self:GetModifiers()) do if tostring(row.id)==tostring(id) then return row end end
+  return nil
+end
+function Unit:GetModifierStacks(id) local row=self:GetModifier(id);return row and __num(row.stacks204,1) or 0 end
+function Unit:GetModifierRemaining(id) local row=self:GetModifier(id);return row and __num(row.duration204 and row.duration204.remaining or row.remainingTurns) or 0 end
+function Unit:IsShaken() return (self.__data.conditions or {}).shaken==true end
+function Unit:IsPanicked() return (self.__data.conditions or {}).panic==true end
+function Unit:GetConditions() return self.__data.conditions or {} end
+function Unit:CanAct() return self:IsAlive() and not self:IsUnconscious() and not self:IsStunned() and not self:IsDying() and self.__data.withdrawn204~=true end
+function Unit:GetOperator() return GetUnit(self.__data.operatorId204) end
+function Unit:GetReactionDebt() return math.max(0,__num(self.__data.reactionDebt204)) end
+local __spendReactionBefore204=SpendReaction
+function SpendReaction(unit,spec)
+  spec=type(spec)=='table' and spec or {}
+  if spec.future==true then return __push({kind='reaction_debt204',unitId=__id(unit),amount=math.max(1,math.floor(__num(spec.amount,1)))}) end
+  return __spendReactionBefore204(unit)
+end
+function Unit:SpendAction() return SpendAction(self) end
+function Unit:RestoreAction() return RestoreAction(self) end
+function Unit:SpendReaction(spec) return SpendReaction(self,spec) end
+function Unit:RestoreReaction() return RestoreReaction(self) end
+function Unit:SpendMovement(amount) return SpendMovement(self,amount) end
+function Unit:RestoreMovement(amount) return RestoreMovement(self,amount) end
+local function __answer204(kind,key,spec)
+  key=tostring(key or '');if key=='' then error('У запроса нужен устойчивый ключ') end
+  local supplied=(__input.params or {}).answers204 or {}
+  if supplied[key]~=nil then return supplied[key] end
+  local row=__plain204(spec or {});row.kind=kind;row.key=key;__push(row);return nil
+end
+function RequestChoice(key,spec) return __answer204('request_choice204',key,spec) end
+function RequestConfirm(key,spec) return __answer204('request_confirm204',key,spec) end
+function RequestChecklist(key,spec) return __answer204('request_checklist204',key,spec) end
+function RequestPoint(key,spec) local answer=__answer204('request_point204',key,spec);return type(answer)=='table' and Vector(answer.x,answer.y) or nil end
+function ShowReminder(key,text) return __answer204('request_confirm204',key,{title='Напоминание',text=tostring(text or ''),reminder=true}) end
+function CancelEvent(reason) if not ({OnActionDeclared=true,OnAttackDeclared=true,BeforeAttackRoll=true,AfterAttackRoll=true,BeforeAttackStart=true,BeforeDamage=true,OnMoveStart=true})[tostring((__input.params or {}).event)] then error('CancelEvent разрешён только до применения результата') end;return __push({kind='cancel_event204',reason=tostring(reason or 'Событие отменено скриптом')}) end
+params.eventId=tostring(rawParams.eventId204 or '')
+params.parentEventId=tostring(rawParams.parentEventId204 or '')
+params.unit=__unit(rawParams.unitId204)
+params.action=tostring(rawParams.action204 or '')
+params.movementKind=tostring(rawParams.movementKind204 or '')
+params.oldPosition=rawParams.oldPosition204
+params.newPosition=rawParams.newPosition204
+params.hpLost=__num(rawParams.hpLost204)
+params.rawDamage=__num(rawParams.rawDamage204)
+params.absorbed=__num(rawParams.absorbed204)
+params.reason=tostring(rawParams.reason204 or '')
+params.scene=__input.session204 or {}
+function params:Cancel(reason) return CancelEvent(reason) end
+if params.thinker then
+  function params.thinker:GetData(key,fallback) local v=(self.data or {})[tostring(key)];if v==nil then return fallback end;return v end
+  function params.thinker:GetUnits() local out={};for _,id in ipairs(self.unitIds or {}) do local unit=GetUnit(id);if unit then out[#out+1]=unit end end;return out end
+  function params.thinker:SetData(key,value) return __push({kind='thinker_data204',thinkerId=self.runtimeId,key=tostring(key),value=__plain204(value)}) end
+  function params.thinker:Destroy() return __push({kind='destroy_thinker',thinkerId=self.runtimeId,casterId=__id(__source:GetCaster())}) end
+end
+local __setOriginBefore204=Unit.SetAbsOrigin
+function Unit:SetAbsOrigin(position,spec)
+  if type(position)~='table' then error('SetAbsOrigin ожидает Vector') end
+  spec=type(spec)=='table' and spec or {}
+  return __push({kind='move_to',unitId=self:GetId(),x=__num(position.x),y=__num(position.y),movementKind204=tostring(spec.kind or 'placement'),checkCollision204=spec.checkCollision~=false})
+end
+local __getHealthBefore204=Unit.GetHealth
+function Unit:GetHealth()
+  if self.__data.pendingHealth204 then error('HP изменяется отложенной командой: читайте подтверждённое HP в OnDamageApplied/OnHealApplied') end
+  return __getHealthBefore204(self)
+end
+local __pushBefore204=__push
+__push=function(row)
+  if __readOnly204 and row.kind~='query_geometry204' then error('Условия Can... не могут изменять бой или запрашивать решение ДМа') end
+  if row.data204 then row.data204=__plain204(row.data204) end
+  if row.duration204 then row.duration204=__plain204(row.duration204) end
+  if row.events204 then row.events204=__plain204(row.events204) end
+  local u=__unit(row.unitId or row.targetId)
+  local strict=(__input.source or {}).costMode204=='scripted'
+  if u then
+    local d=u.__data
+    if row.kind=='spend_action' then if strict and not d.actionAvailable then error('Действие недоступно') end;d.actionAvailable=false
+    elseif row.kind=='restore_action' then d.actionAvailable=true
+    elseif row.kind=='spend_reaction' then if strict and not d.reactionAvailable then error('Реакция недоступна') end;local pool=(d.resources204 or {}).reaction;if pool then pool.value=math.max(0,pool.value-1);d.reactionAvailable=pool.value>0 else d.reactionAvailable=false end
+    elseif row.kind=='restore_reaction' then d.reactionAvailable=true;local pool=(d.resources204 or {}).reaction;if pool then pool.value=pool.max end
+    elseif row.kind=='reaction_debt204' then d.reactionDebt204=__num(d.reactionDebt204)+row.amount
+    elseif row.kind=='spend_movement' then if strict and __num(d.movementRemaining)<row.amount then error('Недостаточно движения') end;d.movementSpent=__num(d.movementSpent)+row.amount;d.movementRemaining=math.max(0,__num(d.movementRemaining)-row.amount)
+    elseif row.kind=='restore_movement' then local amount=row.all and __num(d.movementSpent) or math.min(row.amount,__num(d.movementSpent));d.movementSpent=__num(d.movementSpent)-amount;d.movementRemaining=__num(d.movementRemaining)+amount
+    elseif row.kind=='set_movement_mode' then d.movementMode=row.mode
+    elseif row.kind=='spend_charges' or row.kind=='damage_item' or row.kind=='break_item' then local item=u:GetEquippedItemData(row.slot);if item then if row.kind=='spend_charges' then item.charges=math.max(0,__num(item.charges)-row.amount) elseif row.kind=='damage_item' then item.durability=math.max(0,__num(item.durability)-row.amount);item.broken=__num(item.durabilityMax)>0 and item.durability<=0 else item.durability=0;item.broken=true end end
+    elseif row.kind=='set_condition' then d.conditions=d.conditions or {};d.conditions[row.name]=row.enabled
+    elseif row.kind=='move_to' then d.x=row.x;d.y=row.y;for _,other in ipairs(__unitOrder) do other.__data.distances={} end
+    elseif row.kind=='damage' or row.kind=='heal' then d.pendingHealth204=true
+    elseif row.kind=='define_resource204' then d.resources204=d.resources204 or {};local initial=math.min(row.max,row.initial or row.max);local old=d.resources204[row.key];d.resources204[row.key]={max=row.max,value=old and math.min(old.value,row.max) or initial,reset=row.reset};if row.key=='reaction' then d.reactionAvailable=d.reactionEligible204~=false and d.resources204[row.key].value>0 end
+    elseif row.kind=='spend_resource204' then local r=__resource204(u,row.key);if not r or __num(r.value)<row.amount then error('Недостаточно ресурса: '..row.key) end;r.value=r.value-row.amount
+    elseif row.kind=='restore_resource204' then local r=__resource204(u,row.key);if not r then error('Ресурс не определён: '..row.key) end;r.value=math.min(r.max,row.amount and r.value+row.amount or r.max)
+    elseif row.kind=='apply_modifier' then d.modifierData204=d.modifierData204 or {};d.modifiers=d.modifiers or {};local replaced=false;for i,m in ipairs(d.modifierData204) do if m.id==row.modifierId then d.modifierData204[i]={id=row.modifierId,stacks204=row.stacks204,remainingTurns=row.duration,data204=row.data204};replaced=true end end;if not replaced then d.modifierData204[#d.modifierData204+1]={id=row.modifierId,stacks204=row.stacks204,remainingTurns=row.duration,data204=row.data204};d.modifiers[#d.modifiers+1]=row.modifierId end
+    elseif row.kind=='remove_modifier' then for i=#(d.modifierData204 or {}),1,-1 do if d.modifierData204[i].id==row.modifierId then table.remove(d.modifierData204,i) end end;for i=#(d.modifiers or {}),1,-1 do if d.modifiers[i]==row.modifierId then table.remove(d.modifiers,i) end end
+    end
+  end
+  if row.kind=='source_data204' then __source.__data.state204=__source.__data.state204 or {};__source.__data.state204[row.key]=row.value end
+  if row.kind=='thinker_data204' and params.thinker then params.thinker.data=params.thinker.data or {};params.thinker.data[row.key]=row.value end
+  return __pushBefore204(row)
+end
+
 -- User scripts have no operating-system, filesystem, module-loader or debugger access.
 os = nil
 io = nil
@@ -608,14 +814,14 @@ async function run(payload = {}) {
       local metadata = {}
       __resetCommands()
       if __mode == 'metadata' then
-        local getters = { 'GetBehavior', 'GetCastRange', 'GetAOERadius', 'GetThinkerDuration', 'GetThinkerInterval' }
+        local getters = { 'GetCostMode', 'GetEventScope', 'GetBehavior', 'GetCastRange', 'GetAOERadius', 'GetThinkerDuration', 'GetThinkerInterval' }
         for _, getterName in ipairs(getters) do
           if type(_G[getterName]) == 'function' then metadata[getterName] = _G[getterName](__SCRIPT_SOURCE, __SCRIPT_PARAMS) end
         end
       end
       if (__mode == 'check' or __mode == 'execute') and hasHook then
         local canName = 'Can' .. __hookName
-        if type(_G[canName]) == 'function' then eligible = _G[canName](__SCRIPT_SOURCE, __SCRIPT_PARAMS) ~= false end
+        if type(_G[canName]) == 'function' then __readOnly204 = true; eligible = _G[canName](__SCRIPT_SOURCE, __SCRIPT_PARAMS) ~= false; __readOnly204 = false end
       end
       if __mode == 'execute' and hasHook and eligible then returnValue = _G[__hookName](__SCRIPT_SOURCE, __SCRIPT_PARAMS) end
       __RESULT = { ok = true, hasHook = hasHook, eligible = eligible, hooks = hookNames, commands = __getCommands(), returnValue = returnValue, metadata = metadata }
