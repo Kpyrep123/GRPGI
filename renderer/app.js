@@ -21437,7 +21437,7 @@ function legacyRegionMapsV181() {
           <div class="section-title">Стартовое снаряжение</div>
           <h2>${esc(item.name || item.id)}</h2>
           <div class="registration-equipment-facts-v1072">${facts.filter(Boolean).map(fact => `<span class="pill">${esc(fact)}</span>`).join('')}</div>
-          <p>${esc(item.desc || item.description || item.summary || 'Описание предмета не задано.')}</p>
+          ${window.GRPGItemFactsV141.description(item)}
           <div class="small-note"><b>Требования:</b> ${esc(requirementsTextV1052(item))}</div>
           ${tags.length ? `<div class="small-note"><b>Категории:</b> ${esc(tags.join(' · '))}</div>` : ''}
         </div>
@@ -21466,7 +21466,7 @@ function legacyRegionMapsV181() {
     return `<div class="starting-equipment-grid-v1066">${rows.map(item => `<div class="starting-equipment-card-v1066" data-registration-equipment-card-v1072 data-item-id="${esc(item.id)}" role="button" tabindex="0" aria-pressed="false">
       <input type="checkbox" name="startingEquipmentIds" value="${esc(item.id)}" hidden />
       ${renderThumb(item, { size: 'md', type: 'item', glyph: initials(item.name || item.id) })}
-      <span class="starting-equipment-copy-v1066"><b>${esc(item.name || item.id)}</b><small>${esc(startingEquipmentLabelV1066(item))}${item.rarity ? ` · ${esc(item.rarity)}` : ''}</small><small>${esc(item.desc || '')}</small></span>
+      <span class="starting-equipment-copy-v1066"><b>${esc(item.name || item.id)}</b><small>${esc(startingEquipmentLabelV1066(item))}${item.rarity ? ` · ${esc(item.rarity)}` : ''}</small>${item.type === 'weapon' ? window.GRPGItemFactsV141.pills(item, { excludeLabels: ['Тип', 'Редкость'] }) : `<small>${esc(item.desc || '')}</small>`}</span>
       <span class="creation-cost-badge-v1066">${creationCostV1066(item)} ОЧК.</span>
       <span class="starting-equipment-selected-v1072">ВЫБРАНО</span>
     </div>`).join('')}</div>`;
