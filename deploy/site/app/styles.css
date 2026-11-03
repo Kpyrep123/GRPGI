@@ -1266,7 +1266,7 @@ html[data-era-theme="medieval"] .web-galaxy-tooltip { border-radius:8px;border-c
 
 /* v1.0.52 — registration, origins and armor class */
 .registration-panel-v1052{margin-top:18px}
-.registration-card-v1052{padding:18px;border:1px solid color-mix(in srgb,var(--accent,#6c97c7) 26%,transparent);border-radius:var(--radius-lg,20px);background:rgba(8,14,22,.48);box-shadow:inset 0 1px rgba(255,255,255,.05),0 18px 50px rgba(0,0,0,.32);backdrop-filter:blur(16px)}
+.registration-card-v1052{padding:18px;border:1px solid color-mix(in srgb,var(--accent,#6c97c7) 26%,transparent);border-radius:var(--radius-lg,20px);background:rgba(8,14,22,.88);box-shadow:inset 0 1px rgba(255,255,255,.05),0 18px 50px rgba(0,0,0,.32);backdrop-filter:blur(16px)}
 .form-grid-v1052{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
 [data-era-theme="industrial"] .registration-card-v1052{border-radius:6px;background:rgba(17,18,18,.94);border-color:rgba(181,130,62,.34)}
 [data-era-theme="medieval"] .registration-card-v1052{background:rgba(60,39,21,.92);border-color:rgba(173,124,67,.38)}
@@ -1283,7 +1283,7 @@ html[data-era-theme="medieval"] .web-galaxy-tooltip { border-radius:8px;border-c
 body.registration-open-v1054{overflow:hidden}
 .registration-panel-v1052.hidden{display:none!important}
 .registration-panel-v1052{position:fixed!important;inset:0!important;z-index:12000!important;margin:0!important;pointer-events:auto}
-.registration-window-v1054{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:clamp(12px,2.5vw,36px);background:transparent}
+.registration-window-v1054{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:clamp(12px,2.5vw,36px);background:rgba(2,5,9,.78);backdrop-filter:blur(13px) saturate(.82)}
 .registration-card-v1052{width:min(1160px,96vw);height:min(900px,94vh);display:flex;flex-direction:column;padding:0!important;overflow:hidden!important}
 .registration-sticky-head-v1054{flex:0 0 auto;padding:19px 21px;border-bottom:1px solid color-mix(in srgb,var(--accent,#6c97c7) 18%,transparent);background:color-mix(in srgb,var(--panel,#0a111b) 95%,transparent);backdrop-filter:blur(18px)}
 .registration-form-v1054{flex:1 1 auto;overflow:auto;padding:21px;scrollbar-gutter:stable}
@@ -1747,9 +1747,9 @@ html[data-era-theme="industrial"] .chat-thread-unread-v1065{background:#a92a2a;b
 .creation-budget-v1066.over-budget{color:var(--danger,#ff7c92);border-color:color-mix(in srgb,var(--danger,#ff7c92) 55%,transparent)}
 .creation-cost-badge-v1066{display:inline-flex;align-items:center;justify-content:center;justify-self:start;margin:7px 0;padding:4px 9px;border-radius:999px;border:1px solid color-mix(in srgb,var(--accent,#6c97c7) 32%,transparent);background:color-mix(in srgb,var(--accent,#6c97c7) 8%,transparent);font:700 10px var(--mono,monospace);color:var(--accent,#7df9ff)}
 .starting-equipment-grid-v1066{display:grid;grid-template-columns:repeat(auto-fill,minmax(245px,1fr));gap:10px;margin-top:12px}
-.starting-equipment-card-v1066{position:relative;display:grid;grid-template-columns:40px minmax(0,1fr) auto;align-items:center;gap:11px;min-height:80px;padding:10px 11px;border:1px solid rgba(125,249,255,.18);border-radius:14px;background:linear-gradient(180deg,rgba(125,249,255,.16),rgba(125,249,255,.06));cursor:pointer;transition:.16s ease}
+.starting-equipment-card-v1066{position:relative;display:grid;grid-template-columns:40px minmax(0,1fr) auto;align-items:center;gap:11px;min-height:80px;padding:10px 11px;border:1px solid color-mix(in srgb,var(--accent,#6c97c7) 16%,transparent);border-radius:14px;background:color-mix(in srgb,var(--panel,#09111a) 91%,transparent);cursor:pointer;transition:.16s ease}
 .starting-equipment-card-v1066:hover{transform:translateY(-1px);border-color:color-mix(in srgb,var(--accent,#6c97c7) 34%,transparent)}
-.starting-equipment-card-v1066:has(input:checked){border-color:color-mix(in srgb,var(--accent,#6c97c7) 72%,white 4%);background:radial-gradient(circle at 50% 0%,rgba(125,249,255,.30),rgba(125,249,255,.08));box-shadow:0 10px 28px rgba(0,0,0,.2)}
+.starting-equipment-card-v1066:has(input:checked){border-color:color-mix(in srgb,var(--accent,#6c97c7) 72%,white 4%);background:color-mix(in srgb,var(--accent,#6c97c7) 7%,var(--panel,#09111a));box-shadow:0 10px 28px rgba(0,0,0,.2)}
 .starting-equipment-card-v1066>input{position:absolute;right:9px;top:9px;accent-color:var(--accent,#7df9ff)}
 .starting-equipment-image-v206,.starting-equipment-image-v206>.entity-thumb{width:40px;height:40px;min-width:0;max-width:40px;max-height:40px;overflow:hidden}
 .starting-equipment-image-v206 img{display:block;width:100%;height:100%;object-fit:contain}
