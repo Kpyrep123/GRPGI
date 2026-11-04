@@ -42,7 +42,27 @@
 .r189-common-card.owned{border-color:#bfab6c}.r189-common-card.available{border-color:#69b6a3}.r189-common-card.selected{outline:2px solid #d2b876}
 .radial-skills177 .r177-detail{z-index:9}
 .r177-common[hidden],.r189-common-card[hidden]{display:none!important}
-@media(max-width:720px){.radial-skills177 .r177-common{inset:8px;width:calc(100% - 16px)}.r189-common-list{grid-template-columns:1fr}}
+@media (max-width:720px) {
+  .radial-skills177 .r177-common,
+  .radial-skills177 .r177-detail {
+    inset: 8px;
+    width: auto;
+    height: auto;
+    max-height: none;
+    margin: 0;
+  }
+  .r177-common > header,
+  .r177-common > p,
+  .r177-detail > header {
+    flex-shrink: 0;
+  }
+  .r177-common-scroll,
+  .r177-detail-body {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+  .r189-common-list { grid-template-columns: minmax(0, 1fr); }
+}
 
 .radial-skills177 .has-common .r177-camera-tools,.radial-skills177 .has-common .r177-legend,.radial-skills177 .has-common .r177-hint{visibility:hidden}
 
