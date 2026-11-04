@@ -442,7 +442,10 @@
     function bind() {
       host.onclick = (e) => {
         const b = e.target.closest("button");
-        if(e.pointerType==='touch'&&performance.now()<suppressTouchClick)return;
+        // Safari can dispatch the click after a tap as a MouseEvent.
+        if (b && viewport.contains(b) && e.isTrusted && e.detail &&
+            (!e.pointerType || e.pointerType === 'touch') &&
+            performance.now() < suppressTouchClick) return;
         if(ignoreClick185){ignoreClick185=false;return;}
         if (!b) return;
         if (b.hasAttribute("data-r177-node")) choose(b.dataset.r177Node);
@@ -541,7 +544,7 @@
       viewport.onpointerdown = (e) => {
         if(e.pointerType==='touch'){
           touches.set(e.pointerId,{x:e.clientX,y:e.clientY});
-          viewport.setPointerCapture(e.pointerId);
+          viewport.setPointerCapture?.(e.pointerId);
           if(touches.size>=2){pinchStart();e.preventDefault();return;}
           // Touches on nodes can still become a pinch; a short tap selects them.
           drag={x:e.clientX,y:e.clientY,camera:{...state.camera},touch:true,tap:e.target.closest('button')};
@@ -587,7 +590,9 @@
             else if(touches.size===1){const p=[...touches.values()][0];drag={...p,camera:{...state.camera},touch:true,moved:true};}
             else {viewport.classList.remove('dragging');gesture=false;}
             suppressTouchClick=performance.now()+700;
-            if(tap)tap.click();return;
+            if(tap?.hasAttribute('data-r177-node')) choose(tap.dataset.r177Node);
+            else tap?.click();
+            return;
           }
           if(drag?.id&&drag.moved&&n==='pointerup'){adapter.move(drag.id,drag.point);ignoreClick185=true;drag=null;render();}
           drag = null;
