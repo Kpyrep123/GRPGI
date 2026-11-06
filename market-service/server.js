@@ -5,6 +5,8 @@ const { URL } = require('node:url');
 const { DatabaseSync } = require('node:sqlite');
 const crypto = require('node:crypto');
 const StockMotion = require('./stock-motion-v165.js');
+const Accounting = require('./accounting-v213.js');
+const FEES = Accounting.rates();
 
 const PORT = Number(process.env.MARKET_PORT || 8091);
 const HOST = process.env.MARKET_HOST || '127.0.0.1';
@@ -43,9 +45,12 @@ CREATE TABLE IF NOT EXISTS events(
  id TEXT PRIMARY KEY,campaign_id TEXT NOT NULL,item_id TEXT NOT NULL,percent REAL NOT NULL,
  start_tick INTEGER NOT NULL,end_tick INTEGER NOT NULL,start_price REAL,target_price REAL,created_at TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS active_events ON events(campaign_id,item_id,start_tick,end_tick);
+CREATE TABLE IF NOT EXISTS admin_operations(campaign_id TEXT NOT NULL,player_id TEXT NOT NULL,id TEXT NOT NULL,fingerprint TEXT NOT NULL,protection_ids TEXT NOT NULL DEFAULT '[]',PRIMARY KEY(campaign_id,player_id,id));
 CREATE TABLE IF NOT EXISTS meta(campaign_id TEXT PRIMARY KEY,last_tick INTEGER NOT NULL,world_hash TEXT NOT NULL);
 `);
 for(const column of ['start_price REAL','target_price REAL']){try{market.exec(`ALTER TABLE events ADD COLUMN ${column}`);}catch(error){if(!String(error.message).includes('duplicate column name'))throw error;}}
+
+for(const column of ['stop_loss REAL DEFAULT 0','take_profit REAL DEFAULT 0','parent_id TEXT']){try{market.exec(`ALTER TABLE orders ADD COLUMN ${column}`);}catch(error){if(!String(error.message).includes('duplicate column name'))throw error;}}
 
 let ticking = false;
 const streams = new Set();
@@ -105,17 +110,59 @@ function portfolio(profile){profile.stockPortfolio=profile.stockPortfolio&&typeo
 function executeOrder(order,price,tick){
  const {row,profile}=playerProfile(order.campaign_id,order.player_id),book=portfolio(profile);
  if(book.ledger.some(x=>x.id===order.id))return;
- const qty=order.quantity,total=round(price*qty),requestedLeverage=clamp(order.leverage,1,3),margin=round(total/requestedLeverage),credits=Math.max(0,Number(profile.credits)||0);let lev=requestedLeverage,p,average,share,pnl=0,cashFlow=0;
- if(order.intent==='open_long'){if(credits+1e-9<margin)throw Error(`Недостаточно средств: требуется обеспечение ${margin}`);profile.credits=round(credits-margin);p=book.positions[order.item_id]||{itemId:order.item_id,knownQty:0,costBasis:0,margin:0,leverage:lev};const oldBasis=Number(p.costBasis||0);p.knownQty+=qty;p.costBasis=round(oldBasis+total);p.margin=round(Number(p.margin??oldBasis)+margin);p.leverage=round(p.costBasis/Math.max(MIN_PRICE,p.margin),2);book.positions[order.item_id]=p;cashFlow=-margin;}
+ const qty=order.quantity,total=round(price*qty),tradeFee=round(total*FEES.tradeRate),requestedLeverage=clamp(order.leverage,1,3),margin=round(total/requestedLeverage),credits=Number(profile.credits)||0;let lev=requestedLeverage,p,average,share,pnl=0,cashFlow=0;
+ if(order.intent==='open_long'){if(credits+1e-9<margin+tradeFee)throw Error(`Недостаточно средств: обеспечение и комиссия ${round(margin+tradeFee)}`);profile.credits=round(credits-margin);p=book.positions[order.item_id]||{itemId:order.item_id,knownQty:0,costBasis:0,margin:0,leverage:lev};const oldBasis=Number(p.costBasis||0);p.knownQty+=qty;p.costBasis=round(oldBasis+total);p.margin=round(Number(p.margin??oldBasis)+margin);p.leverage=round(p.costBasis/Math.max(MIN_PRICE,p.margin),2);book.positions[order.item_id]=p;cashFlow=-margin;}
  else if(order.intent==='close_long'){p=book.positions[order.item_id];if(!p||p.knownQty<qty)throw Error('Недостаточно акций');average=p.costBasis/p.knownQty;const positionMargin=Number(p.margin??p.costBasis);share=positionMargin*qty/p.knownQty;lev=p.costBasis/Math.max(MIN_PRICE,positionMargin);pnl=(price-average)*qty;cashFlow=Math.max(0,share+pnl);profile.credits=round(credits+cashFlow);p.knownQty-=qty;p.costBasis=round(p.costBasis-average*qty);p.margin=round(positionMargin-share);if(p.knownQty<=0)delete book.positions[order.item_id];}
- else if(order.intent==='open_short'){if(credits+1e-9<margin)throw Error(`Недостаточно средств: требуется обеспечение ${margin}`);profile.credits=round(credits-margin);p=book.shortPositions[order.item_id]||{itemId:order.item_id,quantity:0,costBasis:0,margin:0,leverage:lev};const oldBasis=Number(p.costBasis||0);p.quantity+=qty;p.costBasis=round(oldBasis+total);p.margin=round(Number(p.margin??oldBasis)+margin);p.leverage=round(p.costBasis/Math.max(MIN_PRICE,p.margin),2);book.shortPositions[order.item_id]=p;cashFlow=-margin;}
+ else if(order.intent==='open_short'){if(credits+1e-9<margin+tradeFee)throw Error(`Недостаточно средств: обеспечение и комиссия ${round(margin+tradeFee)}`);profile.credits=round(credits-margin);p=book.shortPositions[order.item_id]||{itemId:order.item_id,quantity:0,costBasis:0,margin:0,leverage:lev};const oldBasis=Number(p.costBasis||0);p.quantity+=qty;p.costBasis=round(oldBasis+total);p.margin=round(Number(p.margin??oldBasis)+margin);p.leverage=round(p.costBasis/Math.max(MIN_PRICE,p.margin),2);book.shortPositions[order.item_id]=p;cashFlow=-margin;}
  else if(order.intent==='close_short'){p=book.shortPositions[order.item_id];if(!p||p.quantity<qty)throw Error('Недостаточно акций в шорте');average=p.costBasis/p.quantity;const positionMargin=Number(p.margin??p.costBasis);share=positionMargin*qty/p.quantity;lev=p.costBasis/Math.max(MIN_PRICE,positionMargin);pnl=(average-price)*qty;cashFlow=Math.max(0,share+pnl);profile.credits=round(credits+cashFlow);p.quantity-=qty;p.costBasis=round(p.costBasis-average*qty);p.margin=round(positionMargin-share);if(p.quantity<=0)delete book.shortPositions[order.item_id];}
  else throw Error('Неизвестная операция');
- book.ledger.push({id:order.id,type:order.intent,itemId:order.item_id,quantity:qty,unitPrice:price,total,leverage:lev,margin:round(share||margin),cashFlow:round(cashFlow),realizedPnl:round(pnl),createdAt:iso(tick)});if(book.ledger.length>500)book.ledger.splice(0,book.ledger.length-500);
+ if(p&&order.intent.startsWith('open_'))p.lastFeeAt=tick;
+ profile.credits=round(profile.credits-tradeFee);cashFlow-=tradeFee;
+ book.ledger.push({fee:tradeFee,id:order.id,type:order.intent,itemId:order.item_id,quantity:qty,unitPrice:price,total,leverage:lev,margin:round(share||margin),cashFlow:round(cashFlow),realizedPnl:round(pnl),createdAt:iso(tick)});if(book.ledger.length>500)book.ledger.splice(0,book.ledger.length-500);
  savePlayer(order.campaign_id,order.player_id,profile,row.version);
 }
 function shouldFill(order,price){if(order.type==='market')return true;if(order.type==='limit')return ['open_long','close_short'].includes(order.intent)?price<=order.limit_price:price>=order.limit_price;if(order.type==='stop_loss')return order.intent==='close_long'?price<=order.trigger_price:price>=order.trigger_price;if(order.type==='take_profit')return order.intent==='close_long'?price>=order.trigger_price:price<=order.trigger_price;if(order.type==='trailing_stop'){const peak=order.intent==='close_long'?Math.max(order.peak||price,price):Math.min(order.peak||price,price);market.prepare('UPDATE orders SET peak=? WHERE id=?').run(peak,order.id);return order.intent==='close_long'?price<=peak*(1-order.trailing_percent/100):price>=peak*(1+order.trailing_percent/100);}return false;}
-function processOrders(campaign,tick){for(const order of market.prepare("SELECT * FROM orders WHERE campaign_id=? AND status='pending'").all(campaign)){const q=market.prepare('SELECT price FROM quotes WHERE campaign_id=? AND item_id=?').get(campaign,order.item_id);if(!q||!shouldFill(order,q.price))continue;try{executeOrder(order,q.price,tick);market.prepare("UPDATE orders SET status='filled',fill_price=?,filled_at=? WHERE id=? AND status='pending'").run(q.price,iso(tick),order.id);}catch(error){market.prepare("UPDATE orders SET status='rejected',message=? WHERE id=?").run(String(error.message||error),order.id);}}}
+function ensureProtection(order,tick){
+ if(!order.intent.startsWith('open_'))return;
+ for(const [type,trigger] of [['stop_loss',order.stop_loss],['take_profit',order.take_profit]])if(trigger>0){
+  market.prepare(`INSERT OR IGNORE INTO orders(id,campaign_id,player_id,item_id,type,intent,quantity,leverage,trigger_price,limit_price,trailing_percent,peak,status,created_at,parent_id)
+   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(order.id+':'+type,order.campaign_id,order.player_id,order.item_id,type,order.intent==='open_long'?'close_long':'close_short',order.quantity,order.leverage,trigger,0,0,0,'pending',iso(tick),order.id);
+ }
+}
+function reconcileProtection(campaign,playerId,itemId){
+ const {profile}=playerProfile(campaign,playerId),book=portfolio(profile);
+ for(const [intent,available] of [['close_long',Number(book.positions[itemId]?.knownQty)||0],['close_short',Number(book.shortPositions[itemId]?.quantity)||0]]){
+  let remaining=available;
+  const groups=market.prepare("SELECT parent_id,MAX(quantity) AS quantity FROM orders WHERE campaign_id=? AND player_id=? AND item_id=? AND intent=? AND parent_id IS NOT NULL AND status='pending' GROUP BY parent_id ORDER BY MIN(created_at),parent_id").all(campaign,playerId,itemId,intent);
+  for(const group of groups){const qty=Math.min(remaining,group.quantity);remaining-=qty;
+   market.prepare("UPDATE orders SET quantity=?,status=CASE WHEN ?=0 THEN 'cancelled' ELSE status END,cancelled_at=CASE WHEN ?=0 THEN ? ELSE cancelled_at END WHERE parent_id=? AND status='pending'").run(qty,qty,qty,new Date().toISOString(),group.parent_id);
+  }
+ }
+}
+function processOrders(campaign,tick){
+ const pending=market.prepare("SELECT * FROM orders WHERE campaign_id=? AND status='pending' ORDER BY created_at,id").all(campaign);
+ const receipts=new Map();for(const order of pending)if(!receipts.has(order.player_id)){try{receipts.set(order.player_id,new Map(portfolio(playerProfile(campaign,order.player_id).profile).ledger.map(x=>[x.id,x])));}catch{receipts.set(order.player_id,new Map());}}
+ pending.sort((a,b)=>Number(receipts.get(b.player_id).has(b.id))-Number(receipts.get(a.player_id).has(a.id)));
+ for(let order of pending){
+  // A previous fill can cancel its OCO sibling within this same loop.
+  order=market.prepare("SELECT * FROM orders WHERE id=? AND status='pending'").get(order.id);if(!order)continue;
+  const q=market.prepare('SELECT price FROM quotes WHERE campaign_id=? AND item_id=?').get(campaign,order.item_id);
+  const executed=receipts.get(order.player_id).get(order.id);
+  if(!q||(!executed&&!shouldFill(order,q.price)))continue;
+  const fillPrice=Number(executed?.unitPrice)||q.price;
+  try{executeOrder(order,fillPrice,tick);ensureProtection(order,tick);
+   market.prepare("UPDATE orders SET status='filled',fill_price=?,filled_at=? WHERE id=? AND status='pending'").run(fillPrice,iso(tick),order.id);
+   if(order.parent_id)market.prepare("UPDATE orders SET status='cancelled',cancelled_at=? WHERE parent_id=? AND id!=? AND status='pending'").run(iso(tick),order.parent_id,order.id);
+   reconcileProtection(campaign,order.player_id,order.item_id);
+  }catch(error){if(String(error.message).includes('concurrently'))continue;market.prepare("UPDATE orders SET status='rejected',message=? WHERE id=?").run(String(error.message||error),order.id);}
+ }
+}
+function accrueFees(campaign,tick){
+ const prices=new Map(market.prepare('SELECT item_id,price FROM quotes WHERE campaign_id=?').all(campaign).map(q=>[q.item_id,Number(q.price)]));
+ for(const row of pocketbase.prepare('SELECT playerId,playerJson,version FROM campaign_players WHERE campaignId=?').all(campaign)){
+  const profile=parseJson(row.playerJson);if(Accounting.accrue(profile,prices,tick,FEES))savePlayer(campaign,row.playerId,profile,row.version);
+ }
+}
 function processLiquidations(campaign,tick){
  const prices=new Map(market.prepare('SELECT item_id,price FROM quotes WHERE campaign_id=?').all(campaign).map(row=>[row.item_id,Number(row.price)]));
  for(const row of pocketbase.prepare('SELECT playerId,playerJson,version FROM campaign_players WHERE campaignId=?').all(campaign)){
@@ -132,7 +179,7 @@ function processLiquidations(campaign,tick){
    delete book.shortPositions[itemId];changed=true;book.ledger.push({id:`liquidation-short-${itemId}-${tick}`,type:'liquidation_short',itemId,quantity:qty,unitPrice:price,total:round(price*qty),averagePrice:round(average),leverage:round(basis/Math.max(MIN_PRICE,margin),2),margin,cashFlow:0,realizedPnl:round(-margin),createdAt:iso(tick)});
    market.prepare("UPDATE orders SET status='rejected',message='Позиция ликвидирована' WHERE campaign_id=? AND player_id=? AND item_id=? AND intent='close_short' AND status='pending'").run(campaign,row.playerId,itemId);
   }
-  if(changed){if(book.ledger.length>500)book.ledger.splice(0,book.ledger.length-500);try{savePlayer(campaign,row.playerId,profile,row.version);}catch(error){console.error(new Date().toISOString(),'liquidation',row.playerId,error);}}
+  if(changed){if(book.ledger.length>500)book.ledger.splice(0,book.ledger.length-500);try{savePlayer(campaign,row.playerId,profile,row.version);for(const itemId of prices.keys())reconcileProtection(campaign,row.playerId,itemId);}catch(error){console.error(new Date().toISOString(),'liquidation',row.playerId,error);}}
  }
 }
 function tick(campaign=DEFAULT_CAMPAIGN){
@@ -144,11 +191,11 @@ function tick(campaign=DEFAULT_CAMPAIGN){
   const start=Math.max(meta?.last_tick||target-TICK_SECONDS,target-TICK_SECONDS*120);
   market.exec('BEGIN IMMEDIATE');
   try{for(let time=start+TICK_SECONDS;time<=target;time+=TICK_SECONDS){for(const q of market.prepare('SELECT * FROM quotes WHERE campaign_id=?').all(campaign)){const next=nextPrice(campaign,q,time);market.prepare('UPDATE quotes SET previous_price=price,price=?,regime=?,last_tick=?,anchor=CASE WHEN ? IS NULL THEN anchor ELSE ? END WHERE campaign_id=? AND item_id=?').run(next.price,next.regime,time,next.anchor,next.anchor,campaign,q.item_id);writeCandle(campaign,q.item_id,time,next.price);}market.prepare('UPDATE meta SET last_tick=? WHERE campaign_id=?').run(time,campaign);}market.prepare('DELETE FROM events WHERE campaign_id=? AND end_tick<=?').run(campaign,target);market.exec('COMMIT');}catch(error){market.exec('ROLLBACK');throw error;}
-  processLiquidations(campaign,target);processOrders(campaign,target);broadcast(campaign);return true;
+  accrueFees(campaign,target);processLiquidations(campaign,target);processOrders(campaign,target);broadcast(campaign);return true;
  }finally{ticking=false;}
 }
 function indicators(rows){const closes=rows.map(x=>Number(x.close)),avg=n=>closes.length<n?null:round(closes.slice(-n).reduce((a,b)=>a+b,0)/n),sample=closes.slice(-15);let gains=0,losses=0;for(let i=1;i<sample.length;i++){const d=sample[i]-sample[i-1];d>=0?gains+=d:losses-=d;}return{sma5:avg(5),sma20:avg(20),rsi14:sample.length<15?null:round(100-100/(1+(losses?gains/losses:100)),2)};}
-function publicState(campaign,playerId,itemId){syncStocks(campaign);const quotes=market.prepare('SELECT item_id AS itemId,ticker,price,previous_price AS previousPrice,price-previous_price AS change,CASE WHEN previous_price>0 THEN (price-previous_price)*100/previous_price ELSE 0 END AS changePercent,volatility,regime,last_tick AS tick FROM quotes WHERE campaign_id=? ORDER BY ticker').all(campaign);const candles={};if(itemId){const rows=market.prepare('SELECT bucket_time AS time,open,high,low,close,volume FROM candles WHERE campaign_id=? AND item_id=? ORDER BY bucket_time DESC LIMIT ?').all(campaign,itemId,MAX_CANDLES).reverse();candles[itemId]=rows;const q=quotes.find(x=>x.itemId===itemId);if(q)q.indicators=indicators(rows);}const orders=market.prepare("SELECT id,item_id AS itemId,type,intent,quantity,leverage,trigger_price AS triggerPrice,limit_price AS limitPrice,trailing_percent AS trailingPercent,status,fill_price AS fillPrice,message,created_at AS createdAt,filled_at AS filledAt,cancelled_at AS cancelledAt FROM orders WHERE campaign_id=? AND player_id=? ORDER BY created_at DESC LIMIT 100").all(campaign,playerId);return{ok:true,version:200,serverTime:new Date().toISOString(),lastTick:market.prepare('SELECT last_tick FROM meta WHERE campaign_id=?').get(campaign)?.last_tick||0,quotes,candles,orders,player:playerProfile(campaign,playerId).profile};}
+function publicState(campaign,playerId,itemId){syncStocks(campaign);const quotes=market.prepare('SELECT item_id AS itemId,ticker,price,previous_price AS previousPrice,price-previous_price AS change,CASE WHEN previous_price>0 THEN (price-previous_price)*100/previous_price ELSE 0 END AS changePercent,volatility,regime,last_tick AS tick FROM quotes WHERE campaign_id=? ORDER BY ticker').all(campaign);const candles={};if(itemId){const rows=market.prepare('SELECT bucket_time AS time,open,high,low,close,volume FROM candles WHERE campaign_id=? AND item_id=? ORDER BY bucket_time DESC LIMIT ?').all(campaign,itemId,MAX_CANDLES).reverse();candles[itemId]=rows;const q=quotes.find(x=>x.itemId===itemId);if(q)q.indicators=indicators(rows);}const orders=market.prepare("SELECT id,parent_id AS parentId,stop_loss AS stopLoss,take_profit AS takeProfit,item_id AS itemId,type,intent,quantity,leverage,trigger_price AS triggerPrice,limit_price AS limitPrice,trailing_percent AS trailingPercent,status,fill_price AS fillPrice,message,created_at AS createdAt,filled_at AS filledAt,cancelled_at AS cancelledAt FROM orders WHERE campaign_id=? AND player_id=? ORDER BY created_at DESC LIMIT 100").all(campaign,playerId);const owner=playerProfile(campaign,playerId);return{ok:true,version:213,fees:FEES,playerVersion:Number(owner.row.version),serverTime:new Date().toISOString(),lastTick:market.prepare('SELECT last_tick FROM meta WHERE campaign_id=?').get(campaign)?.last_tick||0,quotes,candles,orders,player:owner.profile};}
 function broadcast(campaign){const data=`event: quotes\ndata: ${JSON.stringify({campaignId:campaign,lastTick:market.prepare('SELECT last_tick FROM meta WHERE campaign_id=?').get(campaign)?.last_tick||0})}\n\n`;for(const client of streams){try{client.write(data);}catch{streams.delete(client);}}}
 async function route(req,res){
  if(req.method==='OPTIONS')return send(res,204,{});
@@ -158,8 +205,51 @@ async function route(req,res){
   if(path.endsWith('/stream')){res.writeHead(200,{'content-type':'text/event-stream','cache-control':'no-cache','connection':'keep-alive','access-control-allow-origin':'*'});res.write('retry: 5000\n\n');streams.add(res);req.on('close',()=>streams.delete(res));return;}
   if(req.method==='GET'&&path.endsWith('/stock-exchange-v148')){const campaign=url.searchParams.get('campaignId')||DEFAULT_CAMPAIGN,playerId=url.searchParams.get('playerId')||'',itemId=url.searchParams.get('itemId')||'';if(!playerId)return send(res,400,{ok:false,message:'playerId required'});await authorize(req,campaign,playerId);return send(res,200,publicState(campaign,playerId,itemId));}
   const body=await readBody(req),campaign=String(body.campaignId||DEFAULT_CAMPAIGN);
-  if(req.method==='POST'&&path.endsWith('/order')){await authorize(req,campaign,String(body.playerId));const id=String(body.operationId||crypto.randomUUID()),type=['market','limit','stop_loss','take_profit','trailing_stop'].includes(body.type)?body.type:'market',intent=['open_long','close_long','open_short','close_short'].includes(body.intent)?body.intent:'open_long';market.prepare(`INSERT OR IGNORE INTO orders(id,campaign_id,player_id,item_id,type,intent,quantity,leverage,trigger_price,limit_price,trailing_percent,peak,status,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(id,campaign,String(body.playerId),String(body.itemId),type,intent,clamp(Math.trunc(body.quantity||1),1,MAX_ORDER_QUANTITY),clamp(body.leverage||1,1,3),Math.max(0,Number(body.triggerPrice)||0),Math.max(0,Number(body.limitPrice)||0),clamp(body.trailingPercent||1,.1,50),0,'pending',new Date().toISOString());const orderTick=market.prepare('SELECT last_tick FROM meta WHERE campaign_id=?').get(campaign)?.last_tick||nowSec();processLiquidations(campaign,orderTick);processOrders(campaign,orderTick);return send(res,200,publicState(campaign,String(body.playerId),String(body.itemId)));}
-  if(req.method==='POST'&&path.endsWith('/cancel')){await authorize(req,campaign,String(body.playerId));const result=market.prepare("UPDATE orders SET status='cancelled',cancelled_at=? WHERE id=? AND campaign_id=? AND player_id=? AND status='pending'").run(new Date().toISOString(),String(body.orderId),campaign,String(body.playerId));return send(res,result.changes?200:404,{ok:Boolean(result.changes),status:result.changes?'cancelled':'not_found'});}
+  if(req.method==='POST'&&path.endsWith('/order')){
+   await authorize(req,campaign,String(body.playerId));syncStocks(campaign);
+   const id=String(body.operationId||crypto.randomUUID()),type=String(body.type||'market'),intent=String(body.intent||'open_long');
+   const qty=Number(body.quantity),lev=Number(body.leverage||1),limit=Number(body.limitPrice||0),trigger=Number(body.triggerPrice||0),trailing=Number(body.trailingPercent||1);
+   if(id.includes(':')||id.length>100||!Number.isSafeInteger(qty)||qty<1||qty>MAX_ORDER_QUANTITY||!Number.isFinite(lev)||lev<1||lev>3)
+    return send(res,400,{ok:false,message:'Укажите количество 1–1000000, плечо ×1–×3 и корректный идентификатор заявки'});
+   if(!['market','limit','stop_loss','take_profit','trailing_stop'].includes(type)||!['open_long','close_long','open_short','close_short'].includes(intent))return send(res,400,{ok:false,message:'Неизвестный тип или направление заявки'});
+   if(['stop_loss','take_profit','trailing_stop'].includes(type)&&!intent.startsWith('close_'))return send(res,400,{ok:false,message:'Защита доступна только для закрытия позиции'});
+   if((type==='limit'&&(!Number.isFinite(limit)||limit<=0))||(['stop_loss','take_profit'].includes(type)&&(!Number.isFinite(trigger)||trigger<=0)))return send(res,400,{ok:false,message:'Укажите положительную цену заявки'});
+   const q=market.prepare('SELECT price FROM quotes WHERE campaign_id=? AND item_id=?').get(campaign,String(body.itemId));
+   if(!q)return send(res,400,{ok:false,message:'Акция не найдена'});
+   const prior=market.prepare('SELECT * FROM orders WHERE id=?').get(id);
+   if(prior){
+    if(prior.campaign_id!==campaign||prior.player_id!==String(body.playerId)||prior.item_id!==String(body.itemId)||prior.type!==type||prior.intent!==intent||prior.quantity!==qty||prior.leverage!==lev||Number(prior.stop_loss||0)!==Number(body.stopLoss||0)||Number(prior.take_profit||0)!==Number(body.takeProfit||0)||prior.limit_price!==limit||prior.trigger_price!==trigger)
+     return send(res,409,{ok:false,message:'Идентификатор уже использован для другой заявки'});
+   }else{
+    let protection;try{protection=Accounting.protection({...body,intent},type==='limit'?limit:q.price);}catch(error){return send(res,400,{ok:false,message:error.message});}
+    market.prepare(`INSERT INTO orders(id,campaign_id,player_id,item_id,type,intent,quantity,leverage,trigger_price,limit_price,trailing_percent,peak,status,created_at,stop_loss,take_profit)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(id,campaign,String(body.playerId),String(body.itemId),type,intent,qty,lev,Math.max(0,trigger),Math.max(0,limit),clamp(trailing,.1,50),0,'pending',new Date().toISOString(),protection.stopLoss,protection.takeProfit);
+   }
+   const orderTick=nowSec();accrueFees(campaign,orderTick);processLiquidations(campaign,orderTick);processOrders(campaign,orderTick);
+   const state=publicState(campaign,String(body.playerId),String(body.itemId)),placed=market.prepare('SELECT status,message FROM orders WHERE id=?').get(id);
+   return send(res,200,{...state,ok:placed.status!=='rejected',status:placed.status,message:placed.message||''});
+  }
+  if(req.method==='POST'&&path.endsWith('/cancel')){await authorize(req,campaign,String(body.playerId));const result=market.prepare("UPDATE orders SET status='cancelled',cancelled_at=? WHERE id=? AND campaign_id=? AND player_id=? AND status='pending'").run(new Date().toISOString(),String(body.orderId),campaign,String(body.playerId));if(result.changes){const cancelled=market.prepare('SELECT parent_id FROM orders WHERE id=?').get(String(body.orderId));if(cancelled?.parent_id)market.prepare("UPDATE orders SET status='cancelled',cancelled_at=? WHERE parent_id=? AND status='pending'").run(new Date().toISOString(),cancelled.parent_id);}return send(res,result.changes?200:404,{ok:Boolean(result.changes),status:result.changes?'cancelled':'not_found'});}
+  if(req.method==='POST'&&path.endsWith('/portfolio')){
+   await authorize(req,campaign,String(body.playerId),true);syncStocks(campaign);
+   if(!['add','set','delete'].includes(body.action))return send(res,400,{ok:false,message:'Неизвестная операция'});
+   const id=String(body.itemId||''),q=market.prepare('SELECT price FROM quotes WHERE campaign_id=? AND item_id=?').get(campaign,id);
+   if(!q&&body.action==='add')return send(res,400,{ok:false,message:'Акция не найдена'});
+   accrueFees(campaign,nowSec());const {row,profile}=playerProfile(campaign,String(body.playerId)),book=portfolio(profile),operationId=String(body.operationId||'');
+   if(!operationId||operationId.length>100)return send(res,400,{ok:false,message:'Нужен идентификатор операции'});
+   const fingerprint=crypto.createHash('sha256').update(JSON.stringify([body.action,id,body.side,body.fromSide||body.side,body.quantity,body.leverage,body.entryPrice,body.expected])).digest('hex'),receipt=market.prepare('SELECT fingerprint,protection_ids FROM admin_operations WHERE campaign_id=? AND player_id=? AND id=?').get(campaign,String(body.playerId),operationId),prior=book.ledger.find(x=>x.id===operationId);
+   if((receipt&&receipt.fingerprint!==fingerprint)||(prior&&prior.fingerprint!==fingerprint))return send(res,409,{ok:false,message:'Идентификатор уже использован для другой операции'});
+   const cancelIds=receipt?JSON.parse(receipt.protection_ids):prior?.cancelProtectionIds||(body.action==='add'?[]:market.prepare("SELECT id FROM orders WHERE campaign_id=? AND player_id=? AND item_id=? AND parent_id IS NOT NULL AND status='pending'").all(campaign,String(body.playerId),id).map(o=>o.id));
+   if(!receipt&&!prior){
+    try{Accounting.editPosition(profile,body,q?.price,nowSec());}catch(error){return send(res,409,{ok:false,message:error.message});}
+    book.ledger.push({cancelProtectionIds:cancelIds,fingerprint,id:operationId,type:'dm_'+body.action,itemId:id,side:body.side,quantity:Number(body.quantity)||0,leverage:Number(body.leverage)||1,unitPrice:Number(body.entryPrice)||0,cashFlow:0,createdAt:iso()});
+    savePlayer(campaign,String(body.playerId),profile,row.version);
+   }
+   // Retry exactly the original cancellations; never cancel protection created later.
+   for(const cancelled of cancelIds)market.prepare("UPDATE orders SET status='cancelled',cancelled_at=? WHERE id=? AND campaign_id=? AND player_id=? AND status='pending'").run(iso(),cancelled,campaign,String(body.playerId));
+   market.prepare('INSERT OR IGNORE INTO admin_operations(campaign_id,player_id,id,fingerprint,protection_ids) VALUES(?,?,?,?,?)').run(campaign,String(body.playerId),operationId,fingerprint,JSON.stringify(cancelIds));
+   return send(res,200,publicState(campaign,String(body.playerId),id));
+  }
   if(req.method==='POST'&&path.endsWith('/impulse')){await authorize(req,campaign,String(body.playerId),true);const itemId=String(body.itemId),target=Number(body.targetPrice)||0,q=market.prepare('SELECT price FROM quotes WHERE campaign_id=? AND item_id=?').get(campaign,itemId);if(!q)return send(res,404,{ok:false,message:'Акция не найдена'});if(target>0){market.prepare('DELETE FROM events WHERE campaign_id=? AND item_id=?').run(campaign,itemId);market.prepare('UPDATE quotes SET previous_price=price,price=?,anchor=? WHERE campaign_id=? AND item_id=?').run(Math.max(MIN_PRICE,target),Math.max(MIN_PRICE,target),campaign,itemId);return send(res,200,{ok:true,status:'price-set'});}const start=(market.prepare('SELECT last_tick FROM meta WHERE campaign_id=?').get(campaign)?.last_tick||nowSec())+TICK_SECONDS,duration=Math.ceil(clamp(body.duration||60,TICK_SECONDS,3600)/TICK_SECONDS)*TICK_SECONDS,percent=clamp(body.percent,-50,50),startPrice=Math.max(MIN_PRICE,Number(q.price)),targetPrice=Math.max(MIN_PRICE,round(startPrice*(1+percent/100)));market.prepare('DELETE FROM events WHERE campaign_id=? AND item_id=?').run(campaign,itemId);market.prepare('INSERT INTO events(id,campaign_id,item_id,percent,start_tick,end_tick,start_price,target_price,created_at) VALUES(?,?,?,?,?,?,?,?,?)').run(crypto.randomUUID(),campaign,itemId,percent,start,start+duration,startPrice,targetPrice,new Date().toISOString());return send(res,200,{ok:true,status:'scheduled',startPrice,targetPrice,duration});}
   if(req.method==='POST'&&path.endsWith('/tick')){if(!ADMIN_TOKEN||String(req.headers['x-grpgi-worker-token']||'')!==ADMIN_TOKEN)return send(res,401,{ok:false});return send(res,200,{ok:true,advanced:tick(campaign)});}
   return send(res,404,{ok:false,message:'Not found'});

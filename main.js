@@ -2220,7 +2220,7 @@ async function writePocketBasePlayerRow(config = {}, payload = {}, options = {})
   if (!playerId) throw new Error('player_id is required');
   // Do not normalize a patch into a full player: omitted inventory must stay omitted.
   const player = sanitizePlayerObject(payload.player_json || payload.player || payload.data || payload.entity || {});
-  const route=payload.creditGrantV138?'/api/grpgi/credits/grant':payload.lootTransferV137?'/api/grpgi/loot/transfer':'/api/grpgi/players/mutate';
+  const route=payload.creditGrantV138?'/api/grpgi/auth-v212/credits/grant':payload.lootTransferV137?'/api/grpgi/loot/transfer':'/api/grpgi/players/mutate';
   const result = await pocketbaseFetch(config, route, {
     method: 'POST',
     json: {
@@ -3857,6 +3857,14 @@ ipcMain.handle('stock-exchange:cancel', async (_event, payload = {}) => {
     const request = isPocketBaseSyncConfig(config) ? pocketbaseFetch : selfhostFetch;
     return await request(config, '/api/grpgi/stock-exchange-v148/cancel', { method: 'POST', json: { ...payload, campaignId: config.campaignId } });
   } catch (error) { return { ok: false, status: 'error', httpStatus: Number(error.status || 0), message: error.message }; }
+});
+
+ipcMain.handle('stock-exchange:portfolio', async (_event, payload = {}) => {
+  try {
+    const config = await loadSyncConfig();
+    if (!config.enabled || !isPocketBaseSyncConfig(config)) return {ok:false,message:'Для управления акциями требуется PocketBase и сервис биржи'};
+    return await pocketbaseFetch(config, '/api/grpgi/stock-exchange-v148/portfolio', {method:'POST',json:{...payload,campaignId:config.campaignId}});
+  } catch(error) { return {ok:false,message:error.message}; }
 });
 
 ipcMain.handle('stock-exchange:impulse', async (_event, payload = {}) => {
