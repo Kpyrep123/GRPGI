@@ -2651,7 +2651,7 @@ const PlayerSync = {
   async pushPlayerPatch(playerId, patch = {}, options = {}) {
     const core=window.GRPGPlayerSyncCoreV135;
     if (!this.shouldIsolateUsersFromSnapshot() || !window.electronAPI?.patchPlayer) {
-      await App.writeLocalMirrors();
+      if(options.writeLocalMirrors!==false)await App.writeLocalMirrors();
       if(options.rerender!==false)App.refreshAfterLocalWrite();
       if(options.notice)Toast.show(options.notice,'ok');
       return {ok:true,status:'disabled'};
@@ -2689,7 +2689,7 @@ const PlayerSync = {
     App.state.users[playerId]=normalizePlayerProfileV2(this.projectedPlayerV135(playerId));
     PLAYER_TEMPLATES[playerId]=deep(App.state.users[playerId]);
     return this._queueV135.run(playerId,async()=>{
-      await App.writeLocalMirrors();
+      if(options.writeLocalMirrors!==false)await App.writeLocalMirrors();
       const request={...entry,baseVersion:Number(getPlayerRemoteMeta(playerId,App.state).version||0),
         updatedBy:activeSyncActorLabel(),clientUpdatedAt:new Date().toISOString()};
       let res;
@@ -2714,7 +2714,7 @@ const PlayerSync = {
         App.state.users[playerId]=normalizePlayerProfileV2(this.projectedPlayerV135(playerId));
         PLAYER_TEMPLATES[playerId]=deep(App.state.users[playerId]);
       }
-      await App.writeLocalMirrors();
+      if(options.writeLocalMirrors!==false)await App.writeLocalMirrors();
       if(options.rerender!==false)App.refreshAfterLocalWrite();
       if(!res?.ok){
         const meta=ensurePlayerSyncMeta(App.state);
@@ -3006,7 +3006,9 @@ const App = {
   },
   _mirrorQueueV135: window.GRPGPlayerSyncCoreV135.createQueue(),
   writeLocalMirrors() {
-    return this._mirrorQueueV135.run('mirror',()=>this._writeLocalMirrorsV135());
+    this._mirrorDirtyV214=true;
+    if(!this._mirrorFlushV214)this._mirrorFlushV214=this._mirrorQueueV135.run('mirror',async()=>{try{let result;while(this._mirrorDirtyV214){this._mirrorDirtyV214=false;result=await this._writeLocalMirrorsV135();}return result;}finally{this._mirrorFlushV214=null;}});
+    return this._mirrorFlushV214;
   },
   async _writeLocalMirrorsV135() {
     mirrorPlayersIntoWorld(this.state);
@@ -10396,6 +10398,7 @@ UiSyncGuard.shouldDeferRerender = function() {
 
 const __appRefreshAfterLocalWrite_v056 = App.refreshAfterLocalWrite.bind(App);
 App.refreshAfterLocalWrite = function() {
+  const scrolls=Array.from(document.querySelectorAll('.fs-module.open,[id]')).filter(el=>el.scrollTop||el.scrollLeft).map(el=>({id:el.id,el,top:el.scrollTop,left:el.scrollLeft}));
   this.fillLoginSelect();
   if (this.currentUserId && !this.state.users[this.currentUserId]) {
     this.logout();
@@ -10404,6 +10407,7 @@ App.refreshAfterLocalWrite = function() {
   this.renderLive();
   if (UI.activeModuleId === 'messages') MessagesUI.render();
   Sync.refreshChip();
+  for(const saved of scrolls){const el=saved.el.isConnected?saved.el:saved.id?document.getElementById(saved.id):null;if(el){el.scrollTop=saved.top;el.scrollLeft=saved.left;}}
 };
 
 PlayerSync.computePullSince = function(reason = 'manual', options = {}) {
@@ -23687,9 +23691,10 @@ window.GRPGInstallGlobalStockExchangeV1074?.();
     const currentVersion=Number(getPlayerRemoteMeta(playerId,App.state)?.version||0);
     if(incomingVersion&&currentVersion&&incomingVersion<currentVersion)return;
 
-    PlayerSync.applyRemoteRow(row, { source: 'realtime' });
+    if(!PlayerSync.applyRemoteRow(row, { source: 'realtime' }))return;
     await App.writeLocalMirrors();
-    App.refreshAfterLocalWrite();
+    if(UiSyncGuard.shouldDeferRerender())UiSyncGuard.defer('player-realtime');
+    else App.refreshAfterLocalWrite();
   }
 
   function bindPlayerRealtimeV1092(){
