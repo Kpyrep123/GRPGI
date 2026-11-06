@@ -11,7 +11,7 @@
     w.fetch=async()=>{throw new Error('Unexpected live network access')};
     const html=fs.readFileSync(path.join(root,'deploy/site/app/index.html'),'utf8');
     w.document.write(html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi,''));
-    for(const file of ['rich-text-scope.js','market-engine.js','player-sync-core.js'])run(fs.readFileSync(path.join(root,'deploy/site/app',file),'utf8'));
+    for(const file of ['rich-text-scope.js','market-engine.js','player-sync-core.js','damage-types-v202.js','weapon-handling-v203.js','player-credentials-v212.js','player-auth-v212.js'])run(fs.readFileSync(path.join(root,'deploy/site/app',file),'utf8'));
     let source=fs.readFileSync(path.join(root,'deploy/site/app/app.js'),'utf8');
     const marker='  init().catch(error => {';assert.equal(source.split(marker).length,2);
     source=source.replace(marker,[

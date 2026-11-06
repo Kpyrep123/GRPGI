@@ -1,3 +1,5 @@
+let playerSessionV212 = '';
+const {clean: stripPlayerCredentialsV212} = require('./renderer/player-credentials-v212.js');
 const { app, BrowserWindow, ipcMain, screen, shell, dialog, nativeImage } = require('electron');
 const path = require('path');
 const fs = require('fs');
@@ -247,6 +249,21 @@ async function exportCampaignBackup() {
   if (await copyPathIfExists(syncConfigFilePath(), path.join(backupDir, path.basename(syncConfigFilePath())))) copied.push('sync-config');
   if (await copyPathIfExists(readMarkersFilePath(), path.join(backupDir, path.basename(readMarkersFilePath())))) copied.push('read-markers');
 
+  async function cleanBackupJson(directory) {
+    for (const entry of await fs.promises.readdir(directory, {withFileTypes:true})) {
+      const target = path.join(directory, entry.name);
+      if (entry.isDirectory()) await cleanBackupJson(target);
+      else if (entry.name.endsWith('.json')) {
+        const data = JSON.parse(await fs.promises.readFile(target, 'utf8'));
+        await writeJsonAtomic(target, stripPlayerCredentialsV212(data));
+      }
+    }
+  }
+  const copiedWorld = path.join(backupDir, 'world-data');
+  if (fs.existsSync(copiedWorld)) await cleanBackupJson(copiedWorld);
+  const copiedState = path.join(backupDir, path.basename(stateFilePath()));
+  if (fs.existsSync(copiedState)) await writeJsonAtomic(copiedState, stripPlayerCredentialsV212(JSON.parse(await fs.promises.readFile(copiedState, 'utf8'))));
+
   const manifest = {
     createdAt: new Date().toISOString(),
     appVersion: app.getVersion(),
@@ -354,8 +371,7 @@ function scoreWorldSectionPayload(sectionName, payload, sourceTag = 'unknown') {
 async function backupWorldSectionFile(sectionName, file) {
   try {
     if (!fs.existsSync(file)) return;
-    const raw = await fs.promises.readFile(file, 'utf8');
-    JSON.parse(raw);
+    const raw = JSON.stringify(stripPlayerCredentialsV212(JSON.parse(await fs.promises.readFile(file, 'utf8'))), null, 2);
     const dir = worldBackupsDir();
     await fs.promises.mkdir(dir, { recursive: true });
     const latestFile = latestWorldSectionBackupPath(sectionName);
@@ -1495,13 +1511,16 @@ async function readWorldData() {
       debugLog('WORLD_SECTION_UNUSABLE_PRESERVED', { section: name, file });
     }
 
-    world[name] = payload;
+    const publicPayload = stripPlayerCredentialsV212(payload);
+    if (JSON.stringify(publicPayload) !== JSON.stringify(payload)) await writeJsonAtomic(file, publicPayload);
+    world[name] = publicPayload;
   }
   await writeTradeJsonFilesV175(dataDir,world.equipment);
   return { dataDir, world };
 }
 
 async function writeWorldSection(sectionName, payload) {
+  payload = stripPlayerCredentialsV212(payload);
   if (!WORLD_FILE_NAMES.includes(sectionName)) {
     throw new Error(`Unsupported world section: ${sectionName}`);
   }
@@ -1550,7 +1569,7 @@ function assertWorldJsonSection(sectionName) {
 
 async function exportWorldSectionJson(options = {}) {
   const section = assertWorldJsonSection(options.section);
-  const payload = options.payload;
+  const payload = stripPlayerCredentialsV212(options.payload);
   if (!payload || typeof payload !== 'object') {
     throw new Error('JSON export payload must be an object or array');
   }
@@ -2001,7 +2020,7 @@ async function pocketbaseFetch(config = {}, pathname = '/', options = {}) {
   }
   let lastPayload = null;
   for (let attempt = 0; attempt < 1; attempt += 1) {
-    const headers = { ...(options.headers || {}) };
+    const headers = { ...(playerSessionV212 ? {'X-GRPGI-Session':playerSessionV212} : {}), ...(options.headers || {}) };
     let body = options.body;
     if (options.json !== undefined) {
       headers['content-type'] = 'application/json';
@@ -3069,6 +3088,9 @@ ipcMain.handle('state:load', async () => {
       recovered = true;
       debugLog('STATE_RECOVERED_FROM_BACKUP', { file, backupFile, primaryError: primaryError.message });
     }
+    const publicPayload = stripPlayerCredentialsV212(payload);
+    if (JSON.stringify(publicPayload) !== JSON.stringify(payload)) await writeJsonAtomic(file, publicPayload);
+    payload = publicPayload;
     const migration = await localizeLegacyImageDataUrls(payload, 'state');
     if (migration.changed > 0) {
       await writeJsonAtomic(file, payload);
@@ -3088,12 +3110,13 @@ ipcMain.handle('state:save', async (_event, payload) => {
   const file = stateFilePath();
   const backupFile = stateBackupFilePath();
   try {
+    payload = stripPlayerCredentialsV212(payload);
     await fs.promises.mkdir(path.dirname(file), { recursive: true });
     await localizeLegacyImageDataUrls(payload, 'state');
     if (fs.existsSync(file)) {
       try {
         const previous = JSON.parse(await fs.promises.readFile(file, 'utf8'));
-        await writeJsonAtomic(backupFile, previous);
+        await writeJsonAtomic(backupFile, stripPlayerCredentialsV212(previous));
       } catch (error) {
         debugLog('STATE_BACKUP_SKIPPED', { file, message: error.message });
       }
@@ -3902,6 +3925,28 @@ ipcMain.handle('players:delete', async (_event, payload) => {
   } catch (error) {
     debugLog('PLAYER_DELETE_FAILED', { message: error.message, stack: error.stack, payload });
     return { ok: false, enabled: true, connected: false, status: 'error', message: error.message };
+  }
+});
+
+ipcMain.handle('player-auth-v212', async (_event, payload = {}) => {
+  if (payload.action === 'logout') {playerSessionV212 = '';return {ok:true};}
+  const allowed = new Set(['login','session','recovery/request','recovery/requests','recovery/approve','recovery/reject','recovery/confirm']);
+  if (!allowed.has(payload.action)) return {ok:false,message:'Неизвестная операция'};
+  try {
+    const config = await loadSyncConfig();
+    if (!config.enabled || !isPocketBaseSyncConfig(config)) throw new Error('Для входа требуется сервер PocketBase с модулем авторизации v212');
+    const result = await pocketbaseFetch(config, '/api/grpgi/auth-v212/' + payload.action, {
+      method:payload.data ? 'POST' : 'GET',
+      ...(payload.data ? {json:payload.data} : {}),
+      query:payload.query || {},
+      headers:{'X-GRPGI-Session':String(payload.token || '')}
+    });
+    if (payload.action === 'login') playerSessionV212 = String(result.token || '');
+    if (payload.action === 'session') playerSessionV212 = String(payload.token || '');
+    return result;
+  } catch (error) {
+    if (['login','session'].includes(payload.action)) playerSessionV212 = '';
+    return {ok:false,message:error.message || 'Сервер авторизации недоступен'};
   }
 });
 

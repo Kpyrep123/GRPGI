@@ -53,6 +53,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('sync:snapshot:event', handler);
     return () => ipcRenderer.removeListener('sync:snapshot:event', handler);
   },
+  playerAuthV212: payload => ipcRenderer.invoke('player-auth-v212', payload),
   pullPlayers: payload => ipcRenderer.invoke('players:pull', payload),
   pushPlayer: payload => ipcRenderer.invoke('players:push', payload),
   patchPlayer: payload => ipcRenderer.invoke('players:patch', payload),
