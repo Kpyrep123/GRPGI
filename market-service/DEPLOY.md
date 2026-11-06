@@ -23,7 +23,7 @@ From the repository checkout:
 ```bash
 install -d -o pocketbase -g pocketbase /opt/grpgi-market-service
 install -d -o pocketbase -g pocketbase /var/lib/grpgi-market
-install -o pocketbase -g pocketbase -m 0644 market-service/server.js /opt/grpgi-market-service/server.js
+install -o pocketbase -g pocketbase -m 0644 market-service/server.js market-service/accounting-v213.js market-service/stock-motion-v165.js /opt/grpgi-market-service/
 install -o pocketbase -g pocketbase -m 0644 market-service/package.json /opt/grpgi-market-service/package.json
 install -o root -g root -m 0644 market-service/grpgi-market.service /etc/systemd/system/grpgi-market.service
 install -o root -g pocketbase -m 0640 market-service/grpgi-market.env.example /etc/grpgi-market.env
@@ -59,7 +59,7 @@ systemctl status grpgi-market pocketbase --no-pager
 ps -eo pid,comm,%cpu,%mem --sort=-%cpu | head -15
 ```
 
-Authenticated exchange responses have API version `200`. Read, order and cancel
+Authenticated exchange responses have API version `213`. Read, order and cancel
 requests require the same `X-GRPGI-Session` header as PocketBase. The service
 validates it against `POCKETBASE_URL` (default `http://127.0.0.1:8090`); point this
 at PocketBase directly, not the public Caddy exchange route. A player can access
@@ -86,7 +86,7 @@ The old PocketBase route remains disabled until a deliberate rollback.
 After pulling the merged fix, run from the repository checkout on the local computer:
 
 ```bash
-scp market-service/server.js root@sync.grpg-sync.ru:/opt/grpgi-market-service/server.js
+scp market-service/server.js market-service/accounting-v213.js root@sync.grpg-sync.ru:/opt/grpgi-market-service/
 ```
 
 Then on the server:
@@ -110,3 +110,77 @@ Disable the legacy PocketBase route and worker so two engines cannot settle the
 same portfolio. Testing the old worker's endpoint on port 8090 does not test the
 public exchange routed to port 8091. After deployment, log into the website again
 and verify quote movement, chart history, placing and cancelling an order.
+
+## v213: attached protection, commissions, DM portfolio and credit grants
+
+The deployed exchange is the independent service on 8091. v213 does not change
+the intentionally disabled legacy PocketBase exchange engine.
+
+- New tickets choose a market or limit entry and optional absolute stop-loss and
+  take-profit prices. Long: stop below entry, take above; short: the reverse.
+  Protected exits are created only after the opening order fills. One exit fills
+  and cancels its sibling (OCO). Cancelling either exit cancels both. Execution
+  uses the available server quote; a stop price is not a guaranteed fill price.
+- Partial manual closes reduce outstanding protection. When multiple protected
+  entries share an aggregated position, remaining protection is allocated oldest
+  first. Full close and liquidation leave no usable protection for an empty position.
+  Existing standalone protective orders remain supported for compatibility.
+- Opening and closing pay `MARKET_TRADE_FEE_RATE` (default 0.001 = 0.1%) on gross
+  traded value. An opening requires both collateral and commission. Each tick
+  accrues `MARKET_BORROW_DAILY_RATE` (0.0003 = 0.03%/day) on entry cost minus
+  collateral, and `MARKET_CUSTODY_DAILY_RATE` (0.0001 = 0.01%/day) on current
+  position value, for both long and short positions. Rates are game defaults,
+  configurable in `/etc/grpgi-market.env`, not universal real-exchange tariffs.
+- Time is real elapsed seconds / 86400, including service downtime and time offline.
+  Custody uses the current quote when accrual runs. First observation of an old
+  position starts its accrual clock, with no retrospective installation charge.
+  Charges are deducted from cash and shown in daily ledger summaries; cash can
+  become negative, preventing new entries without sufficient funds. Closing remains
+  possible and proceeds first repay a negative cash balance. No fee is levied for
+  placing or cancelling an unfilled order. Client normalization preserves clocks.
+- World Config's character card has a live stock editor immediately below inventory.
+  Add/edit/delete long or short, quantity, entry price and leverage. Adding the same
+  stock/side merges cost and collateral, yielding effective weighted leverage.
+  Granting collateral does not debit cash; deleting does not credit cash. Editing
+  or deleting cancels attached protection; unrelated pending entry orders remain.
+  Every mutation is DM-authorized, checks concurrent position changes and uses a
+  persistent operation receipt. Saving the rest of the form retains the live portfolio.
+- Credits use `/api/grpgi/auth-v212/credits/grant`: private DM session, backend campaign,
+  transactional receipt and no duplicate credit on retry. The renderer now reads
+  lexical `Sync.config`, replacing stale retries containing a blank campaign.
+
+After merging and pulling, from the local repository folder:
+
+```bash
+scp market-service/server.js market-service/accounting-v213.js root@sync.grpg-sync.ru:/opt/grpgi-market-service/
+scp pocketbase/pb_hooks/grpgi_auth_v212.js pocketbase/pb_hooks/grpgi_auth_v212.pb.js root@sync.grpg-sync.ru:/opt/pocketbase/pb_hooks/
+```
+
+On the server:
+
+```bash
+node --check /opt/grpgi-market-service/server.js
+node --check /opt/grpgi-market-service/accounting-v213.js
+systemctl restart pocketbase
+systemctl restart grpgi-market
+systemctl is-active pocketbase grpgi-market
+curl -fsS http://127.0.0.1:8091/health
+journalctl -u grpgi-market --since '2 minutes ago' --no-pager
+```
+
+No manual migration and no environment replacement are needed for the defaults.
+SQLite columns and receipt table are added automatically, preserving data. Do not
+re-enable the old stock worker or legacy route. Publish `deploy/site/app` through
+the existing website deployment and restart/rebuild the desktop app to load the
+updated main/preload/renderer. Android builds obtain these web changes via
+`tools/prepare-mobile.cjs` from `deploy/site/app`. The legacy `mobile/www` and `webapp_work` trees are
+not the deployed website and are not upgraded by this service release.
+
+Checks (run from the repository root):
+
+```bash
+node tests/market-accounting-v213.cjs
+POCKETBASE_BIN=/path/to/pocketbase python tests/market-session-v212.integration.py
+HAPPY_DOM_MODULE=/path/to/happy-dom/lib/index.js node tests/stock-config-v213.dom.mjs
+HAPPY_DOM_MODULE=/path/to/happy-dom/lib/index.js node tests/stock-orders-v213.dom.mjs
+```

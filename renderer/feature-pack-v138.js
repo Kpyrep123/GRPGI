@@ -36,9 +36,9 @@
   function savePending(value){try{localStorage.setItem(PENDING_KEY,JSON.stringify(value));}catch{}}
   function operationId(){try{return window.GRPGPlayerSyncCoreV135?.operationId?.()||crypto.randomUUID();}catch{return`credit_${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`;}}
   function pendingJob(playerId,amount,options={}){
-    const map=pendingMap(),prior=map[playerId];
-    if(prior&&integer(prior.amount)===amount)return prior;
-    const job={operationId:text(options.operationId)||operationId(),playerId,amount,reason:text(options.reason||'World Config'),campaignId:String(window.Sync?.config?.campaignId||''),createdAt:new Date().toISOString()};map[playerId]=job;savePending(map);return job;
+    const map=pendingMap(),prior=map[playerId],campaignId=String(typeof Sync!=='undefined'?Sync.config?.campaignId||'':'');
+    if(prior&&prior.campaignId===campaignId&&integer(prior.amount)===amount&&(!options.operationId||prior.operationId===options.operationId))return prior;
+    const job={operationId:text(options.operationId)||operationId(),playerId,amount,reason:text(options.reason||'World Config'),campaignId,createdAt:new Date().toISOString()};map[playerId]=job;savePending(map);return job;
   }
   function clearPending(playerId,operation){const map=pendingMap();if(map[playerId]?.operationId===operation){delete map[playerId];savePending(map);}}
   async function persistLocal(){

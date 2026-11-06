@@ -10,3 +10,5 @@ onRecordCreate(function(e) { return require(__hooks + "/grpgi_auth_v212.js").pro
 onRecordUpdate(function(e) { return require(__hooks + "/grpgi_auth_v212.js").protectPlayer(e, false); }, "campaign_players");
 onRecordCreate(function(e) { return require(__hooks + "/grpgi_auth_v212.js").protectSnapshot(e); }, "campaign_snapshots");
 onRecordUpdate(function(e) { return require(__hooks + "/grpgi_auth_v212.js").protectSnapshot(e); }, "campaign_snapshots");
+
+routerAdd("POST", "/api/grpgi/auth-v212/credits/grant", function(e) { return require(__hooks + "/grpgi_auth_v212.js").grantCredits(e); });

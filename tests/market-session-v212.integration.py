@@ -1,5 +1,6 @@
 """Disposable real PocketBase + independent market test. Set POCKETBASE_BIN."""
 import json
+import math
 import os
 from pathlib import Path
 import shutil
@@ -114,9 +115,9 @@ with tempfile.TemporaryDirectory(prefix='grpgi-market-session-') as folder:
             code, result, _ = request(API + '/order', order, player)
             assert code == 200, result
             assert result['player']['stockPortfolio']['positions']['alpha']['knownQty'] == 2
-            assert result['player']['credits'] == 9800
+            assert math.isclose(result['player']['credits'], 9799.8, abs_tol=.01)
             assert result['orders'][0]['status'] == 'filled'
-            assert request(API + '/order', order, player)[1]['player']['credits'] == 9800
+            assert math.isclose(request(API + '/order', order, player)[1]['player']['credits'], 9799.8, abs_tol=.01)
             pending = {**order, 'type': 'limit', 'limitPrice': .01, 'operationId': 'limit-1'}
             assert request(API + '/order', pending, player)[0] == 200
             cancel = {'campaignId': 'main', 'playerId': 'p', 'orderId': 'limit-1'}
@@ -133,6 +134,112 @@ with tempfile.TemporaryDirectory(prefix='grpgi-market-session-') as folder:
             assert after['lastTick'] > before['lastTick'], 'quote timer stopped'
             assert after['candles']['alpha'], 'no candle history'
             assert after['quotes'][0]['price'] != before['quotes'][0]['price'], 'quotes did not move'
+            # v213: authenticated grants use the real backend campaign, not window.Sync.
+            grant = {'campaignId': 'main', 'playerId': 'p', 'operationId': 'grant-213', 'creditGrantV138': {'amount': 50}}
+            assert auth('credits/grant', grant)[0] == 401
+            assert auth('credits/grant', grant, player)[0] == 403
+            balance = request(API + query, token=player)[1]['player']['credits']
+            code, awarded, _ = auth('credits/grant', grant, dm)
+            assert code == 200, awarded
+            assert math.isclose(awarded['row']['playerJson']['credits'], balance + 50, abs_tol=.01)
+            assert auth('credits/grant', grant, dm)[1]['row']['playerJson']['credits'] == awarded['row']['playerJson']['credits']
+            assert auth('credits/grant', {**grant, 'creditGrantV138': {'amount': 51}}, dm)[0] == 400
+            assert auth('credits/grant', {**grant, 'campaignId': 'other'}, dm)[0] == 403
+
+            # DM edit lives in the independent market and never grants authority to players.
+            admin = {'campaignId': 'main', 'playerId': 'p', 'itemId': 'alpha', 'action': 'add',
+                'side': 'short', 'quantity': 6, 'leverage': 3, 'entryPrice': 100, 'operationId': 'dm-add'}
+            assert request(API + '/portfolio', admin)[0] == 401
+            assert request(API + '/portfolio', admin, player)[0] == 403
+            code, result, _ = request(API + '/portfolio', admin, dm)
+            assert code == 200, result
+            assert result['player']['stockPortfolio']['shortPositions']['alpha']['quantity'] == 6
+            assert result['player']['stockPortfolio']['shortPositions']['alpha']['margin'] == 200
+            assert request(API + '/portfolio', admin, dm)[1]['player']['stockPortfolio']['shortPositions']['alpha']['quantity'] == 6
+            assert request(API + '/portfolio', {**admin, 'quantity': 7}, dm)[0] == 409
+            edit = {**admin, 'action': 'set', 'quantity': 4, 'leverage': 2, 'entryPrice': 120,
+                'expected': {'quantity': 6, 'costBasis': 600, 'margin': 200}, 'operationId': 'dm-edit'}
+            assert request(API + '/portfolio', {**edit, 'expected': {}}, dm)[0] == 409
+            assert request(API + '/portfolio', edit, dm)[1]['player']['stockPortfolio']['shortPositions']['alpha']['margin'] == 240
+            delete = {**admin, 'action': 'delete', 'expected': {'quantity': 4, 'costBasis': 480, 'margin': 240}, 'operationId': 'dm-delete'}
+            assert request(API + '/portfolio', delete, dm)[0] == 200
+            assert not request(API + query, token=player)[1]['player']['stockPortfolio']['shortPositions']
+
+            def place(**kw):
+                body = {**order, 'quantity': 1, 'operationId': 'op-' + str(time.time_ns()), **kw}
+                code, result, _ = request(API + '/order', body, player)
+                assert code == 200, result
+                return result, body['operationId']
+            def price(value):
+                assert request(API + '/impulse', {**impulse, 'playerId': 'gm', 'targetPrice': value}, dm)[0] == 200
+            def process_at(value):
+                price(value)
+                return place(type='limit', limitPrice=.01)[0]
+            # Start from no long position so protection quantities can be checked exactly.
+            current = request(API + query, token=player)[1]['player']['stockPortfolio']['positions']['alpha']['knownQty']
+            place(intent='close_long', quantity=current)
+            price(100)
+            result, parent = place(quantity=6, leverage=3, stopLoss=90, takeProfit=120)
+            children = [o for o in result['orders'] if o['parentId'] == parent]
+            assert len(children) == 2 and all(o['status'] == 'pending' for o in children)
+            result, _ = place(intent='close_long', quantity=2)
+            assert all(o['quantity'] == 4 for o in result['orders'] if o['parentId'] == parent)
+            result = process_at(121)
+            children = {o['type']: o for o in result['orders'] if o['parentId'] == parent}
+            assert children['take_profit']['status'] == 'filled', children
+            assert children['stop_loss']['status'] == 'cancelled', children
+            assert not result['player']['stockPortfolio']['positions']
+            # Simulate a crash between portfolio commit and the market's OCO acknowledgement.
+            balance = result['player']['credits']
+            with sqlite3.connect(tmp / 'market.sqlite') as db:
+                db.execute("UPDATE orders SET status='pending' WHERE parent_id=?", (parent,))
+            result = process_at(85)
+            children = {o['type']: o for o in result['orders'] if o['parentId'] == parent}
+            assert children['take_profit']['status'] == 'filled' and children['take_profit']['fillPrice'] == 121
+            assert children['stop_loss']['status'] == 'cancelled'
+            assert math.isclose(result['player']['credits'], balance, abs_tol=.001)
+            # Short protection reverses trigger directions and does not create a long.
+            price(100)
+            _, parent = place(intent='open_short', quantity=3, leverage=2, stopLoss=110, takeProfit=80)
+            result = process_at(111)
+            children = {o['type']: o for o in result['orders'] if o['parentId'] == parent}
+            assert children['stop_loss']['status'] == 'filled'
+            assert children['take_profit']['status'] == 'cancelled'
+            assert not result['player']['stockPortfolio']['shortPositions']
+            # Limit entry has no active exits until it fills.
+            price(100)
+            result, parent = place(type='limit', limitPrice=95, stopLoss=90, takeProfit=120)
+            assert not [o for o in result['orders'] if o['parentId'] == parent]
+            result = process_at(94)
+            assert len([o for o in result['orders'] if o['parentId'] == parent]) == 2
+            # Cancelling one attached protection cancels its OCO sibling too.
+            child = next(o for o in result['orders'] if o['parentId'] == parent)
+            assert request(API + '/cancel', {'campaignId': 'main', 'playerId': 'p', 'orderId': child['id']}, player)[0] == 200
+            assert all(o['status'] == 'cancelled' for o in request(API + query, token=player)[1]['orders'] if o['parentId'] == parent)
+
+            # Accrue a full offline day on actual borrowed capital and current exposure.
+            price(100)
+            with sqlite3.connect(db_path) as db:
+                raw = json.loads(db.execute("SELECT playerJson FROM campaign_players WHERE playerId='p'").fetchone()[0])
+                raw['stockPortfolio']['positions']['alpha']['lastFeeAt'] = int(time.time()) - 86400
+                raw['stockPortfolio']['positions']['alpha']['costBasis'] = 300
+                raw['stockPortfolio']['positions']['alpha']['knownQty'] = 3
+                raw['stockPortfolio']['positions']['alpha']['margin'] = 100
+                db.execute("UPDATE campaign_players SET playerJson=? WHERE playerId='p'", (json.dumps(raw),))
+            balance = raw['credits']
+            result, _ = place(type='limit', limitPrice=.01)
+            assert math.isclose(result['player']['credits'], balance - .09, abs_tol=.001), result['player']['credits']
+            assert any(o['type'] == 'fees' for o in result['player']['stockPortfolio']['ledger'])
+            # Service restart preserves positions, OCO state, history and idempotent DM receipts.
+            market.terminate()
+            market.wait(timeout=10)
+            market = subprocess.Popen(['node', str(ROOT / 'market-service/server.js')], env=env, stdout=log, stderr=subprocess.STDOUT)
+            processes.append(market)
+            wait(MARKET_URL + '/health', market)
+            result = request(API + query, token=player)[1]
+            assert result['candles']['alpha'] and result['player']['stockPortfolio']['positions']['alpha']['knownQty'] == 3
+            assert request(API + '/portfolio', admin, dm)[1]['player']['stockPortfolio']['shortPositions'] == {}
+
             assert auth('recovery/request', {'campaignId': 'main', 'playerId': 'p'})[0] == 200
             pending = auth('recovery/requests?campaignId=main', token=dm)[1]['requests'][0]
             issued = auth('recovery/approve', {'campaignId': 'main', 'requestId': pending['id']}, dm)[1]
@@ -144,11 +251,11 @@ with tempfile.TemporaryDirectory(prefix='grpgi-market-session-') as folder:
             pb.terminate()
             pb.wait(timeout=10)
             assert request(API + query, token=dm)[0] == 503
-            print('PASS browser CORS, real sessions, ownership, DM permissions, settlement, cancellation, moving quotes, candles, recovery revocation')
+            print('PASS CORS/auth, grants/idempotency, DM portfolio, long/short OCO, partial close, deferred limit protection, daily fees, restart persistence, quotes/history and session revocation')
         except BaseException:
             log.flush()
             log.seek(0)
-            print(log.read())
+            print(log.read()[-12000:])
             raise
         finally:
             for process in reversed(processes):

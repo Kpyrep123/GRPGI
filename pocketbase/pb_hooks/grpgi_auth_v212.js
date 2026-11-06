@@ -93,6 +93,28 @@ function session(e) {
   var user = actor(e);
   return e.json(200, {ok:true, playerId:user.getString("playerId"), campaignId:user.getString("campaignId"), dm:user.getBool("dm")});
 }
+// A dedicated authenticated route avoids depending on a legacy grant hook.
+function grantCredits(e) {
+  var data=e.requestInfo().body||{},admin=gm(e,String(data.campaignId||""));
+  var amount=Number((data.creditGrantV138||{}).amount),operation=String(data.operationId||"");
+  if(!Number.isSafeInteger(amount)||amount<=0||!operation||operation.length>100)throw new BadRequestError("Укажите положительное целое количество денег и идентификатор операции");
+  var result;
+  e.app.runInTransaction(function(app){
+    var rows=app.findRecordsByFilter("campaign_players","campaignId={:campaign} && playerId={:player}","",1,0,{campaign:String(data.campaignId),player:String(data.playerId)});
+    if(!rows.length||rows[0].getString("deletedAt"))throw new NotFoundError("Персонаж не найден");
+    var row=rows[0],profile=json(row,"playerJson"),receipts=profile.__creditReceiptsV138||{};
+    if(profile.__deleted)throw new NotFoundError("Персонаж удалён");
+    if(receipts[operation]&&Number(receipts[operation].amount)!==amount)throw new BadRequestError("Идентификатор уже использован для другой суммы");
+    if(!receipts[operation]){
+      var balance=Number(profile.credits||0)+amount;
+      if(!isFinite(balance)||Math.abs(balance)>Number.MAX_SAFE_INTEGER)throw new BadRequestError("Превышен допустимый баланс");
+      profile.credits=balance;receipts[operation]={amount:amount,at:new Date().toISOString(),by:admin.getString("playerId")};profile.__creditReceiptsV138=receipts;
+      row.set("playerJson",clean(profile));row.set("version",row.getFloat("version")+1);row.set("updatedBy","credit-grant-v213");row.set("clientUpdatedAt",new Date().toISOString());app.save(row);
+    }
+    result=row.publicExport();
+  });
+  return e.json(200,{ok:true,status:"granted",row:result});
+}
 function request(e) {
   var data = body(e);
   rate(e, "request-ip", "", 10, 900);
@@ -256,6 +278,6 @@ function protectSnapshot(e) {
   ["worldJson","stateJson"].forEach(function(field) { e.record.set(field, clean(json(e.record, field))); });
   e.next();
 }
-module.exports = {clean:clean, credential:credential, createCredential:createCredential, login:login, session:session,
+module.exports = {grantCredits:grantCredits,clean:clean, credential:credential, createCredential:createCredential, login:login, session:session,
   request:request, requests:requests, approve:approve, reject:reject, confirm:confirm,
   protectPlayer:protectPlayer, protectSnapshot:protectSnapshot, guard:guard};
