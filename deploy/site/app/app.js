@@ -957,7 +957,7 @@
       url.searchParams.set(key, String(value));
     });
     for (let attempt = 0; attempt < 1; attempt += 1) {
-      const headers = { ...(options.headers || {}) };
+      const headers = { ...(options.headers || {}), ...(App.session?.authTokenV212 ? {'X-GRPGI-Session': App.session.authTokenV212} : {}) };
       let body = options.body;
       if (options.json !== undefined) {
         headers['Content-Type'] = 'application/json';
@@ -1289,6 +1289,7 @@
       merged.id = row.player_id;
       base.set(row.player_id, merged);
     });
+    for (const [id, value] of base) base.set(id, window.GRPGPlayerCredentialsV212.clean(value));
     return base;
   }
 
@@ -1404,7 +1405,7 @@
       App.rememberUntil = remembered.expiresAt;
     }
     App.config = normalizeConfig(await storageGet(KEYS.config, {}));
-    App.cache = await storageGet(KEYS.cache, App.cache);
+    App.cache = window.GRPGPlayerCredentialsV212.clean(await storageGet(KEYS.cache, App.cache));
     App.session = await storageGet(KEYS.session, null);
     App.auth = { token: '', expiresAt: 0 };
     await storageRemove(KEYS.auth);
@@ -3839,8 +3840,8 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
   async function login(playerId, pass) {
     const player = App.data.players.get(playerId);
     if (!player) throw new Error('Персонаж не найден');
-    if (String(player.role || '') !== 'guest' && String(player.pass || '') !== String(pass || '')) throw new Error('Неверный пароль персонажа');
-    App.session = { userId: playerId, role: player.role || 'player', loggedInAt: new Date().toISOString() };
+    const auth = await authenticatePlayerV212(player.id, pass);
+    App.session = { authTokenV212:auth.token, userId: playerId, role: player.role === 'guest' ? 'guest' : auth.dm ? 'gm' : 'player', loggedInAt: new Date().toISOString() };
     if (RUNTIME.cloudOnly && App.rememberLogin) await setRememberLogin(true, { extend: true });
     await storageSet(KEYS.session, App.session);
     openBoot('app');
@@ -4467,9 +4468,9 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
     if(!campaign||campaign.availableNow===false)throw new Error('Эта кампания сейчас недоступна');
     if(!approvedPlayerV1052(player))throw new Error(String(player.approvalStatus||'')==='pending'?'Анкета ещё ожидает одобрения ДМа':'Анкета персонажа отклонена');
     if(String(player.role||'').toLowerCase()!=='gm'&&!campaignIdsForPlayer(player).includes(campaignId))throw new Error('Персонаж не относится к выбранной кампании');
-    if(String(player.role||'')!=='guest'&&String(player.pass||'')!==String(pass||''))throw new Error('Неверный пароль персонажа');
+    const auth = await authenticatePlayerV212(playerId, pass);
     App.ui.selectedCampaignId=campaignId;applyEraThemeV1049(campaign);
-    App.session={userId:playerId,role:player.role||'player',loggedInAt:new Date().toISOString(),campaignId,era:normalizeEraV1049(campaign.era)};
+    App.session={authTokenV212:auth.token,userId:playerId,role:player.role==='guest'?'guest':auth.dm?'gm':'player',loggedInAt:new Date().toISOString(),campaignId,era:normalizeEraV1049(campaign.era)};
     if(RUNTIME.cloudOnly&&App.rememberLogin)await setRememberLogin(true,{extend:true});
     await storageSet(KEYS.session,App.session);openBoot('app');App.ui.screen='home';renderCurrentScreen();startRealtimeSync();notify(`Вход выполнен: ${player.displayName||player.id}`,'ok');
   };
@@ -4549,7 +4550,7 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
       <section class="registration-section-v1054"><div class="section-title">Профессия</div><p class="muted">Показываются только варианты, доступные выбранной кампании или её эпохе.</p><div data-registration-professions-v1066>${registrationOriginCardsWebV1066(socialOriginsV1052(),'socialOriginId','profession',campaign)}</div></section>
       <section class="registration-section-v1054"><div class="section-title">Происхождение</div><p class="muted">Происхождением может быть город, регион, станция, колония или целая планета.</p><div data-registration-origins-v1066>${registrationOriginCardsWebV1066(geographicOriginsV1052(),'geographicOriginId','geographic',campaign)}</div></section>
       <section class="registration-section-v1054"><div class="section-title">Стартовое снаряжение</div><p class="muted">Можно выбрать несколько предметов. Показываются только предметы с флагом «Доступен как стартовое», доступные кампании или её эпохе.</p><div data-registration-equipment-v1066>${startingEquipmentCardsWebV1066(campaign)}</div></section>
-      <section class="registration-section-v1054"><div class="section-title">Доступ</div><div class="form-grid-v1052"><label class="field"><span>Пароль персонажа</span><input class="input" name="pass" type="password" minlength="4" required autocomplete="new-password" /></label><label class="field"><span>Повторите пароль</span><input class="input" name="pass2" type="password" minlength="4" required autocomplete="new-password" /></label></div></section>
+      <section class="registration-section-v1054"><div class="section-title">Доступ</div><div class="form-grid-v1052"><label class="field"><span>Пароль персонажа</span><input class="input" name="pass" type="password" minlength="8" required autocomplete="new-password" /></label><label class="field"><span>Повторите пароль</span><input class="input" name="pass2" type="password" minlength="4" required autocomplete="new-password" /></label></div></section>
       <div class="registration-submit-v1054"><button class="primary" type="submit">ОТПРАВИТЬ АНКЕТУ ДМУ</button><div class="status-line muted" id="register-status-v1052"></div></div></form></div></div>`;
   }
   async function resizeRegistrationPhotoV1052(file){
@@ -5978,7 +5979,7 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
         notify(`Загружен локальный кеш. Облако сейчас недоступно: ${error.message}`, 'warn');
       }
       renderLogin();
-      if (App.session?.userId && App.data.players.has(App.session.userId) && sessionCampaignAllowedV1049()) {
+      if (App.session?.userId && App.data.players.has(App.session.userId) && sessionCampaignAllowedV1049() && await validateSessionV212()) {
         applyEraThemeV1049(campaignV1049(selectedCampaignV1049()));
         openBoot('app');
         restoreWebNavigationV149();
@@ -6162,6 +6163,29 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
   renderChat=keepFocusV183(renderChat);
   renderProfile=keepFocusV183(renderProfile);
   renderWebChatMasterV1068=keepFocusV183(renderWebChatMasterV1068);
+
+  async function authenticatePlayerV212(playerId, password) {
+    if (String(App.data.players.get(playerId)?.role || '') === 'guest') return {token:''};
+    return pbFetch(App.config, '/api/grpgi/auth-v212/login', {method:'POST',json:{campaignId:App.config.campaignId,playerId,password}});
+  }
+  async function validateSessionV212() {
+    if (isGuestSession()) return true;
+    if (!App.session?.authTokenV212) return false;
+    try {
+      const actor = await pbFetch(App.config, '/api/grpgi/auth-v212/session');
+      return actor.playerId === App.session.userId && actor.campaignId === App.config.campaignId;
+    } catch { return false; }
+  }
+  window.GRPGPlayerAuthV212.install({
+    input:'login-pass', selected:()=>document.getElementById('login-player')?.value || '',
+    campaign:()=>App.config.campaignId, profile:()=>document.getElementById('screen-profile'),
+    dm:()=>!isGuestSession() && String(currentPlayer()?.role || '') === 'gm',
+    name:id=>App.data.players.get(id)?.displayName || id,
+    call:(path,data,query)=>pbFetch(App.config,path,{method:data?'POST':'GET',...(data?{json:data}:{}),query})
+  });
+  const renderAuthLoginV212 = renderLogin, renderAuthProfileV212 = renderProfile;
+  renderLogin = function(...args) {const result=renderAuthLoginV212(...args);window.GRPGPlayerAuthV212.attach();return result;};
+  renderProfile = function(...args) {const result=renderAuthProfileV212(...args);window.GRPGPlayerAuthV212.attach();return result;};
 
   init().catch(error => {
     openBoot('login');

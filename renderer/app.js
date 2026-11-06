@@ -394,7 +394,6 @@ function createBlankEntity(type) {
     return {
       id: `player_${stamp}`,
       role: 'player',
-      pass: '0000',
       shortName: `Agent${stamp.slice(-3)}`,
       displayName: 'Новый персонаж',
       rank: 'Operative',
@@ -476,6 +475,7 @@ function createBlankEntity(type) {
 }
 
 function applyWorldData(payload = {}) {
+  payload = window.GRPGPlayerCredentialsV212.clean(payload);
   worldData = payload || {};
   PLAYER_TEMPLATES = worldData.players?.PLAYER_TEMPLATES || {};
   PLAYER_LIST = worldData.players?.PLAYER_LIST || Object.values(PLAYER_TEMPLATES);
@@ -2957,8 +2957,13 @@ const App = {
       $('#login-error').textContent = 'Профиль не найден. Проверь локальные файлы и облачную синхронизацию.';
       return;
     }
-    if (target.pass !== pass) {
-      $('#login-error').textContent = 'ERROR: WRONG_PASS';
+    try {
+      const authenticated = await playerAuthCallV212('login', {campaignId:Sync.config?.campaignId, playerId:userId, password:pass});
+      playerSessionV212 = authenticated.token;
+      localStorage.setItem('grpg.player-session.v212', playerSessionV212);
+      target.role = authenticated.dm ? 'gm' : 'player';
+    } catch (error) {
+      $('#login-error').textContent = error.message || 'Вход не подтверждён сервером';
       return;
     }
     this.currentUserId = userId;
@@ -4529,7 +4534,7 @@ const UI = {
           <form id="profile-edit-form" class="card profile-card form">
             <div class="section-title">Редактирование профиля</div>
             <div class="field"><label>Отображаемое имя</label><input class="input" name="displayName" value="${esc(user.displayName)}" ${canEdit ? '' : 'disabled'} /></div>
-            <div class="field"><label>Пароль</label><input class="input" name="pass" value="${esc(user.pass)}" ${canEdit ? '' : 'disabled'} /></div>
+
             <div class="field"><label>Лор персонажа</label><textarea class="area" name="lore" ${canEdit ? '' : 'disabled'}>${esc(user.lore)}</textarea></div>
             <div class="field"><label>Личные заметки</label><textarea class="area" name="notes">${esc(user.notes)}</textarea></div>
             <button class="primary" type="submit">СОХРАНИТЬ ПРОФИЛЬ</button>
@@ -4547,13 +4552,11 @@ const UI = {
       user.notes = String(formData.get('notes') || '').trim();
       if (user.role !== 'gm') {
         user.displayName = String(formData.get('displayName') || user.displayName).trim() || user.displayName;
-        user.pass = String(formData.get('pass') || user.pass).trim() || user.pass;
         user.lore = String(formData.get('lore') || user.lore).trim() || user.lore;
       }
       if (PLAYER_TEMPLATES[user.id]) {
         PLAYER_TEMPLATES[user.id].notes = user.notes;
         PLAYER_TEMPLATES[user.id].displayName = user.displayName;
-        PLAYER_TEMPLATES[user.id].pass = user.pass;
         PLAYER_TEMPLATES[user.id].lore = user.lore;
       }
       const saveWorldRes = await persistPlayersTemplateOnly();
@@ -5032,7 +5035,6 @@ const GM = {
       const user = App.state.users[this.selectedUserId];
       user.displayName = String(formData.get('displayName') || user.displayName).trim() || user.displayName;
       user.rank = String(formData.get('rank') || user.rank).trim() || user.rank;
-      user.pass = String(formData.get('pass') || user.pass).trim() || user.pass;
       user.credits = Number(formData.get('credits') || user.credits);
       user.lore = String(formData.get('lore') || user.lore).trim();
       user.notes = String(formData.get('notes') || user.notes).trim();
@@ -5072,7 +5074,7 @@ const GM = {
           <div class="field"><label>Ранг</label><input class="input" name="rank" value="${esc(user.rank)}" /></div>
         </div>
         <div class="cols2">
-          <div class="field"><label>Пароль</label><input class="input" name="pass" value="${esc(user.pass)}" /></div>
+
           <div class="field"><label>Кредиты</label><input class="input" type="number" name="credits" value="${user.credits}" /></div>
         </div>
         <div class="cols3">
@@ -5379,7 +5381,7 @@ const Configurator = {
           <div class="field"><label>Глиф</label><input class="input" name="avatarGlyph" value="${esc(user.avatarGlyph || '')}" /></div>
         </div>
         <div class="cols3">
-          <div class="field"><label>Пароль</label><input class="input" name="pass" value="${esc(user.pass || '')}" /></div>
+
           <div class="field"><label>Кредиты</label><input class="input" type="number" name="credits" value="${Number(user.credits || 0)}" /></div>
           <div class="field"><label>Текущая планета</label><select class="select" name="currentPlanetId"><option value="">Не задана</option>${Object.values(PLANETS).map(option => `<option value="${option.id}" ${option.id === (user.currentPlanetId || '') ? 'selected' : ''}>${esc(option.name)}</option>`).join('')}</select><div class="small-note">Подсветка этой планеты появится на карте и в профиле персонажа.</div></div>
         </div>
@@ -5826,7 +5828,7 @@ const Configurator = {
       return {
         id: baseId,
         role: String(formData.get('role') || 'player'),
-        pass: String(formData.get('pass') || '0000').trim(),
+
         shortName: String(formData.get('shortName') || baseId).trim(),
         displayName: String(formData.get('displayName') || baseId).trim(),
         rank: String(formData.get('rank') || '').trim(),
@@ -7439,7 +7441,7 @@ function normalizeEquipmentItemV2(item = {}) {
   return next;
 }
 function normalizePlayerProfileV2(user = {}) {
-  const next = { ...user };
+  const next = window.GRPGPlayerCredentialsV212.clean(user);
   const oldStats = next.stats || {};
   const hpLegacy = Number(oldStats.hp ?? 100);
   const shieldLegacy = Number(oldStats.shield ?? 50);
@@ -7750,7 +7752,7 @@ UI.renderProfile = function() {
         <form id="profile-edit-form" class="card profile-card form">
           <div class="section-title">Редактирование профиля</div>
           <div class="field"><label>Отображаемое имя</label><input class="input" name="displayName" value="${esc(user.displayName)}" ${canEdit ? '' : 'disabled'} /></div>
-          <div class="field"><label>Пароль</label><input class="input" name="pass" value="${esc(user.pass)}" ${canEdit ? '' : 'disabled'} /></div>
+
           <div class="field"><label>Лор персонажа</label><textarea class="area" name="lore" ${canEdit ? '' : 'disabled'}>${esc(user.lore)}</textarea></div>
           <div class="field"><label>Личные заметки</label><textarea class="area" name="notes">${esc(user.notes)}</textarea></div>
           <button class="primary" type="submit">СОХРАНИТЬ ПРОФИЛЬ</button>
@@ -7801,10 +7803,9 @@ UI.renderProfile = function() {
     const currentRemote = App.state.users[user.id] || user;
     const runtime = normalizePlayerProfileV2({ ...currentRemote });
     runtime.displayName = String(fd.get('displayName') || runtime.displayName).trim() || runtime.displayName;
-    runtime.pass = String(fd.get('pass') || runtime.pass).trim() || runtime.pass;
     runtime.lore = String(fd.get('lore') || runtime.lore).trim();
     runtime.notes = String(fd.get('notes') || runtime.notes).trim();
-    const patch = shallowDiffObject(currentRemote, runtime, ['displayName', 'pass', 'lore', 'notes']);
+    const patch = shallowDiffObject(currentRemote, runtime, ['displayName', 'lore', 'notes']);
     App.state.users[user.id] = normalizePlayerProfileV2(runtime);
     PLAYER_TEMPLATES[user.id] = deep(App.state.users[user.id]);
     await App.writeLocalMirrors();
@@ -7842,7 +7843,7 @@ Configurator.renderPlayerEditor = function(user) {
         <div class="field"><label>Глиф</label><input class="input" name="avatarGlyph" value="${esc(user.avatarGlyph || '')}" /></div>
       </div>
       <div class="cols3">
-        <div class="field"><label>Пароль</label><input class="input" name="pass" value="${esc(user.pass || '')}" /></div>
+
         <div class="field"><label>Кредиты</label><input class="input" type="number" name="credits" value="${Number(user.credits || 0)}" /></div>
         <div class="field"><label>Текущая планета</label><select class="select" name="currentPlanetId"><option value="">Не задана</option>${Object.values(PLANETS).map(option => `<option value="${option.id}" ${option.id === (user.currentPlanetId || '') ? 'selected' : ''}>${esc(option.name)}</option>`).join('')}</select></div>
       </div>
@@ -7928,7 +7929,7 @@ Configurator.collectEntity = function(type, formEl, formData = new FormData(form
     return normalizePlayerProfileV2({
       id: slugifyId(formData.get('id') || formData.get('displayName') || '', 'player'),
       role: String(formData.get('role') || 'player'),
-      pass: String(formData.get('pass') || '0000').trim(),
+
       shortName: String(formData.get('shortName') || '').trim(),
       displayName: String(formData.get('displayName') || '').trim(),
       rank: String(formData.get('rank') || '').trim(),
@@ -8392,7 +8393,7 @@ const MessagesUI = {
       <div class="messages-layout">
         <aside class="messages-side card">
           <div class="section-title">Сообщения</div>
-          
+
           <div class="message-contact-list">
             <div class="tiny-label" style="margin-bottom:8px">Игроки</div>
             ${partners.map(id => `
@@ -8413,7 +8414,7 @@ const MessagesUI = {
         <section class="messages-main card pad18">
           ${selection.kind === 'direct' && selection.key ? `
             <div class="section-title">Диалог с ${esc(getPlayerDisplayName(selection.key))}</div>
-            
+
             <div class="chat-thread message-thread" data-direct-thread>
               ${directThread.map(message => this.directMessageMarkup(message)).join('') || '<div class="small-note">Диалог ещё не начат.</div>'}
             </div>
@@ -8451,7 +8452,7 @@ const MessagesUI = {
       <div class="messages-layout gm">
         <aside class="messages-side card">
           <div class="section-title">Все диалоги</div>
-          
+
           <div class="message-contact-list">
             <div class="tiny-label" style="margin-bottom:8px">Игрок ↔ Игрок</div>
             ${directKeys.map(threadKey => {
@@ -9342,7 +9343,7 @@ function renderPlayerChatHeader(playerId) {
       <div class="message-thread-avatar">${renderZoomableThumb(player, { size: 'lg', type: 'player', glyph: player.avatarGlyph || initials(player.displayName) })}</div>
       <div>
         <div class="section-title">Диалог с ${esc(player.displayName || getPlayerDisplayName(playerId))}</div>
-        
+
       </div>
     </div>
   `;
@@ -9427,7 +9428,7 @@ MessagesUI.renderForPlayer = function() {
     <div class="messages-layout">
       <aside class="messages-side card">
         <div class="section-title">Сообщения</div>
-        
+
         <div class="field" style="margin-bottom:12px"><input class="input" id="messages-search-player" value="${esc(this.playerSearch || '')}" placeholder="Поиск по имени, ID или тексту..." /></div>
         <div class="small-note" style="margin:-4px 0 12px">Сортировка по дате последнего сообщения, новые сверху.</div>
         <div class="message-contact-list">
@@ -9520,7 +9521,7 @@ MessagesUI.renderForGm = function() {
     <div class="messages-layout gm">
       <aside class="messages-side card">
         <div class="section-title">Все диалоги</div>
-        
+
         <div class="field" style="margin-bottom:12px"><input class="input" id="messages-search-gm" value="${esc(this.gmSearch || '')}" placeholder="Поиск по игроку, NPC или тексту..." /></div>
         <div class="small-note" style="margin:-4px 0 12px">Сортировка по дате последнего сообщения, новые сверху.</div>
         <div class="message-contact-list">
@@ -19281,7 +19282,7 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
       ${imageFieldMarkup(user, 'Портрет персонажа')}
       <div class="cols3"><div class="field"><label>ID</label><input class="input" name="id" value="${esc(user.id)}" /></div><div class="field"><label>Короткое имя</label><input class="input" name="shortName" value="${esc(user.shortName || '')}" /></div><div class="field"><label>Роль</label><select class="select" name="role"><option value="player" ${user.role === 'player' ? 'selected' : ''}>player</option><option value="gm" ${user.role === 'gm' ? 'selected' : ''}>gm</option></select></div></div>
       <div class="cols3"><div class="field"><label>Отображаемое имя</label><input class="input" name="displayName" value="${esc(user.displayName)}" /></div><div class="field"><label>Ранг</label><input class="input" name="rank" value="${esc(user.rank || '')}" /></div><div class="field"><label>Глиф</label><input class="input" name="avatarGlyph" value="${esc(user.avatarGlyph || '')}" /></div></div>
-      <div class="cols3"><div class="field"><label>Пароль</label><input class="input" name="pass" value="${esc(user.pass || '')}" /></div><div class="field"><label>Кредиты</label><input class="input" type="number" name="credits" value="${Number(user.credits || 0)}" /></div><div class="field"><label>Текущая планета</label><select class="select" name="currentPlanetId"><option value="">Не задана</option>${Object.values(PLANETS).map(option => `<option value="${option.id}" ${option.id === (user.currentPlanetId || '') ? 'selected' : ''}>${esc(option.name)}</option>`).join('')}</select></div></div>
+      <div class="cols3"><div class="field"><label>Кредиты</label><input class="input" type="number" name="credits" value="${Number(user.credits || 0)}" /></div><div class="field"><label>Текущая планета</label><select class="select" name="currentPlanetId"><option value="">Не задана</option>${Object.values(PLANETS).map(option => `<option value="${option.id}" ${option.id === (user.currentPlanetId || '') ? 'selected' : ''}>${esc(option.name)}</option>`).join('')}</select></div></div>
       <div class="cols3"><div class="field"><label>Текущее здоровье</label><input class="input" type="number" name="hpCurrent" value="${Number(user.stats.hpCurrent || 0)}" /></div><div class="field"><label>Макс. здоровье</label><input class="input" type="number" name="hpMax" value="${Number(user.stats.hpMax || 0)}" /></div><div class="field"><label>Энергия (текущая)</label><input class="input" type="number" name="energyCurrent" value="${Number(user.stats.energyCurrent || 0)}" /></div></div>
       <div class="cols3"><div class="field"><label>Текущий щит</label><input class="input" type="number" name="shieldCurrent" value="${Number(user.stats.shieldCurrent || 0)}" /></div><div class="field"><label>Макс. щит</label><input class="input" type="number" name="shieldMax" value="${Number(user.stats.shieldMax || 0)}" /></div><div class="field"><label>Энергия (базовый максимум)</label><input class="input" type="number" name="energyMax" value="${Number(user.stats.energyMax || 1)}" /></div></div>
       <div class="section-title">Характеристики</div>${renderAbilityInputsV50(user)}
@@ -19387,7 +19388,7 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
       return normalizePlayerProfileV2({
         id: slugifyId(formData.get('id') || formData.get('displayName') || '', 'player'),
         role: String(formData.get('role') || 'player'),
-        pass: String(formData.get('pass') || '0000').trim(),
+
         shortName: String(formData.get('shortName') || '').trim(),
         displayName: String(formData.get('displayName') || '').trim(),
         rank: String(formData.get('rank') || '').trim(),
@@ -19498,7 +19499,6 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
   const GUEST_PROFILE_V60 = {
     id: GUEST_ID_V60,
     role: 'guest',
-    pass: '',
     shortName: 'Guest',
     displayName: 'Гость',
     rank: 'Guest Access',
@@ -21556,7 +21556,7 @@ function legacyRegionMapsV181() {
 
           <div class="registration-section-v1054"><div class="section-title">Стартовое снаряжение</div><div class="small-note">Можно выбрать несколько предметов. Показываются только предметы с флагом «Доступен как стартовое», доступные кампании или её эпохе.</div><div data-registration-equipment-v1066>${renderStartingEquipmentCardsV1066(campaign)}</div></div>
 
-          <div class="registration-section-v1054"><div class="section-title">Доступ</div><div class="cols2"><div class="field"><label>Пароль персонажа</label><input class="input" name="pass" type="password" required minlength="4" autocomplete="new-password" /></div><div class="field"><label>Повторите пароль</label><input class="input" name="pass2" type="password" required minlength="4" autocomplete="new-password" /></div></div></div>
+          <div class="registration-section-v1054"><div class="section-title">Доступ</div><div class="cols2"><div class="field"><label>Пароль персонажа</label><input class="input" name="pass" type="password" required minlength="8" autocomplete="new-password" /></div><div class="field"><label>Повторите пароль</label><input class="input" name="pass2" type="password" required minlength="4" autocomplete="new-password" /></div></div></div>
           <div class="registration-submit-v1054"><button class="primary" type="submit">ОТПРАВИТЬ АНКЕТУ ДМУ</button><div class="small-note" id="registration-status-v1052"></div></div>
         </form>
       </div>
@@ -21627,6 +21627,7 @@ function legacyRegionMapsV181() {
           credits: 0, stats: { hpCurrent: 10, hpMax: 10, shieldCurrent: 0, shieldMax: 0, energyCurrent: 1, energyMax: 1, baseArmorClass: 10 }, abilities: Object.fromEntries(ABILITIES_V1052.map(row => [row.key, 0])), abilityBase: Object.fromEntries(ABILITIES_V1052.map(row => [row.key, 0])),
           equipmentSlots: { primaryWeapon: '', secondaryWeapon: '', armor: '' }, installedImplantIds: [], inventory: creation.equipmentIds.map(itemId => ({ itemId, qty: 1 })), social: { npcIds: [], orgs: [], reputation: [] }, currentPlanetId: '', relatedArticleIds: [], ...window.GRPGRegistrationLoadoutV179.payload(creation.loadout)
         });
+        player.pass = pass; // Transient registration input, removed by the server before storing the profile.
         if (!window.electronAPI?.submitCharacterApplication) throw new Error('Установите версию 1.0.93 и серверный модуль анкет');
         const submitted = await window.electronAPI.submitCharacterApplication({ player_id: id, player, updatedBy: Sync.config?.deviceLabel || 'desktop-registration', clientUpdatedAt: new Date().toISOString() });
         if (!submitted?.ok || !submitted?.row) throw new Error(submitted?.message || 'Сервер не подтвердил сохранение анкеты');
@@ -23833,4 +23834,65 @@ window.GRPGInstallGlobalStockExchangeV1074?.();
     document.getElementById('mod-profile')?.scrollTo({top:0,behavior:'instant'});
     UI.renderProfile();
   });
+})();
+
+// Server-backed character credentials and DM-assisted recovery.
+let playerSessionV212 = localStorage.getItem('grpg.player-session.v212') || '';
+async function playerAuthCallV212(action, data = null, query = {}) {
+  const response = await window.electronAPI?.playerAuthV212?.({action,data,query,token:playerSessionV212});
+  if (!response?.ok) throw new Error(response?.message || 'Требуется сервер авторизации v212');
+  return response;
+}
+(function() {
+  const finish = App.finishLogin.bind(App);
+  App.finishLogin = async function(...args) {
+    if (String(App.currentUser?.role || '') !== 'guest') {
+      try {
+        const actor = await playerAuthCallV212('session');
+        if (actor.playerId !== App.currentUserId || actor.campaignId !== String(Sync.config?.campaignId || '')) throw new Error('Войдите в выбранного персонажа заново');
+        App.currentUser.role = actor.dm ? 'gm' : 'player';
+      } catch (error) {
+        App.currentUserId = null;
+        Persistence.clearSession();
+        document.getElementById('login-error').textContent = error.message;
+        return;
+      }
+    }
+    if (String(App.currentUser?.role || '') === 'guest') {
+      playerSessionV212 = '';
+      localStorage.removeItem('grpg.player-session.v212');
+      await window.electronAPI?.playerAuthV212?.({action:'logout'});
+    }
+    return finish(...args);
+  };
+  const logout = App.logout.bind(App);
+  App.logout = function(...args) {
+    playerSessionV212 = '';
+    window.electronAPI?.playerAuthV212?.({action:'logout'});
+    localStorage.removeItem('grpg.player-session.v212');
+    return logout(...args);
+  };
+  const render = UI.renderProfile.bind(UI), fill = App.fillLoginSelect.bind(App);
+  UI.renderProfile = function(...args) {const result=render(...args);window.GRPGPlayerAuthV212.attach();return result;};
+  App.fillLoginSelect = function(...args) {
+    for (const map of [App.state?.users, PLAYER_TEMPLATES]) {
+      if (map) for (const [id, player] of Object.entries(map)) map[id] = window.GRPGPlayerCredentialsV212.clean(player);
+    }
+    const result=fill(...args);window.GRPGPlayerAuthV212.attach();return result;
+  };
+  window.GRPGPlayerAuthV212.install({
+    input:'pass-input', selected:()=>document.getElementById('char-select')?.value || '',
+    campaign:()=>String(Sync.config?.campaignId || ''),
+    profile:()=>document.getElementById('profile-content'),
+    dm:()=>App.currentUser?.role === 'gm',
+    name:id=>App.state.users[id]?.displayName || id,
+    call:(path,data,query)=>playerAuthCallV212(path.split('/auth-v212/')[1],data,query)
+  });
+})();
+
+(function() {
+  const save = Persistence.save.bind(Persistence);
+  Persistence.save = function(state, ...args) {
+    return save(window.GRPGPlayerCredentialsV212.clean(state), ...args);
+  };
 })();
