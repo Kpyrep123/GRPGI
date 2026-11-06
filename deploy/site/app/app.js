@@ -6034,11 +6034,88 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
     deep,
     app: App
   };
+  const storyFieldsV210 = [
+    ['lore', 'История персонажа'], ['personalityTrait', 'Черта характера'],
+    ['ideal', 'Идеал'], ['weakness', 'Слабость']
+  ];
+  let storyEditorV210 = null;
+
+  function renderProfileStoryV210(host, player) {
+    const tail = host?.querySelector(':scope > .character-sheet-story-v142');
+    if (!tail || !player?.id) return;
+    if (storyEditorV210?.playerId !== player.id) storyEditorV210 = null;
+    const editor = storyEditorV210;
+    const panel = document.createElement('section');
+    panel.className = 'panel profile-story-v210';
+    const open = App.ui.storyPlayerV210 === player.id;
+    panel.innerHTML = `<div role="tablist" aria-label="История и личность"><button class="secondary" type="button" role="tab" aria-selected="${open}" aria-controls="profile-story-content-v210" data-story-toggle>История и личность</button></div>
+      <div id="profile-story-content-v210" role="tabpanel" ${open ? '' : 'hidden'}>
+      ${editor ? `<form data-story-form>
+        ${storyFieldsV210.map(([key, label]) => `<label class="field"><span>${label}</span><textarea class="input area" name="${key}" ${key === 'lore' ? '' : 'maxlength="3000"'} ${editor.saving ? 'disabled' : ''}>${esc(editor.values[key])}</textarea></label>`).join('')}
+        <div class="small-note">История поддерживает HTML-разметку.</div>
+        <div class="pill-row"><button class="primary" type="submit" ${editor.saving ? 'disabled' : ''}>${editor.saving ? 'Сохранение…' : 'Сохранить'}</button><button class="secondary" type="button" data-story-cancel ${editor.saving ? 'disabled' : ''}>Отмена</button></div>
+        <p role="status">${esc(editor.error || '')}</p></form>` :
+        `<div class="section-head"><h3>История и личность</h3>${!isGuestSession() && String(player.role).toLowerCase() !== 'gm' ? '<button class="secondary" type="button" data-story-edit>Редактировать</button>' : ''}</div>
+        <div class="article-body">${normalizeProfileLoreHtmlV1103(player.lore || 'История персонажа пока не заполнена.')}</div>
+        <div class="personality-profile-grid-v1066">${storyFieldsV210.slice(1).map(([key, label]) => `<div class="info-card"><div class="k">${label}</div><div class="v" style="white-space:pre-wrap">${esc(player[key] || 'Не указано')}</div></div>`).join('')}</div>`}
+      </div>`;
+    // Related articles and private notes retain their existing presentation.
+    const lore = tail.querySelector('.profile-lore-rich-v1103');
+    const notes = lore?.querySelector('.profile-notes-v1103');
+    if (notes) tail.append(notes);
+    lore?.remove();
+    for (const heading of tail.querySelectorAll('.section-head')) {
+      if (heading.querySelector('.section-title')?.textContent.trim() === 'Личность') {
+        heading.nextElementSibling?.remove();
+        heading.remove();
+      }
+    }
+    tail.prepend(panel);
+    panel.querySelector('[data-story-toggle]').onclick = () => {
+      if (editor?.saving) return;
+      App.ui.storyPlayerV210 = open ? '' : player.id;
+      renderProfile();
+    };
+    panel.querySelector('[data-story-edit]')?.addEventListener('click', () => {
+      if (isGuestSession() || currentPlayer()?.id !== player.id) return;
+      storyEditorV210 = {playerId: player.id, values: Object.fromEntries(storyFieldsV210.map(([key]) => [key, String(player[key] || '')]))};
+      renderProfile();
+    });
+    panel.querySelector('[data-story-cancel]')?.addEventListener('click', () => {
+      storyEditorV210 = null;
+      renderProfile();
+    });
+    panel.querySelector('[data-story-form]')?.addEventListener('input', event => {
+      if (storyFieldsV210.some(([key]) => key === event.target.name)) editor.values[event.target.name] = event.target.value;
+    });
+    panel.querySelector('[data-story-form]')?.addEventListener('submit', async event => {
+      event.preventDefault();
+      if (editor.saving || isGuestSession() || currentPlayer()?.id !== editor.playerId) return;
+      const changes = Object.fromEntries(storyFieldsV210.map(([key]) => [key, editor.values[key].trim()]));
+      editor.saving = true;
+      editor.error = '';
+      renderProfile();
+      try {
+        await commitPlayerMutation(next => {
+          if (next.id !== editor.playerId) throw new Error('Профиль изменился. Откройте редактор заново.');
+          Object.assign(next, changes);
+        }, 'История и личность сохранены', {rerender: false});
+        if (storyEditorV210 === editor) storyEditorV210 = null;
+      } catch (error) {
+        editor.error = error.message || 'Не удалось сохранить профиль';
+      } finally {
+        editor.saving = false;
+        if (App.ui.screen === 'profile') renderProfile();
+      }
+    });
+  }
+
   const renderProfileBeforeSheetV142 = renderProfile;
   renderProfile = function() {
     const host=$('#screen-profile'),previous=window.GRPGProfileSheetV142?.captureInventory(host),scroll=document.scrollingElement?.scrollTop || 0;
     const result = renderProfileBeforeSheetV142();
     if (App.ui.profileTab !== 'skills') window.GRPGProfileSheetV142?.layoutWeb($('#screen-profile'), normalizeInventoryPlayerWebV1067(currentPlayer() || {}));
+    if (App.ui.profileTab !== 'skills') renderProfileStoryV210(host, currentPlayer());
     window.GRPGProfileSheetV142?.restoreInventory(host,previous);
     if(previous && document.scrollingElement)document.scrollingElement.scrollTop=scroll;
     return result;

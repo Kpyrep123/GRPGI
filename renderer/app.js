@@ -23757,7 +23757,7 @@ window.GRPGInstallGlobalStockExchangeV1074?.();
   }
 
   function renderLoreSectionV1103(root,user){
-    const canEdit=String(user.role||'').toLowerCase()!=='gm';
+    const canEdit=!['gm','guest'].includes(String(user.role||'').toLowerCase());
     root.innerHTML=`${profileTabsV1103(user)}
       <section class="profile-lore-shell-v1103">
         <div class="card profile-lore-header-v1103">
@@ -23772,7 +23772,8 @@ window.GRPGInstallGlobalStockExchangeV1074?.();
           ${canEdit?`<form id="profile-lore-form-v1103" class="card form profile-lore-editor-v1103">
             <div class="section-title">HTML-РЕДАКТОР</div>
             <div class="field"><label>Лор персонажа</label><textarea class="area article-body-editor" name="lore" spellcheck="true">${esc(user.lore||'')}</textarea>${__htmlHint}</div>
-            <button class="primary" type="submit">СОХРАНИТЬ ЛОР</button>
+            ${[['personalityTrait','Черта характера'],['ideal','Идеал'],['weakness','Слабость']].map(([key,label])=>`<div class="field"><label>${label}</label><textarea class="area" name="${key}" maxlength="3000">${esc(user[key]||'')}</textarea></div>`).join('')}
+            <button class="primary" type="submit">СОХРАНИТЬ</button>
           </form>`:''}
         </div>
       </section>`;
@@ -23780,17 +23781,26 @@ window.GRPGInstallGlobalStockExchangeV1074?.();
 
     root.querySelector('#profile-lore-form-v1103')?.addEventListener('submit',async event=>{
       event.preventDefault();
-      const button=event.currentTarget.querySelector('[type="submit"]');
-      if(button)button.disabled=true;
-      const current=App.state.users[user.id]||user;
-      const lore=String(new FormData(event.currentTarget).get('lore')||'').trim();
-      const next=normalizePlayerProfileV2({...current,lore});
-      App.state.users[user.id]=next;
-      PLAYER_TEMPLATES[user.id]=deep(next);
-      await App.writeLocalMirrors();
-      const result=await PlayerSync.pushPlayerPatch(user.id,{lore},{notice:'Лор персонажа обновлён',rerender:false});
-      if(!result?.ok&&result?.status!=='disabled')Toast.show(`Лор сохранён локально, но облако не обновилось: ${result?.message||'unknown error'}`,'info');
-      UI.renderProfile();
+      const form = event.currentTarget;
+      const button = form.querySelector('[type="submit"]');
+      if (button?.disabled || !canEdit || App.currentUser?.id !== user.id) return;
+      const fd = new FormData(form);
+      const patch = Object.fromEntries(['lore','personalityTrait','ideal','weakness'].map(key => [key, String(fd.get(key) || '').trim()]));
+      if (button) button.disabled = true;
+      try {
+        const current = App.state.users[user.id] || user;
+        const next = normalizePlayerProfileV2({...current, ...patch});
+        App.state.users[user.id] = next;
+        PLAYER_TEMPLATES[user.id] = deep(next);
+        await App.writeLocalMirrors();
+        const result = await PlayerSync.pushPlayerPatch(user.id, patch, {notice:'История и личность обновлены', rerender:false});
+        if (!result?.ok && result?.status !== 'disabled') Toast.show(`Сохранено локально, но облако не обновилось: ${result?.message || 'unknown error'}`, 'info');
+        UI.renderProfile();
+      } catch (error) {
+        Toast.show(error.message || 'Не удалось сохранить профиль', 'err');
+      } finally {
+        if (button) button.disabled = false;
+      }
     });
   }
 
