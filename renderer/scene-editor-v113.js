@@ -2351,7 +2351,7 @@
   }
   async function pushCombatProfile120(playerId,patch){
     if(!PlayerSync?.pushPlayerPatch)return{ok:true,status:'local-only'};
-    return PlayerSync.pushPlayerPatch(playerId,patch,{notice:null,rerender:false});
+    return PlayerSync.pushPlayerPatch(playerId,patch,{notice:null,rerender:false,writeLocalMirrors:false});
   }
   async function persistCombatProfiles105(reason='Сцена: боевое действие',options={}){
     local.stability.dirtyProfiles=true;
@@ -2359,20 +2359,22 @@
     const save=async()=>{
       try{
         window.__grpgCombatCheckpointV120=true;
-        try{const saved=await Persistence?.save?.(App.state);if(saved?.ok===false)throw Error(saved.message||'Профиль не записан локально');}finally{window.__grpgCombatCheckpointV120=false;}
-        await App.writeLocalMirrors?.();
+        try{
+          if(App.writeLocalMirrors){const saved=await App.writeLocalMirrors();if(saved?.ok===false)throw Error(saved.message||'Профиль не записан локально');}
+          else {const saved=await Persistence?.save?.(App.state);if(saved?.ok===false)throw Error(saved.message||'Профиль не записан локально');}
+        }finally{window.__grpgCombatCheckpointV120=false;}
         if(options.immediate){
-          const runtime=Combat.getRuntime(),playerIds=unique(list(runtime?.tokens).map(token=>token?.playerId));
+          const runtime=Combat.getRuntime(),playerIds=unique(list(runtime?.tokens).map(token=>token?.playerId)),jobs=[];
           for(const playerId of playerIds){
             const user=normalizePlayerProfileV2(App.state?.users?.[playerId]||PLAYER_TEMPLATES?.[playerId]||{});
             if(!user.id)continue;
             const patch=combatProfilePatch120(user),hash=JSON.stringify(patch);
             if(local.combatProfileHashesV120.get(playerId)===hash)continue;
-            const pushed=await pushCombatProfile120(playerId,patch);
-            if(pushed?.ok===false)throw new Error(pushed?.message||`Не удалось сохранить профиль ${user.displayName||playerId}`);
-            local.combatProfileHashesV120.set(playerId,hash);
+            jobs.push((async()=>{const pushed=await pushCombatProfile120(playerId,patch);if(pushed?.ok===false)throw Error(pushed.message||`Не удалось сохранить профиль ${user.displayName||playerId}`);local.combatProfileHashesV120.set(playerId,hash);})());
           }
-          await App.writeLocalMirrors?.();
+          const results=await Promise.allSettled(jobs);
+          if(jobs.length){const saved=await App.writeLocalMirrors?.();if(saved?.ok===false)throw Error(saved.message||'Подтверждённые профили не записаны локально');}
+          const failed=results.find(result=>result.status==='rejected');if(failed)throw failed.reason;
         }
         return {ok:true,status:options.immediate?'saved':'saved-local',reason};
       }catch(error){console.error('SCENE_LOCAL_PROFILE_SAVE_FAILED',error);return {ok:false,message:error?.message||String(error),reason};}

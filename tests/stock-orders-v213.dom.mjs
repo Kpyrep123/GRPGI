@@ -9,7 +9,7 @@ const context = vm.createContext(w), run = text => vm.runInContext(text, context
 w.setInterval=()=>0;w.requestAnimationFrame=()=>0;
 const read = name => fs.readFileSync('deploy/site/app/' + name, 'utf8');
 w.document.write(read('index.html').replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, ''));
-for (const file of ['rich-text-scope.js','market-engine.js','player-sync-core.js','damage-types-v202.js','weapon-handling-v203.js','player-credentials-v212.js','player-auth-v212.js']) run(read(file));
+for (const file of ['stock-ticket-v214.js','rich-text-scope.js','market-engine.js','player-sync-core.js','damage-types-v202.js','weapon-handling-v203.js','player-credentials-v212.js','player-auth-v212.js']) run(read(file));
 const source = read('app.js').replace('  init().catch(error => {', `
   window.stockTest={App,ticket:stockOrderPanelWebV148};stockExchangeWebV148={fees:{tradeRate:.001,borrowDailyRate:.0003,custodyDailyRate:.0001},quotes:[],orders:[],candles:{}};
   renderCurrentScreen=()=>{};startRealtimeSync=()=>{};notify=()=>{};
