@@ -309,7 +309,8 @@
 
   function resolveMediaUrl(source, storagePath = '') {
     const raw = String(source || '').trim();
-    if (storagePath) return publicStorageUrl(storagePath);
+    const storageUrl = publicStorageUrl(storagePath);
+    if (storageUrl) return storageUrl;
     if (!raw) return '';
     if (/^(data:|blob:|https?:|content:|capacitor:|file:)/i.test(raw)) {
       return encodeURI(raw).replace(/%5C/g, '/');
