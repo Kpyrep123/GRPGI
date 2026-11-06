@@ -3734,8 +3734,10 @@ function renderThumb(entity, options = {}) {
   const size = options.size || 'sm';
   const label = options.label || titleForEntity(options.type || 'entity', entity);
   const glyph = entity?.avatarGlyph || options.glyph || initials(label, '✦');
-  if (entity?.image) {
-    return `<div class="entity-thumb ${size}"><img src="${esc(entity.image)}" alt="${esc(label)}" loading="lazy" /></div>`;
+  const image = entity?.image || entity?.avatarImage || entity?.photo ||
+    entity?.portrait || (/^https?:\/\//i.test(entity?.imageStoragePath || '') ? entity.imageStoragePath : '');
+  if (image) {
+    return `<div class="entity-thumb ${size}"><img src="${esc(image)}" alt="${esc(label)}" loading="lazy" /></div>`;
   }
   const hue = hashHue(entity?.id || label);
   const hue2 = (hue + 45) % 360;
