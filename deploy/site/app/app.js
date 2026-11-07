@@ -861,11 +861,11 @@
       return;
     }
 
-    if ((changed.chat && active === 'chat') || (changed.combat && active === 'combat') || (changed.players && active === 'profile') || (changed.snapshot && ['home', 'archive', 'market', 'tasks'].includes(active))) {
+    if ((changed.chat && active === 'chat') || (changed.combat && active === 'combat') || (changed.players && active === 'profile') || (changed.snapshot && ['home', 'archive', 'market', 'tasks', 'news'].includes(active))) {
       renderActiveScreenSafely();
       return;
     }
-    if (changed.players && ['home', 'market', 'chat', 'tasks'].includes(active)) {
+    if (changed.players && ['home', 'market', 'chat', 'tasks', 'news'].includes(active)) {
       renderActiveScreenSafely();
     }
   }
@@ -1416,6 +1416,10 @@
   }
 
   function openBoot(mode) {
+    if (mode !== 'app') {
+      $('#task-reader')?.close();
+      if (App.ui.chatMasterOpenV1068) closeWebChatMasterV1068();
+    }
     App.ui.boot = mode;
     const nodes = screenNodes();
     nodes.login?.classList.toggle('hidden', mode !== 'login');
@@ -2649,7 +2653,7 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
           <h3>${esc(entity.title || entity.name || entity.id)}</h3>
           ${entity.subtitle ? `<p class="small-note">${esc(entity.subtitle)}</p>` : ''}
           ${destination ? renderRelatedSectionWebV1100('planet', [destination.id], 'Планета назначения') : ''}
-          ${entity.reward ? `<p class="small-note"><b>Награда</b> · ${esc(entity.reward)}</p>` : ''}
+          ${String(entity.reward ?? '') ? `<p class="small-note"><b>Награда</b> · ${esc(entity.reward)}</p>` : ''}
           ${entity.summary ? `<p class="small-note">${esc(entity.summary)}</p>` : ''}
           ${entity.body ? `<div class="article-body">${normalizeRichHtml(entity.body, { interactive: true })}</div>` : ''}
           ${renderRelatedSectionWebV1100('article', entity.relatedArticleIds, 'Материалы по заданию')}
@@ -3583,6 +3587,42 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
     `;
   }
 
+  function renderTaskTile(task) {
+    const destination = visibleTaskPlanet(task.destinationPlanetId);
+    const image = mediaFromEntity(task);
+    return `<button class="card task-tile" type="button" data-action="open-task-reader" data-task-id="${esc(task.id)}">
+      <span class="task-tile-image" aria-hidden="true">${image ? `<img src="${esc(image)}" alt="" loading="lazy" />` : '◫'}</span>
+      <span class="task-tile-copy">
+        <strong>${esc(task.title || task.name || 'Без названия')}</strong>
+        ${task.subtitle ? `<span class="task-tile-subtitle">${esc(task.subtitle)}</span>` : ''}
+        ${String(task.reward ?? '') ? `<span>Награда · ${esc(task.reward)}</span>` : ''}
+        ${destination ? `<span>Планета · ${esc(destination.name || destination.id)}</span>` : ''}
+      </span>
+    </button>`;
+  }
+
+  let taskReaderMarkup = '';
+  function openTaskReader(taskId) {
+    const reader = $('#task-reader');
+    const task = App.data.tasksList.find(entry => entry.id === taskId);
+    if (!visibleForPlayer(task, App.session?.userId)) {
+      if (reader.open) reader.close();
+      return;
+    }
+    reader.dataset.taskId = taskId;
+    reader.querySelector('#task-reader-title').textContent = task.title || task.name || 'Задание';
+    const content = reader.querySelector('.task-reader-content');
+    const markup = renderEntityBody({ ...task, _type: 'task' });
+    if (taskReaderMarkup !== markup) {
+      content.innerHTML = markup;
+      taskReaderMarkup = markup;
+    }
+    if (!reader.open) {
+      reader.showModal();
+      content.scrollTop = 0;
+    }
+  }
+
   function renderTasks() {
     setTopbar('Задания', 'Не принятые, активные и завершённые');
     const visible = App.data.tasksList.filter(task => visibleForPlayer(task, App.session?.userId));
@@ -3595,23 +3635,44 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
       <section class="web-task-column">
         <h2 class="section-title">${label}</h2>
         ${visible.filter(task => (task.status || 'open') === status)
-          .map(task => renderEntityBody({ ...task, _type: 'task' })).join('') || '<div class="placeholder">Нет заданий</div>'}
+          .map(renderTaskTile).join('') || '<div class="placeholder">Нет заданий</div>'}
       </section>
     `).join('')}</div>`;
+    const reader = $('#task-reader');
+    if (reader.open) openTaskReader(reader.dataset.taskId);
+  }
+
+  function renderGalaGram() {
+    const isMessages = App.ui.screen === 'chat';
+    setTopbar('GalaGram', isMessages ? 'Переписки кампании' : 'Лента кампании');
+    const player = currentPlayer();
+    const name = player?.displayName || player?.shortName || 'Гость';
+    $('#social-identity').innerHTML = `${renderEntityAvatar(player || {}, name, 'sm')}<div><b>${esc(name)}</b><small>GalaGram</small></div>`;
+    $$('.social-nav [data-section]').forEach(button => {
+      if (button.dataset.section === App.ui.screen) button.setAttribute('aria-current', 'page');
+      else button.removeAttribute('aria-current');
+    });
+    if (isMessages) renderChat();
+    else window.GRPGNewsWebV159?.show();
+    updateChatUnreadIndicatorsV1065();
   }
 
   function renderCurrentScreen() {
     if (App.ui.screen !== 'home') { App.ui.galaxyDesktopActive = false; WebGalaxyMap.destroy(); }
     if (RUNTIME.hideCombat && App.ui.screen === 'combat') App.ui.screen = 'home';
     if (App.ui.screen !== 'combat') document.body.classList.remove('combat-modal-open');
+    if (App.ui.screen !== 'tasks') $('#task-reader')?.close();
+    if (App.ui.screen !== 'chat' && App.ui.chatMasterOpenV1068) closeWebChatMasterV1068();
+    const social = ['news', 'chat'].includes(App.ui.screen);
+    $('#social-shell').classList.toggle('hidden', !social);
+    const navScreen = social ? 'news' : App.ui.screen;
     $$('.screen').forEach(node => node.classList.toggle('active', node.id === `screen-${App.ui.screen}`));
-    $$('.nav-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.screen === App.ui.screen));
+    $$('.nav-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.screen === navScreen));
     if (App.ui.screen === 'home') renderHome();
     if (App.ui.screen === 'archive') renderArchive();
     if (App.ui.screen === 'market') renderMarket();
     if (App.ui.screen === 'tasks') renderTasks();
-    if (App.ui.screen === 'chat') renderChat();
-    if (App.ui.screen === 'news') { setTopbar('GalaGram', 'Лента кампании'); window.GRPGNewsWebV159?.show(); }
+    if (social) renderGalaGram();
     if (App.ui.screen === 'combat' && !RUNTIME.hideCombat) renderCombat();
     if (App.ui.screen === 'profile') renderProfile();
     if (App.ui.screen === 'hub-v153') {
@@ -4095,6 +4156,13 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
         requestAnimationFrame(() => $('#archive-search-input')?.focus());
       }
       if (action === 'archive-back-v1079') document.querySelector('.archive-sidebar')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      if (action === 'open-task-reader') openTaskReader(button.dataset.taskId);
+      if (action === 'close-task-reader') $('#task-reader').close();
+      if (action === 'social-section' && App.ui.screen !== button.dataset.section) {
+        App.ui.screen = button.dataset.section;
+        renderCurrentScreen();
+        window.scrollTo(0, 0);
+      }
       if (action === 'open-article') openArticleById(button.dataset.articleId);
       if (action === 'open-planet') openPlanet(button.dataset.planetId);
       if (action === 'open-system') openSystem(button.dataset.systemId);
@@ -4972,7 +5040,8 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
       total += count;
     }
 
-    const navButton = document.querySelector('.nav-btn[data-screen="chat"]');
+    setUnreadBadgeTextV1065($('#social-unread'), total);
+    const navButton = document.querySelector('.nav-btn[data-screen="news"]');
     if (navButton) {
       let badge = navButton.querySelector('.chat-nav-unread-v1065');
       if (!badge) {
@@ -5187,7 +5256,6 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
 
   const __renderChatV1068 = renderChat;
   renderChat = function() {
-    setTopbar('Сообщения', '');
     const root = $('#screen-chat');
     if (!root) return;
     const threads = buildThreads();
@@ -5234,7 +5302,11 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
   const __renderAffectedScreensV1068 = renderAffectedScreens;
   renderAffectedScreens = function(changed = {}) {
     const result = __renderAffectedScreensV1068(changed);
-    if (changed.chat && App.ui.screen !== 'chat' && App.ui.chatMasterOpenV1068 && App.ui.selectedThreadKey) requestAnimationFrame(() => renderWebChatMasterV1068(App.ui.selectedThreadKey));
+    if (changed.chat && App.ui.chatMasterOpenV1068) {
+      requestAnimationFrame(() => {
+        if (App.ui.screen === 'chat' && App.ui.chatMasterOpenV1068) renderWebChatMasterV1068(App.ui.selectedThreadKey);
+      });
+    }
     return result;
   };
 

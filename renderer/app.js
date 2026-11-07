@@ -4428,6 +4428,7 @@ const UI = {
   },
   closeModule() {
     if (!this.activeElement) return;
+    if (this.activeModuleId === 'tasks') $('#task-reader')?.close();
     const prev = this.activeElement;
     prev.classList.remove('open');
     prev.classList.remove('over-login');
@@ -7071,6 +7072,48 @@ UI.renderNews = function() {
   `;
 };
 
+function renderTaskTile(task) {
+  const destination = Data.getPlanet(task.destinationPlanetId);
+  return `<button class="task-tile" type="button" data-task-id="${esc(task.id)}">
+    <span class="task-tile-image" aria-hidden="true">${task.image ? `<img src="${esc(task.image)}" alt="" loading="lazy" />` : '◫'}</span>
+    <span class="task-tile-copy">
+      <strong>${esc(task.title || task.name || 'Без названия')}</strong>
+      ${task.subtitle ? `<span class="task-tile-subtitle">${esc(task.subtitle)}</span>` : ''}
+      ${String(task.reward ?? '') ? `<span>Награда · ${esc(task.reward)}</span>` : ''}
+      ${isEntityVisible(destination) ? `<span>Планета · ${esc(destination.name || destination.id)}</span>` : ''}
+    </span>
+  </button>`;
+}
+
+function openTaskReader(taskId) {
+  const reader = $('#task-reader');
+  const task = Data.tasks[taskId];
+  if (!isEntityVisible(task)) {
+    if (reader.open) reader.close();
+    return;
+  }
+  const destination = Data.getPlanet(task.destinationPlanetId);
+  const content = reader.querySelector('.task-reader-content');
+  reader.dataset.taskId = taskId;
+  reader.querySelector('#task-reader-title').textContent = task.title || task.name || 'Задание';
+  content.innerHTML = `<article class="card pad18">
+    ${task.image ? renderThumb(task, { size: 'lg', type: 'task' }) : ''}
+    ${task.subtitle ? `<p class="subtle">${esc(task.subtitle)}</p>` : ''}
+    ${isEntityVisible(destination) ? renderEntityButton('planet', destination, { subtitle: 'Планета назначения' }) : ''}
+    ${String(task.reward ?? '') ? `<p class="small-note">Награда · ${esc(task.reward)}</p>` : ''}
+    ${task.summary ? `<p class="small-note">${esc(task.summary)}</p>` : ''}
+    ${__renderRichText(task.body, '')}
+    ${renderRelatedArticlesSection(task.relatedArticleIds || [], 'Материалы по заданию')}
+  </article>`;
+  UI.attachEntityLinks(content);
+  if (!reader.open) {
+    reader.showModal();
+    content.scrollTop = 0;
+  }
+}
+
+$('#task-reader [data-action="close-task-reader"]')?.addEventListener('click', () => $('#task-reader').close());
+
 UI.renderTasks = function() {
   const visible = Object.values(TASKS).filter(entry => isEntityVisible(entry));
   const root = $('#tasks-content');
@@ -7086,31 +7129,17 @@ UI.renderTasks = function() {
         <section class="card pad18 task-column">
           <div class="section-title">${column.label}</div>
           <div class="task-column-stack">
-            ${visible.filter(task => (task.status || 'open') === column.key).map(task => {
-              const destination = Data.getPlanet(task.destinationPlanetId);
-              return `
-              <article class="task-card">
-                <div class="task-card-head">
-                  ${renderThumb(task, { size: 'sm', type: 'task', glyph: '◫' })}
-                  <div>
-                    <b>${esc(task.title || task.name || 'Без названия')}</b>
-                    ${task.subtitle ? `<div class="subtle">${esc(task.subtitle)}</div>` : ''}
-                  </div>
-                </div>
-                ${isEntityVisible(destination) ? renderEntityButton('planet', destination, { subtitle: 'Планета назначения' }) : ''}
-                ${task.reward ? `<div class="chip" style="margin:8px 0">НАГРАДА: ${esc(task.reward)}</div>` : ''}
-                ${task.summary ? `<div class="small-note" style="margin-bottom:8px">${esc(task.summary)}</div>` : ''}
-                ${__renderRichText(task.body, '')}
-                ${renderRelatedArticlesSection(task.relatedArticleIds || [], 'Материалы по заданию')}
-              </article>
-            `;
-            }).join('') || '<div class="small-note">Пусто</div>'}
+            ${visible.filter(task => (task.status || 'open') === column.key).map(renderTaskTile).join('') || '<div class="small-note">Пусто</div>'}
           </div>
         </section>
       `).join('')}
     </div>
   `;
-  UI.attachEntityLinks(root);
+  root.querySelectorAll('[data-task-id]').forEach(button => {
+    button.addEventListener('click', () => openTaskReader(button.dataset.taskId));
+  });
+  const reader = $('#task-reader');
+  if (reader?.open) openTaskReader(reader.dataset.taskId);
 };
 
 const __openModule = UI.openModule.bind(UI);

@@ -1705,7 +1705,7 @@ html[data-era-theme="industrial"] .campaign-chat-members-v1062{border-color:rgba
 @media(max-width:900px){.npc-scroll-select-v1064{min-height:180px;max-height:34vh}}
 
 /* v1.0.65 unread chat indicators */
-.nav-btn[data-screen="chat"]{position:relative}
+.nav-btn[data-screen="news"]{position:relative}
 .chat-nav-unread-v1065,
 .chat-thread-unread-v1065{
   display:inline-grid;
@@ -2045,9 +2045,6 @@ html[data-era-theme="medieval"] .origin-citizenship-v1087{background:rgba(116,69
   align-items: start;
 }
 .web-task-column { min-width: 0; }
-.web-task-column > .article-card { margin-bottom: 12px; overflow-wrap: anywhere; }
-.web-task-column .entity-hero-image { height: 140px; min-height: 0; }
-.web-task-column .related-entity-grid-v1100 { grid-template-columns: minmax(0, 1fr); }
 .task-marker-labels { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; }
 .web-task-map-legend {
   position: absolute;
@@ -2062,4 +2059,101 @@ html[data-era-theme="medieval"] .origin-citizenship-v1087{background:rgba(116,69
 }
 @media (max-width: 900px) {
   .web-task-board { grid-template-columns: minmax(0, 1fr); }
+}
+
+.task-tile {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px;
+  text-align: left;
+}
+.task-tile-image {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border-radius: 6px;
+  background: rgba(128, 145, 165, .14);
+}
+.task-tile-image img { width: 100%; height: 100%; min-height: 0; object-fit: contain; }
+.task-tile-copy { display: grid; gap: 3px; min-width: 0; font-size: 12px; overflow-wrap: anywhere; }
+.task-tile-copy strong { font-size: 14px; }
+.task-tile-subtitle {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+.task-reader {
+  position: fixed;
+  inset: 0;
+  box-sizing: border-box;
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  padding: 0;
+  border: 0;
+  background: var(--bg, #101722);
+  color: var(--text, #f0f5fa);
+  overflow: hidden;
+}
+.task-reader[open] { display: grid; grid-template-rows: auto minmax(0, 1fr); }
+.task-reader-bar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: max(12px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) 12px max(16px, env(safe-area-inset-left));
+  border-bottom: 1px solid var(--line, rgba(128, 145, 165, .3));
+  background: var(--panel, #192130);
+}
+.task-reader-bar h2 { margin: 0; flex: 1 1 200px; font-size: 20px; overflow-wrap: anywhere; }
+.task-reader-content {
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 16px 12px max(18px, env(safe-area-inset-bottom));
+}
+.task-reader-content > article { max-width: 860px; margin: 0 auto; overflow-wrap: anywhere; }
+
+.web-task-column > .task-tile { margin-bottom: 8px; }
+.task-reader-content .entity-hero-image { min-height: 0; height: clamp(140px, 32vh, 340px); }
+.task-reader-content .entity-hero-image img { object-fit: contain; }
+
+.social-shell {
+  display: grid;
+  grid-template-columns: minmax(180px, 220px) minmax(0, 760px);
+  gap: 18px;
+  align-items: start;
+  justify-content: center;
+}
+.social-sidebar {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+.social-identity { display: flex; align-items: center; gap: 8px; overflow-wrap: anywhere; }
+.social-identity .avatar-circle { flex: none; }
+.social-identity small { display: block; color: var(--muted); margin-top: 3px; }
+.social-nav { display: grid; gap: 6px; }
+.social-nav button { display: flex; align-items: center; justify-content: space-between; gap: 6px; text-align: left; }
+.social-nav .chat-thread-unread-v1065 { position: static; }
+.social-nav [aria-current="page"] { color: var(--text); border-color: var(--accent); }
+.social-main { min-width: 0; }
+.social-main .gg-feed { max-width: none; padding: 0; }
+.social-main .gg-heading > span { display: none; }
+.social-main .gg-heading h2 { margin-top: 0; }
+@media (max-width: 700px) {
+  .social-shell { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .social-sidebar { padding: 8px; gap: 8px; }
+  .social-nav { grid-template-columns: 1fr 1fr; }
 }

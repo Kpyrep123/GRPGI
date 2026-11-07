@@ -96,8 +96,16 @@ await run('window.electronAPI.loadWorldData().then(result=>applyWorldData(result
 render('tasks','task_example');
 assert.equal(w.document.querySelector('[name="destinationPlanetId"]').value,'task_planet');
 run('UI.renderTasks()');
-assert(w.document.querySelector('#tasks-content [data-entity="planet"][data-id="task_planet"]'));
-assert(w.document.querySelector('#tasks-content [data-entity="article"][data-id="task_article"]'));
+const taskTile=w.document.querySelector('#tasks-content [data-task-id="task_example"]');
+assert.match(taskTile.textContent,/Планета задания/);
+assert(!w.document.querySelector('#tasks-content [data-entity="article"]'));
+taskTile.click();
+const taskReader=w.document.querySelector('#task-reader');
+assert(taskReader.open);
+assert(taskReader.querySelector('[data-entity="planet"][data-id="task_planet"]'));
+assert(taskReader.querySelector('[data-entity="article"][data-id="task_article"]'));
+taskReader.querySelector('[data-action="close-task-reader"]').click();
+assert(!taskReader.open);
 assert.equal(run("Configurator.worldSectionsForEntityChange('planets','task_planet').includes('tasks')"),true);
 assert.equal(run("Configurator.worldSectionsForEntityChange('articles','task_article').includes('tasks')"),true);
 run("Configurator.remapReferences('planets','task_planet','new_planet'); Configurator.remapReferences('articles','task_article','new_article')");

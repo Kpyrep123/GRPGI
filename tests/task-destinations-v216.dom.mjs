@@ -19,15 +19,21 @@ for (const file of ['task-map-v216.js', 'rich-text-scope.js', 'market-engine.js'
 }
 assert.equal(read('task-map-v216.js'), fs.readFileSync(new URL('../renderer/task-map-v216.js', import.meta.url), 'utf8'));
 run(read('app.js').replace('  init().catch(error => {', `
-  window.tasksTest = { App, compileData, bindGlobalEvents, renderAffectedScreens, WebGalaxyMap };
+  window.tasksTest = { App, compileData, bindGlobalEvents, renderAffectedScreens, openCharacterChatV1086, WebGalaxyMap };
   if (false) init().catch(error => {`));
 
+for (const file of ['news-core-v159.js', 'news-ui-v159.js', 'news-web-v159.js']) run(read(file));
+
 const openTo = playerId => ({ playerIds: [playerId] });
-const task = (title, status, destinationPlanetId, visibility = openTo('p')) => ({ title, status, destinationPlanetId, visibility });
-const { App, compileData, bindGlobalEvents, renderAffectedScreens, WebGalaxyMap } = window.tasksTest;
+const task = (title, status, destinationPlanetId, visibility = openTo('p')) => ({ id: title.toLowerCase().replaceAll(' ', '-'), title, status, destinationPlanetId, visibility });
+const { App, compileData, bindGlobalEvents, renderAffectedScreens, openCharacterChatV1086, WebGalaxyMap } = window.tasksTest;
 const planet = (id, name, visibility = openTo('p')) => ({ id, name, visibility });
 const world = {
-  players: { PLAYER_TEMPLATES: { p: { id: 'p', role: 'player' } } },
+  players: { PLAYER_TEMPLATES: {
+    p: { id: 'p', displayName: 'Player One', role: 'player', campaignIds: ['main'] },
+    q: { id: 'q', displayName: 'Player Two', role: 'player', campaignIds: ['main'] }
+  } },
+  news: { NEWS_LIST: [{ id: 'headline', title: 'Campaign headline', body: '<p>Feed post</p>' }] },
   systems: { SYSTEMS: [
     { id: 'visible', name: 'Visible System', pos: { x: .4, y: .4 }, planetIds: ['home', 'secret', 'finished'], visibility: openTo('p') },
     { id: 'hidden', name: 'Hidden System', pos: { x: .6, y: .6 }, planetIds: ['stranded'], visibility: openTo('other') }
@@ -43,7 +49,7 @@ const world = {
     classified: { id: 'classified', title: 'Hidden Article', visibility: openTo('other') }
   } },
   tasks: { TASK_LIST: [
-    { ...task('Task Open', 'open', 'home'), relatedArticleIds: ['briefing', 'classified'] },
+    { ...task('Task Open', 'open', 'home'), subtitle: 'Brief subtitle', summary: 'Full summary', body: '<p>Full mission body</p>', reward: 0, image: 'https://grpgi.test/mission.png', relatedArticleIds: ['briefing', 'classified'] },
     task('Task Active', 'active', 'home'),
     task('Task Same Destination', 'active', 'home'),
     task('Task Complete', 'completed', 'finished'),
@@ -55,7 +61,8 @@ const world = {
 };
 
 try {
-  App.session = { userId: 'p', role: 'player' };
+  App.config = { campaignId: 'main' };
+  App.session = { userId: 'p', role: 'player', campaignId: 'main' };
   App.ui.boot = 'app';
   compileData({ world_json: world, state_json: {} }, [], [], null);
   bindGlobalEvents();
@@ -69,12 +76,22 @@ try {
   assert.match(columns[1].textContent, /Task Active/);
   assert.match(columns[2].textContent, /Task Complete/);
   assert.doesNotMatch(board.textContent, /Secret Planet|Hidden Article/);
-  assert(![...board.querySelectorAll('h3')].some(title => title.textContent === 'Task Hidden'));
-  assert(board.querySelector('[data-related-type="planet"][data-related-id="home"]'));
-
-  const briefing = board.querySelector('[data-related-id="briefing"]');
-  assert(briefing);
-  briefing.click();
+  assert(!board.querySelector('[data-task-id="task-hidden"]'));
+  assert.doesNotMatch(board.textContent, /Full summary|Full mission body|Task Briefing/);
+  const tile = board.querySelector('[data-task-id="task-open"]');
+  assert.match(tile.textContent, /Brief subtitle.*Награда · 0.*Visible Planet/s);
+  assert.equal(tile.querySelector('img').getAttribute('src'), 'https://grpgi.test/mission.png');
+  tile.click();
+  const reader = document.querySelector('#task-reader');
+  assert(reader.open);
+  assert.match(reader.textContent, /Full summary.*Full mission body/s);
+  assert(reader.querySelector('[data-related-type="planet"][data-related-id="home"]'));
+  assert(!reader.querySelector('[data-related-id="classified"]'));
+  reader.querySelector('[data-action="close-task-reader"]').click();
+  assert(!reader.open);
+  tile.click();
+  reader.querySelector('[data-related-id="briefing"]').click();
+  assert(!reader.open);
   assert.equal(App.ui.screen, 'archive');
   assert.equal(App.ui.selectedArchiveId, 'briefing');
   assert.match(document.querySelector('#screen-archive').textContent, /Briefing body/);
@@ -83,6 +100,11 @@ try {
   App.data.tasksList[0].title = 'Task Updated';
   renderAffectedScreens({ snapshot: true });
   assert.match(board.textContent, /Task Updated/);
+  board.querySelector('[data-task-id="task-open"]').click();
+  App.data.tasksList[0].visibility = openTo('other');
+  renderAffectedScreens({ snapshot: true });
+  assert(!reader.open);
+  App.data.tasksList[0].visibility = openTo('p');
 
   navigate('home');
   const systemCards = [...document.querySelectorAll('#screen-home .system-grid .entity-card')];
@@ -105,7 +127,49 @@ try {
   WebGalaxyMap.camera.zoom = 3;
   WebGalaxyMap.draw();
   assert.deepEqual(glyphs, ['◆', '▲']);
-  console.log('PASS web tasks tab, article link, snapshot refresh, visibility and both galaxy zoom levels');
+  console.log('PASS compact tasks, fullscreen reader, article link, visibility and galaxy markers');
+
+  window.requestAnimationFrame = callback => { callback(); return 0; };
+  navigate('news');
+  assert(!document.querySelector('.nav-btn[data-screen="chat"]'));
+  assert.match(document.querySelector('#screen-news').textContent, /Campaign headline/);
+  const draft = document.querySelector('.gg-composer textarea');
+  draft.value = 'Draft remains in the feed';
+  const messagesTab = document.querySelector('.social-nav [data-section="chat"]');
+  const feedTab = document.querySelector('.social-nav [data-section="news"]');
+  App.data.chatRows.push({
+    message_id: 'incoming', kind: 'direct', sender_type: 'player', sender_id: 'q',
+    recipient_player_id: 'p', created_at: new Date(Date.now() + 10000).toISOString(), body_html: '<p>Incoming message</p>'
+  });
+  renderAffectedScreens({ chat: true });
+  const unread = document.querySelector('#social-unread');
+  assert.equal(unread.textContent, '1');
+  assert(!unread.hidden);
+  assert.equal(document.querySelector('.nav-btn[data-screen="news"] .chat-nav-unread-v1065').textContent, '1');
+  messagesTab.click();
+  assert.equal(App.ui.screen, 'chat');
+  assert.equal(messagesTab.getAttribute('aria-current'), 'page');
+  assert(document.querySelector('.nav-btn[data-screen="news"]').classList.contains('active'));
+  assert(document.querySelector('#screen-chat').classList.contains('active'));
+  document.querySelector('#screen-chat [data-thread-key="p__q"]').click();
+  const thread = document.querySelector('#chat-master-modal-v1068');
+  assert.match(thread.textContent, /Incoming message/);
+  assert(unread.hidden);
+  App.data.chatRows.push({
+    ...App.data.chatRows[0], message_id: 'next', created_at: new Date(Date.now() + 20000).toISOString(), body_html: '<p>Next message</p>'
+  });
+  renderAffectedScreens({ chat: true });
+  assert.match(thread.textContent, /Next message/);
+  feedTab.click();
+  assert(thread.classList.contains('hidden'));
+  assert.equal(document.querySelector('.gg-composer textarea').value, 'Draft remains in the feed');
+  openCharacterChatV1086({ entityType: 'player', entityId: 'q' });
+  assert.equal(App.ui.screen, 'chat');
+  assert.match(thread.textContent, /Next message/);
+  navigate('tasks');
+  assert(document.querySelector('#social-shell').classList.contains('hidden'));
+  assert(thread.classList.contains('hidden'));
+  console.log('PASS GalaGram feed, messages, unread count, live thread, deep link and retained composer draft');
 } finally {
   await window.happyDOM.abort();
 }
