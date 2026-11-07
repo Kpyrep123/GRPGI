@@ -5669,7 +5669,8 @@ const Configurator = {
       ...Object.values(EQUIPMENT),
       ...Object.values(FLORA),
       ...Object.values(FAUNA),
-      ...Object.values(ARTICLES)
+      ...Object.values(ARTICLES),
+      ...Object.values(TASKS)
     ];
   },
   cleanupReferences(type, id) {
@@ -5683,6 +5684,9 @@ const Configurator = {
     if (type === 'planets') {
       SYSTEMS.forEach(system => { system.planetIds = (system.planetIds || []).filter(value => value !== id); });
       Object.values(ARTICLES).forEach(article => { article.relatedPlanetIds = (article.relatedPlanetIds || []).filter(value => value !== id); });
+      for (const task of Object.values(TASKS)) {
+        if (task.destinationPlanetId === id) task.destinationPlanetId = '';
+      }
       if (UI.selectedPlanetId === id) UI.selectedPlanetId = null;
     }
     if (type === 'npcs') {
@@ -5729,6 +5733,9 @@ const Configurator = {
     if (type === 'planets') {
       SYSTEMS.forEach(system => { system.planetIds = (system.planetIds || []).map(value => value === oldId ? newId : value); });
       Object.values(ARTICLES).forEach(article => { article.relatedPlanetIds = (article.relatedPlanetIds || []).map(value => value === oldId ? newId : value); });
+      for (const task of Object.values(TASKS)) {
+        if (task.destinationPlanetId === oldId) task.destinationPlanetId = newId;
+      }
       if (UI.selectedPlanetId === oldId) UI.selectedPlanetId = newId;
     }
     if (type === 'npcs') {
@@ -5769,6 +5776,17 @@ const Configurator = {
       if (App.currentUserId === oldId) App.currentUserId = newId;
     }
   },
+  worldSectionsForEntityChange(type, id) {
+    const sections = [type];
+    if (type === 'planets' && Object.values(TASKS).some(task => task.destinationPlanetId === id)) {
+      sections.push('tasks');
+      if (SYSTEMS.some(system => system.planetIds?.includes(id))) sections.push('systems');
+    }
+    if (type === 'articles' && Object.values(TASKS).some(task => task.relatedArticleIds?.includes(id))) {
+      sections.push('tasks');
+    }
+    return sections;
+  },
   async deleteSelected() {
     const entity = this.getSelectedEntity();
     if (!entity) return;
@@ -5779,9 +5797,11 @@ const Configurator = {
     const ok = await requestConfirmationV1090(`Удалить ${entity.name || entity.displayName || entity.id}?`, { acceptLabel: 'Удалить' });
     if (!ok) return;
     const removedId = entity.id;
+    const worldSections = this.worldSectionsForEntityChange(this.selectedType, removedId);
     this.cleanupReferences(this.selectedType, removedId);
     this.removeEntity(this.selectedType, removedId);
-    await this.persistAll(`Удалена сущность ${removedId}`, this.selectedType === 'players' ? { playerSync: { deleteId: removedId } } : {});
+    const options = this.selectedType === 'players' ? { playerSync: { deleteId: removedId } } : { worldSections };
+    await this.persistAll(`Удалена сущность ${removedId}`, options);
     const remaining = this.getItems(this.selectedType);
     this.selectedId = remaining[0]?.id || null;
     this.render();
@@ -6010,11 +6030,15 @@ const Configurator = {
         Toast.show('Профиль ведущего должен оставаться ролью gm', 'err');
         return;
       }
+      const worldSections = entity.id === oldId
+        ? [this.selectedType]
+        : this.worldSectionsForEntityChange(this.selectedType, oldId);
       this.replaceEntity(this.selectedType, oldId, entity);
       Debug.log('CONFIG_ENTITY_REPLACED', { type: this.selectedType, oldId, newId: entity.id });
       FormDrafts.clear(FormDrafts.configKey(this.selectedType, oldId || this.selectedId || 'new'));
       FormDrafts.clear(FormDrafts.configKey(this.selectedType, entity.id || 'new'));
-      await this.persistAll(`Сохранён раздел ${WORLD_SECTIONS[this.selectedType].label}`, this.selectedType === 'players' ? { playerSync: { playerId: entity.id, oldId } } : {});
+      const options = this.selectedType === 'players' ? { playerSync: { playerId: entity.id, oldId } } : { worldSections };
+      await this.persistAll(`Сохранён раздел ${WORLD_SECTIONS[this.selectedType].label}`, options);
       this.render();
     } catch (error) {
       Debug.error('CONFIG_SUBMIT_FAILED', {
@@ -6257,6 +6281,9 @@ function renderGalaxyLegendOverlay() {
     <div class="section-title">НАВИГАЦИЯ</div>
     <div class="legend-group-title">ТИПЫ МЕТОК</div>
     ${markerMarkup}
+    ${(window.GRPGTaskMapV216?.markers || []).map(({ glyph, color, label }) => `
+      <div class="legend-chip"><span aria-hidden="true" style="color:${color}">${glyph}</span><span>${label}</span></div>
+    `).join('')}
     ${colorMarkup}
   `;
   node.querySelectorAll('img[data-marker-sprite]').forEach(img => {
@@ -6684,6 +6711,8 @@ const GalaxyMap = {
     }
 
     const visibleSystemEntries = getVisibleSystems().map(system => ({ system, point: this.worldToScreen(system.pos.x, system.pos.y) }));
+    const taskMap = window.GRPGTaskMapV216;
+    const taskDestinations = taskMap?.byPlanet(Object.values(TASKS), task => isEntityVisible(task));
     const markerScaleMap = state.viewMode === 'galaxy'
       ? computeGalaxyMarkerScaleMapV1058(visibleSystemEntries.map(({ system, point }) => ({
           id: system.id,
@@ -6749,6 +6778,10 @@ const GalaxyMap = {
           }
         }
 
+        if (state.viewMode === 'galaxy' && taskMap) {
+          const statuses = taskMap.forSystem(taskDestinations, system.planetIds, id => isEntityVisible(Data.getPlanet(id)));
+          taskMap.draw(ctx, point.sx, point.sy - size - 11 * this.DPR, this.DPR, statuses);
+        }
         const galaxyLabelFade = clamp((state.zoom - 2.75) / 1.4, 0, 1);
         if (state.viewMode === 'galaxy' && galaxyLabelFade > 0.02) {
           ctx.save();
@@ -6825,6 +6858,7 @@ const GalaxyMap = {
             ctx.fillText('YOU ARE HERE', x + 12 * this.DPR, y - 10 * this.DPR);
             ctx.restore();
           }
+          taskMap?.draw(ctx, x, y - (planet.size + 11) * this.DPR, this.DPR, taskDestinations.get(planet.id));
         }
       }
     }
@@ -6963,7 +6997,7 @@ createBlankEntity = function(type) {
     return { id: `news_${stamp}`, name: 'Новая новость', title: 'Новая новость', subtitle: '', body: '', image: '', publishedAt: new Date().toISOString(), visibility: { playerIds: [] } };
   }
   if (type === 'tasks') {
-    return { id: `task_${stamp}`, name: 'Новое задание', title: 'Новое задание', subtitle: '', summary: '', body: '', reward: '', status: 'open', image: '', relatedArticleIds: [], visibility: { playerIds: [] } };
+    return { id: `task_${stamp}`, name: 'Новое задание', title: 'Новое задание', subtitle: '', summary: '', body: '', reward: '', status: 'open', destinationPlanetId: '', image: '', relatedArticleIds: [], visibility: { playerIds: [] } };
   }
   return __createBlankEntity(type);
 };
@@ -7052,7 +7086,9 @@ UI.renderTasks = function() {
         <section class="card pad18 task-column">
           <div class="section-title">${column.label}</div>
           <div class="task-column-stack">
-            ${visible.filter(task => (task.status || 'open') === column.key).map(task => `
+            ${visible.filter(task => (task.status || 'open') === column.key).map(task => {
+              const destination = Data.getPlanet(task.destinationPlanetId);
+              return `
               <article class="task-card">
                 <div class="task-card-head">
                   ${renderThumb(task, { size: 'sm', type: 'task', glyph: '◫' })}
@@ -7061,12 +7097,14 @@ UI.renderTasks = function() {
                     ${task.subtitle ? `<div class="subtle">${esc(task.subtitle)}</div>` : ''}
                   </div>
                 </div>
+                ${isEntityVisible(destination) ? renderEntityButton('planet', destination, { subtitle: 'Планета назначения' }) : ''}
                 ${task.reward ? `<div class="chip" style="margin:8px 0">НАГРАДА: ${esc(task.reward)}</div>` : ''}
                 ${task.summary ? `<div class="small-note" style="margin-bottom:8px">${esc(task.summary)}</div>` : ''}
                 ${__renderRichText(task.body, '')}
                 ${renderRelatedArticlesSection(task.relatedArticleIds || [], 'Материалы по заданию')}
               </article>
-            `).join('') || '<div class="small-note">Пусто</div>'}
+            `;
+            }).join('') || '<div class="small-note">Пусто</div>'}
           </div>
         </section>
       `).join('')}
@@ -7285,6 +7323,7 @@ Configurator.renderNewsEditor = function(entry) {
 };
 
 Configurator.renderTaskEditor = function(task) {
+  const destinations = sortEntitiesForList(Object.values(PLANETS));
   return `
     <form id="config-editor-form" class="form" data-entity-type="tasks">
       ${this.renderHeader(task, 'Доска заданий с колонками «не принятые», «активные» и «завершённые».')}
@@ -7296,6 +7335,13 @@ Configurator.renderTaskEditor = function(task) {
       </div>
       <div class="field"><label>Заголовок</label><input class="input" name="title" value="${esc(task.title || task.name || '')}" /></div>
       <div class="field"><label>Подзаголовок</label><input class="input" name="subtitle" value="${esc(task.subtitle || '')}" /></div>
+      <div class="field">
+        <label for="task-destination-planet">Планета назначения</label>
+        <select id="task-destination-planet" class="select" name="destinationPlanetId">
+          <option value="">Без назначения</option>
+          ${destinations.map(planet => `<option value="${esc(planet.id)}" ${planet.id === task.destinationPlanetId ? 'selected' : ''}>${esc(planet.name || planet.id)}</option>`).join('')}
+        </select>
+      </div>
       ${this.renderVisibilityField(task)}
       <div class="field"><label>Краткое описание</label><textarea class="area" name="summary">${esc(task.summary || '')}</textarea>${__htmlHint}</div>
       <div class="field"><label>Полный текст</label><textarea class="area article-body-editor" name="body">${esc(task.body || '')}</textarea>${__htmlHint}</div>
@@ -7352,6 +7398,7 @@ Configurator.collectEntity = function(type, formEl, formData = new FormData(form
   if (type === 'tasks') {
     const image = String(formEl.querySelector('input[name="imageData"]')?.value || '').trim();
     const title = String(formData.get('title') || '').trim();
+    const destinationPlanetId = String(formData.get('destinationPlanetId') || '');
     return {
       id: slugifyId(formData.get('id') || title || '', 'task'),
       name: title,
@@ -7361,6 +7408,7 @@ Configurator.collectEntity = function(type, formEl, formData = new FormData(form
       body: String(formData.get('body') || '').trim(),
       reward: String(formData.get('reward') || '').trim(),
       status: String(formData.get('status') || 'open').trim(),
+      destinationPlanetId: Object.hasOwn(PLANETS, destinationPlanetId) ? destinationPlanetId : '',
       image,
       relatedArticleIds: getCheckedValues(formEl, 'relatedArticleIds'),
       visibility: { playerIds: getCheckedValues(formEl, 'visibilityPlayerIds') }
