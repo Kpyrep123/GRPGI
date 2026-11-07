@@ -2451,7 +2451,7 @@ window.GRPGInstallGlobalStockExchangeV1074 = function(){
     }else if(stock){
       const pos=portfolio.positions[itemId];if(!pos||positionQtyV1074(pos)<amount)throw new Error('В портфеле недостаточно акций.');const knownBefore=Math.max(0,Number(pos.knownQty||0)),average=knownBefore>0?Math.max(0,Number(pos.costBasis||0))/knownBefore:0,knownSold=Math.min(knownBefore,amount),unpricedSold=amount-knownSold,costRemoved=average*knownSold;pos.knownQty=knownBefore-knownSold;pos.unpricedQty=Math.max(0,Number(pos.unpricedQty||0)-unpricedSold);pos.costBasis=Math.max(0,Number(pos.costBasis||0)-costRemoved);if(positionQtyV1074(pos)<1)delete portfolio.positions[itemId];user.credits=Number(user.credits||0)+total;appendLocalLedgerV1074(portfolio,{id:`stock_${Date.now()}_${Math.random().toString(36).slice(2,8)}`,type:'sell',itemId,quantity:amount,unitPrice,total,costRemoved:knownSold?costRemoved:null,realizedPnl:unpricedSold?null:total-costRemoved,planetId:planet.id,marketDay:rotation.rotationKey,createdAt:new Date().toISOString()});
     }else{
-      const entry=user.inventory.find(row=>row.itemId===itemId);if(!entry||Number(entry.qty||0)<1)throw new Error('В инвентаре нет этого предмета');const equipped=[user.equipmentSlots?.primaryWeapon||user.equipmentSlots?.weapon,user.equipmentSlots?.secondaryWeapon,user.equipmentSlots?.armor,user.equipmentSlots?.backpack,...(user.implantSlots||[])].filter(id=>id===itemId).length;if(Number(entry.qty||0)<=equipped)throw new Error('Нельзя продать экипированный экземпляр');const removeIndex=Number.isInteger(Number(unitIndex))&&Number(unitIndex)>=equipped?Number(unitIndex):Number(entry.qty)-1;entry.qty-=1;if(Array.isArray(entry.positions))entry.positions.splice(removeIndex,1);if(entry.qty<=0)user.inventory=user.inventory.filter(row=>row!==entry);user.credits=Number(user.credits||0)+total;if(offer.unique){const claims={...(App.state.marketRuntimeV1071?.claims||{})};delete claims[offer.claimKey];App.state.marketRuntimeV1071={claims,updatedAt:new Date().toISOString()};}
+      const entry=user.inventory.find(row=>row.itemId===itemId);if(!entry||Number(entry.qty||0)<1)throw new Error('В инвентаре нет этого предмета');const equipped=[user.equipmentSlots?.primaryWeapon||user.equipmentSlots?.weapon,user.equipmentSlots?.secondaryWeapon,user.equipmentSlots?.armor,user.equipmentSlots?.backpack,...(user.implantSlots||[])].filter(id=>id===itemId).length;if(Number(entry.qty||0)<=equipped)throw new Error('Нельзя продать экипированный экземпляр');const removeIndex=Number.isInteger(Number(unitIndex))&&Number(unitIndex)>=equipped?Number(unitIndex):Number(entry.qty)-1;window.GRPGItemInstancesV215.remove(entry,removeIndex);if(entry.qty<=0)user.inventory=user.inventory.filter(row=>row!==entry);user.credits=Number(user.credits||0)+total;if(offer.unique){const claims={...(App.state.marketRuntimeV1071?.claims||{})};delete claims[offer.claimKey];App.state.marketRuntimeV1071={claims,updatedAt:new Date().toISOString()};}
     }
     await App.saveState(`${action==='buy'?'Куплено':'Продано'}: ${item?.name||itemId}${amount>1?` × ${amount}`:''}`);return{ok:true,quantity:amount,total};
   }
@@ -22340,7 +22340,9 @@ function legacyRegionMapsV181() {
     if (slotType === 'implant') return String(user.implantSlots?.[slotIndex] || '');
     return String(user.equipmentSlots?.[slotType] || '');
   }
-  function setSlotItemV1067(user, slotType, slotIndex, itemId) {
+  function setSlotItemV1067(user, slotType, slotIndex, itemId, instanceId) {
+    const copies=window.GRPGItemInstancesV215;
+    copies?.bind(user,itemId,copies.slotKey(slotType,slotIndex),instanceId);
     if (slotType === 'implant') {
       user.implantSlots = Array.from({ length: user.implantSlotCount }, (_, index) => String(user.implantSlots?.[index] || ''));
       if (slotIndex < 0 || slotIndex >= user.implantSlotCount) return false;
@@ -22568,13 +22570,14 @@ function legacyRegionMapsV181() {
       const item = itemForInventoryV1067(drag.itemId);
       if (!slotAcceptsItemV1067(targetType, item)) { Toast.show('Этот предмет нельзя установить в выбранный слот', 'err'); return; }
       await persistInventoryMutationV1067(user => {
+        const instanceId=window.GRPGItemInstancesV215?.choose(user,drag);
         if (drag.source === 'slot') setSlotItemV1067(user, drag.slotType, drag.slotIndex, '');
         const owned = itemOwnedQtyV1067(user, drag.itemId);
         const alreadyEquipped = equippedCountForItemV1067(user, drag.itemId);
         const targetCurrent = getSlotItemV1067(user, targetType, targetIndex);
         const allowance = targetCurrent === drag.itemId ? 1 : 0;
         if (owned <= alreadyEquipped - allowance) { Toast.show('В инвентаре нет свободного экземпляра этого предмета', 'err'); return false; }
-        setSlotItemV1067(user, targetType, targetIndex, drag.itemId);
+        setSlotItemV1067(user, targetType, targetIndex, drag.itemId,instanceId);
         return true;
       }, 'Экипировка обновлена');
       return;
@@ -22587,8 +22590,10 @@ function legacyRegionMapsV181() {
     await persistInventoryMutationV1067(user => {
       let unitIndex = drag.unitIndex;
       if (drag.source === 'slot') {
+        const copies=window.GRPGItemInstancesV215, instanceId=copies?.choose(user,drag);
         setSlotItemV1067(user, drag.slotType, drag.slotIndex, '');
-        unitIndex = equippedCountForItemV1067(user, drag.itemId);
+        copies?.normalize(user,id=>EQUIPMENT?.[id]);
+        unitIndex=user.inventory.find(row=>row.itemId===drag.itemId)?.instancesV215?.findIndex(copy=>copy.id===instanceId)??equippedCountForItemV1067(user,drag.itemId);
       }
       if (unitIndex < 0 || !canPlaceInventoryUnitV1067(user, drag.itemId, unitIndex, x, y)) { Toast.show('Предмет не помещается в выбранное место', 'err'); return false; }
       setInventoryPositionV1067(user, drag.itemId, unitIndex, { x, y });
@@ -22652,6 +22657,19 @@ function legacyRegionMapsV181() {
     const overflow = layout.overflow.length ? `<div class="inventory-overflow-v1067"><b>Не помещается: ${layout.overflow.length}</b>${layout.overflow.map(instance=>`<span>${esc(instance.item.name||instance.itemId)} (${instance.w}×${instance.h})</span>`).join('')}</div>` : '';
     return `<div class="inventory-grid-v1067 wc-inventory-grid-v1068" data-wc-inventory-grid-v1068 style="--inv-cols:${layout.cols};--inv-rows:${layout.rows}">${cells}${tiles}</div>${overflow}`;
   }
+  function wcItemDurabilityV215(user) {
+    const rows = (user.inventory || []).flatMap(entry => {
+      const item = itemForInventoryV1067(entry.itemId);
+      return (entry.instancesV215 || []).map((copy, index) => {
+        const label = esc(item.name || item.id) + ' №' + (index + 1);
+        const control = copy.durabilityMax > 0
+          ? `<input class="input" type="number" min="0" max="${copy.durabilityMax}" step="1" value="${copy.durability}" data-wc-durability-value-v215 aria-label="Прочность ${label}"><span>/ ${copy.durabilityMax}</span><button type="button" class="secondary" data-wc-durability-save-v215="${esc(copy.id)}">Записать</button>`
+          : '<span>Предел прочности не задан</span>';
+        return `<div class="row" data-wc-durability-row-v215><b title="${esc(copy.id)}">${label}</b>${copy.slot?'<span>Экипирован</span>':''}${copy.broken?'<span>Сломан</span>':''}${control}</div>`;
+      });
+    });
+    return rows.length ? `<div class="section-title">Прочность экземпляров</div><p class="small-note">0 — предмет сломан. После ремонта укажите новую прочность.</p>${rows.join('')}` : '';
+  }
   function wcInventoryStageMarkupV1068(rawState = {}) {
     const user = normalizePlayerProfileV2(rawState);
     const layout = buildInventoryLayoutV1067(user);
@@ -22660,7 +22678,7 @@ function legacyRegionMapsV181() {
     const quantityRows = (user.inventory || []).filter(row=>intNonNegativeV1067(row?.qty,0)>0).map(row=>{const item=itemForInventoryV1067(row.itemId);return `<label class="wc-inventory-quantity-row-v129"><span><b>${esc(item.name||row.itemId)}</b><small>${esc(wcInventoryTypeLabelV1068(item))}</small></span><input class="input" type="number" min="0" step="1" data-wc-inventory-qty-v129 data-item-id="${esc(row.itemId)}" value="${intNonNegativeV1067(row.qty,0)}" aria-label="Количество ${esc(item.name||row.itemId)}"/></label>`;}).join('');
     return `<div class="inventory-capacity-bar-v1067"><span>Инвентарь <b>${occupiedCells} / ${user.inventorySize}</b> клеток</span><span class="${overweight?'inventory-limit-exceeded-v1067':''}">Вес <b>${layout.weight.toFixed(1)} / ${Number(user.carryWeightMax).toFixed(1)}</b></span><span>Импланты <b>${user.implantSlots.filter(Boolean).length} / ${user.implantSlotCount}</b></span></div>
       <div class="inventory-equipment-slots-v1067 wc-inventory-equipment-slots-v1068">${wcInventorySlotMarkupV1068(user,'primaryWeapon')}${wcInventorySlotMarkupV1068(user,'secondaryWeapon')}${wcInventorySlotMarkupV1068(user,'armor')}${wcInventorySlotMarkupV1068(user,'backpack')}${Array.from({length:user.implantSlotCount},(_,i)=>wcInventorySlotMarkupV1068(user,'implant',i)).join('')}</div>
-      <div class="section-title" style="margin-top:14px">Инвентарь персонажа</div>${wcInventoryGridMarkupV1068(user)}
+      <div class="section-title" style="margin-top:14px">Инвентарь персонажа</div>${wcInventoryGridMarkupV1068(user)}${wcItemDurabilityV215(user)}
       <div class="section-title" style="margin-top:14px">Количество предметов</div><div class="wc-inventory-quantities-v129">${quantityRows||'<span class="small-note">Инвентарь пуст.</span>'}</div>
       <div class="section-title" style="margin-top:14px">Документы и предметы без веса/размера</div><div class="tags">${(layout.text||[]).map(row=>`<span class="tag wc-inventory-text-item-v113" draggable="true" data-wc-inventory-drag-v1068 data-source="grid" data-item-id="${esc(row.itemId)}" data-unit-index="0" title="Перетащите в общий пул, чтобы удалить один экземпляр">${esc(row.item.name||row.itemId)}${Number(row.qty||1)>1?` ×${row.qty}`:''}</span>`).join('')||'<span class="small-note">Нет таких предметов.</span>'}</div>`;
   }
@@ -22679,18 +22697,17 @@ function legacyRegionMapsV181() {
     let entry = (state.inventory ||= []).find(row=>String(row.itemId)===String(itemId));
     if (!entry) { entry={itemId:String(itemId),qty:0,positions:[]}; state.inventory.push(entry); }
     entry.positions = Array.isArray(entry.positions) ? entry.positions : [];
-    entry.qty = intNonNegativeV1067(entry.qty,0) + Math.max(1,intNonNegativeV1067(qty,1));
+    window.GRPGItemInstancesV215.add(entry,Math.max(1,intNonNegativeV1067(qty,1)),itemForInventoryV1067(itemId),()=>crypto.randomUUID());
     while (entry.positions.length < entry.qty) entry.positions.push(null);
     return entry;
   }
-  function wcInventoryRemoveUnitV1068(state, itemId, unitIndex = -1, fromSlot = false) {
+  function wcInventoryRemoveUnitV1068(state, itemId, unitIndex = -1, fromSlot = false, instanceId = '') {
     const entry = (state.inventory || []).find(row=>String(row.itemId)===String(itemId));
     if (!entry || intNonNegativeV1067(entry.qty,0) <= 0) return false;
     entry.positions = Array.isArray(entry.positions) ? entry.positions : [];
-    if (fromSlot) entry.positions.shift();
-    else if (unitIndex >= 0 && unitIndex < entry.positions.length) entry.positions.splice(unitIndex,1);
-    else entry.positions.pop();
-    entry.qty = Math.max(0,intNonNegativeV1067(entry.qty,0)-1);
+    const selected=instanceId?entry.instancesV215?.findIndex(copy=>copy.id===instanceId):-1;
+    const index=selected>=0?selected:fromSlot?0:unitIndex>=0&&unitIndex<entry.qty?unitIndex:entry.qty-1;
+    window.GRPGItemInstancesV215.remove(entry,index);
     if (!entry.qty) state.inventory = state.inventory.filter(row=>row!==entry);
     return true;
   }
@@ -22870,8 +22887,9 @@ function legacyRegionMapsV181() {
 
       if (pool) {
         if (drag.source==='pool') return;
+        const instanceId=window.GRPGItemInstancesV215.choose(state,drag);
         if (drag.source==='slot') setSlotItemV1067(state,drag.slotType,drag.slotIndex,'');
-        wcInventoryRemoveUnitV1068(state,drag.itemId,drag.unitIndex,drag.source==='slot');
+        wcInventoryRemoveUnitV1068(state,drag.itemId,drag.unitIndex,drag.source==='slot',instanceId);
         wcInventoryRenderStageV1068(editor,state);
         await wcInventoryPersistRealtimeV1069(editor, state);
         return;
@@ -22881,10 +22899,11 @@ function legacyRegionMapsV181() {
         const targetType=String(slot.dataset.slotType||''), targetIndex=Number(slot.dataset.slotIndex??-1), item=itemForInventoryV1067(drag.itemId);
         if (!slotAcceptsItemV1067(targetType,item)) throw new Error('Этот предмет нельзя установить в выбранный слот');
         if (drag.source==='pool') wcInventoryAddQtyV1068(state,drag.itemId,1);
+        const instanceId=window.GRPGItemInstancesV215.choose(state,{...drag,unitIndex:drag.source==='pool'?itemOwnedQtyV1067(state,drag.itemId)-1:drag.unitIndex});
         if (drag.source==='slot') setSlotItemV1067(state,drag.slotType,drag.slotIndex,'');
         const owned=itemOwnedQtyV1067(state,drag.itemId), equipped=equippedCountForItemV1067(state,drag.itemId), current=getSlotItemV1067(state,targetType,targetIndex), allowance=current===drag.itemId?1:0;
         if (owned<=equipped-allowance) throw new Error('Нет свободного экземпляра предмета для этого слота');
-        setSlotItemV1067(state,targetType,targetIndex,drag.itemId);
+        setSlotItemV1067(state,targetType,targetIndex,drag.itemId,instanceId);
         const validated=wcInventoryCloneAndValidateV1068(state);
         wcInventoryRenderStageV1068(editor,validated);
         await wcInventoryPersistRealtimeV1069(editor, validated);
@@ -22896,7 +22915,12 @@ function legacyRegionMapsV181() {
         const x=Math.max(0,Math.min(cols-1,Math.floor((event.clientX-rect.left)/cell))), y=Math.max(0,Math.floor((event.clientY-rect.top)/cell));
         let unitIndex=drag.unitIndex;
         if (drag.source==='pool') { const entry=wcInventoryAddQtyV1068(state,drag.itemId,1); unitIndex=entry.qty-1; }
-        if (drag.source==='slot') { setSlotItemV1067(state,drag.slotType,drag.slotIndex,''); unitIndex=equippedCountForItemV1067(state,drag.itemId); }
+        if (drag.source==='slot') {
+          const copies=window.GRPGItemInstancesV215, instanceId=copies.choose(state,drag);
+          setSlotItemV1067(state,drag.slotType,drag.slotIndex,'');
+          copies.normalize(state,id=>EQUIPMENT?.[id]);
+          unitIndex=state.inventory.find(row=>row.itemId===drag.itemId)?.instancesV215?.findIndex(copy=>copy.id===instanceId)??equippedCountForItemV1067(state,drag.itemId);
+        }
         if (unitIndex<0 || !canPlaceInventoryUnitV1067(state,drag.itemId,unitIndex,x,y)) throw new Error('Предмет не помещается в выбранное место');
         setInventoryPositionV1067(state,drag.itemId,unitIndex,{x,y});
         const validated=wcInventoryCloneAndValidateV1068(state);
@@ -22933,6 +22957,44 @@ function legacyRegionMapsV181() {
     }, 260);
   });
 
+  document.addEventListener('click', async event => {
+    const button = event.target?.closest?.('[data-wc-durability-save-v215]');
+    const editor = button?.closest('[data-wc-inventory-editor-v1068]');
+    if (!editor || !['gm','dm','master'].includes(String(App.currentUser?.role || '').toLowerCase())) return;
+    const playerId = wcInventoryTargetPlayerIdV1069(editor);
+    const player = App.state.users?.[playerId];
+    const state = player ? wcInventoryStateV1068(player) : wcInventoryReadStateV1068(editor);
+    const id = button.dataset.wcDurabilitySaveV215;
+    const entry = state.inventory.find(row => row.instancesV215?.some(copy => copy.id === id));
+    const copy = entry?.instancesV215.find(row => row.id === id);
+    const value = button.closest('[data-wc-durability-row-v215]')?.querySelector('[data-wc-durability-value-v215]')?.value;
+    button.disabled = true;
+    try {
+      if (!copy) throw Error('Экземпляр больше не находится в инвентаре');
+      if (value == null || value === '') throw Error('Укажите текущую прочность');
+      window.GRPGItemInstancesV215.repair(copy, itemForInventoryV1067(entry.itemId), value);
+      if (player) {
+        if (PlayerSync.shouldIsolateUsersFromSnapshot() && window.electronAPI?.patchPlayer) {
+          const result = await PlayerSync.pushPlayerPatch(playerId, {inventory:state.inventory}, {rerender:false});
+          if (!result?.ok) throw Error(result?.message || 'Прочность не сохранена');
+        } else {
+          App.state.users[playerId] = normalizePlayerProfileV2({...player, inventory:state.inventory});
+          PLAYER_TEMPLATES[playerId] = deep(App.state.users[playerId]);
+          const result = await App.writeLocalMirrors();
+          if (result?.ok === false) throw Error(result.message || 'Прочность не сохранена');
+        }
+        wcInventoryRefreshEditorFromPlayerV1069(playerId);
+      } else {
+        wcInventoryRenderStageV1068(editor, state);
+      }
+      Toast.show('Прочность сохранена', 'ok');
+    } catch (error) {
+      Toast.show(error.message || String(error), 'err');
+    } finally {
+      button.disabled = false;
+    }
+  });
+
   document.addEventListener('change', async event => {
     const input=event.target?.closest?.('[data-wc-inventory-qty-v129]');
     if(!input)return;
@@ -22942,7 +23004,7 @@ function legacyRegionMapsV181() {
       const equipped=equippedCountForItemV1067(state,itemId);if(qty<equipped)throw new Error(`Нельзя уменьшить количество ниже числа экипированных экземпляров (${equipped})`);
       let entry=(state.inventory||[]).find(row=>String(row.itemId||'')===itemId);
       if(!entry&&qty>0){entry={itemId,qty:0,positions:[]};state.inventory.push(entry);}
-      if(entry){entry.positions=Array.isArray(entry.positions)?entry.positions:[];entry.qty=qty;if(qty<=0)state.inventory=state.inventory.filter(row=>row!==entry);else{entry.positions=entry.positions.slice(0,qty);while(entry.positions.length<qty)entry.positions.push(null);}}
+      if(entry){entry.positions=Array.isArray(entry.positions)?entry.positions:[];if(qty>entry.qty)window.GRPGItemInstancesV215.add(entry,qty-entry.qty,itemForInventoryV1067(itemId),()=>crypto.randomUUID());else entry.qty=qty;if(qty<=0)state.inventory=state.inventory.filter(row=>row!==entry);else{entry.positions=entry.positions.slice(0,qty);while(entry.positions.length<qty)entry.positions.push(null);}}
       const validated=wcInventoryCloneAndValidateV1068(state);wcInventoryRenderStageV1068(editor,validated);await wcInventoryPersistRealtimeV1069(editor,validated);
     }catch(error){wcInventoryRenderStageV1068(editor,before);Toast.show(error.message||String(error),'err');}
   });
@@ -23409,14 +23471,14 @@ window.scrollVisibleMessageThreadToBottomV1070 = scrollVisibleMessageThreadToBot
       user.inventory = Array.isArray(user.inventory) ? user.inventory : [];
       let entry = user.inventory.find(row=>row.itemId===itemId);
       if(!entry){entry={itemId,qty:0,positions:[]};user.inventory.push(entry);}
-      entry.qty=Number(entry.qty||0)+1;entry.positions=Array.isArray(entry.positions)?entry.positions:[];while(entry.positions.length<entry.qty)entry.positions.push(null);
+      window.GRPGItemInstancesV215.add(entry,1,Data.getItem(itemId),()=>crypto.randomUUID());entry.positions=Array.isArray(entry.positions)?entry.positions:[];while(entry.positions.length<entry.qty)entry.positions.push(null);
       if(targetPosition)entry.positions[entry.qty-1]={x:Number(targetPosition.x),y:Number(targetPosition.y)};
       if(offer.unique){const claims={...(App.state.marketRuntimeV1071?.claims||{})};claims[Engine.claimKey(marketCampaignIdV1071(),planet.id,rotation.rotationKey,itemId)]={playerId:user.id,boughtAt:new Date().toISOString()};App.state.marketRuntimeV1071={claims,updatedAt:new Date().toISOString()};}
     } else {
       const entry=user.inventory?.find(row=>row.itemId===itemId);if(!entry)throw new Error('В инвентаре нет этого предмета');
       const equipped=[user.equipmentSlots?.primaryWeapon||user.equipmentSlots?.weapon,user.equipmentSlots?.secondaryWeapon,user.equipmentSlots?.armor,...(user.implantSlots||[])].filter(id=>id===itemId).length;
       if(Number(entry.qty||0)<=equipped)throw new Error('Нельзя продать экипированный экземпляр');
-      const removeIndex=Number.isInteger(Number(unitIndex))&&Number(unitIndex)>=equipped?Number(unitIndex):Number(entry.qty)-1;entry.qty-=1;if(Array.isArray(entry.positions))entry.positions.splice(removeIndex,1);if(entry.qty<=0)user.inventory=user.inventory.filter(row=>row!==entry);
+      const removeIndex=Number.isInteger(Number(unitIndex))&&Number(unitIndex)>=equipped?Number(unitIndex):Number(entry.qty)-1;window.GRPGItemInstancesV215.remove(entry,removeIndex);if(entry.qty<=0)user.inventory=user.inventory.filter(row=>row!==entry);
       user.credits=Number(user.credits||0)+offer.sellPrice;
       if(offer.unique){const claims={...(App.state.marketRuntimeV1071?.claims||{})};delete claims[Engine.claimKey(marketCampaignIdV1071(),planet.id,rotation.rotationKey,itemId)];App.state.marketRuntimeV1071={claims,updatedAt:new Date().toISOString()};}
     }

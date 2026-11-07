@@ -192,10 +192,10 @@ end
 function Unit:GetEquippedItemData(slot)
   slot = tostring(slot or '')
   for _, row in ipairs(self:GetEquippedItems()) do
-    if tostring(row.slot or '') == slot or tostring(row.itemId or row.id or '') == slot then return row end
+    if tostring(row.slot or '') == slot or tostring(row.itemId or row.id or '') == slot or (row.instanceId and tostring(row.instanceId) == slot) then return row end
   end
   for _, row in ipairs(self:GetInventory()) do
-    if tostring(row.itemId or row.id or '') == slot then return row end
+    if tostring(row.itemId or row.id or '') == slot or (row.instanceId and tostring(row.instanceId) == slot) then return row end
   end
   return nil
 end
@@ -230,6 +230,10 @@ function Unit:GetAmmoType(slot)
   return row and tostring(row.ammoTypeId or '') or ''
 end
 function Unit:IsWeaponEmpty(slot) return self:GetMagazineSize(slot) > 0 and self:GetAmmo(slot) <= 0 end
+function Unit:GetItemInstanceId(slot)
+  local row = self:GetEquippedItemData(slot)
+  return row and tostring(row.instanceId or '') or ''
+end
 function Unit:GetDurability(slot)
   local row = self:GetEquippedItemData(slot)
   return row and math.max(0, __num(row.durability)) or 0

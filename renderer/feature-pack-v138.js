@@ -14,7 +14,7 @@
 
   function normalizeItemState(value){
     const source=value&&typeof value==='object'&&!Array.isArray(value)?value:{};
-    return Object.fromEntries(Object.entries(source).map(([id,row])=>[String(id),{itemId:String(row?.itemId||id),slot:String(row?.slot||''),durabilityMax:Math.max(0,integer(row?.durabilityMax,0)),durability:Math.max(0,number(row?.durability,0)),chargesMax:Math.max(0,integer(row?.chargesMax,0)),charges:Math.max(0,integer(row?.charges,0)),broken:Boolean(row?.broken),pendingWear197:Math.max(0,integer(row?.pendingWear197,0))}]));
+    return Object.fromEntries(Object.entries(source).map(([id,row])=>[String(id),{id:String(row?.id||''),itemId:String(row?.itemId||id),slot:String(row?.slot||''),durabilityMax:Math.max(0,integer(row?.durabilityMax,0)),durability:Math.max(0,number(row?.durability,0)),chargesMax:Math.max(0,integer(row?.chargesMax,0)),charges:Math.max(0,integer(row?.charges,0)),broken:Boolean(row?.broken),pendingWear197:Math.max(0,integer(row?.pendingWear197,0))}]));
   }
 
   const normalizeEquipmentBefore138=normalizeEquipmentItemV2;
@@ -27,7 +27,7 @@
   if(typeof normalizePlayerProfileV2==='function'){
     const normalizePlayerBefore138=normalizePlayerProfileV2;
     normalizePlayerProfileV2=function(raw={}){
-      const next=normalizePlayerBefore138(raw);next.itemStateV138=normalizeItemState(raw?.itemStateV138||next.itemStateV138);next.__creditReceiptsV138=raw?.__creditReceiptsV138&&typeof raw.__creditReceiptsV138==='object'?{...raw.__creditReceiptsV138}:{};return next;
+      const next=normalizePlayerBefore138(raw);next.itemStateV138=normalizeItemState(next.itemStateV138||raw?.itemStateV138);next.__creditReceiptsV138=raw?.__creditReceiptsV138&&typeof raw.__creditReceiptsV138==='object'?{...raw.__creditReceiptsV138}:{};return next;
     };
   }
   try{Object.entries(EQUIPMENT||{}).forEach(([id,item])=>{EQUIPMENT[id]=normalizeEquipmentItemV2(item);});Object.entries(App.state?.users||{}).forEach(([id,user])=>{App.state.users[id]=normalizePlayerProfileV2(user);});}catch(error){console.warn('FEATURE_PACK_V138_NORMALIZE',error);}

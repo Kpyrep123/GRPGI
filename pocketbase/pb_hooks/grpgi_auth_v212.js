@@ -223,6 +223,34 @@ function protectPlayer(e, creating) {
     }
     profile = clean(profile);
     profile.id = id;
+    var previousProfile = creating ? {id:id} : json(old, "playerJson");
+    var previousInventory = Array.isArray(previousProfile.inventory) ? previousProfile.inventory : [];
+    var incomingInventory = Array.isArray(profile.inventory) ? profile.inventory : [];
+    var needsCopies = incomingInventory.some(function(row) {
+      var before = previousInventory.find(function(candidate) { return candidate.itemId === row.itemId; });
+      if (Array.isArray(row.instancesV215)) return row.instancesV215.length !== Number(row.qty);
+      return !before || before.qty !== row.qty || Array.isArray(before.instancesV215);
+    });
+    if (needsCopies) {
+      var snapshots = app.findRecordsByFilter("campaign_snapshots", "campaignId={:campaign}", "", 1, 0, {campaign:campaign});
+      var world = snapshots.length ? json(snapshots[0], "worldJson") : {};
+      var catalog = (world.equipment || {}).EQUIPMENT || {};
+      var copies = require(__hooks + "/item-instances-v215.js");
+      incomingInventory.forEach(function(row) {
+        var qty = Number(row.qty);
+        if ((copies.tracked(catalog[row.itemId]) || Array.isArray(row.instancesV215)) &&
+            (!Number.isSafeInteger(qty) || qty < 0 || qty > 10000)) {
+          throw new BadRequestError("Недопустимое количество экземпляров предмета");
+        }
+      });
+      copies.reconcile(previousProfile, profile, function(itemId) { return catalog[itemId]; },
+        function() { return "item:" + $security.randomString(24); });
+    }
+    if (profile.itemStateV138) {
+      previousInventory.concat(incomingInventory).forEach(function(row) {
+        if (Array.isArray(row.instancesV215)) delete profile.itemStateV138[row.itemId];
+      });
+    }
     // Role changes cannot promote a player into a recovery administrator.
     profile.role = user && user.getBool("dm") ? "gm" : "player";
     e.record.set("playerJson", profile);

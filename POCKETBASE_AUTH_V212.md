@@ -61,3 +61,14 @@ Middleware проверяет сессию при изменениях чере�
 - node tests/player-auth-v212.main.cjs проверяет реальный IPC-обработчик и передачу сессии в main-процессе.
 - HAPPY_DOM_MODULE=/path/to/happy-dom/lib/index.js node tests/player-auth-v212.client.mjs проверяет веб-вход, восстановление и разделение серверной и игровой кампании.
 - Регрессии v135-player-sync-web.mjs и v135-player-sync-client.mjs проверяют очереди обновлений и сохранение актуального инвентаря.
+
+### Обновление для экземпляров снаряжения v215
+
+После слияния из каталога проекта отправьте оба файла модуля:
+
+```bash
+scp pocketbase/pb_hooks/grpgi_auth_v212.js pocketbase/pb_hooks/item-instances-v215.js root@sync.grpg-sync.ru:/opt/pocketbase/pb_hooks/
+ssh root@sync.grpg-sync.ru 'systemctl restart pocketbase && systemctl is-active pocketbase'
+```
+
+Обновите приложение и опубликуйте `deploy/site/app` с `item-instances-v215.js`. Старые данные преобразуются при чтении в клиенте и сохраняются при следующем изменении профиля. Сервер присваивает ID копиям, добавленным прежними транзакциями изменения количества.

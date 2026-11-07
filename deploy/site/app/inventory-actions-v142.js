@@ -11,6 +11,7 @@
   function change(raw,source,target,api){
     const user=api.normalize(clone(raw)),before=api.layout(user),item=api.item(source.itemId);
     if(!item)throw Error('Предмет больше недоступен');
+    const copies=root.GRPGItemInstancesV215,instanceId=copies?.choose(user,source);
     const get=(slot,index)=>slot==='implant'?user.implantSlots?.[index]:user.equipmentSlots?.[slot];
     const set=(slot,index,id)=>{if(slot==='implant'){user.implantSlots[index]=id;user.installedImplantIds=user.implantSlots.filter(Boolean);}else user.equipmentSlots[slot]=id;};
     if(source.source==='slot'){
@@ -23,6 +24,7 @@
       const equipped=[...Object.values(user.equipmentSlots||{}),...(user.implantSlots||[])].filter(id=>id===source.itemId).length;
       if(owned<=equipped)throw Error('Нет свободного экземпляра предмета');
       set(target.slot,target.index,source.itemId);
+      copies?.bind(user,source.itemId,copies.slotKey(target.slot,target.index),instanceId);
     }else if(source.source!=='slot')throw Error('Предмет не надет');
     const next=api.normalize(user),after=api.layout(next);
     if(after.overflow.length>before.overflow.length)throw Error('Недостаточно ячеек для снятого снаряжения');
@@ -33,12 +35,23 @@
   function bind(api){
     function open(node){
       document.querySelector('.sheet-item-dialog')?.remove();
-      const source={itemId:node.dataset.itemId,source:node.dataset.source||(node.hasAttribute('data-inv113-drag-slot')?'slot':'grid'),slot:node.dataset.slotType||node.dataset.slotV113,index:Number(node.dataset.slotIndex??node.dataset.slotIndexV113??-1)};
+      const source={itemId:node.dataset.itemId,unitIndex:Number(node.dataset.unitIndex??-1),source:node.dataset.source||(node.hasAttribute('data-inv113-drag-slot')?'slot':'grid'),slot:node.dataset.slotType||node.dataset.slotV113,index:Number(node.dataset.slotIndex??node.dataset.slotIndexV113??-1)};
       const item=api.item(source.itemId),user=api.normalize(api.current());if(!item||!user)return;
       const dialog=document.createElement('dialog');dialog.className='sheet-item-dialog';dialog.setAttribute('aria-labelledby','sheet-item-title');
       const title=document.createElement('h2');title.id='sheet-item-title';title.textContent=item.name||source.itemId;
       const facts=document.createElement('dl');
       for(const row of root.GRPGItemFactsV141?.facts(item)||[]){const dt=document.createElement('dt'),dd=document.createElement('dd');dt.textContent=row.label;dd.textContent=String(row.value);facts.append(dt,dd);}
+      const instances = root.GRPGItemInstancesV215;
+      const copy = instances?.instance(user, source.itemId, source.unitIndex,
+        source.source === 'slot' ? instances.slotKey(source.slot, source.index) : '');
+      if (copy?.durabilityMax || copy?.broken) {
+        const label = document.createElement('dt'), value = document.createElement('dd');
+        label.textContent = 'Прочность';
+        value.textContent = copy.durabilityMax
+          ? copy.durability + ' / ' + copy.durabilityMax + (copy.broken ? ' · Сломан' : '')
+          : 'Сломан';
+        facts.append(label, value);
+      }
       const message=document.createElement('p');message.setAttribute('role','status');
       const actions=document.createElement('div');actions.className='sheet-item-actions';
       const button=(label,handler)=>{const b=document.createElement('button');b.type='button';b.textContent=label;b.onclick=handler;actions.append(b);return b;};
