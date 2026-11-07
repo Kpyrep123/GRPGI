@@ -6,7 +6,7 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: file: https:; font-src 'self' data:; connect-src 'self'; frame-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; worker-src 'self'; media-src 'self' data: blob: file: https:" />
   <title>GRPGI · интерфейс кампании</title>
   <script src="./graphics-mode-bootstrap.js?v=1.0.143"></script>
-  <link rel="stylesheet" href="./styles.css?v=207" />
+  <link rel="stylesheet" href="./styles.css?v=217" />
   <link rel="stylesheet" href="./scene-editor-v113.css?v=199" />
   <link rel="stylesheet" href="./stats-engine-v113.css?v=196" />
   <link rel="stylesheet" href="./stats-engine-v114.css?v=1.0.143" />
@@ -268,6 +268,13 @@
       <div id="hub-content-v153"></div>
     </div>
 
+    <dialog id="task-reader" class="task-reader" aria-labelledby="task-reader-title">
+      <header class="task-reader-bar">
+        <h2 id="task-reader-title">Задание</h2>
+        <button class="secondary" type="button" data-action="close-task-reader" autofocus>← К заданиям</button>
+      </header>
+      <div class="task-reader-content"></div>
+    </dialog>
     <div id="toast" class="toast info"></div>
   </div>
 
@@ -295,7 +302,7 @@
 <script src="./player-credentials-v212.js?v=212"></script>
 <script src="./player-auth-v212.js?v=212"></script>
 <script src="./task-map-v216.js?v=216"></script>
-<script src="./app.js?v=216"></script>
+<script src="./app.js?v=217"></script>
   <script src="./campaign-studio.js?v=1.0.143"></script>
   <script src="./item-instances-v215.js?v=215"></script>
   <script src="./stats-engine-v113.js?v=215"></script>

@@ -14,7 +14,12 @@ const ctx={window:{GRPGNewsV159:C,GRPGNewsUIV159:{create:B=>{global.desktopBridg
 const fd=new Map([['authorType','organization'],['authorName','Free Trade Union']]);let n=ctx.Configurator.collectEntity('news',{},fd);assert.equal(n.authorName,'Free Trade Union');assert.equal(n.image,'https://test/img');assert.equal(n.visibility.eraIds[0],'old');assert.match(ctx.Configurator.renderNewsEditor(n),/Free Trade Union/);
 fd.set('authorType','npc');fd.set('authorNpcId','npc');n=ctx.Configurator.collectEntity('news',{},fd);assert.equal(n.authorNpcId,'npc');fd.set('authorNpcId','missing');assert.throws(()=>ctx.Configurator.collectEntity('news',{},fd));
 for(const name of ['news-core-v159.js','news-ui-v159.js','news-v159.css'])assert.equal(fs.readFileSync('renderer/'+name,'utf8'),fs.readFileSync('deploy/site/app/'+name,'utf8'));
-const web=fs.readFileSync('deploy/site/app/app.js','utf8'),html=fs.readFileSync('deploy/site/app/index.html','utf8');assert.match(web,/screen === 'news'.*GRPGNewsWebV159/);assert.match(web,/\['home','archive','market','chat','combat','profile','news'\]/);assert.match(html,/data-screen="news"/);assert.match(html,/id="screen-news"/);
+const web=fs.readFileSync('deploy/site/app/app.js','utf8'),html=fs.readFileSync('deploy/site/app/index.html','utf8');
+assert.match(web,/function renderGalaGram\(\)[\s\S]+?GRPGNewsWebV159\?\.show\(\)/);
+assert.match(html,/data-screen="news"/);
+assert.doesNotMatch(html,/data-screen="chat"/);
+assert.match(html,/data-section="chat" aria-controls="screen-chat"/);
+assert.match(html,/news-web-v159\.js/);
 console.log('GalaGram core, World Config authors, campaign filtering, ownership and legacy compatibility: passed');
 
 (async()=>{
