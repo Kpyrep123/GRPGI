@@ -78,6 +78,34 @@ assert.ok(w.document.querySelector('[data-world-json-mode-v132="merge"]'));
 w.document.querySelector('[data-world-json-mode-v132="merge"]').click();await new Promise(r=>setTimeout(r,30));
 assert.equal(JSON.parse(fs.readFileSync(path.join(scratch,'world.json'),'utf8')).equipment.EQUIPMENT.ammo.ammoFamily,'7.62x39');
 for(const type of ['npcs','articles','players','skills']){render(type,type==='players'?'gm':type==='skills'?'test_skill':null);checkToolbar();}
+// The task editor persists its destination and existing article selection together.
+run(`
+ Configurator.insertEntity('planets', {id:'task_planet',name:'Планета задания'});
+ Configurator.insertEntity('articles', {id:'task_article',name:'Статья задания',title:'Статья задания'});
+ Configurator.insertEntity('tasks', {id:'task_example',name:'Задание',status:'active'});
+`);
+render('tasks','task_example');
+w.currentForm=w.document.getElementById('config-editor-form');
+w.currentForm.querySelector('[name="destinationPlanetId"]').value='task_planet';
+w.currentForm.querySelector('[name="relatedArticleIds"][value="task_article"]').checked=true;
+await run('Configurator.submit({preventDefault(){},currentTarget:window.currentForm})');
+let savedTask=JSON.parse(fs.readFileSync(path.join(scratch,'world.json'),'utf8')).tasks.TASKS.task_example;
+assert.equal(savedTask.destinationPlanetId,'task_planet');
+assert.deepEqual(savedTask.relatedArticleIds,['task_article']);
+await run('window.electronAPI.loadWorldData().then(result=>applyWorldData(result.world))');
+render('tasks','task_example');
+assert.equal(w.document.querySelector('[name="destinationPlanetId"]').value,'task_planet');
+run('UI.renderTasks()');
+assert(w.document.querySelector('#tasks-content [data-entity="planet"][data-id="task_planet"]'));
+assert(w.document.querySelector('#tasks-content [data-entity="article"][data-id="task_article"]'));
+assert.equal(run("Configurator.worldSectionsForEntityChange('planets','task_planet').includes('tasks')"),true);
+assert.equal(run("Configurator.worldSectionsForEntityChange('articles','task_article').includes('tasks')"),true);
+run("Configurator.remapReferences('planets','task_planet','new_planet'); Configurator.remapReferences('articles','task_article','new_article')");
+assert.equal(run('buildWorldSnapshot().tasks.TASKS.task_example.destinationPlanetId'),'new_planet');
+assert.equal(run('buildWorldSnapshot().tasks.TASKS.task_example.relatedArticleIds[0]'),'new_article');
+run("Configurator.cleanupReferences('planets','new_planet'); Configurator.cleanupReferences('articles','new_article')");
+assert.equal(run('buildWorldSnapshot().tasks.TASKS.task_example.destinationPlanetId'),'');
+assert.equal(run('buildWorldSnapshot().tasks.TASKS.task_example.relatedArticleIds.length'),0);
 assert.equal(w.notices.some(n=>n.type==='err'),false,JSON.stringify(w.notices));
 assert.deepEqual(errors,[]);
 await w.happyDOM.abort();fs.rmSync(scratch,{recursive:true,force:true});

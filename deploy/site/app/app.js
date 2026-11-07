@@ -861,11 +861,11 @@
       return;
     }
 
-    if ((changed.chat && active === 'chat') || (changed.combat && active === 'combat') || (changed.players && active === 'profile') || (changed.snapshot && ['home', 'archive', 'market'].includes(active))) {
+    if ((changed.chat && active === 'chat') || (changed.combat && active === 'combat') || (changed.players && active === 'profile') || (changed.snapshot && ['home', 'archive', 'market', 'tasks'].includes(active))) {
       renderActiveScreenSafely();
       return;
     }
-    if (changed.players && ['home', 'market', 'chat'].includes(active)) {
+    if (changed.players && ['home', 'market', 'chat', 'tasks'].includes(active)) {
       renderActiveScreenSafely();
     }
   }
@@ -2014,6 +2014,8 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
         }
       }
       const visibleSystems = this.visibleSystems().map(system => ({ system, p: this.worldToScreen(system.pos?.x, system.pos?.y) }));
+      const taskMap = window.GRPGTaskMapV216;
+      const taskDestinations = taskDestinationsForPlayer();
       const markerScaleMap = !this.activeSystemId
         ? computeWebGalaxyMarkerScaleMapV1058(visibleSystems.map(({ system, p }) => ({ id: system.id, x: p.x, y: p.y })), this.dpr)
         : new Map();
@@ -2039,7 +2041,11 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
           ctx.setLineDash([]);
         }
         ctx.restore();
-        if (active && this.camera.zoom > 2) this.drawSystemPlanets(ctx, system, p, t);
+        if (!this.activeSystemId && taskMap) {
+          const statuses = taskMap.forSystem(taskDestinations, system.planetIds, id => Boolean(visibleTaskPlanet(id)));
+          taskMap.draw(ctx, p.x, p.y - r - 11 * this.dpr, this.dpr, statuses);
+        }
+        if (active && this.camera.zoom > 2) this.drawSystemPlanets(ctx, system, p, t, taskDestinations);
       }
       if (!this.visibleSystems().length) {
         ctx.fillStyle = palette.text;
@@ -2047,7 +2053,7 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
         ctx.fillText('Нет доступных систем', 28 * this.dpr, 42 * this.dpr);
       }
     },
-    drawSystemPlanets(ctx, system, center, t) {
+    drawSystemPlanets(ctx, system, center, t, taskDestinations) {
       const planets = this.visiblePlanets(system);
       const palette = galaxyEraPaletteV1050();
       planets.forEach((planet, index) => {
@@ -2071,6 +2077,7 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
         ctx.font = `${10 * this.dpr}px Consolas, monospace`; ctx.fillStyle = palette.text;
         ctx.fillText(planet.name || planet.id, x + 10 * this.dpr, y - 8 * this.dpr);
         ctx.restore();
+        window.GRPGTaskMapV216?.draw(ctx, x, y - r - 11 * this.dpr, this.dpr, taskDestinations?.get(planet.id));
       });
     },
     activateAt(x, y) {
@@ -2200,6 +2207,23 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
     root.innerHTML = '<div class="eyebrow">НАВИГАЦИЯ</div><h2>Галактическая карта</h2><p class="muted">Выберите систему на карте. Колесо — масштаб, перетаскивание — навигация.</p>';
   }
 
+  function visibleTaskPlanet(id) {
+    const planet = App.data.planets.get(id);
+    return visibleForPlayer(planet, App.session?.userId) ? planet : null;
+  }
+
+  function taskDestinationsForPlayer() {
+    return window.GRPGTaskMapV216?.byPlanet(App.data.tasksList, task => visibleForPlayer(task, App.session?.userId));
+  }
+
+  function taskMarkerLabels(statuses) {
+    if (!statuses?.size) return '';
+    return `<div class="task-marker-labels">${window.GRPGTaskMapV216.markers
+      .filter(marker => statuses.has(marker.status))
+      .map(({ glyph, color, label }) => `<span><b aria-hidden="true" style="color:${color}">${glyph}</b> ${label}</span>`)
+      .join('')}</div>`;
+  }
+
   function renderGalaxyHome() {
     setTopbar('Галактическая карта', 'Интерактивная навигация по доступным системам и планетам');
     const root = $('#screen-home');
@@ -2211,6 +2235,7 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
             <button class="secondary hidden" id="web-galaxy-back" type="button" data-action="galaxy-back">← ГАЛАКТИКА</button>
             <button class="secondary" type="button" data-action="galaxy-center">⌾ ЦЕНТР</button>
           </div>
+          <div class="web-task-map-legend">${taskMarkerLabels(new Set(['active', 'open']))}</div>
           <div class="web-galaxy-hint">ПЕРЕТАСКИВАНИЕ · КАМЕРА &nbsp; / &nbsp; КОЛЕСО · МАСШТАБ &nbsp; / &nbsp; ЩЕЛЧОК · ОТКРЫТЬ</div>
         </section>
         <aside class="web-galaxy-inspector" id="web-galaxy-inspector"></aside>
@@ -2238,7 +2263,9 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
     const visibleSystems = App.data.systems.filter(item => visibleForPlayer(item, App.session.userId));
     const focusId = App.ui.focusedSystemId || system?.id || visibleSystems[0]?.id || '';
     const focusSystem = visibleSystems.find(item => item.id === focusId) || system || visibleSystems[0] || null;
-    const focusPlanets = focusSystem ? (focusSystem.planetIds || []).map(id => App.data.planets.get(id)).filter(Boolean).filter(item => visibleForPlayer(item, App.session.userId)) : [];
+    const focusPlanets = focusSystem ? (focusSystem.planetIds || []).map(visibleTaskPlanet).filter(Boolean) : [];
+    const taskMap = window.GRPGTaskMapV216;
+    const taskDestinations = taskDestinationsForPlayer();
     root.innerHTML = `
       <div class="hero-card">
         <div class="hero-cover">
@@ -2264,12 +2291,14 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
       <div class="section-head" style="margin-top:18px"><div class="section-title">Системы сектора</div></div>
       <div class="system-grid">
         ${visibleSystems.map(item => {
-          const planets = (item.planetIds || []).map(id => App.data.planets.get(id)).filter(Boolean);
+          const planets = (item.planetIds || []).map(visibleTaskPlanet).filter(Boolean);
+          const statuses = taskMap?.forSystem(taskDestinations, planets.map(planet => planet.id), () => true);
           const active = item.id === focusSystem?.id;
           return `
             <article class="entity-card ${active ? 'active' : ''}">
               <div class="eyebrow">Система</div>
               <h3>${esc(item.name || item.id)}</h3>
+              ${taskMarkerLabels(statuses)}
               <div class="entity-meta">Планет: ${planets.length}. Маршрутов: ${(item.routes || []).length}. ${item.markerLabel ? `Маркер: ${esc(item.markerLabel)}.` : ''}</div>
               <div class="entity-actions">
                 <button class="secondary" type="button" data-action="focus-system" data-system-id="${esc(item.id)}">Открыть</button>
@@ -2288,6 +2317,7 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
               <article class="planet-card ${item.id === planet?.id ? 'active' : ''}">
                 <div class="eyebrow">Планета</div>
                 <h3>${esc(item.name)}</h3>
+                ${taskMarkerLabels(taskDestinations?.get(item.id))}
                 <div class="entity-meta">${esc(item.location?.obj || item.location?.system || item.code || '')}</div>
                 <div class="entity-actions">
                   <button class="secondary" type="button" data-action="open-planet" data-planet-id="${esc(item.id)}">Открыть карточку</button>
@@ -2611,16 +2641,31 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
           ${renderRelatedSectionWebV1100('article', entity.relatedArticleIds, 'Связанные статьи')}
         </article>`;
     }
-    if (type === 'news' || type === 'task') {
+    if (type === 'task') {
+      const destination = visibleTaskPlanet(entity.destinationPlanetId);
+      return `
+        <article class="article-card">
+          ${mediaFromEntity(entity) ? renderEntityThumb(entity, 'hero') : ''}
+          <h3>${esc(entity.title || entity.name || entity.id)}</h3>
+          ${entity.subtitle ? `<p class="small-note">${esc(entity.subtitle)}</p>` : ''}
+          ${destination ? renderRelatedSectionWebV1100('planet', [destination.id], 'Планета назначения') : ''}
+          ${entity.reward ? `<p class="small-note"><b>Награда</b> · ${esc(entity.reward)}</p>` : ''}
+          ${entity.summary ? `<p class="small-note">${esc(entity.summary)}</p>` : ''}
+          ${entity.body ? `<div class="article-body">${normalizeRichHtml(entity.body, { interactive: true })}</div>` : ''}
+          ${renderRelatedSectionWebV1100('article', entity.relatedArticleIds, 'Материалы по заданию')}
+        </article>
+      `;
+    }
+    if (type === 'news') {
       return `
         <article class="article-card">
           ${renderEntityThumb(entity, 'hero')}
-          <div class="eyebrow">${type === 'news' ? 'Новость' : 'Задание'}</div>
+          <div class="eyebrow">Новость</div>
           <h3>${esc(entity.title || entity.name || entity.id)}</h3>
           <div class="small-note">${esc(entity.subtitle || entity.summary || entity.status || '')}</div>
           <div class="divider"></div>
           <div class="article-body">${normalizeRichHtml(entity.body || `<p>${esc(entity.summary || 'Без дополнительного текста.')}</p>`)}</div>
-          ${renderRelatedSectionWebV1100('article', entity.relatedArticleIds, type === 'task' ? 'Материалы по заданию' : 'Связанные статьи')}
+          ${renderRelatedSectionWebV1100('article', entity.relatedArticleIds, 'Связанные статьи')}
         </article>
       `;
     }
@@ -3538,6 +3583,23 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
     `;
   }
 
+  function renderTasks() {
+    setTopbar('Задания', 'Не принятые, активные и завершённые');
+    const visible = App.data.tasksList.filter(task => visibleForPlayer(task, App.session?.userId));
+    const columns = [
+      { status: 'open', label: 'Не принятые' },
+      { status: 'active', label: 'Активные' },
+      { status: 'completed', label: 'Завершённые' }
+    ];
+    $('#screen-tasks').innerHTML = `<div class="web-task-board">${columns.map(({ status, label }) => `
+      <section class="web-task-column">
+        <h2 class="section-title">${label}</h2>
+        ${visible.filter(task => (task.status || 'open') === status)
+          .map(task => renderEntityBody({ ...task, _type: 'task' })).join('') || '<div class="placeholder">Нет заданий</div>'}
+      </section>
+    `).join('')}</div>`;
+  }
+
   function renderCurrentScreen() {
     if (App.ui.screen !== 'home') { App.ui.galaxyDesktopActive = false; WebGalaxyMap.destroy(); }
     if (RUNTIME.hideCombat && App.ui.screen === 'combat') App.ui.screen = 'home';
@@ -3547,6 +3609,7 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
     if (App.ui.screen === 'home') renderHome();
     if (App.ui.screen === 'archive') renderArchive();
     if (App.ui.screen === 'market') renderMarket();
+    if (App.ui.screen === 'tasks') renderTasks();
     if (App.ui.screen === 'chat') renderChat();
     if (App.ui.screen === 'news') { setTopbar('GalaGram', 'Лента кампании'); window.GRPGNewsWebV159?.show(); }
     if (App.ui.screen === 'combat' && !RUNTIME.hideCombat) renderCombat();
@@ -5894,7 +5957,7 @@ function stockFeesV213(fees){if(!fees)return 'Тарифы загрузятся 
 
   /* v1.0.149 — persistent web navigation and mobile back handling */
   const WEB_NAV_KEY_V149='grpg.web.navigation.v149';
-  const WEB_SCREENS_V149=new Set(['home','archive','market','chat','combat','profile','news','hub-v153']);
+  const WEB_SCREENS_V149=new Set(['home','archive','market','tasks','chat','combat','profile','news','hub-v153']);
   let webNavPopV149=false,webNavScreenV149='',webNavScrollTimerV149=0;
   function webNavSnapshotV149(){
     return{
