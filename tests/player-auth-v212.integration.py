@@ -29,7 +29,7 @@ def migrate(hooks):
         raise AssertionError("Fixture migration failed. Inspect " + log.name)
 migrate(empty_hooks)
 shutil.copy("pocketbase/pb_migrations/1793923200_player_auth_v212.js", migrations)
-for name in ("grpgi_auth_v212.js", "grpgi_auth_v212.pb.js"):
+for name in ("grpgi_auth_v212.js", "grpgi_auth_v212.pb.js", "item-instances-v215.js"):
     shutil.copy(os.path.join("pocketbase/pb_hooks", name), test_hooks)
 migrate(test_hooks)
 shutil.copy("tests/fixtures/player-auth-v212-routes.pb.js", test_hooks)
@@ -132,6 +132,37 @@ try:
     assert request(base + "/api/collections/grpgi_credentials_v212/records")[0] in (401, 403)
     snapshots = request(base + "/api/collections/campaign_snapshots/records")[1]
     assert "old-pass" not in json.dumps(snapshots)
+    # Exercise the real record hook on inventory writes, including legacy qty-only transactions.
+    snap = snapshots["items"][0]
+    world = {**snap["worldJson"], "equipment": {"EQUIPMENT": {
+        "armor": {"id":"armor", "type":"armor", "durabilityMax":4, "rarity":"редкий"}}}}
+    assert request(base + "/api/collections/campaign_snapshots/records/" + snap["id"],
+        {"worldJson":world}, dm, method="PATCH")[0] == 200
+    url = base + "/api/collections/campaign_players/records/" + row["id"]
+    def save_inventory(profile):
+        code, result = request(url, {"playerJson":profile}, dm, method="PATCH")
+        assert code == 200, result
+        return result["playerJson"]
+    profile = save_inventory({**row["playerJson"], "inventory":[{"itemId":"armor","qty":2,"positions":[{"x":0,"y":0},{"x":1,"y":0}]}]})
+    copies = profile["inventory"][0]["instancesV215"]
+    assert len(copies) == 2 and copies[0]["id"] != copies[1]["id"]
+    assert copies[0]["durability"] == 4 and copies[0]["rarity"] == "редкий"
+    first, second = [copy["id"] for copy in copies]
+    copies[0].update({"durability":0,"broken":True,"modifiers":[{"target":"defense","op":"add","value":1}]})
+    profile = save_inventory(profile)
+    assert profile["inventory"][0]["instancesV215"][0]["durability"] == 0
+    profile["inventory"][0]["qty"] = 3
+    profile = save_inventory(profile)
+    copies = profile["inventory"][0]["instancesV215"]
+    assert len(copies) == 3 and copies[0]["id"] == first and copies[1]["id"] == second
+    assert copies[0]["broken"] and len(copies[0]["modifiers"]) == 1 and copies[2]["durability"] == 4
+    profile["inventory"][0]["qty"] = 2
+    profile["inventory"][0]["positions"].pop(0)
+    profile = save_inventory(profile)
+    assert profile["inventory"][0]["instancesV215"][0]["id"] == second
+    assert all(copy["id"] != first for copy in profile["inventory"][0]["instancesV215"])
+    print("PASS actual PocketBase copy identity, wear/modifier persistence, qty-only grants and middle removal")
+
 
     assert request(base + "/api/grpgi/character-applications/submit", {
         "campaignId":"main","playerId":"p","playerJson":{"id":"p","pass":"overwrite-123","role":"player"}})[0] == 400
