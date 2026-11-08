@@ -34,6 +34,24 @@
     const inventory = (player.inventory || []).some(r => String(r.itemId) === String(id) && Number(r.qty) > 0);
     return where === 'equipped' ? equipped : where === 'inventory' ? inventory : inventory || equipped;
   }
+  function textItemName(value) {
+    let text = String(value ?? '');
+    if (typeof document !== 'undefined' && /[<&]/.test(text)) {
+      const template = document.createElement('template');
+      template.innerHTML = text;
+      template.content.querySelectorAll('script, style').forEach(node => node.remove());
+      text = template.content.textContent;
+    }
+    return text.normalize('NFKC').trim().replace(/\s+/g, ' ').toLowerCase();
+  }
+  function hasTextItem(player, name) {
+    const wanted = textItemName(name);
+    const rows = player.textInventoryItems ?? player.weightlessItems ?? player.inventoryTextItems ?? player.looseItems;
+    return Boolean(wanted && Array.isArray(rows) && rows.some(row => {
+      if (typeof row === 'string') return textItemName(row) === wanted;
+      return row && Number(row.qty ?? row.quantity ?? 1) > 0 && textItemName(row.name ?? row.title ?? row.label) === wanted;
+    }));
+  }
   const key = (...parts) => JSON.stringify(parts);
   function completedDialog(player,state,condition) {
     // Legacy unscoped prerequisites retain their original, current-hub meaning.
@@ -61,11 +79,11 @@
     if (rule.requiredItemId && !hasItem(player, rule.requiredItemId, rule.itemLocation)) return 'Нет требуемого предмета';
     if (rule.requiredDialogId && !completedDialog(player,state,{id:rule.requiredDialogId})) return 'Сначала завершите предыдущий диалог';
     const conditions=rule.conditions||[];
-    if(conditions.some(c=>!c.id||!['flag','dialog','item'].includes(c.type)))return 'Условие не настроено';
+    if(conditions.some(c=>!c.id||!['flag','dialog','item','text-item'].includes(c.type)))return 'Условие не настроено';
     const checks=conditions.map(c=>{
-      let ok=c.type==='flag'?!!state.flags[c.id]:c.type==='dialog'?completedDialog(player,state,c):hasItem(player,c.id,c.location||'either');
+      let ok=c.type==='flag'?!!state.flags[c.id]:c.type==='dialog'?completedDialog(player,state,c):c.type==='text-item'?hasTextItem(player,c.id):hasItem(player,c.id,c.location||'either');
       if(c.value===false)ok=!ok;
-      return {ok,why:c.type==='item'?'Нет требуемого предмета':c.type==='dialog'?'Сначала завершите предыдущий диалог':'Не выполнено условие флага'};
+      return {ok,why:['item','text-item'].includes(c.type)?'Нет требуемого предмета':c.type==='dialog'?'Сначала завершите предыдущий диалог':'Не выполнено условие флага'};
     });
     if(checks.length&&(rule.conditionMode==='any'?!checks.some(c=>c.ok):!checks.every(c=>c.ok)))return checks.find(c=>!c.ok).why;
     return '';
@@ -240,7 +258,7 @@
     const all=hub.maps.flatMap(m=>m.objects||[]),dialogIds=hub.dialogs.map(d=>d.id);
     for(const o of all){for(const id of ids(o.dialogIds||o.dialogId))if(!dialogIds.includes(id))errors.push('Диалог объекта не найден: '+(o.name||o.id));if(o.type==='transition'&&o.targetMapId&&!hub.maps.some(m=>m.id===o.targetMapId))errors.push('Карта перехода не найдена');}
     for(const m of hub.maps)for(const o of m.objects||[])if(o.type==='transition'&&(o.targetObjectId||(o.targetType==='transition'&&o.targetMapId))){const target=hub.maps.find(t=>t.id===o.targetMapId)?.objects?.find(t=>t.id===o.targetObjectId&&t.type==='transition');if(!target||(m.id===o.targetMapId&&o.id===o.targetObjectId))errors.push('Связанный переход не найден: '+(o.name||o.id));}
-    const checkConditions=r=>{for(const c of r.conditions||[])if(!c.id||!['flag','dialog','item'].includes(c.type)||(c.type==='dialog'&&!dialogIds.includes(c.id)))errors.push('Незаполненное или неверное условие');};
+    const checkConditions=r=>{for(const c of r.conditions||[])if(!c.id||!['flag','dialog','item','text-item'].includes(c.type)||(c.type==='dialog'&&!dialogIds.includes(c.id)))errors.push('Незаполненное или неверное условие');};
     all.forEach(checkConditions);
     for(const o of [...all,...(hub.prefabs||[])])errors.push(...merchantErrors(o));
     for(const d of hub.dialogs){checkConditions(d);for(const n of d.nodes||[]){checkConditions(n);for(const c of n.choices||[])checkConditions(c);}}
@@ -248,5 +266,5 @@
     if(new Set(hub.dialogs.map(d=>d.id)).size!==hub.dialogs.length)errors.push('Duplicate dialogue ID');
     return [...new Set(errors)];
   }
-  globalThis.GRPGHubCoreV156={clone,ids,kind,isHub,trader,hubOf,stateFor,storeState,hasItem,key,completedDialog,destination,reason,visible,access,dialogReason,nodeReason,choiceReason,dialogsFor,effects,advance,use,merchantErrors,merchantRotation,purchase,sell,canMove,inspectDialog,validate};
+  globalThis.GRPGHubCoreV156={clone,ids,kind,isHub,trader,hubOf,stateFor,storeState,hasItem,hasTextItem,key,completedDialog,destination,reason,visible,access,dialogReason,nodeReason,choiceReason,dialogsFor,effects,advance,use,merchantErrors,merchantRotation,purchase,sell,canMove,inspectDialog,validate};
 })();

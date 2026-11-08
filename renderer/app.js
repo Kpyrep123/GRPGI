@@ -450,7 +450,7 @@ function createBlankEntity(type) {
     return { id: `npc_${stamp}`, name: 'Новый NPC', role: '', location: '', summary: '', traits: [], image: '', relatedArticleIds: [], visibility: { playerIds: [] } };
   }
   if (type === 'equipment') {
-    return { id: `item_${stamp}`, type: 'misc', name: 'Новый предмет', desc: '', rarity: 'обычный', tags: [], image: '', relatedArticleIds: [], visibility: { playerIds: [] }, mechanicType: '', decryptorMode: 'decryptor', mechanicTitle: '', decryptorDefaultCipher: 'caesar', mechanicHint: '', mechanicTimeLimit: 20, mechanicCodeLength: 5, mechanicSlots: 3 };
+    return { id: `item_${stamp}`, type: 'misc', name: 'Новый предмет', desc: '', rarity: 'обычный', tags: [], image: '', relatedArticleIds: [], visibility: { playerIds: [] } };
   }
   if (type === 'flora') {
     return { id: `flora_${stamp}`, name: 'Новая флора', habitat: '', summary: '', danger: 'Низкая', use: '', image: '', relatedArticleIds: [], visibility: { playerIds: [] } };
@@ -474,7 +474,16 @@ function createBlankEntity(type) {
   return { id: `entity_${stamp}`, name: 'Новая сущность' };
 }
 
+// Register world-load phases once in dependency order while the renderer loads.
+const worldLoadSteps = [];
 function applyWorldData(payload = {}) {
+  const sourceCampaigns = payload?.campaigns?.CAMPAIGNS;
+  const rawCampaigns = sourceCampaigns && typeof sourceCampaigns === 'object' ? sourceCampaigns : {};
+  loadWorldCollections(payload);
+  for (const step of worldLoadSteps) step(payload, rawCampaigns);
+}
+
+function loadWorldCollections(payload) {
   payload = window.GRPGPlayerCredentialsV212.clean(payload);
   worldData = payload || {};
   PLAYER_TEMPLATES = worldData.players?.PLAYER_TEMPLATES || {};
@@ -572,9 +581,12 @@ async function persistPlayerWorldMirror(state = App?.state) {
   return result;
 }
 
+const worldSavePreparation = [];
+const worldSaveSections = [];
 function buildWorldSnapshot() {
+  for (const prepare of worldSavePreparation) prepare();
   mirrorPlayersIntoWorld(App?.state);
-  return {
+  const snapshot = {
     players: serializeWorldSection('players', PLAYER_TEMPLATES),
     systems: serializeWorldSection('systems', SYSTEMS),
     planets: serializeWorldSection('planets', PLANETS),
@@ -584,6 +596,8 @@ function buildWorldSnapshot() {
     fauna: serializeWorldSection('fauna', FAUNA),
     articles: serializeWorldSection('articles', ARTICLES)
   };
+  for (const write of worldSaveSections) write(snapshot);
+  return snapshot;
 }
 
 function defaultSyncMeta() {
@@ -1785,9 +1799,7 @@ window.addEventListener('load', () => {
     rawRows.forEach(raw => copyRawVisibilityV1088(byId.get(String(raw?.id || '')), raw));
   }
 
-  const applyWorldBeforeEraVisibilityV1088 = applyWorldData;
-  applyWorldData = function(payload = {}) {
-    const result = applyWorldBeforeEraVisibilityV1088(payload);
+  worldLoadSteps.push(function restoreInitialVisibility(payload) {
     restoreArrayVisibilityV1088(Data?.systems, payload?.systems?.SYSTEMS);
     restoreMapVisibilityV1088(Data?.planets, payload?.planets?.PLANETS);
     restoreMapVisibilityV1088(Data?.npcs, payload?.npcs?.NPCS);
@@ -1800,8 +1812,7 @@ window.addEventListener('load', () => {
     restoreMapVisibilityV1088(Data?.organizations, payload?.organizations?.ORGANIZATIONS);
     restoreMapVisibilityV1088(Data?.factions, payload?.factions?.FACTIONS);
     restoreMapVisibilityV1088(Data?.skills, payload?.skills?.SKILLS);
-    return result;
-  };
+  });
 
   isEntityVisible = evaluateVisibilityV1088;
   window.GRPGVisibilityV1088 = Object.freeze({
@@ -5531,17 +5542,6 @@ const Configurator = {
         <div class="field"><label>Название</label><input class="input" name="name" value="${esc(item.name || '')}" /></div>
         ${this.renderVisibilityField(item)}
         <div class="field"><label>Описание</label><textarea class="area" name="desc">${esc(item.desc || '')}</textarea></div>
-        <div class="cols3">
-          <div class="field"><label>Механика предмета</label><select class="select" name="mechanicType"><option value="" ${!item.mechanicType ? 'selected' : ''}>Нет активной механики</option><option value="decryptor" ${item.mechanicType === 'decryptor' ? 'selected' : ''}>Дешифратор / интерактивный модуль</option></select></div>
-          <div class="field"><label>Режим модуля</label><select class="select" name="decryptorMode"><option value="decryptor" ${String(item.decryptorMode || 'decryptor') === 'decryptor' ? 'selected' : ''}>Обычный дешифратор</option><option value="codebreaker" ${item.decryptorMode === 'codebreaker' ? 'selected' : ''}>Мини-игра: быстрый взлом</option><option value="doorhack" ${item.decryptorMode === 'doorhack' ? 'selected' : ''}>Мини-игра: дверной взлом</option></select></div>
-          <div class="field"><label>Название модуля</label><input class="input" name="mechanicTitle" value="${esc(item.mechanicTitle || '')}" placeholder="Полевой дешифратор" /></div>
-        </div>
-        <div class="cols3">
-          <div class="field"><label>Шифр по умолчанию</label><select class="select" name="decryptorDefaultCipher"><option value="caesar" ${String(item.decryptorDefaultCipher || 'caesar') === 'caesar' ? 'selected' : ''}>Caesar</option><option value="vigenere" ${item.decryptorDefaultCipher === 'vigenere' ? 'selected' : ''}>Vigenere</option><option value="atbash" ${item.decryptorDefaultCipher === 'atbash' ? 'selected' : ''}>Atbash</option><option value="xor" ${item.decryptorDefaultCipher === 'xor' ? 'selected' : ''}>XOR/Base64</option></select></div>
-          <div class="field"><label>Лимит времени (сек)</label><input class="input" type="number" min="5" max="120" name="mechanicTimeLimit" value="${esc(String(item.mechanicTimeLimit || 20))}" /></div>
-          <div class="field"><label>Длина кода / слотов</label><input class="input" type="number" min="3" max="8" name="mechanicCodeLength" value="${esc(String(item.mechanicCodeLength || item.mechanicSlots || 5))}" /></div>
-        </div>
-        <div class="field"><label>Подсказка к механике</label><textarea class="area" name="mechanicHint">${esc(item.mechanicHint || '')}</textarea></div>
         <div class="field"><label>Теги (по одному на строку)</label><textarea class="area inv-editor" name="tags">${esc(listText(item.tags))}</textarea></div>
         <div class="field"><label>Связанные статьи</label>${renderRelatedArticlesEditor(item.relatedArticleIds || [])}</div>
         <button class="primary" type="submit">SAVE_ITEM</button>
@@ -5936,15 +5936,7 @@ const Configurator = {
         tags: parseListEditor(formData.get('tags') || ''),
         image,
         relatedArticleIds: getCheckedValues(formEl, 'relatedArticleIds'),
-        visibility: { playerIds: getCheckedValues(formEl, 'visibilityPlayerIds') },
-        mechanicType: String(formData.get('mechanicType') || '').trim(),
-        decryptorMode: String(formData.get('decryptorMode') || 'decryptor').trim(),
-        mechanicTitle: String(formData.get('mechanicTitle') || '').trim(),
-        decryptorDefaultCipher: String(formData.get('decryptorDefaultCipher') || 'caesar').trim(),
-        mechanicHint: String(formData.get('mechanicHint') || '').trim(),
-        mechanicTimeLimit: clamp(Number(formData.get('mechanicTimeLimit') || 20), 5, 120),
-        mechanicCodeLength: clamp(Number(formData.get('mechanicCodeLength') || 5), 3, 8),
-        mechanicSlots: clamp(Number(formData.get('mechanicCodeLength') || formData.get('mechanicSlots') || 3), 3, 5)
+        visibility: { playerIds: getCheckedValues(formEl, 'visibilityPlayerIds') }
       };
     }
     if (type === 'flora') {
@@ -6972,24 +6964,19 @@ function __bindLocalArticleLinks(root = document) {
   root.addEventListener('grpgi:entity-link-v1085', event => openChatTarget(event.detail));
 }
 
-const __applyWorldData = applyWorldData;
-applyWorldData = function(payload = {}) {
-  __applyWorldData(payload);
+worldLoadSteps.push(function loadNewsAndTasks(payload) {
   NEWS = payload.news?.NEWS || {};
   NEWS_LIST = payload.news?.NEWS_LIST || Object.values(NEWS);
   TASKS = payload.tasks?.TASKS || {};
   TASK_LIST = payload.tasks?.TASK_LIST || Object.values(TASKS);
   Data.news = NEWS;
   Data.tasks = TASKS;
-};
+});
 
-const __buildWorldSnapshot = buildWorldSnapshot;
-buildWorldSnapshot = function() {
-  const snap = __buildWorldSnapshot();
+worldSaveSections.push(function writeNewsAndTasks(snap) {
   snap.news = serializeWorldSection('news', NEWS);
   snap.tasks = serializeWorldSection('tasks', TASKS);
-  return snap;
-};
+});
 
 const __createBlankEntity = createBlankEntity;
 createBlankEntity = function(type) {
@@ -7598,9 +7585,7 @@ function itemExtraSummaryV2(item = {}) {
   return bits.filter(Boolean).join(' · ');
 }
 
-const __applyWorldDataV2 = applyWorldData;
-applyWorldData = function(payload = {}) {
-  __applyWorldDataV2(payload);
+worldLoadSteps.push(function normalizeInventoryCollections() {
   for (const [id, item] of Object.entries(EQUIPMENT)) {
     EQUIPMENT[id] = normalizeEquipmentItemV2(item);
   }
@@ -7625,7 +7610,7 @@ applyWorldData = function(payload = {}) {
     worldData.players.PLAYER_LIST = PLAYER_LIST;
   }
   Data.equipment = EQUIPMENT;
-};
+});
 
 const __createBlankEntityV2 = createBlankEntity;
 createBlankEntity = function(type) {
@@ -7983,15 +7968,7 @@ Configurator.renderEquipmentEditor = function(item) {
       </div>
       <div class="cols3">
         <div class="field"><label>Энергия: модификатор макс.</label><input class="input" type="number" name="energyDelta" value="${Number(item.energyDelta || 0)}" /></div>
-        <div class="field"><label>Механика предмета</label><select class="select" name="mechanicType"><option value="" ${!item.mechanicType ? 'selected' : ''}>Нет активной механики</option><option value="decryptor" ${item.mechanicType === 'decryptor' ? 'selected' : ''}>Дешифратор / интерактивный модуль</option></select></div>
-        <div class="field"><label>Режим модуля</label><select class="select" name="decryptorMode"><option value="decryptor" ${String(item.decryptorMode || 'decryptor') === 'decryptor' ? 'selected' : ''}>Обычный дешифратор</option><option value="codebreaker" ${item.decryptorMode === 'codebreaker' ? 'selected' : ''}>Мини-игра: быстрый взлом</option><option value="doorhack" ${item.decryptorMode === 'doorhack' ? 'selected' : ''}>Мини-игра: дверной взлом</option></select></div>
       </div>
-      <div class="cols3">
-        <div class="field"><label>Название модуля</label><input class="input" name="mechanicTitle" value="${esc(item.mechanicTitle || '')}" placeholder="Полевой дешифратор" /></div>
-        <div class="field"><label>Шифр по умолчанию</label><select class="select" name="decryptorDefaultCipher"><option value="caesar" ${String(item.decryptorDefaultCipher || 'caesar') === 'caesar' ? 'selected' : ''}>Caesar</option><option value="vigenere" ${item.decryptorDefaultCipher === 'vigenere' ? 'selected' : ''}>Vigenere</option><option value="atbash" ${item.decryptorDefaultCipher === 'atbash' ? 'selected' : ''}>Atbash</option><option value="xor" ${item.decryptorDefaultCipher === 'xor' ? 'selected' : ''}>XOR/Base64</option></select></div>
-        <div class="field"><label>Лимит времени / длина кода</label><input class="input" type="number" min="3" max="120" name="mechanicTimeLimit" value="${esc(String(item.mechanicTimeLimit || 20))}" /></div>
-      </div>
-      <div class="field"><label>Подсказка к механике</label><textarea class="area" name="mechanicHint">${esc(item.mechanicHint || '')}</textarea></div>
       <div class="field"><label>Теги (по одному на строку)</label><textarea class="area inv-editor" name="tags">${esc(listText(item.tags))}</textarea></div>
       <div class="field"><label>Связанные статьи</label>${renderRelatedArticlesEditor(item.relatedArticleIds || [])}</div>
       <button class="primary" type="submit">SAVE_ITEM</button>
@@ -11908,18 +11885,13 @@ const Combat = {
   }
 };
 
-const __combatApplyWorldData = applyWorldData;
-applyWorldData = function(payload = {}) {
-  __combatApplyWorldData(payload);
+worldLoadSteps.push(function loadCombatScenes(payload) {
   setCombatScenes(payload.combatScenes?.COMBAT_SCENES || {});
-};
+});
 
-const __combatBuildWorldSnapshot = buildWorldSnapshot;
-buildWorldSnapshot = function() {
-  const snapshot = __combatBuildWorldSnapshot();
+worldSaveSections.push(function writeCombatScenes(snapshot) {
   snapshot.combatScenes = serializeWorldSection('combatScenes', COMBAT_SCENES);
-  return snapshot;
-};
+});
 
 const __combatOpenModule = UI.openModule.bind(UI);
 UI.openModule = function(id, options = {}) {
@@ -14427,21 +14399,16 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
     return state;
   };
 
-  const __applyWorldData_v30 = applyWorldData;
-  applyWorldData = function(payload = {}) {
-    __applyWorldData_v30(payload);
+  worldLoadSteps.push(function loadNavigationLegend() {
     if (!worldData.ui || typeof worldData.ui !== 'object') worldData.ui = {};
     if (!Array.isArray(worldData.ui.galaxyLegend)) worldData.ui.galaxyLegend = [];
     syncGalaxyLegendStateFromWorldV30();
-  };
+  });
 
-  const __buildWorldSnapshot_v30 = buildWorldSnapshot;
-  buildWorldSnapshot = function() {
-    const snap = __buildWorldSnapshot_v30();
+  worldSaveSections.push(function writeNavigationLegend(snap) {
     if (!snap.ui || typeof snap.ui !== 'object') snap.ui = {};
     snap.ui.galaxyLegend = getGalaxyLegendSnapshotSourceV30({ preferState: true });
-    return snap;
-  };
+  });
 
   saveWorldConfigFromMap = async function(message = 'Изменения на карте сохранены') {
     if (!worldData.ui || typeof worldData.ui !== 'object') worldData.ui = {};
@@ -14900,17 +14867,13 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
     Data.planets = PLANETS;
   }
 
-  const __applyWorldData_v311 = applyWorldData;
-  applyWorldData = function(payload = {}) {
-    __applyWorldData_v311(payload);
+  worldLoadSteps.push(function normalizeCelestialReferences() {
     normalizeCelestialLinksV311();
-  };
+  });
 
-  const __buildWorldSnapshot_v311 = buildWorldSnapshot;
-  buildWorldSnapshot = function() {
+  worldSavePreparation.unshift(function prepareCelestialReferences() {
     normalizeCelestialLinksV311();
-    return __buildWorldSnapshot_v311();
-  };
+  });
 
   const __createBlankEntity_v311 = createBlankEntity;
   createBlankEntity = function(type) {
@@ -15375,17 +15338,13 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
     Data.planets = PLANETS;
   }
 
-  const __applyWorldData_v33 = applyWorldData;
-  applyWorldData = function(payload = {}) {
-    __applyWorldData_v33(payload);
+  worldLoadSteps.push(function normalizeCelestialRoutes() {
     normalizeCelestialLinksV33();
-  };
+  });
 
-  const __buildWorldSnapshot_v33 = buildWorldSnapshot;
-  buildWorldSnapshot = function() {
+  worldSavePreparation.unshift(function prepareCelestialRoutes() {
     normalizeCelestialLinksV33();
-    return __buildWorldSnapshot_v33();
-  };
+  });
 
   const __configReplaceEntity_v33 = Configurator.replaceEntity.bind(Configurator);
   Configurator.replaceEntity = function(type, oldId, entity) {
@@ -15667,22 +15626,19 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
     Data.planets = PLANETS;
   }
 
-  const __applyWorldData_v34 = applyWorldData;
-  applyWorldData = function(payload = {}) {
-    __applyWorldData_v34(payload);
+  worldLoadSteps.push(function restoreLegacyCelestialOwnership() {
     normalizeCelestialLinksV34({ allowLegacyBootstrap: true });
-  };
+  });
 
-  const __buildWorldSnapshot_v34 = buildWorldSnapshot;
-  buildWorldSnapshot = function() {
+  worldSavePreparation.unshift(function prepareCelestialOwnership() {
     normalizeCelestialLinksV34({ allowLegacyBootstrap: false });
-    const snapshot = __buildWorldSnapshot_v34();
+  });
+  worldSaveSections.push(function writeLegacyWorldFallbacks(snapshot) {
     if (!snapshot.news && worldData?.news) snapshot.news = deep(worldData.news);
     if (!snapshot.tasks && worldData?.tasks) snapshot.tasks = deep(worldData.tasks);
     if (!snapshot.combatScenes && worldData?.combatScenes) snapshot.combatScenes = deep(worldData.combatScenes);
     if (!snapshot.ui && worldData?.ui) snapshot.ui = deep(worldData.ui);
-    return snapshot;
-  };
+  });
 
   const __configCollectEntity_v34 = Configurator.collectEntity.bind(Configurator);
   Configurator.collectEntity = function(type, formEl, formData = new FormData(formEl)) {
@@ -17048,9 +17004,7 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
     window.__orgTickerIntervalV48 = setInterval(refreshOrganizationTickerV48, 2000);
   }
 
-  const __applyWorldData_org_v48 = applyWorldData;
-  applyWorldData = function(payload = {}) {
-    __applyWorldData_org_v48(payload);
+  worldLoadSteps.push(function loadOrganizations(payload) {
     const section = payload.organizations && typeof payload.organizations === 'object' ? payload.organizations : {};
     ORGANIZATIONS = normalizeOrganizationsRecordV48(section.ORGANIZATIONS || {}, section.ORGANIZATION_LIST || []);
     ORGANIZATION_LIST = Object.values(ORGANIZATIONS);
@@ -17058,14 +17012,11 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
       worldData.organizations = serializeWorldSection('organizations', ORGANIZATIONS);
     }
     Data.organizations = ORGANIZATIONS;
-  };
+  });
 
-  const __buildWorldSnapshot_org_v48 = buildWorldSnapshot;
-  buildWorldSnapshot = function() {
-    const snap = __buildWorldSnapshot_org_v48();
+  worldSaveSections.push(function writeOrganizations(snap) {
     snap.organizations = serializeWorldSection('organizations', ORGANIZATIONS);
-    return snap;
-  };
+  });
 
   const __createBlankEntity_org_v48 = createBlankEntity;
   createBlankEntity = function(type) {
@@ -17722,9 +17673,7 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
   Data.getFaction = function(id) { return this.factions?.[id] || null; };
   Data.getSkill = function(id) { return this.skills?.[id] || null; };
 
-  const __applyWorldDataV50 = applyWorldData;
-  applyWorldData = function(payload = {}) {
-    __applyWorldDataV50(payload);
+  worldLoadSteps.push(function loadFactionsAndSkills(payload) {
     FACTIONS_V50 = normalizeRecordFromSectionV50(payload.factions || {}, 'FACTIONS', 'FACTION_LIST', normalizeFactionV50);
     SKILLS_V50 = normalizeRecordFromSectionV50(payload.skills || {}, 'SKILLS', 'SKILL_LIST', normalizeSkillV50);
     syncFactionsWorldDataV50();
@@ -17734,15 +17683,12 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
     if (App?.state?.users) {
       App.state.users = Object.fromEntries(Object.entries(App.state.users || {}).map(([id, player]) => [id, normalizePlayerProfileV2(player)]));
     }
-  };
+  });
 
-  const __buildWorldSnapshotV50 = buildWorldSnapshot;
-  buildWorldSnapshot = function() {
-    const snap = __buildWorldSnapshotV50();
+  worldSaveSections.push(function writeFactionsAndSkills(snap) {
     snap.factions = serializeWorldSection('factions', FACTIONS_V50);
     snap.skills = serializeWorldSection('skills', SKILLS_V50);
-    return snap;
-  };
+  });
 
   const __createBlankEntityV50 = createBlankEntity;
   createBlankEntity = function(type) {
@@ -19766,9 +19712,7 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
     return false;
   };
 
-  const __applyWorldDataV60 = applyWorldData;
-  applyWorldData = function(payload = {}) {
-    __applyWorldDataV60(payload);
+  worldLoadSteps.push(function loadCampaigns(payload) {
     CAMPAIGNS_V60 = normalizeCampaignSectionV60(payload.campaigns || {});
     CAMPAIGN_LIST_V60 = campaignListV60();
     PLAYER_TEMPLATES = Object.fromEntries(Object.entries(PLAYER_TEMPLATES || {}).map(([id, player]) => [id, normalizePlayerCampaignsV60(player)]));
@@ -19778,11 +19722,9 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
     NPC_LIST = sortEntitiesForList(Object.values(NPCS));
     Data.npcs = NPCS;
     syncCampaignsWorldDataV60();
-  };
+  });
 
-  const __buildWorldSnapshotV60 = buildWorldSnapshot;
-  buildWorldSnapshot = function() {
-    const snap = __buildWorldSnapshotV60();
+  worldSaveSections.push(function writeCampaigns(snap) {
     snap.campaigns = serializeWorldSection('campaigns', CAMPAIGNS_V60);
     if (snap.players?.PLAYER_TEMPLATES) {
       Object.entries(snap.players.PLAYER_TEMPLATES).forEach(([id, player]) => { snap.players.PLAYER_TEMPLATES[id] = normalizePlayerCampaignsV60(player); });
@@ -19792,8 +19734,7 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
       Object.entries(snap.npcs.NPCS).forEach(([id, npc]) => { snap.npcs.NPCS[id] = normalizeNpcV60(npc); });
       snap.npcs.NPC_LIST = sortEntitiesForList(Object.values(snap.npcs.NPCS));
     }
-    return snap;
-  };
+  });
 
   const __createBlankEntityV60 = createBlankEntity;
   createBlankEntity = function(type) {
@@ -20042,17 +19983,14 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
     missiles: ['MISSILES', 'MISSILE_LIST'],
     radars: ['RADARS', 'RADAR_LIST']
   };
-  const snapshot = buildWorldSnapshot;
-  buildWorldSnapshot = function() {
-    const result = snapshot();
+  worldSaveSections.push(function preserveRetiredWorldSections(result) {
     for (const [section, [mapKey, listKey]] of Object.entries(sections)) {
       // Preserve old campaigns verbatim; these sections are no longer editable.
       const raw = worldData[section] || (section === 'regionMaps' ? worldData.regions : null);
       if (raw) result[section] = structuredClone(raw);
       else if (worldData[mapKey]) result[section] = { [mapKey]: structuredClone(worldData[mapKey]), [listKey]: structuredClone(worldData[listKey] || Object.values(worldData[mapKey])) };
     }
-    return result;
-  };
+  });
 })();
 
 // Read-only resolution for old origin access grants; no map simulation is loaded.
@@ -20500,10 +20438,7 @@ function legacyRegionMapsV181() {
     return renderCheckboxSelector('visibilityCampaignIds', rows, uniqueStringsV1049(selectedIds), 'campaign', 'Игровых кампаний пока нет');
   }
 
-  const __applyWorldDataV1049 = applyWorldData;
-  applyWorldData = function(payload = {}) {
-    const rawCampaigns = payload?.campaigns?.CAMPAIGNS && typeof payload.campaigns.CAMPAIGNS === 'object' ? payload.campaigns.CAMPAIGNS : {};
-    const result = __applyWorldDataV1049(payload);
+  worldLoadSteps.push(function loadCampaignErasAndVisibility(payload, rawCampaigns) {
     Object.entries(Data?.campaigns || {}).forEach(([id, campaign]) => enhanceCampaignV1049(campaign, rawCampaigns[id] || campaign));
 
     // Several older normalizers intentionally copied only playerIds. Restore the new
@@ -20524,8 +20459,7 @@ function legacyRegionMapsV181() {
     const selected = selectedCampaignIdV1049();
     if (selected) applyEraThemeV1049(campaignByIdV1049(selected));
     else applyEraThemeV1049('technological');
-    return result;
-  };
+  });
 
   const __createBlankEntityV1049 = createBlankEntity;
   createBlankEntity = function(type) {
@@ -21031,9 +20965,7 @@ function legacyRegionMapsV181() {
     Data.equipment = EQUIPMENT;
   }
 
-  const __applyWorldDataV1052 = applyWorldData;
-  applyWorldData = function(payload = {}) {
-    __applyWorldDataV1052(payload);
+  worldLoadSteps.push(function loadCharacterOrigins(payload) {
     SOCIAL_ORIGINS_V1052 = normalizeOriginSectionV1052(payload.socialOrigins || worldData?.socialOrigins || {}, 'social');
     GEOGRAPHIC_ORIGINS_V1052 = normalizeOriginSectionV1052(payload.geographicOrigins || worldData?.geographicOrigins || {}, 'geographic');
     worldData.socialOrigins = originSectionPayloadV1052('social');
@@ -21045,15 +20977,12 @@ function legacyRegionMapsV181() {
     for (const [id, player] of Object.entries(PLAYER_TEMPLATES || {})) PLAYER_TEMPLATES[id] = normalizePlayerProfileV2(player);
     PLAYER_LIST = sortEntitiesForList(Object.values(PLAYER_TEMPLATES || {}));
     if (App?.state?.users) for (const [id, player] of Object.entries(App.state.users)) App.state.users[id] = normalizePlayerProfileV2(player);
-  };
+  });
 
-  const __buildWorldSnapshotV1052 = buildWorldSnapshot;
-  buildWorldSnapshot = function() {
-    const snap = __buildWorldSnapshotV1052();
+  worldSaveSections.push(function writeOrigins(snap) {
     snap.socialOrigins = originSectionPayloadV1052('social');
     snap.geographicOrigins = originSectionPayloadV1052('geographic');
-    return snap;
-  };
+  });
 
   const __createBlankEntityV1052 = createBlankEntity;
   createBlankEntity = function(type) {
@@ -21722,8 +21651,7 @@ function legacyRegionMapsV181() {
   }
 
   // Campaign selector may be rebuilt many times, but registration should always reflect the current world.
-  const __finishLoadV1052 = applyWorldData;
-  applyWorldData = function(payload = {}) { const result = __finishLoadV1052(payload); bindRegistrationV1052(); return result; };
+  worldLoadSteps.push(bindRegistrationV1052);
   bindRegistrationV1052();
   window.GRPGRegistrationBridgeV179 = {
     formSelector:'#registration-form-v1052', selection:creationSelectionV1066,
@@ -22098,17 +22026,13 @@ function legacyRegionMapsV181() {
     Data.planets = PLANETS;
   }
 
-  const __applyWorldDataV1064 = applyWorldData;
-  applyWorldData = function(payload = {}) {
-    __applyWorldDataV1064(payload);
+  worldLoadSteps.push(function restorePlanetOwnedLinks() {
     normalizePlanetOwnedLinksV1064({ migrateLegacy: true });
-  };
+  });
 
-  const __buildWorldSnapshotV1064 = buildWorldSnapshot;
-  buildWorldSnapshot = function() {
+  worldSavePreparation.unshift(function preparePlanetOwnedLinks() {
     normalizePlanetOwnedLinksV1064({ migrateLegacy: false });
-    return __buildWorldSnapshotV1064();
-  };
+  });
 
   const __renderSystemEditorV1064 = Configurator.renderSystemEditor.bind(Configurator);
   Configurator.renderSystemEditor = function(system) {
@@ -23263,15 +23187,11 @@ window.scrollVisibleMessageThreadToBottomV1070 = scrollVisibleMessageThreadToBot
     ticker: stockTickerV1074
   });
 
-  const applyWorldBeforeStocksV1074 = applyWorldData;
-  applyWorldData = function(payload = {}) {
-    const rawCampaigns = payload?.campaigns?.CAMPAIGNS || {};
-    const result = applyWorldBeforeStocksV1074(payload);
+  worldLoadSteps.push(function loadMarketDatesAndPortfolios(_payload, rawCampaigns) {
     Object.entries(rawCampaigns).forEach(([id,raw])=>{if(Data?.campaigns?.[id])Data.campaigns[id].marketDate=String(raw?.marketDate||raw?.gameDate||raw?.currentDate||'').slice(0,10);});
     Object.entries(EQUIPMENT || {}).forEach(([id,item])=>{EQUIPMENT[id]=normalizeEquipmentItemV2(item);});
     if (App?.state?.users) Object.entries(App.state.users).forEach(([id,user])=>{App.state.users[id]=normalizePlayerProfileV2(user);});
-    return result;
-  };
+  });
 
   const renderCampaignBeforeStocksV1074 = Configurator.renderCampaignEditor?.bind(Configurator);
   if (renderCampaignBeforeStocksV1074) Configurator.renderCampaignEditor = function(entity) {

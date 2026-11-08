@@ -24,6 +24,10 @@ npm start
 
 При обычном `npm start` проверка Electron запускается автоматически. Если загрузка Electron не проходит, проверьте доступ к GitHub, VPN/прокси и антивирус, затем повторите `npm run electron:repair`.
 
+## Общий код Electron и сайта
+
+Канонические файлы из `tools/shared-client-files.json` редактируются в `renderer/`. Команда `npm run sync:shared` обновляет их копии в `deploy/site/app/` для ручной публикации. Перед DEV-деплоем обновите копии той же командой. Проверка PR сверяет копии и запускает `npm run test:pr`. Для DOM-тестов установите `happy-dom@20.11.1` или укажите путь к его `lib/index.js` в `HAPPY_DOM_MODULE`.
+
 ## Сборка
 
 ```bash

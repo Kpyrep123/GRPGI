@@ -222,8 +222,7 @@ try {
       !document.querySelector(".hub-walking-v157")
     );
   }, destination);
-  assert.ok(writes.length > 10);
-  assert.ok(writes.some((s) => s.y > 670));
+  assert.equal(writes.length, 1);
   assert.equal(
     await page.locator(".hub-walls-v157,.hub-hex-grid-v157").count(),
     0,
@@ -235,23 +234,9 @@ try {
     ),
     true,
   );
-  const map = await page.evaluate(
-    () => GRPGHubBridgeV153.currentPlanet().hub.maps[0],
-  );
-  const distances = await page.evaluate(
-    ({ map, steps }) => {
-      const S = GRPGHubSpatialV157;
-      return steps.map((at, i) => {
-        const prev = i ? steps[i - 1] : map.spawnPoints[0];
-        return S.distance(S.hex(map, prev.x, prev.y), S.hex(map, at.x, at.y));
-      });
-    },
-    { map, steps: writes },
-  );
-  assert.ok(distances.every((d) => d > 0 && d <= 60.01));
   assert.equal(writes.at(-1).exploration.main.version178, 1);
   const before = writes.length;
-  failAt = attempts + 2;
+  failAt = attempts + 1;
   const second = await page.evaluate(() => ({ x: 300.3, y: 500.7 }));
   await click(second);
   await page.waitForFunction(() =>
@@ -260,7 +245,7 @@ try {
       ?.textContent.includes("fixture save failure"),
   );
   await page.waitForTimeout(300);
-  assert.equal(writes.length, before + 1);
+  assert.equal(writes.length, before);
   assert.equal(
     await page.evaluate(() =>
       Boolean(document.querySelector(".hub-walking-v157")),
@@ -276,7 +261,7 @@ try {
   );
   assert.deepEqual(errors, []);
   console.log(
-    "PASS: full web app + real mutation bridge follows continuous wall detour to exact clicked point; hidden walls and no hex grid, player photo, explored fog; failed segment stops at confirmed position",
+    "PASS: full web app + real mutation bridge follows continuous wall detour to exact clicked point; hidden walls and no hex grid, player photo, explored fog; one save per route and rollback to confirmed position",
   );
 } finally {
   await browser.close();

@@ -239,6 +239,11 @@
         catch(e){const live=App.state.users[user.id];for(const key of Object.keys(patch))if(JSON.stringify(live[key])===JSON.stringify(patch[key])){if(base[key]===undefined)delete live[key];else live[key]=copy(base[key]);}throw e;}
       }
     });
+    const closeModule = UI.closeModule.bind(UI);
+    UI.closeModule = function (...args) {
+      if (UI.activeModuleId === 'hub-v153') playerRuntime.leave();
+      return closeModule(...args);
+    };
     const oldOpen=UI.openModule.bind(UI);UI.openModule=function(id,options={}){const result=oldOpen(id,options);if(id==='hub-v153')playerRuntime.show();if(id==='market'&&isHub(currentPlanet()))requestAnimationFrame(()=>{const goods=document.querySelector('#market-items [data-market-tab-v1074="goods"],#market-items [data-market-tab-v1073="goods"]'),stocks=document.querySelector('#market-items [data-market-tab-v1074="stocks"],#market-items [data-market-tab-v1073="stocks"]');if(goods)goods.style.display='none';if(stocks&&!stocks.classList.contains('active'))stocks.click();});return result;};
     document.getElementById('open-hub-v153')?.addEventListener('click',()=>UI.openModule('hub-v153'));
     const refresh=()=>document.getElementById('open-hub-v153')?.classList.toggle('hidden',!isHub(currentPlanet()));refresh();setInterval(refresh,3000);

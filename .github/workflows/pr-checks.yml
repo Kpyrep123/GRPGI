@@ -1,0 +1,23 @@
+name: PR checks
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install DOM test runtime
+        run: npm install --prefix "$RUNNER_TEMP/grpgi-tests" --no-package-lock --ignore-scripts --no-audit --no-fund happy-dom@20.11.1
+      - name: Check shared files and run regressions
+        run: |
+          export HAPPY_DOM_MODULE="$RUNNER_TEMP/grpgi-tests/node_modules/happy-dom/lib/index.js"
+          npm run test:pr

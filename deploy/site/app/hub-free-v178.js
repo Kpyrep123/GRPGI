@@ -369,8 +369,8 @@
   const masks178 = new WeakMap();
   function drawFog(canvas, m, s, p, preview = false) {
     if (!canvas) return;
-    canvas.width = m.width;
-    canvas.height = m.height;
+    if (canvas.width !== m.width) canvas.width = m.width;
+    if (canvas.height !== m.height) canvas.height = m.height;
     const ctx = canvas.getContext("2d");
     ctx.clearRect(0, 0, m.width, m.height);
     if (!m.fogEnabled) return;
