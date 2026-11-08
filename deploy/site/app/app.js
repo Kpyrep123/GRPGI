@@ -2621,21 +2621,6 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
           ${renderRelatedSectionWebV1100('article', entity.relatedArticleIds, 'Связанные статьи')}
         </article>`;
     }
-    if (type === 'task') {
-      const destination = visibleTaskPlanet(entity.destinationPlanetId);
-      return `
-        <article class="article-card">
-          ${mediaFromEntity(entity) ? renderEntityThumb(entity, 'hero') : ''}
-          <h3>${esc(entity.title || entity.name || entity.id)}</h3>
-          ${entity.subtitle ? `<p class="small-note">${esc(entity.subtitle)}</p>` : ''}
-          ${destination ? renderRelatedSectionWebV1100('planet', [destination.id], 'Планета назначения') : ''}
-          ${String(entity.reward ?? '') ? `<p class="small-note"><b>Награда</b> · ${esc(entity.reward)}</p>` : ''}
-          ${entity.summary ? `<p class="small-note">${esc(entity.summary)}</p>` : ''}
-          ${entity.body ? `<div class="article-body">${normalizeRichHtml(entity.body, { interactive: true })}</div>` : ''}
-          ${renderRelatedSectionWebV1100('article', entity.relatedArticleIds, 'Материалы по заданию')}
-        </article>
-      `;
-    }
     if (type === 'news') {
       return `
         <article class="article-card">
@@ -3580,15 +3565,39 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
   function renderTaskTile(task) {
     const destination = visibleTaskPlanet(task.destinationPlanetId);
     const image = mediaFromEntity(task);
-    return `<button class="card task-tile" type="button" data-action="open-task-reader" data-task-id="${esc(task.id)}">
+    const reward = String(task.reward ?? '');
+    return `<button class="task-tile" type="button" aria-haspopup="dialog" data-action="open-task-reader" data-task-id="${esc(task.id)}">
       <span class="task-tile-image" aria-hidden="true">${image ? `<img src="${esc(image)}" alt="" loading="lazy" />` : '◫'}</span>
       <span class="task-tile-copy">
-        <strong>${esc(task.title || task.name || 'Без названия')}</strong>
+        <strong class="section-title">${esc(task.title || task.name || 'Без названия')}</strong>
         ${task.subtitle ? `<span class="task-tile-subtitle">${esc(task.subtitle)}</span>` : ''}
-        ${String(task.reward ?? '') ? `<span>Награда · ${esc(task.reward)}</span>` : ''}
-        ${destination ? `<span>Планета · ${esc(destination.name || destination.id)}</span>` : ''}
+        ${reward || destination ? `<span class="task-tile-meta">
+          ${reward ? `<span>Награда · <b>${esc(reward)}</b></span>` : ''}
+          ${destination ? `<span>Планета · <b>${esc(destination.name || destination.id)}</b></span>` : ''}
+        </span>` : ''}
       </span>
+      <span class="task-tile-arrow" aria-hidden="true">›</span>
     </button>`;
+  }
+
+  function renderTaskDetails(task) {
+    const image = mediaFromEntity(task);
+    const destination = visibleTaskPlanet(task.destinationPlanetId);
+    const reward = String(task.reward ?? '');
+    const intro = [
+      task.subtitle ? `<p class="topbar-sub">${esc(task.subtitle)}</p>` : '',
+      task.summary ? `<p class="task-reader-summary">${esc(task.summary)}</p>` : '',
+      reward ? `<p class="task-reader-reward"><span>Награда</span><b>${esc(reward)}</b></p>` : ''
+    ].join('');
+    return `<article class="task-reader-sheet">
+      ${image || intro ? `<div class="task-reader-lead">
+        ${image ? `<img class="task-reader-image" src="${esc(image)}" alt="" />` : ''}
+        ${intro ? `<div class="task-reader-intro">${intro}</div>` : ''}
+      </div>` : ''}
+      ${task.body ? `<div class="article-body task-reader-description">${normalizeRichHtml(task.body, { interactive: true })}</div>` : ''}
+      ${destination ? renderRelatedSectionWebV1100('planet', [destination.id], 'Планета назначения') : ''}
+      ${renderRelatedSectionWebV1100('article', task.relatedArticleIds, 'Материалы по заданию')}
+    </article>`;
   }
 
   let taskReaderMarkup = '';
@@ -3602,7 +3611,7 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
     reader.dataset.taskId = taskId;
     reader.querySelector('#task-reader-title').textContent = task.title || task.name || 'Задание';
     const content = reader.querySelector('.task-reader-content');
-    const markup = renderEntityBody({ ...task, _type: 'task' });
+    const markup = renderTaskDetails(task);
     if (taskReaderMarkup !== markup) {
       content.innerHTML = markup;
       taskReaderMarkup = markup;
@@ -3613,6 +3622,7 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
     }
   }
 
+  let taskBoardMarkup = '';
   function renderTasks() {
     setTopbar('Задания', 'Не принятые, активные и завершённые');
     const visible = App.data.tasksList.filter(task => visibleForPlayer(task, App.session?.userId));
@@ -3621,13 +3631,20 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
       { status: 'active', label: 'Активные' },
       { status: 'completed', label: 'Завершённые' }
     ];
-    $('#screen-tasks').innerHTML = `<div class="web-task-board">${columns.map(({ status, label }) => `
-      <section class="web-task-column">
-        <h2 class="section-title">${label}</h2>
-        ${visible.filter(task => (task.status || 'open') === status)
-          .map(renderTaskTile).join('') || '<div class="placeholder">Нет заданий</div>'}
-      </section>
-    `).join('')}</div>`;
+    const markup = `<div class="web-task-board">${columns.map(({ status, label }) => {
+      const tasks = visible.filter(task => (task.status || 'open') === status);
+      return `<section class="web-task-column" data-task-status="${status}" aria-labelledby="task-column-${status}">
+        <header class="task-column-head">
+          <h2 id="task-column-${status}" class="section-title">${label}</h2>
+          <span class="task-column-count" aria-label="Заданий: ${tasks.length}">${tasks.length}</span>
+        </header>
+        <div class="task-column-list">${tasks.map(renderTaskTile).join('') || '<p class="task-column-empty">Нет заданий</p>'}</div>
+      </section>`;
+    }).join('')}</div>`;
+    if (taskBoardMarkup !== markup) {
+      $('#screen-tasks').innerHTML = markup;
+      taskBoardMarkup = markup;
+    }
     const reader = $('#task-reader');
     if (reader.open) openTaskReader(reader.dataset.taskId);
   }
