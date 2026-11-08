@@ -2104,12 +2104,10 @@ html[data-era-theme="medieval"] .origin-citizenship-v1087{background:rgba(116,69
 
 .task-tile {
   display: grid;
-  grid-template-columns: 48px minmax(0, 1fr) 12px;
-  align-items: center;
-  gap: 10px;
+  grid-template-columns: minmax(0, 1fr);
   width: 100%;
-  min-height: 68px;
-  padding: 9px 10px;
+  padding: 0;
+  overflow: hidden;
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   background: var(--panel-2);
@@ -2122,15 +2120,16 @@ html[data-era-theme="medieval"] .origin-citizenship-v1087{background:rgba(116,69
 .task-tile-image {
   display: grid;
   place-items: center;
-  aspect-ratio: 1;
-  overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
+  position: relative;
+  aspect-ratio: 16 / 9;
+  border-bottom: 1px solid var(--line);
   background: var(--panel);
   color: var(--accent);
+  font-size: 24px;
 }
-.task-tile-image img { width: 100%; height: 100%; display: block; object-fit: contain; }
-.task-tile-copy { display: grid; gap: 4px; min-width: 0; overflow-wrap: anywhere; }
+.task-tile-image img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.task-tile-copy { display: grid; gap: 6px; min-width: 0; padding: 12px; overflow-wrap: anywhere; }
+.task-tile-head { display: flex; justify-content: space-between; align-items: start; gap: 8px; }
 .task-tile-copy .section-title { color: var(--accent); font-size: 15px; line-height: 1.25; }
 .task-tile-subtitle {
   display: -webkit-box;
@@ -2207,30 +2206,26 @@ html[data-era-theme="medieval"] .origin-citizenship-v1087{background:rgba(116,69
   padding: clamp(12px, 4vw, 34px) max(12px, env(safe-area-inset-right)) max(20px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
 }
 .task-reader-sheet {
-  display: grid;
-  gap: 18px;
   max-width: 860px;
   margin: 0 auto;
-  padding: clamp(12px, 4vw, 28px);
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--panel);
   color: var(--text);
   box-shadow: var(--shadow);
+  overflow: hidden;
   overflow-wrap: anywhere;
 }
-.task-reader-lead { display: flex; flex-wrap: wrap; align-items: start; gap: 16px; }
 .task-reader-image {
   display: block;
-  width: min(100%, 220px);
-  height: auto;
-  max-height: 190px;
-  object-fit: contain;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
+  width: 100%;
+  aspect-ratio: 16 / 7;
+  max-height: 48vh;
+  object-fit: cover;
+  border-bottom: 1px solid var(--line);
   background: var(--panel-2);
 }
-.task-reader-intro { flex: 1 1 210px; min-width: 0; }
+.task-reader-body { display: grid; gap: 18px; padding: clamp(12px, 4vw, 28px); }
 .task-reader-intro p { margin: 0 0 10px; }
 .task-reader-intro p:last-child { margin-bottom: 0; }
 .task-reader-summary { line-height: 1.5; }
@@ -2246,7 +2241,7 @@ html[data-era-theme="medieval"] .origin-citizenship-v1087{background:rgba(116,69
 .task-reader-reward span { color: var(--muted); }
 .task-reader-reward b { color: var(--accent); }
 .task-reader-description { padding-top: 14px; border-top: 1px solid var(--line); }
-.task-reader-sheet > .related-entity-section-v1100 { margin-top: 0; }
+.task-reader-body > .related-entity-section-v1100 { margin-top: 0; }
 .task-reader-sheet .related-entity-card-v1100 { cursor: pointer; }
 .task-reader-sheet .related-entity-card-v1100:active { border-color: var(--accent); box-shadow: inset 0 2px 5px var(--surface-shadow); }
 .task-reader-sheet .related-entity-card-v1100:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }

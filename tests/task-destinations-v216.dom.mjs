@@ -49,10 +49,10 @@ const world = {
     classified: { id: 'classified', title: 'Hidden Article', visibility: openTo('other') }
   } },
   tasks: { TASK_LIST: [
-    { ...task('Task Open', 'open', 'home'), subtitle: 'Brief subtitle', summary: 'Full summary', body: '<p>Full mission body</p>', reward: 0, image: 'https://grpgi.test/mission.png', relatedArticleIds: ['briefing', 'classified'] },
-    task('Task Active', 'active', 'home'),
-    task('Task Same Destination', 'active', 'home'),
-    task('Task Complete', 'completed', 'finished'),
+    { ...task('Task Open', 'open', 'home'), subtitle: 'Brief subtitle', summary: 'Full summary', body: '<p>Full mission body</p>', reward: 5000000, image: 'https://grpgi.test/mission.png', relatedArticleIds: ['briefing', 'classified'] },
+    { ...task('Task Active', 'active', 'home'), reward: '5 000 000 cr' },
+    { ...task('Task Same Destination', 'active', 'home'), reward: 0 },
+    { ...task('Task Complete', 'completed', 'finished'), reward: 'Пропуск в док' },
     task('Task Hidden Planet', 'active', 'secret'),
     task('Task Hidden System', 'open', 'stranded'),
     task('Task Hidden', 'open', 'finished', openTo('other')),
@@ -81,8 +81,12 @@ try {
   assert(!board.querySelector('[data-task-id="task-hidden"]'));
   assert.doesNotMatch(board.textContent, /Full summary|Full mission body|Task Briefing/);
   const tile = board.querySelector('[data-task-id="task-open"]');
-  assert.match(tile.textContent, /Brief subtitle.*Награда · 0.*Visible Planet/s);
-  assert.equal(tile.querySelector('img').getAttribute('src'), 'https://grpgi.test/mission.png');
+  assert.match(tile.textContent, /Brief subtitle.*Награда · 5\.000\.000 CR.*Visible Planet/s);
+  assert.equal(tile.firstElementChild.querySelector('img').getAttribute('src'), 'https://grpgi.test/mission.png');
+  const boardReward = id => board.querySelector(`[data-task-id="${id}"] .task-tile-meta b`).textContent;
+  assert.equal(boardReward('task-active'), '5.000.000 CR');
+  assert.equal(boardReward('task-same-destination'), '0 CR');
+  assert.equal(boardReward('task-complete'), 'Пропуск в док');
   assert.equal(tile.getAttribute('aria-haspopup'), 'dialog');
   assert.equal(tile.querySelector('.section-title').textContent, 'Task Open');
   tile.focus();
@@ -93,7 +97,10 @@ try {
   const reader = document.querySelector('#task-reader');
   assert(reader.open);
   assert.equal(reader.querySelector('#task-reader-title.section-title').textContent, 'Task Open');
-  assert.equal(reader.querySelector('.task-reader-sheet .topbar-sub').textContent, 'Brief subtitle');
+  const sheet = reader.querySelector('.task-reader-sheet');
+  assert.equal(sheet.firstElementChild.getAttribute('src'), 'https://grpgi.test/mission.png');
+  assert.equal(sheet.querySelector('.topbar-sub').textContent, 'Brief subtitle');
+  assert.equal(sheet.querySelector('.task-reader-reward b').textContent, '5.000.000 CR');
   assert.match(reader.textContent, /Full summary.*Full mission body/s);
   assert(reader.querySelector('[data-related-type="planet"][data-related-id="home"]'));
   assert(!reader.querySelector('[data-related-id="classified"]'));
