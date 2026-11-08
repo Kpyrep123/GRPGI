@@ -3562,41 +3562,55 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
     `;
   }
 
+  function formatTaskReward(value) {
+    const reward = String(value ?? '').trim();
+    const amount = reward.replace(/\s*(?:cr|₹|кредит(?:а|ов)?)$/i, '');
+    // World Config also accepts text, such as an item or access reward.
+    const number = amount.match(/^([+-]?)(\d{1,3}(?:\.\d{3})+|\d{1,3}(?:,\d{3})+|\d{1,3}(?:[ \u00a0\u202f]\d{3})+|\d+)(?:[.,](\d{1,2}))?$/);
+    if (!number) return reward;
+    const [, sign, integer, fraction] = number;
+    const digits = integer.replace(/\D/g, '').replace(/^0+(?=\d)/, '');
+    const grouped = digits.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    return `${sign}${grouped}${fraction ? `,${fraction}` : ''} CR`;
+  }
+
   function renderTaskTile(task) {
     const destination = visibleTaskPlanet(task.destinationPlanetId);
     const image = mediaFromEntity(task);
-    const reward = String(task.reward ?? '');
+    const reward = formatTaskReward(task.reward);
     return `<button class="task-tile" type="button" aria-haspopup="dialog" data-action="open-task-reader" data-task-id="${esc(task.id)}">
       <span class="task-tile-image" aria-hidden="true">${image ? `<img src="${esc(image)}" alt="" loading="lazy" />` : '◫'}</span>
       <span class="task-tile-copy">
-        <strong class="section-title">${esc(task.title || task.name || 'Без названия')}</strong>
+        <span class="task-tile-head">
+          <strong class="section-title">${esc(task.title || task.name || 'Без названия')}</strong>
+          <span class="task-tile-arrow" aria-hidden="true">›</span>
+        </span>
         ${task.subtitle ? `<span class="task-tile-subtitle">${esc(task.subtitle)}</span>` : ''}
         ${reward || destination ? `<span class="task-tile-meta">
           ${reward ? `<span>Награда · <b>${esc(reward)}</b></span>` : ''}
           ${destination ? `<span>Планета · <b>${esc(destination.name || destination.id)}</b></span>` : ''}
         </span>` : ''}
       </span>
-      <span class="task-tile-arrow" aria-hidden="true">›</span>
     </button>`;
   }
 
   function renderTaskDetails(task) {
     const image = mediaFromEntity(task);
     const destination = visibleTaskPlanet(task.destinationPlanetId);
-    const reward = String(task.reward ?? '');
+    const reward = formatTaskReward(task.reward);
     const intro = [
       task.subtitle ? `<p class="topbar-sub">${esc(task.subtitle)}</p>` : '',
       task.summary ? `<p class="task-reader-summary">${esc(task.summary)}</p>` : '',
       reward ? `<p class="task-reader-reward"><span>Награда</span><b>${esc(reward)}</b></p>` : ''
     ].join('');
     return `<article class="task-reader-sheet">
-      ${image || intro ? `<div class="task-reader-lead">
-        ${image ? `<img class="task-reader-image" src="${esc(image)}" alt="" />` : ''}
+      ${image ? `<img class="task-reader-image" src="${esc(image)}" alt="" />` : ''}
+      <div class="task-reader-body">
         ${intro ? `<div class="task-reader-intro">${intro}</div>` : ''}
-      </div>` : ''}
-      ${task.body ? `<div class="article-body task-reader-description">${normalizeRichHtml(task.body, { interactive: true })}</div>` : ''}
-      ${destination ? renderRelatedSectionWebV1100('planet', [destination.id], 'Планета назначения') : ''}
-      ${renderRelatedSectionWebV1100('article', task.relatedArticleIds, 'Материалы по заданию')}
+        ${task.body ? `<div class="article-body task-reader-description">${normalizeRichHtml(task.body, { interactive: true })}</div>` : ''}
+        ${destination ? renderRelatedSectionWebV1100('planet', [destination.id], 'Планета назначения') : ''}
+        ${renderRelatedSectionWebV1100('article', task.relatedArticleIds, 'Материалы по заданию')}
+      </div>
     </article>`;
   }
 
