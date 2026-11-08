@@ -22,13 +22,10 @@ Thumbs.db
 GRPGI-source-*.zip
 *.apk
 *.aab
-mobile/android/.gradle/
-mobile/android/**/build/
 
 # Local source backup for the synchronization fix
 .sync-fix-backups/
 
-/mobile/generated-www/
 
 # Large ambient track is supplied locally and copied by Deploy Web.
 /renderer/assets/audio/web_ambient.m4a

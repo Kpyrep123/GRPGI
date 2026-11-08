@@ -5,8 +5,7 @@
   function create(B) {
     let ctx=null,queue=Promise.resolve(),walking=false,epoch=0,cameraCleanup=null,workspaceCleanup=null,interactionId=null;const cameras=new Map();
     function modal(title,html){window.GRPGDialogViewV161.active?.leave();document.querySelector('.hub-modal-v153')?.remove();const n=document.createElement('div');n.className='hub-modal-v153';n.innerHTML=`<div class="hub-modal-card-v153"><div class="row" style="justify-content:space-between"><h3>${esc(title)}</h3><button class="secondary" data-close>ЗАКРЫТЬ</button></div><div data-modal-body>${html}</div><div role="status" data-status></div></div>`;document.body.append(n);n.onclick=e=>{if(e.target===n||e.target.closest('[data-close]'))n.remove();};return n;}
-    function transact(mutator,notice=null) {
-      const captured=ctx;
+    function transact(mutator,notice=null,captured=ctx) {
       const task=queue.then(async()=>{
         if(!captured||B.currentPlayer()?.id!==captured.playerId||B.currentPlanet()?.id!==captured.planet.id)throw new Error('Персонаж или хаб изменился. Откройте хаб заново.');
         let result;
@@ -26,7 +25,7 @@
       finally{node.dataset.busy='';node.querySelectorAll('button').forEach(b=>b.disabled=b.dataset.blocked==='1');}
     }
     function refresh(){const p=B.currentPlayer(),planet=B.currentPlanet();if(!p||!C.isHub(planet)){ctx=null;return null;}const hub=C.hubOf(planet),state=C.stateFor(p,planet,hub);ctx={playerId:p.id,planet,hub,state,map:hub.maps.find(m=>m.id===state.mapId)};return ctx;}
-    function objectsHtml(p){const {map,state}=ctx,sight=map.fogEnabled?S.visibleCells(map,state,p):null;
+    function objectsHtml(p, {map,state}=ctx){const sight=map.fogEnabled?S.visibleCells(map,state,p):null;
       return map.objects.filter(o=>o.type!=='spawn'&&o.type!=='wall'&&C.visible(o,p,state)&&S.inSight(map,state,p,o,sight)).map(o=>{
       const unit=C.kind(o)==='unit',size=Math.max(24,+o.width||48),open=state.objectStates[o.id]==='open';
       return `<button class="hub-object-v153 ${unit?'hub-unit-v156':''} ${open?'hub-door-open-v156':''}" data-object="${esc(o.id)}" aria-label="${esc(o.name||'Объект')}" title="${esc(o.name||'Объект')}" data-type="${esc(o.type)}" style="left:${+o.x||0}px;top:${+o.y||0}px;width:${unit?size:Math.max(24,+o.width||90)}px;height:${unit?size:Math.max(24,+o.height||70)}px;z-index:${Math.max(1,Math.min(90,+o.zIndex||1))};transform:rotate(${+o.rotation||0}deg)">${o.image?`<img src="${esc(o.image)}" alt="" draggable="false">`:`<span>${esc(o.name||'Объект')}${o.type==='door'?(open?' · Открыта':' · Закрыта'):''}</span>`}</button>`;
@@ -79,8 +78,15 @@
       cameraCleanup=()=>{window.removeEventListener('pointermove',move);window.removeEventListener('pointerup',finish);window.removeEventListener('pointercancel',finish);if(gesture&&wrap.hasPointerCapture(gesture.id))wrap.releasePointerCapture(gesture.id);gesture=null;};
       return {dragging:()=>Boolean(gesture?.moved),scale:()=>v.scale,afterLayout:()=>{if(record)wrap.scrollTo(v.left,v.top);else center();}};
     }
+    function leave(){
+      closeInteraction();
+      cameraCleanup?.();
+      workspaceCleanup?.();
+      cameraCleanup = workspaceCleanup = null;
+      epoch++;
+    }
     function show(){
-      cameraCleanup?.();workspaceCleanup?.();interactionId=null;epoch++;walking=false;
+      leave();
       const root=B.root();if(!root)return; if(!refresh()){root.innerHTML='<div class="hub-empty-v153">Персонаж сейчас не находится в хабе.</div>';return;}
       B.activate?.();const p=B.currentPlayer();
       root.innerHTML=`<div class="hub-shell-v153"><div class="hub-camera-v164"><div class="hub-map-wrap-v153 hub-camera-wrap-v164"><div class="hub-map-stage-v164">${mapHtml(p)}</div></div><div class="hub-camera-controls-v164" data-camera-controls><button class="secondary" data-camera-out aria-label="Отдалить камеру">−</button><span data-camera-scale>100%</span><button class="secondary" data-camera-in aria-label="Приблизить камеру">+</button><button class="secondary" data-camera-center>К ПЕРСОНАЖУ</button></div></div><aside class="hub-panel-v153"><div class="hub-card-v153"><h3>${esc(ctx.planet.name)}</h3><div>${esc(ctx.map.name)}</div></div><div class="hub-card-v153" data-info>Колесо — масштаб; перетаскивание левой или средней кнопкой — камера; короткий щелчок — движение. Взаимодействие — на близкой дистанции. Персонаж огибает препятствия; туман раскрывается во время движения.</div><div class="hub-card-v153"><button class="secondary" data-stocks>ОТКРЫТЬ БИРЖУ</button></div></aside></div>`;
@@ -93,7 +99,7 @@
       const position=e=>{const r=map.getBoundingClientRect();return{x:(e.clientX-r.left)/r.width*ctx.map.width,y:(e.clientY-r.top)/r.height*ctx.map.height};};
       map.onpointermove=e=>{
         pointer=e;if(walking||cam.dragging()||frame)return;
-        frame=requestAnimationFrame(()=>{frame=0;if(walking||cam.dragging()||!map.isConnected||!pointer)return;
+        frame=requestAnimationFrame(()=>{frame=0;if(walking||cam.dragging()||!B.isActive()||!map.isConnected||!pointer)return;
           if(pointer.target.closest('[data-object]')){hoverKey='';drawRoute(map,[]);return;}
           const at=position(pointer),goal=S.nearest(ctx.map,at.x,at.y),key=goal&&S.cellKey(goal);
           if(key===hoverKey)return;hoverKey=key;
@@ -103,39 +109,149 @@
       map.onpointerleave=()=>{pointer=null;hoverKey='';if(frame)cancelAnimationFrame(frame);frame=0;if(!walking)drawRoute(map,[]);};
       map.onclick=e=>{if(e.target.closest('[data-object]')||walking||cam.dragging())return;closeInteraction();hoverKey='';const at=position(e);walk(at.x,at.y);};
     }
-    function drawRoute(mapNode,route,goal){
+    function drawRoute(mapNode,route,goal,state=ctx.state){
       const overlay=mapNode.querySelector('[data-route]');if(!overlay)return;
-      if(!route.length){const here=S.hex(ctx.map,ctx.state.x,ctx.state.y);overlay.innerHTML=goal&&S.distance(here,goal)?`<polygon class="hub-route-blocked-v160" points="${S.polygon(ctx.map,goal)}"/>`:'';return;}
-      const points=[ctx.state,...route].map(p=>p.x+','+p.y).join(' '),last=route[route.length-1];
+      if(!route.length){const here=S.hex(ctx.map,state.x,state.y);overlay.innerHTML=goal&&S.distance(here,goal)?`<polygon class="hub-route-blocked-v160" points="${S.polygon(ctx.map,goal)}"/>`:'';return;}
+      const points=[state,...route].map(p=>p.x+','+p.y).join(' '),last=route[route.length-1];
       overlay.innerHTML=`<polyline points="${points}"/>${route.map(p=>`<circle cx="${p.x}" cy="${p.y}" r="4"/>`).join('')}<polygon points="${S.polygon(ctx.map,last)}"/>`;
     }
-    function animateStep(token,destination,from,mapNode,atState,atMap,player){
-      if(!window.GRPGHubFreeV178)return new Promise(resolve=>{token.style.left=destination.x+'px';token.style.top=destination.y+'px';setTimeout(resolve,180);});
-      const duration=Math.max(60,Math.hypot(destination.x-from.x,destination.y-from.y)/300*1000),before=token.style.transition,start=performance.now();
-      token.style.transition='none';
-      return new Promise(resolve=>{function frame(now){const t=Math.min(1,(now-start)/duration),x=from.x+(destination.x-from.x)*t,y=from.y+(destination.y-from.y)*t;token.style.left=x+'px';token.style.top=y+'px';if(mapNode.isConnected)S.drawFog(mapNode.querySelector('[data-fog]'),atMap,{...atState,x,y},player);if(t<1&&mapNode.isConnected)requestAnimationFrame(frame);else {token.style.transition=before;resolve();}}requestAnimationFrame(frame);});
-    }
-    function resetToken(token,at){const transition=token.style.transition;token.style.transition='none';token.style.left=at.x+'px';token.style.top=at.y+'px';token.getBoundingClientRect();token.style.transition=transition;}
-    async function walk(x,y){
-      if(walking||!refresh())return;const currentEpoch=epoch,playerId=ctx.playerId,planetId=ctx.planet.id,mapId=ctx.map.id,root=B.root(),mapNode=root.querySelector('[data-runtime-map]');
-      const route=S.path(ctx.map,ctx.state,x,y);if(!route.length){const target=S.nearest(ctx.map,x,y),here=S.hex(ctx.map,ctx.state.x,ctx.state.y);if(target&&S.distance(here,target))B.notify('Нет доступного пути к этой точке','err');return;}
-      closeInteraction();walking=true;drawRoute(mapNode,route);mapNode.classList.add('hub-walking-v157');root.querySelector('[data-info]').textContent='Движение…';
-      const active=()=>epoch===currentEpoch&&B.isActive()&&B.currentPlayer()?.id===playerId&&B.currentPlanet()?.id===planetId&&mapNode.isConnected;
-      try{
-        for(const [routeIndex,destination] of route.entries()){
-          if(!active())break;const from={x:ctx.state.x,y:ctx.state.y};
-          const token=mapNode.querySelector('.hub-player-v153');
-          const save=transact((p,s,h)=>{if(s.mapId!==mapId||Math.hypot(s.x-from.x,s.y-from.y)>1)throw new Error('Положение персонажа изменилось. Выберите путь заново.');S.step(h.maps.find(m=>m.id===mapId),s,p,destination);},null);
-          const animation=animateStep(token,destination,from,mapNode,structuredClone(ctx.state),ctx.map,B.currentPlayer());
-          try{await Promise.all([save,animation]);}catch(e){await animation;if(active()){resetToken(token,from);S.drawFog(mapNode.querySelector('[data-fog]'),ctx.map,ctx.state,B.currentPlayer());}throw e;}
-          if(!active())break;drawRoute(mapNode,route.slice(routeIndex+1));S.drawFog(mapNode.querySelector('[data-fog]'),ctx.map,ctx.state,B.currentPlayer());
-          // Replace visible objects without rebuilding the terrain or interrupting the player animation.
-          const fresh=document.createElement('div');fresh.innerHTML=objectsHtml(B.currentPlayer());
-          mapNode.querySelectorAll('[data-object]').forEach(n=>n.remove());fresh.querySelectorAll('[data-object]').forEach(n=>{mapNode.append(n);n.onclick=e=>{e.stopPropagation();select(n.dataset.object);};});
-          const wrap=mapNode.closest('.hub-map-wrap-v153'),scale=cameras.get(C.key(playerId,planetId,mapId))?.scale||1,tx=destination.x*scale,ty=destination.y*scale;if(tx<wrap.scrollLeft+50||tx>wrap.scrollLeft+wrap.clientWidth-50||ty<wrap.scrollTop+50||ty>wrap.scrollTop+wrap.clientHeight-50)wrap.scrollTo({left:tx-wrap.clientWidth/2,top:ty-wrap.clientHeight/2,behavior:'smooth'});
+    function animateRoute(token, start, route, active, onFrame, onCheckpoint) {
+      let elapsed = 0;
+      let lastTime = performance.now();
+      let index = 0;
+      let from = start;
+      let duration = Math.hypot(route[0].x - from.x, route[0].y - from.y) / 0.3;
+      const { transition, willChange } = token.style;
+      token.style.transition = 'none';
+      token.style.willChange = 'translate';
+      token.style.left = start.x + 'px';
+      token.style.top = start.y + 'px';
+      return new Promise((resolve, reject) => {
+        function finish(error) {
+          token.style.left = from.x + 'px';
+          token.style.top = from.y + 'px';
+          token.style.translate = '';
+          token.style.transition = transition;
+          token.style.willChange = willChange;
+          if (error) reject(error);
+          else resolve(index);
         }
-      }catch(e){B.notify(e.message,'err');}
-      finally{if(epoch===currentEpoch){walking=false;drawRoute(mapNode,[]);mapNode.classList.remove('hub-walking-v157');if(active())root.querySelector('[data-info]').textContent='Выберите объект или точку назначения.';}}
+        function frame(now) {
+          if (!active()) return finish();
+          // A delayed frame should slow the animation instead of teleporting the token.
+          elapsed += Math.min(50, Math.max(0, now - lastTime));
+          lastTime = now;
+          try {
+            while (index < route.length && elapsed >= duration) {
+              elapsed -= duration;
+              from = route[index++];
+              onCheckpoint(from, index);
+              const next = route[index];
+              if (next) duration = Math.hypot(next.x - from.x, next.y - from.y) / 0.3;
+            }
+            const next = route[index];
+            const ratio = next ? elapsed / duration : 0;
+            const x = next ? from.x + (next.x - from.x) * ratio : from.x;
+            const y = next ? from.y + (next.y - from.y) * ratio : from.y;
+            token.style.translate = `${x - start.x}px ${y - start.y}px`;
+            onFrame(x, y, now);
+            if (next) requestAnimationFrame(frame);
+            else finish();
+          } catch (error) {
+            finish(error);
+          }
+        }
+        requestAnimationFrame(frame);
+      });
+    }
+    function updateObjects(mapNode, markup) {
+      const fresh = document.createElement('template');
+      fresh.innerHTML = markup;
+      mapNode.querySelectorAll('[data-object]').forEach(node => node.remove());
+      for (const node of fresh.content.children) {
+        node.onclick = event => { event.stopPropagation(); select(node.dataset.object); };
+      }
+      mapNode.append(fresh.content);
+    }
+    async function walk(x,y){
+      if (walking || !refresh()) return;
+      const captured = ctx;
+      const {playerId, planet, map, state} = captured;
+      const root = B.root();
+      const mapNode = root.querySelector('[data-runtime-map]');
+      if (!mapNode) return;
+      const route = S.path(map, state, x, y);
+      if (!route.length) {
+        const target = S.nearest(map, x, y);
+        if (target && S.distance(S.hex(map, state.x, state.y), target)) B.notify('Нет доступного пути к этой точке','err');
+        return;
+      }
+      const currentEpoch = epoch;
+      const sameLocation = () => B.currentPlayer()?.id === playerId && B.currentPlanet()?.id === planet.id;
+      const active = () => epoch === currentEpoch && B.isActive() && sameLocation() && mapNode.isConnected;
+      const player = B.currentPlayer();
+      const preview = C.clone(state);
+      const token = mapNode.querySelector('.hub-player-v153');
+      const canvas = mapNode.querySelector('[data-fog]');
+      const wrap = mapNode.closest('.hub-map-wrap-v153');
+      const scale = cameras.get(C.key(playerId, planet.id, map.id))?.scale || 1;
+      let lastFogAt = -Infinity;
+      let visibleObjects = objectsHtml(player, captured);
+      closeInteraction();
+      walking = true;
+      drawRoute(mapNode, route);
+      mapNode.classList.add('hub-walking-v157');
+      root.querySelector('[data-info]').textContent = 'Движение…';
+      try {
+        const count = await animateRoute(token, state, route, active, (x, y, now) => {
+          if (map.fogEnabled && now - lastFogAt >= 50) {
+            S.drawFog(canvas, map, {...preview, x, y}, player);
+            lastFogAt = now;
+          }
+        }, (destination, index) => {
+          S.step(map, preview, player, destination);
+          drawRoute(mapNode, route.slice(index), null, preview);
+          const markup = objectsHtml(player, {map, state: preview});
+          if (markup !== visibleObjects) {
+            updateObjects(mapNode, markup);
+            visibleObjects = markup;
+          }
+          const px = destination.x * scale, py = destination.y * scale;
+          if (px < wrap.scrollLeft + 50 || px > wrap.scrollLeft + wrap.clientWidth - 50 ||
+              py < wrap.scrollTop + 50 || py > wrap.scrollTop + wrap.clientHeight - 50) {
+            wrap.scrollTo({left: px - wrap.clientWidth / 2, top: py - wrap.clientHeight / 2, behavior: 'smooth'});
+          }
+        });
+        if (count && sameLocation()) {
+          if (active()) root.querySelector('[data-info]').textContent = 'Сохранение позиции…';
+          await transact((p, live, hub) => {
+            if (live.mapId !== map.id || Math.hypot(live.x - state.x, live.y - state.y) > 1) {
+              throw new Error('Положение персонажа изменилось. Выберите путь заново.');
+            }
+            const liveMap = hub.maps.find(entry => entry.id === live.mapId);
+            for (let index = 0; index < count; index++) S.step(liveMap, live, p, route[index]);
+          }, null, captured);
+        }
+      } catch (error) {
+        B.notify(error.message, 'err');
+      } finally {
+        walking = false;
+        if (B.isActive() && sameLocation()) {
+          const current = refresh();
+          if (!current || current.map.id !== map.id || !active()) {
+            show();
+          } else {
+            token.style.left = current.state.x + 'px';
+            token.style.top = current.state.y + 'px';
+            drawRoute(mapNode, []);
+            S.drawFog(canvas, current.map, current.state, B.currentPlayer());
+            const markup = objectsHtml(B.currentPlayer(), current);
+            if (markup !== visibleObjects) updateObjects(mapNode, markup);
+            mapNode.classList.remove('hub-walking-v157');
+            root.querySelector('[data-info]').textContent = 'Выберите объект или точку назначения.';
+          }
+        }
+      }
     }
 
     function objectNow(id,p,s,h){const o=h.maps.find(m=>m.id===s.mapId)?.objects.find(o=>o.id===id);if(!o||!C.visible(o,p,s))throw new Error('Объект недоступен');S.assertObject(h,o,p,s);return o;}
@@ -191,7 +307,7 @@
         onLeave:()=>{if(B.isActive()&&B.currentPlayer()?.id===playerId&&B.currentPlanet()?.id===planetId){show();select(id);}}
       });
     }
-    return {show,select,openDialog,merchant,transact,refresh,walk};
+    return {show,leave,select,openDialog,merchant,transact,refresh,walk};
   }
   window.GRPGHubRuntimeV156={create};
 })();

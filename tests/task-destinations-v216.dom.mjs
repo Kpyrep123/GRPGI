@@ -170,6 +170,21 @@ try {
   assert(document.querySelector('#social-shell').classList.contains('hidden'));
   assert(thread.classList.contains('hidden'));
   console.log('PASS GalaGram feed, messages, unread count, live thread, deep link and retained composer draft');
+  const inventoryWorld = {
+    players: { PLAYER_TEMPLATES: {
+      p: { id: 'p', role: 'player', inventory: [{ itemId: 'permit', qty: 1 }], textInventoryItems: [{ name: 'Ручная запись', qty: 1 }] }
+    } },
+    equipment: { EQUIPMENT: { permit: { id: 'permit', name: 'Допуск', type: 'gear', mass: 1, inventoryWidth: 1, inventoryHeight: 1, textOnlyInventory: true } } }
+  };
+  compileData({ world_json: inventoryWorld, state_json: {} }, [], [], null);
+  assert.equal(App.data.players.get('p').inventory.length, 0);
+  assert.deepEqual(Array.from(App.data.players.get('p').textInventoryItems, row => row.name), ['Ручная запись', 'Допуск']);
+  inventoryWorld.equipment.EQUIPMENT.permit.textOnlyInventory = false;
+  compileData({ world_json: inventoryWorld, state_json: {} }, [], [], null);
+  assert.equal(App.data.players.get('p').inventory[0].itemId, 'permit');
+  assert.deepEqual(Array.from(App.data.players.get('p').textInventoryItems, row => row.name), ['Ручная запись']);
+  console.log('PASS text inventory migration uses the new catalog from the first update');
+
 } finally {
   await window.happyDOM.abort();
 }

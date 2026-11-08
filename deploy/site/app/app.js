@@ -28,7 +28,6 @@
     galaxyView: 'grpg.web.galaxyView.v1'
   };
   const WEB_REMEMBER_MAX_MS = 30 * 24 * 60 * 60 * 1000;
-  const LEGACY_BACKEND_MARKER = ['supa', 'base'].join('');
 
   const App = {
     config: null,
@@ -147,23 +146,6 @@
     return clean;
   }
 
-  function purgeLegacyBrowserState() {
-    if (!RUNTIME.cloudOnly) return;
-    [window.localStorage, window.sessionStorage].forEach(storage => {
-      try {
-        const removals = [];
-        for (let index = 0; index < storage.length; index += 1) {
-          const key = storage.key(index);
-          const raw = key ? String(storage.getItem(key) || '') : '';
-          if (String(key || '').toLowerCase().includes(LEGACY_BACKEND_MARKER) || raw.toLowerCase().includes(LEGACY_BACKEND_MARKER)) {
-            removals.push(key);
-          }
-        }
-        removals.filter(Boolean).forEach(key => storage.removeItem(key));
-      } catch {}
-    });
-  }
-
   function readRememberState() {
     if (!RUNTIME.cloudOnly) return { enabled: false, expiresAt: 0 };
     const saved = jsonStorageRead(window.localStorage, KEYS.remember, null);
@@ -267,18 +249,12 @@
     return String(value || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
   }
 
-  function normalizeBackend() {
-    return 'pocketbase';
-  }
-
   function normalizeConfig(payload = {}) {
     const requestedUrl = String(payload.url || DEFAULTS.url).trim();
-    const requestedProvider = String(payload.backend || payload.provider || '').trim().toLowerCase();
-    const legacyConfig = requestedProvider.includes(LEGACY_BACKEND_MARKER) || requestedUrl.toLowerCase().includes(LEGACY_BACKEND_MARKER);
     return {
       backend: 'pocketbase',
       provider: 'pocketbase',
-      url: legacyConfig ? DEFAULTS.url : requestedUrl,
+      url: requestedUrl || DEFAULTS.url,
       appUsersCollection: String(payload.appUsersCollection || payload.pocketbaseUsersCollection || DEFAULTS.appUsersCollection).trim() || DEFAULTS.appUsersCollection,
       campaignId: String(payload.campaignId || DEFAULTS.campaignId || 'main').trim() || 'main',
       deviceLabel: String(payload.deviceLabel || '').trim(),
@@ -1346,7 +1322,6 @@
     App.data.world = world;
     App.data.state = state;
     App.data.playerRows = new Map(playerRows.map(row => [row.player_id, row]));
-    App.data.players = buildPlayerMap(snapshot, playerRows);
     App.data.systems = Array.isArray(world.systems?.SYSTEMS) ? deep(world.systems.SYSTEMS) : [];
     App.data.planets = new Map(Object.entries(world.planets?.PLANETS || {}).map(([id, value]) => [id, deep(value)]));
     App.data.articles = new Map(Object.entries(world.articles?.ARTICLES || {}).map(([id, value]) => [id, deep(value)]));
@@ -1356,7 +1331,8 @@
     App.data.npcs = new Map(Object.entries(world.npcs?.NPCS || {}).map(([id, value]) => [id, deep(value)]));
     App.data.flora = new Map(Object.entries(world.flora?.FLORA || {}).map(([id, value]) => [id, deep(value)]));
     App.data.fauna = new Map(Object.entries(world.fauna?.FAUNA || {}).map(([id, value]) => [id, deep(value)]));
-    App.data.items = new Map(Object.entries(world.equipment?.EQUIPMENT || {}).map(([id, value]) => [id, deep(value)]));
+    App.data.items = new Map(Object.entries(world.equipment?.EQUIPMENT || {}).map(([id, item]) => [id, normalizeItemWeb118({ ...item, id: item.id || id })]));
+    App.data.players = buildPlayerMap(snapshot, playerRows);
     App.data.campaigns = new Map(Object.entries(world.campaigns?.CAMPAIGNS || {}).map(([id, value]) => [id, deep(value)]));
     if (!App.data.campaigns.size) App.data.campaigns.set('main', { id: 'main', name: 'Основная кампания' });
     App.data.skillGroups185=deep(world.skills?.SKILL_GROUPS||{});
@@ -1397,7 +1373,6 @@
 
   async function loadLocalState() {
     if (RUNTIME.cloudOnly) {
-      purgeLegacyBrowserState();
       jsonStorageRemove(window.localStorage, KEYS.cache);
       jsonStorageRemove(window.sessionStorage, KEYS.cache);
       const remembered = readRememberState();
@@ -1417,6 +1392,7 @@
 
   function openBoot(mode) {
     if (mode !== 'app') {
+      window.GRPGHubV153?.leave?.();
       $('#task-reader')?.close();
       if (App.ui.chatMasterOpenV1068) closeWebChatMasterV1068();
     }
@@ -2809,9 +2785,23 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
     requestAnimationFrame(() => openWebChatMasterV1068(thread.key));
   }
 
+  let indexedChatRows;
+  let indexedChatLength = -1;
+  let chatRowsByThread = new Map();
   function messagesForThread(threadKey) {
-    const key = String(threadKey || '');
-    return App.data.chatRows.filter(row => canonicalChatThreadKeyV1090(row) === key && !row.deleted_at);
+    const rows = App.data.chatRows;
+    if (rows !== indexedChatRows || rows.length !== indexedChatLength) {
+      chatRowsByThread = new Map();
+      for (const row of rows) {
+        if (row.deleted_at) continue;
+        const key = canonicalChatThreadKeyV1090(row);
+        if (!chatRowsByThread.has(key)) chatRowsByThread.set(key, []);
+        chatRowsByThread.get(key).push(row);
+      }
+      indexedChatRows = rows;
+      indexedChatLength = rows.length;
+    }
+    return chatRowsByThread.get(String(threadKey || '')) || [];
   }
 
   function renderChat() {
@@ -3658,6 +3648,7 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
   }
 
   function renderCurrentScreen() {
+    if (App.ui.screen !== 'hub-v153' && $('#screen-hub-v153')?.classList.contains('active')) window.GRPGHubV153?.leave?.();
     if (App.ui.screen !== 'home') { App.ui.galaxyDesktopActive = false; WebGalaxyMap.destroy(); }
     if (RUNTIME.hideCombat && App.ui.screen === 'combat') App.ui.screen = 'home';
     if (App.ui.screen !== 'combat') document.body.classList.remove('combat-modal-open');
@@ -5849,7 +5840,7 @@ function stockFeesV213(fees){if(!fees)return 'Тарифы загрузятся 
   showWebSkillTip=function(node,skillId){showSkillTipBefore118(node,skillId);const skill=App.data.skills.get(skillId),label={active:'Активный',passive:'Пассивный',reaction:'Реакция'}[String(skill?.activationType||'passive')]||'Пассивный',head=document.querySelector('#web-skill-tip .web-skill-tip-head span');if(head&&String(skill?.skillType||skill?.type)!=='specialization')head.textContent=`Навык · ${label}`;};
 
   const compileDataBefore118=compileData;
-  compileData=function(...args){const result=compileDataBefore118(...args);App.data.items=new Map(Array.from(App.data.items.entries()).map(([id,item])=>[id,normalizeItemWeb118({...item,id:item.id||id})]));App.data.skills.forEach(skill=>{skill.activationType=['active','passive','reaction'].includes(String(skill.activationType))?String(skill.activationType):'passive';});App.data.players=new Map(Array.from(App.data.players.entries()).map(([id,player])=>[id,normalizeInventoryPlayerWebV1067(player)]));return result;};
+  compileData=function(...args){const result=compileDataBefore118(...args);App.data.skills.forEach(skill=>{skill.activationType=['active','passive','reaction'].includes(String(skill.activationType))?String(skill.activationType):'passive';});App.data.players=new Map(Array.from(App.data.players.entries()).map(([id,player])=>[id,normalizeInventoryPlayerWebV1067(player)]));return result;};
 
   const renderProfileBefore118=renderProfile;
   renderProfile=function(){const result=renderProfileBefore118();const root=$('#screen-profile'),player=currentPlayer();if(root&&player){const normalized=normalizeInventoryPlayerWebV1067(player);const card=root.querySelector('.profile-card .info-grid');if(card&&!card.querySelector('[data-web-combat-stats-v118]'))card.insertAdjacentHTML('beforeend',`<div class="info-card" data-web-combat-stats-v118><div class="k">Обзор / движение</div><div class="v">${Number(normalized.combat?.visionRange||0)} / ${Number(normalized.combat?.moveRange||0)} гекс.</div></div><div class="info-card" data-web-combat-stats-v118><div class="k">Класс брони / защита</div><div class="v">${Number(normalized.stats?.armorClass||0)} / ${Number(normalized.stats?.defense||0)}</div></div>`);}return result;};
@@ -5908,7 +5899,6 @@ function stockFeesV213(fees){if(!fees)return 'Тарифы загрузятся 
   const compileDataBeforeWeb120=compileData;
   compileData=function(...args){
     const result=compileDataBeforeWeb120(...args);
-    App.data.items=new Map(Array.from(App.data.items.entries()).map(([id,item])=>[id,normalizeItemWeb118({...item,id:item.id||id})]));
     App.data.skills=new Map(Array.from(App.data.skills.entries()).map(([id,skill])=>[id,normalizeSkillWeb120({...skill,id:skill.id||id})]));
     App.data.players=new Map(Array.from(App.data.players.entries()).map(([id,player])=>[id,normalizePlayerWeb120(player)]));
     return result;

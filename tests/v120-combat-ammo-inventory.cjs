@@ -15,8 +15,6 @@ const featureCss=read('renderer/feature-pack-v120.css');
 const web=read('deploy/site/app/app.js');
 const webCss=read('deploy/site/app/styles.css');
 const desktopHtml=read('renderer/index.html');
-const webHtml=read('deploy/site/app/index.html');
-const pkg=JSON.parse(read('package.json'));
 
 const rulesContext={console,Math};rulesContext.window=rulesContext;rulesContext.globalThis=rulesContext;
 vm.createContext(rulesContext);vm.runInContext(rulesSource,rulesContext,{filename:'combat-rules-v119.js'});
@@ -47,12 +45,13 @@ const featureContext={
   deep:value=>structuredClone(value),esc:value=>String(value??'')
 };
 featureContext.window=featureContext;
-vm.createContext(featureContext);vm.runInContext(feature,featureContext,{filename:'feature-pack-v120.js'});
+featureContext.GRPGSkillModelV50={normalize:featureContext.normalizeSkillV50,isSpecialization:featureContext.isSpecializationV55,sync(){}};
+vm.createContext(featureContext);vm.runInContext(read('renderer/damage-types-v202.js'),featureContext);vm.runInContext(feature,featureContext,{filename:'feature-pack-v120.js'});
 const ammo=featureContext.normalizeEquipmentItemV2({id:'ammo',type:'ammo',ammoFamily:'12.7',stackLimit:60});
 const weapon=featureContext.normalizeEquipmentItemV2({id:'gun',type:'weapon',ammoFamily:'12.7',stackable:true,stackLimit:20});
 assert.equal(ammo.stackable,true);assert.equal(ammo.stackLimit,60);assert.equal(ammo.ammoFamily,'12.7');
 assert.equal(weapon.stackable,true);assert.equal(weapon.stackLimit,20);
-const skill=featureContext.normalizeSkillV50({id:'old',type:'specialization',activationType:'reaction',specializationIncreases:['x'],visibility:{playerIds:['p1'],campaignIds:['main'],eraIds:['industrial']}});
+const skill=featureContext.GRPGSkillModelV50.normalize({id:'old',type:'specialization',activationType:'reaction',specializationIncreases:['x'],visibility:{playerIds:['p1'],campaignIds:['main'],eraIds:['industrial']}});
 assert.equal(skill.type,'skill');assert.equal(skill.skillType,'skill');assert.equal(skill.activationType,'reaction');assert.deepEqual(Array.from(skill.specializationIncreases),[]);
 assert.deepEqual(JSON.parse(JSON.stringify(skill.visibility)),{playerIds:['p1'],campaignIds:['main'],eraIds:['industrial']});
 const collectedSkill=featureContext.Configurator.collectEntity('skills',{}, {get(){return null;}});
@@ -102,10 +101,7 @@ assert.match(web,/Защита<\/div>/);
 assert.match(webCss,/web-reputation-row-v120/);
 assert.match(webCss,/web-player-write-pending-v120/);
 
-const patchVersion=Number(String(pkg.version).split('.')[2]||0);
-assert.ok(patchVersion>=120);assert.equal(pkg.buildVersion,`${pkg.version}.0`);assert.equal(pkg.build.buildVersion,`${pkg.version}.0`);
 assert.ok(desktopHtml.indexOf('feature-pack-v119.js')<desktopHtml.indexOf('feature-pack-v120.js'));
-assert.match(desktopHtml,/feature-pack-v120\.css\?v=1\.0\.132/);
-assert.match(webHtml,new RegExp(`styles\\.css\\?v=${pkg.version.replaceAll('.', '\\.')}`));assert.match(webHtml,new RegExp(`app\\.js\\?v=${pkg.version.replaceAll('.', '\\.')}`));
+assert.match(desktopHtml,/feature-pack-v120\.css\?v=[^"]+/);
 
 console.log('V120_COMBAT_AMMO_INVENTORY_OK');

@@ -10,6 +10,6 @@
   // Older cached app bundles lack the unified route: prevent their generic nav handler from clearing it.
   if(!B.openHub)document.getElementById('nav-hub-v153')?.addEventListener('click',event=>{event.stopImmediatePropagation();runtime.show();},{capture:true});
   const syncNav=()=>document.getElementById('nav-hub-v153')?.classList.toggle('hidden',!window.GRPGHubCoreV156.isHub(B.currentPlanet()));syncNav();setInterval(syncNav,3000);
-  window.GRPGHubV153={show:runtime.show,isHub:window.GRPGHubCoreV156.isHub,version:168};
+  window.GRPGHubV153={show:runtime.show,leave:runtime.leave,isHub:window.GRPGHubCoreV156.isHub,version:168};
   if(B.app.ui.screen==='hub-v153'){if(B.openHub)B.openHub();else runtime.show();}
 })();

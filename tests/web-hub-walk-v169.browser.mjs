@@ -28,7 +28,7 @@ try{
  await page.goto('https://web168.test/index.html');await page.waitForFunction(()=>window.GRPGHubBridgeV153&&document.querySelector('#login-status').textContent.includes('Не удалось'));
  await page.evaluate(()=>{
   const B=GRPGHubBridgeV153,A=B.app,S=GRPGHubSpatialV157;
-  const map={id:'main',name:'Основная карта',width:2000,height:1200,hexSize:28,objects:[],spawnPoints:[],walls:[]},start=S.center(map,{q:12,r:14});map.spawnPoints=[{id:'entry',...start}];
+  const map={id:'main',name:'Основная карта',width:2000,height:1200,hexSize:28,objects:[],spawnPoints:[],walls:[]},start={x:400,y:350};map.spawnPoints=[{id:'entry',...start}];
   map.objects=[{id:'sign',name:'Надпись',type:'decor',x:start.x+35,y:start.y-24,width:48,height:48,dialogIds:['read']}];
   const planet={id:'h',name:'Сухой док',locationType:'hub',hub:{maps:[map],defaultMapId:'main',dialogs:[{id:'read',name:'Прочитать',startNodeId:'n',nodes:[{id:'n',text:'Надпись',choices:[]}]}]}},player={id:'p',displayName:'Тест',currentPlanetId:'h',credits:0,inventory:[],campaignIds:['main'],role:'player'};
   A.data.planets.set('h',planet);A.data.players.set('p',player);A.session={userId:'p',role:'player'};A.ui.boot='app';A.ui.screen='profile';
@@ -37,14 +37,12 @@ try{
  server={id:'row',campaignId:'main',playerId:'p',version:0,playerJson:await page.evaluate(()=>structuredClone(GRPGHubBridgeV153.currentPlayer()))};
  await page.locator('#nav-hub-v153').click();await page.waitForTimeout(150);
  await page.evaluate(()=>document.querySelector('[data-runtime-map]').__sameMap=true);
- const destination=await page.evaluate(()=>GRPGHubSpatialV157.center(GRPGHubBridgeV153.currentPlanet().hub.maps[0],{q:17,r:14}));
+ const destination=await page.evaluate(()=>({x:680,y:350}));
  const click=async at=>{const rect=await page.locator('[data-runtime-map]').boundingBox();await page.mouse.click(rect.x+at.x*rect.width/2000,rect.y+at.y*rect.height/1200);};
  await click(destination);await page.waitForFunction(({x,y})=>{const p=GRPGHubBridgeV153.currentPlayer().hubState;return p&&Math.hypot(p.x-x,p.y-y)<1&&!document.querySelector('.hub-walking-v157');},destination);
- assert.equal(writes.length,5);assert.equal(await page.evaluate(()=>document.querySelector('[data-runtime-map]').__sameMap),true);
- const map=await page.evaluate(()=>GRPGHubBridgeV153.currentPlanet().hub.maps[0]);
- const distances=await page.evaluate(({map,steps})=>{const S=GRPGHubSpatialV157;return steps.map((at,i)=>{const prev=i?steps[i-1]:map.spawnPoints[0];return S.distance(S.hex(map,prev.x,prev.y),S.hex(map,at.x,at.y));});},{map,steps:writes});assert.deepEqual(distances,[1,1,1,1,1]);
- const before=writes.length;failAt=attempts+2;
- const second=await page.evaluate(()=>GRPGHubSpatialV157.center(GRPGHubBridgeV153.currentPlanet().hub.maps[0],{q:12,r:14}));await click(second);await page.waitForFunction(()=>document.querySelector('#toast-stack')?.textContent.includes('fixture save failure'));
- await page.waitForTimeout(220);assert.equal(writes.length,before+1);assert.equal(await page.evaluate(()=>Boolean(document.querySelector('.hub-walking-v157'))),false);assert.deepEqual(await page.evaluate(()=>({x:GRPGHubBridgeV153.currentPlayer().hubState.x,y:GRPGHubBridgeV153.currentPlayer().hubState.y})),{x:writes.at(-1).x,y:writes.at(-1).y});
- assert.deepEqual(errors,[]);console.log('PASS: full web app + real mutation bridge saves all five hexes from one click without rebuilding the map; failed next step stops and preserves confirmed position');
+ assert.equal(writes.length,1);assert.equal(await page.evaluate(()=>document.querySelector('[data-runtime-map]').__sameMap),true);
+ const before=writes.length;failAt=attempts+1;
+ const second=await page.evaluate(()=>({x:400,y:350}));await click(second);await page.waitForFunction(()=>document.querySelector('#toast-stack')?.textContent.includes('fixture save failure'));
+ await page.waitForTimeout(220);assert.equal(writes.length,before);assert.equal(await page.evaluate(()=>Boolean(document.querySelector('.hub-walking-v157'))),false);assert.deepEqual(await page.evaluate(()=>({x:GRPGHubBridgeV153.currentPlayer().hubState.x,y:GRPGHubBridgeV153.currentPlayer().hubState.y})),{x:writes.at(-1).x,y:writes.at(-1).y});
+ assert.deepEqual(errors,[]);console.log('PASS: full web app + real mutation bridge saves one complete route without rebuilding the map; failed write rolls back and preserves confirmed position');
 }finally{await browser.close();}
