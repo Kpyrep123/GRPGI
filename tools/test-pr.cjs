@@ -8,6 +8,7 @@ const checks = [
   ['tests/hub-functions-v156.mjs'],
   ['tests/hub-free-v178.mjs'],
   ['tests/hub-movement-v218.dom.mjs'],
+  ['tests/hub-storage-v222.dom.mjs'],
   ['tests/v120-combat-ammo-inventory.cjs'],
   ['tests/v134-world-config-full-load.mjs'],
   ['tests/v140-world-integrity.cjs'],

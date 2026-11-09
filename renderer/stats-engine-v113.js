@@ -375,8 +375,9 @@
   function fits(total,occupied,x,y,w,h){if(x<0||y<0||x+w>5)return false;for(let yy=y;yy<y+h;yy++)for(let xx=x;xx<x+w;xx++){const idx=yy*5+xx;if(idx<0||idx>=total||occupied.has(`${xx}:${yy}`))return false;}return true;}
   function mark(occ,x,y,w,h){for(let yy=y;yy<y+h;yy++)for(let xx=x;xx<x+w;xx++)occ.add(`${xx}:${yy}`);}
   function firstFit(total,occ,w,h){const rows=Math.ceil(Math.max(1,total)/5);for(let y=0;y<rows;y++)for(let x=0;x<5;x++)if(fits(total,occ,x,y,w,h))return{x,y};return null;}
-  function layout(rawUser={}){
-    const user=normalizePlayerProfileV2(rawUser), total=Math.max(0,i(user.inventorySize,0)), equipped=equippedCounts(user), occupied=new Set(), instances=[], overflow=[], text=[];
+  function layout(rawUser={}, {storageCapacity}={}){
+    const user=storageCapacity == null ? normalizePlayerProfileV2(rawUser) : {...rawUser, inventorySize:storageCapacity};
+    const total=Math.max(0,i(user.inventorySize,0)), equipped=equippedCounts(user), occupied=new Set(), instances=[], overflow=[], text=[];
     arr(user.inventory).forEach(entry=>{
       const item=inventoryItem(entry.itemId), qty=Math.max(0,i(entry.qty,0)), skip=Math.min(qty,equipped.get(entry.itemId)||0), remaining=Math.max(0,qty-skip);
       if(!remaining)return;
