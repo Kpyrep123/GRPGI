@@ -6185,6 +6185,25 @@ function stockFeesV213(fees){if(!fees)return 'Тарифы загрузятся 
     }
   };
   window.GRPGHubBridgeV153 = {
+    playerById: id => App.data.players.get(id),
+    hubRequest: async (route, data) => {
+      const player = currentPlayer();
+      const campaignId = App.config.campaignId;
+      const request = async () => {
+        if (currentPlayer()?.id !== player?.id || App.config.campaignId !== campaignId) throw Error('Кампания или персонаж изменились');
+        const result = await pbFetch(App.config, '/api/grpgi/auth-v212/hub-v221/' + route, {method:'POST',json:data});
+        if (result.player && currentPlayer()?.id === player?.id && App.config.campaignId === campaignId) {
+          const row = normalizePlayerRow({playerId:player.id,campaignId,playerJson:result.player,version:result.playerVersion,
+            updatedAt:result.playerUpdatedAt,clientUpdatedAt:result.playerClientUpdatedAt,updatedBy:'hub-storage'});
+          const current = App.data.playerRows.get(player.id);
+          if (!current || Number(row.version) >= Number(current.version)) App.data.playerRows.set(player.id, row);
+          App.data.players = buildPlayerMap(App.cache.snapshot, Array.from(App.data.playerRows.values()));
+          await saveCache();
+        }
+        return result;
+      };
+      return route === 'storage' ? playerWritesV135.run(player?.id, request) : request();
+    },
     itemThumb: item => renderEntityThumb(item),
     inventoryLayout: player => buildInventoryLayoutWebV1067(player),
     currentPlayer,

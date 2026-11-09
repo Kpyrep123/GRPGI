@@ -2,7 +2,7 @@
   'use strict';
   const C=window.GRPGHubCoreV156,A=window.GRPGHubAuthoringV156,S=window.GRPGHubSpatialV157;
   const VERSION=157;
-  const TYPES={decor:'Ассет',label:'Надпись',terminal:'Терминал',door:'Дверь',transition:'Переход',npc:'Юнит',item:'Объект'};
+  const TYPES={decor:'Ассет',label:'Надпись',terminal:'Терминал',door:'Дверь',transition:'Переход',npc:'Юнит',item:'Объект',storage:'Ящик'};
   const uid=prefix=>prefix+'_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,7);
   const copy=C.clone,asHub=C.hubOf,isHub=C.isHub,visible=C.visible;
   const safe=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -34,6 +34,7 @@
     {id:'transition',kind:'asset',type:'transition',targetType:'transition',name:'Переход',width:90,height:90},
     {id:'spawn',kind:'asset',type:'spawn',name:'Стартовая точка',width:40,height:40},
     {id:'label',kind:'asset',type:'label',name:'Надпись',width:160,height:40},
+    {id:'storage',kind:'asset',type:'storage',name:'Ящик',width:72,height:56,storageMode:'personal',storageCells:12},
     {id:'item',kind:'asset',type:'item',name:'Интерактивный предмет',width:70,height:70},
     {id:'unit',kind:'unit',type:'npc',name:'Юнит',width:48,height:48},
     ...['rectangle','circle','cone','wall','polygon'].map(shape=>({id:shape,kind:'zone',type:'zone',shape,name:({rectangle:'Прямоугольник',circle:'Круг',cone:'Конус',wall:'Стена',polygon:'Область'})[shape],width:shape==='wall'?200:160,height:shape==='wall'?12:160,color:'#d6a65b'}))
@@ -57,6 +58,12 @@
     if(!o)return '<div class="scene-inspector-head-v104"><b>КАРТА</b></div><div class="hub-form-v153">'+field155('Название карты','map.name',map.name)+select155('Начальная карта хаба','hub.defaultMapId',builder.hub.defaultMapId,builder.hub.maps)+'<label>Фон</label><button class="secondary" data-pick-background>ЗАГРУЗИТЬ ФОН</button><button class="ghost" data-clear-background>УБРАТЬ</button>'+field155('Ширина (от 640)','map.width',map.width,'number')+field155('Высота (от 420)','map.height',map.height,'number')+field155('Масштаб дистанций (20–80 px)','map.hexSize',S.size(map),'number')+field155('Ширина персонажа (8–80 px)','map.playerWidth',map.playerWidth??40,'number')+field155('Дальность обзора (пусто — из профиля)','map.visionRange',map.visionRange??'','number')+'<p>Перетащите точку входа из палитры ассетов. Инструмент «Стена»: зажмите мышь и проведите отрезок. Shift — угол кратный 30°. Туман проверяется от точки входа.</p></div>';
     const kind=C.kind(o);
     let specific=kind==='unit'?select155('Персонаж NPC','npcId',o.npcId,Object.values(NPCS)):'';
+    if(o.type==='storage')specific+=select155('Владелец','storageMode',o.storageMode||'personal',[{id:'personal',name:'Личный для каждого персонажа'},{id:'shared',name:'Общий'}])+
+      field155('Вместимость в ячейках','storageCells',o.storageCells??12,'number')+
+      field155('Лимит кредитов (0 — без лимита)','storageCreditLimit',o.storageCreditLimit??0,'number')+
+      select155('Флаг просмотра','storageViewFlag',o.storageViewFlag,flags,'Без флага')+
+      select155('Флаг пополнения','storageDepositFlag',o.storageDepositFlag,flags,'Без флага')+
+      select155('Флаг изъятия','storageWithdrawFlag',o.storageWithdrawFlag,flags,'Без флага');
     if(o.type==='terminal'||o.type==='item')specific+=select155('Статья','articleId',o.articleId,Object.values(ARTICLES));
     if(o.type==='transition')specific+=select155('Карта назначения','targetMapId',o.targetMapId,builder.hub.maps)+select155('Переход назначения','targetObjectId',o.targetObjectId,(builder.hub.maps.find(m=>m.id===o.targetMapId)?.objects||[]).filter(t=>t.type==='transition'&&(o.targetMapId!==map.id||t.id!==o.id)))+(o.targetSpawnId&&!o.targetObjectId?'<p>Старая связь с начальной точкой сохранена. Выберите переход, чтобы заменить её.</p>':'')+'<button type="button" class="secondary" data-link-transitions '+(!o.targetObjectId?'disabled':'')+'>СВЯЗАТЬ В ОБЕ СТОРОНЫ</button>';
     if(kind==='zone')specific+=select155('Форма','shape',o.shape,['rectangle','circle','cone','wall','polygon'].map(id=>({id,name:id})))+field155('Цвет','color',o.color||'#d6a65b','color');
@@ -83,7 +90,13 @@
   async function saveBuilder(){
     const current=builder;if(!current||current.saving)return {ok:false,message:'The Hub draft is unavailable or already saving'};
     document.activeElement?.blur();current.hub.maps.forEach(syncSpawns155);
-    const errors=C.validate(current.hub);if(errors.length){Toast.show(errors.join(' · '),'err');return {ok:false,message:errors.join(' · ')};}
+    const errors=C.validate(current.hub);
+    for(const object of current.hub.maps.flatMap(map=>map.objects).filter(object=>object.type==='storage')){
+      const cells=Number(object.storageCells??12),limit=Number(object.storageCreditLimit??0);
+      if(!Number.isInteger(cells)||cells<1||cells>10000||!Number.isFinite(limit)||limit<0||limit>Number.MAX_SAFE_INTEGER/10000)
+        errors.push((object.name||'Ящик')+' — укажите от 1 до 10 000 ячеек и допустимый лимит кредитов.');
+    }
+    if(errors.length){Toast.show(errors.join(' · '),'err');return {ok:false,message:errors.join(' · ')};}
     const live=PLANETS[current.planet.id];
     if(!live){Toast.show('Планета удалена. Черновик хаба остаётся открыт.','err');return {ok:false,message:'The planet was deleted. The Hub draft remains open.'};}
     if(JSON.stringify(live.hub||null)!==JSON.stringify(current.baseHub)){Toast.show('Хаб изменён извне. Сохранение отменено, чтобы не перезаписать изменения. Черновик остаётся открыт.','err');return {ok:false,message:'The Hub changed externally. Saving was cancelled; the draft remains open.'};}
@@ -225,6 +238,21 @@
       itemThumb:item=>typeof renderThumb==='function'?renderThumb(item,{size:'sm',type:'item'}):window.GRPGMerchantUIV163.thumb(item),inventoryLayout:p=>window.GRPGInventoryV1067.buildLayout?.(p),
       marketContext:()=>{const campaignId=String((typeof Sync!=='undefined'?Sync.config?.campaignId:'')||App.activeCampaignId||'main');return {campaignId,priceAdjustmentPct:currentPlanet()?.priceAdjustmentPct||0,equipment:EQUIPMENT,campaign:Data.getCampaign?.(campaignId)||Data.campaigns?.[campaignId]||{}};},
       item:id=>Data.getItem(id),npc:id=>NPCS[id],article:id=>ARTICLES[id],
+      playerById:id=>App.state.users[id],
+      hubRequest:async (route, data)=>{
+        const playerId=App.currentUser?.id;
+        const result=await window.electronAPI.hubRequestV221({route,data});
+        if (!result?.ok && !result?.peers) {
+          const error=new Error(result?.message||'Хаб недоступен');
+          error.status=result?.httpStatus;
+          throw error;
+        }
+        if(result.player && App.currentUser?.id===playerId) {
+          PlayerSync.applyRemoteRow({playerId,player:result.player,version:result.playerVersion,updatedAt:result.playerUpdatedAt,clientUpdatedAt:result.playerClientUpdatedAt,updatedBy:'hub-storage'},{authoritative:true,source:'hub-storage'});
+          await App.writeLocalMirrors();
+        }
+        return result;
+      },
       canAdd:(p,id,n)=>window.GRPGInventoryV1067.canAddItem(p,id,n),
       notify:(m,t)=>Toast.show(m,t),openStocks:()=>UI.openModule('market'),
       openArticle:id=>{UI.closeModule();UI.openModule('wiki',{preserveWikiState:true});Wiki.showEntity('article',id,true);},

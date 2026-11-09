@@ -4,6 +4,7 @@ const path = require('node:path');
 const root = path.join(__dirname, '..');
 const checks = [
   ['tools/sync-shared-client.cjs', '--check'],
+  ['tools/build-hub-rules-v221.cjs', '--check'],
   ['tests/hub-functions-v156.mjs'],
   ['tests/hub-free-v178.mjs'],
   ['tests/hub-movement-v218.dom.mjs'],
