@@ -5821,8 +5821,9 @@ function stockFeesV213(fees){if(!fees)return 'Тарифы загрузятся 
   slotAcceptsWebV1067=function(type,item){const itemType=normalizedItemTypeV1052(item);if(type==='armor')return itemType==='armor';if(type==='backpack')return itemType==='backpack';if(type==='implant')return itemType==='implant';if(type==='primaryWeapon')return itemType==='shield'||itemType==='weapon'&&['primary','versatile',''].includes(String(item.weaponSlot||'primary'));if(type==='secondaryWeapon')return itemType==='weapon'&&['secondary','versatile',''].includes(String(item.weaponSlot||'secondary'));return false;};
   webSlotLabelV1067=function(type,index=-1){return type==='primaryWeapon'?'Основное оружие / щит':type==='secondaryWeapon'?'Вторичное оружие':type==='armor'?'Броня':type==='backpack'?'Рюкзак':`Имплант ${index+1}`;};
 
-  buildInventoryLayoutWebV1067=function(rawUser={}){
-    const user=normalizeInventoryPlayerWebV1067(rawUser),size=user.inventorySize,cols=5,equipped=equippedCountsWebV1067(user),occupied=new Set(),instances=[],overflow=[],textItems=[];
+  buildInventoryLayoutWebV1067=function(rawUser={}, {storageCapacity}={}){
+    const user=storageCapacity == null ? normalizeInventoryPlayerWebV1067(rawUser) : {...rawUser, inventorySize:storageCapacity};
+    const size=user.inventorySize,cols=5,equipped=equippedCountsWebV1067(user),occupied=new Set(),instances=[],overflow=[],textItems=[];
     for(const entry of user.inventory){
       const item=itemWebV1067(entry.itemId),qty=Math.max(0,Math.trunc(Number(entry.qty||0))),skip=Math.min(qty,equipped.get(entry.itemId)||0),remaining=Math.max(0,qty-skip);if(!remaining)continue;
       if(item.textOnlyInventory===true||(Number(item.mass||0)===0&&Number(item.inventoryWidth||0)===0&&Number(item.inventoryHeight||0)===0)){textItems.push({itemId:entry.itemId,item,qty:remaining,entry});continue;}
@@ -6205,7 +6206,7 @@ function stockFeesV213(fees){if(!fees)return 'Тарифы загрузятся 
       return route === 'storage' ? playerWritesV135.run(player?.id, request) : request();
     },
     itemThumb: item => renderEntityThumb(item),
-    inventoryLayout: player => buildInventoryLayoutWebV1067(player),
+    inventoryLayout: (player, options) => buildInventoryLayoutWebV1067(player, options),
     currentPlayer,
     currentPlanet,
     canAdd: (p,id,n) => canAddInventoryItemWebV1067(p,id,n),

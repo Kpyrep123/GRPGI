@@ -23,7 +23,7 @@ function first(app, collection, filter, args) {
 
 function identity(e) {
   const user = auth.actor(e);
-  return {campaign: user.getString("campaignId"), player: user.getString("playerId")};
+  return {campaign: user.getString("campaignId"), player: user.getString("playerId"), dm: user.getBool("dm")};
 }
 
 function position(app, who, input, ephemeral) {
@@ -122,12 +122,15 @@ function inventoryLimits(player, catalog) {
   if (weight > Number(player.carryWeightMax ?? 12) + 1e-9) throw new BadRequestError("Недостаточная грузоподъёмность");
 }
 
-function transferItems(source, destination, player, catalog, deposit, itemId, qty) {
+function transferItems(source, destination, player, catalog, deposit, itemId, qty, instanceIds) {
   const item = own(catalog, itemId);
   if (!item) throw new BadRequestError("Предмет не найден в каталоге");
   const from = source.find(entry => entry.itemId === itemId);
   if (!from || Number(from.qty) - (deposit ? equipmentCount(player, itemId) : 0) < qty)
     throw new BadRequestError("Недостаточно свободных экземпляров");
+  const selected = instanceIds && instanceIds.map(id => from.instancesV215?.findIndex(copy => copy.id === id && !copy.slot) ?? -1);
+  if (selected?.some(index => index < 0)) throw new BadRequestError("Выбранный экземпляр недоступен. Обновите ящик.");
+  const selectedIndices = selected && new Set(selected);
   const to = destination.find(entry => entry.itemId === itemId) || {itemId, qty: 0, positions: []};
   if (Number(to.qty) + qty > 10000) throw new BadRequestError("Слишком много экземпляров");
   if (!destination.includes(to)) destination.push(to);
@@ -135,7 +138,7 @@ function transferItems(source, destination, player, catalog, deposit, itemId, qt
     to.instancesV215 ||= [];
     for (let index = from.instancesV215.length - 1; index >= 0 && qty > 0; index--) {
       const copy = from.instancesV215[index];
-      if (copy.slot) continue;
+      if (copy.slot || (selectedIndices && !selectedIndices.has(index))) continue;
       to.instancesV215.push(copy);
       to.qty++;
       copies.remove(from, index);
@@ -182,7 +185,13 @@ function storage(e) {
       const itemId = String(input.itemId || "");
       if (!Number.isFinite(amount) || amount <= 0 || (itemId && (!Number.isSafeInteger(amount) || amount > 10000)))
         throw new BadRequestError("Недопустимое количество");
-      const receipt = {actor: core.key(who.campaign, who.player), operation, request: core.key(key, action, itemId, amount)};
+      const instanceIds = input.instanceIds;
+      if (instanceIds != null && (!itemId || !Array.isArray(instanceIds) || instanceIds.length !== amount ||
+          new Set(instanceIds).size !== amount || instanceIds.some(id => typeof id !== "string" || !id || id.length > 256))) {
+        throw new BadRequestError("Недопустимый список экземпляров");
+      }
+      const request = instanceIds ? core.key(key, action, itemId, amount, instanceIds) : core.key(key, action, itemId, amount);
+      const receipt = {actor: core.key(who.campaign, who.player), operation, request};
       const prior = new DynamicModel({request: ""});
       app.db().newQuery("SELECT COALESCE((SELECT request FROM grpgi_hub_receipts_v221 WHERE actor={:actor} AND operation={:operation}), '') AS request").bind(receipt).one(prior);
       if (prior.request && prior.request !== receipt.request) throw new BadRequestError("Идентификатор использован в другой операции");
@@ -190,8 +199,11 @@ function storage(e) {
         const deposit = action === "deposit";
         if (itemId) {
           player.inventory ||= [];
-          copies.normalize(player, id => own(catalog, id), () => "item:" + $security.randomString(24));
-          transferItems(deposit ? player.inventory : stored.items, deposit ? stored.items : player.inventory, player, catalog, deposit, itemId, amount);
+          const lookup = id => own(catalog, id);
+          const newId = () => "item:" + $security.randomString(24);
+          copies.normalize(player, lookup, instanceIds ? undefined : newId);
+          copies.normalize({inventory: stored.items}, lookup, newId);
+          transferItems(deposit ? player.inventory : stored.items, deposit ? stored.items : player.inventory, player, catalog, deposit, itemId, amount, instanceIds);
           if (deposit && used(stored.items, catalog) > capacity) throw new BadRequestError("Недостаточно ячеек ящика");
           if (!deposit) inventoryLimits(player, catalog);
         } else {
@@ -233,7 +245,7 @@ function presence(e) {
   const now = Date.now();
   const store = e.app.store();
   const room = prefix + "room:" + core.key(who.campaign, planet.id, map.id) + ":";
-  const key = room + who.player;
+  const key = who.dm ? prefix + "dm:" + core.key(who.campaign, planet.id, map.id, who.player) : room + who.player;
   const previous = JSON.parse(store.get(key) || "null");
   const x = Number(input.x), y = Number(input.y);
   const origin = previous && previous.until > now ? previous : state;
@@ -243,6 +255,7 @@ function presence(e) {
       (Math.hypot(x - origin.x, y - origin.y) <= 100 + elapsed * 0.45 &&
         spatial.canMove(map, {...state, x: origin.x, y: origin.y}, x, y)));
   const at = valid ? {x, y} : {x: origin.x, y: origin.y};
+  if (who.dm) store.remove(room + who.player);
   store.set(key, JSON.stringify({...at, id: who.player, at: now, until: now + ttl}));
   const peers = [];
   const range = spatial.size(map) * spatial.vision(map, player) * Math.sqrt(3);

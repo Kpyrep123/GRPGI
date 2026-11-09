@@ -235,7 +235,7 @@
     playerRuntime=window.GRPGHubRuntimeV156.create({
       root:()=>document.getElementById('hub-content-v153'),currentPlayer:()=>App.currentUser,currentPlanet,
       isActive:()=>UI.activeModuleId==='hub-v153',activate:()=>{},
-      itemThumb:item=>typeof renderThumb==='function'?renderThumb(item,{size:'sm',type:'item'}):window.GRPGMerchantUIV163.thumb(item),inventoryLayout:p=>window.GRPGInventoryV1067.buildLayout?.(p),
+      itemThumb:item=>typeof renderThumb==='function'?renderThumb(item,{size:'sm',type:'item'}):window.GRPGMerchantUIV163.thumb(item),inventoryLayout:(p,options)=>window.GRPGInventoryV1067.buildLayout?.(p,options),
       marketContext:()=>{const campaignId=String((typeof Sync!=='undefined'?Sync.config?.campaignId:'')||App.activeCampaignId||'main');return {campaignId,priceAdjustmentPct:currentPlanet()?.priceAdjustmentPct||0,equipment:EQUIPMENT,campaign:Data.getCampaign?.(campaignId)||Data.campaigns?.[campaignId]||{}};},
       item:id=>Data.getItem(id),npc:id=>NPCS[id],article:id=>ARTICLES[id],
       playerById:id=>App.state.users[id],
