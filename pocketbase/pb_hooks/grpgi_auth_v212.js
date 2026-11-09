@@ -306,6 +306,6 @@ function protectSnapshot(e) {
   ["worldJson","stateJson"].forEach(function(field) { e.record.set(field, clean(json(e.record, field))); });
   e.next();
 }
-module.exports = {grantCredits:grantCredits,clean:clean, credential:credential, createCredential:createCredential, login:login, session:session,
+module.exports = {actor:actor, grantCredits:grantCredits,clean:clean, credential:credential, createCredential:createCredential, login:login, session:session,
   request:request, requests:requests, approve:approve, reject:reject, confirm:confirm,
   protectPlayer:protectPlayer, protectSnapshot:protectSnapshot, guard:guard};

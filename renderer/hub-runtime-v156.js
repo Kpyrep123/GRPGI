@@ -78,7 +78,11 @@
       cameraCleanup=()=>{window.removeEventListener('pointermove',move);window.removeEventListener('pointerup',finish);window.removeEventListener('pointercancel',finish);if(gesture&&wrap.hasPointerCapture(gesture.id))wrap.releasePointerCapture(gesture.id);gesture=null;};
       return {dragging:()=>Boolean(gesture?.moved),scale:()=>v.scale,afterLayout:()=>{if(record)wrap.scrollTo(v.left,v.top);else center();}};
     }
+    let presenceCleanup, livePoint;
     function leave(){
+      presenceCleanup?.();
+      presenceCleanup = null;
+      document.querySelector('[data-hub-storage-v221]')?.remove();
       closeInteraction();
       cameraCleanup?.();
       workspaceCleanup?.();
@@ -95,6 +99,8 @@
       root.querySelectorAll('[data-object]').forEach(el=>el.onclick=e=>{e.stopPropagation();select(el.dataset.object);});
       root.querySelector('[data-stocks]').onclick=()=>B.openStocks();
       const map=root.querySelector('[data-runtime-map]');S.drawFog(map.querySelector('[data-fog]'),ctx.map,ctx.state,p);const cam=camera(map);fitWorkspace(cam.afterLayout);
+      livePoint = ctx.state;
+      presenceCleanup = window.GRPGHubMultiplayerV221?.presence(B, map, ctx, p, () => livePoint);
       let hoverKey='',frame=0,pointer=null;
       const position=e=>{const r=map.getBoundingClientRect();return{x:(e.clientX-r.left)/r.width*ctx.map.width,y:(e.clientY-r.top)/r.height*ctx.map.height};};
       map.onpointermove=e=>{
@@ -204,6 +210,7 @@
       root.querySelector('[data-info]').textContent = 'Движение…';
       try {
         const count = await animateRoute(token, state, route, active, (x, y, now) => {
+          livePoint = {x, y};
           if (map.fogEnabled && now - lastFogAt >= 50) {
             S.drawFog(canvas, map, {...preview, x, y}, player);
             lastFogAt = now;
@@ -241,6 +248,7 @@
           if (!current || current.map.id !== map.id || !active()) {
             show();
           } else {
+            livePoint = current.state;
             token.style.left = current.state.x + 'px';
             token.style.top = current.state.y + 'px';
             drawRoute(mapNode, []);
@@ -261,7 +269,7 @@
       closeInteraction();interactionId=id;
       info.innerHTML=`<b>${esc(o.name||'Объект')}</b><p>${esc(o.description||'')}</p>${why?`<p>${esc(why)}</p>`:''}`;
       const menu=document.createElement('div');menu.className='hub-interaction-v167';menu.dataset.interactionPopover='';
-      const actions=`${['door','terminal','transition','item'].includes(o.type)||o.setFlag||o.clearFlag?'<button class="primary" data-use>ИСПОЛЬЗОВАТЬ</button>':''}${dialogs.map(d=>`<button class="secondary" data-dialog="${esc(d.id)}">${esc(d.name||'Диалог')}</button>`).join('')}${C.trader(o)?'<button class="secondary" data-trade>ТОРГОВАТЬ</button>':''}`;
+      const actions=`${o.type==='storage' && B.hubRequest && window.GRPGHubMultiplayerV221 ? '<button class="primary" data-storage>ОТКРЫТЬ ЯЩИК</button>' : ''}${['door','terminal','transition','item'].includes(o.type)||o.setFlag||o.clearFlag?'<button class="primary" data-use>ИСПОЛЬЗОВАТЬ</button>':''}${dialogs.map(d=>`<button class="secondary" data-dialog="${esc(d.id)}">${esc(d.name||'Диалог')}</button>`).join('')}${C.trader(o)?'<button class="secondary" data-trade>ТОРГОВАТЬ</button>':''}`;
       menu.innerHTML=`<button class="primary" data-interact-toggle aria-expanded="false" aria-controls="hub-interaction-options-v167">ВЗАИМОДЕЙСТВОВАТЬ</button><div id="hub-interaction-options-v167" data-interaction-options hidden><b>${esc(o.name||'Объект')}</b>${why?`<p>${esc(why)}</p>`:''}<div class="hub-actions-v153">${actions||'<p>Нет доступных действий.</p>'}</div><div data-status role="status"></div></div>`;
       B.root().querySelector('.hub-camera-v164').append(menu);
       Array.from(B.root().querySelectorAll('[data-object]')).find(n=>n.dataset.object===id)?.classList.add('selected');
@@ -269,6 +277,7 @@
       menu.querySelector('[data-interact-toggle]').onclick=()=>{const options=menu.querySelector('[data-interaction-options]');options.hidden=!options.hidden;menu.querySelector('[data-interact-toggle]').setAttribute('aria-expanded',String(!options.hidden));positionInteraction();};
       if(why)menu.querySelectorAll('[data-interaction-options] button').forEach(b=>{b.disabled=true;b.dataset.blocked='1';});
       menu.querySelector('[data-use]')?.addEventListener('click',()=>busy(menu,()=>transact((p,s,h)=>{const live=objectNow(id,p,s,h);if(live.articleId&&!B.article(live.articleId))throw new Error('Статья не найдена');C.use(h,live,p,s);return live.articleId;}),articleId=>{if(B.isActive()){show();select(id);}if(articleId)B.openArticle(articleId);}));
+      menu.querySelector('[data-storage]')?.addEventListener('click', () => window.GRPGHubMultiplayerV221.storage(B, modal, ctx, o, esc));
       menu.querySelectorAll('[data-dialog]').forEach(b=>b.onclick=()=>openDialog(id,b.dataset.dialog));
       menu.querySelector('[data-trade]')?.addEventListener('click',()=>merchant(id));positionInteraction();
     }

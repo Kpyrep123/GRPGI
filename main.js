@@ -3832,6 +3832,17 @@ ipcMain.handle('market:transaction', async (_event, payload = {}) => {
   }
 });
 
+ipcMain.handle('hub-request-v221', async (_event, {route, data} = {}) => {
+  if (!['storage','presence'].includes(route)) return {ok:false,httpStatus:400,message:'Неизвестный маршрут хаба'};
+  try {
+    const config = await loadSyncConfig();
+    if (!config.enabled || !isPocketBaseSyncConfig(config)) throw new Error('Требуется сервер PocketBase');
+    return await pocketbaseFetch(config, '/api/grpgi/auth-v212/hub-v221/' + route, {method:'POST',json:data});
+  } catch (error) {
+    return {ok:false,httpStatus:Number(error.status || 0),message:error.message};
+  }
+});
+
 ipcMain.handle('stock-exchange:get', async (_event, payload = {}) => {
   try {
     const config = await loadSyncConfig();
