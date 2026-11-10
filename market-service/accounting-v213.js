@@ -1,4 +1,5 @@
 'use strict';
+const {createHmac} = require('node:crypto');
 const StockMotion = require('./stock-motion-v165.js');
 const round=n=>Math.round(n*1e4)/1e4;
 function rate(value,fallback){const n=Number(value??fallback);if(!Number.isFinite(n)||n<0||n>1)throw Error('Invalid market fee rate');return n;}
@@ -57,7 +58,7 @@ function editPosition(profile,body,_price,tick){
 const NEWS_INTERVAL_SECONDS = 3600;
 const PROFIT_THRESHOLD = .003;
 const FULL_PRESSURE_AT = .02;
-const MAX_LOG_MOVE_PER_SECOND = .000025;
+const MAX_DIRECTION_BIAS = .05;
 
 function openExposure(profiles) {
  const result = new Map();
@@ -89,16 +90,15 @@ function pressure(price, exposure) {
  if (!net || !Number.isFinite(basis) || basis <= 0) return 0;
  const pnl = price * net + shortBasis - longBasis;
  const strength = Math.max(0, Math.min(1, (pnl / basis - PROFIT_THRESHOLD) / (FULL_PRESSURE_AT - PROFIT_THRESHOLD)));
- return strength ? -net / (longQty + shortQty) * strength : 0;
+ if (!strength) return 0;
+ return -net / (longQty + shortQty) * strength * strength * (3 - 2 * strength);
 }
 
-function nextQuote(options, exposure) {
- const motion = StockMotion.next({...options, newsIntervalSeconds:NEWS_INTERVAL_SECONDS,randomWalk:true});
- const delta = pressure(options.price, exposure) * MAX_LOG_MOVE_PER_SECOND * options.stepSeconds;
- if (!delta) return motion;
- const factor = Math.exp(delta);
- return {...motion, price:Math.max(StockMotion.MIN_PRICE, Math.round(motion.price * factor * 10000) / 10000),
-  anchor:Math.max(StockMotion.MIN_PRICE, motion.anchor * factor)};
+function nextQuote(options, exposure, motionKey) {
+ const tickSeed = createHmac('sha256', motionKey)
+  .update(JSON.stringify([options.campaignId, options.itemId, options.tick])).digest('hex');
+ const upChance = .5 + pressure(options.price, exposure) * MAX_DIRECTION_BIAS;
+ return StockMotion.next({...options, tickSeed, upChance, newsIntervalSeconds:NEWS_INTERVAL_SECONDS, randomWalk:true});
 }
 
 module.exports={rates,accrue,protection,editPosition,round,marketRisk:{openExposure,pressure,next:nextQuote}};

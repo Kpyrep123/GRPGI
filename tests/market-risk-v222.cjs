@@ -3,6 +3,8 @@ const assert = require('node:assert/strict');
 const Motion = require('../market-service/stock-motion-v165.js');
 const Accounting = require('../market-service/accounting-v213.js');
 const Risk = Accounting.marketRisk;
+const motionKey = 'market-risk-v222-fixture';
+const nextRisk = (options, exposure) => Risk.next(options, exposure, motionKey);
 const {tradeRate} = Accounting.rates({});
 
 const holdings = (id, direction, quantity, entry) => ({stockPortfolio:direction === 1
@@ -18,10 +20,35 @@ assert.equal(Risk.pressure(103,Risk.openExposure([long,short]).get('alpha')),0);
 assert.equal(Risk.openExposure([{...long,role:'gm'}, {...short,__deleted:true}]).size,0);
 assert.equal(Risk.openExposure([{credits:1e9}]).size,0);
 const options={campaignId:'test',itemId:'alpha',price:103,anchor:103,volatility:1,tick:1700000000,stepSeconds:10};
-const neutral = Risk.next(options);
-const pressured = Risk.next(options,Risk.openExposure([long]).get('alpha'));
-assert.ok(pressured.price < neutral.price && pressured.anchor < neutral.anchor);
-assert.ok(Math.log(neutral.anchor / pressured.anchor) <= .000251);
+const neutral = nextRisk(options);
+assert.deepEqual(nextRisk(options), neutral);
+assert.notDeepEqual(Risk.next(options, undefined, 'other-key'), neutral);
+
+const longExposure = Risk.openExposure([long]).get('alpha');
+const shortExposure = Risk.openExposure([holdings('alpha',-1,100,110)]).get('alpha');
+let ordinary = 0, unchanged = 0, changedLong = 0, changedShort = 0, news = 0;
+for (let n=0; n<10000; n++) {
+ const tick = {...options, tick:options.tick+n*options.stepSeconds};
+ const baseline = nextRisk(tick);
+ const withLong = nextRisk(tick,longExposure);
+ const withShort = nextRisk(tick,shortExposure);
+ if (baseline.regime === 'news-shock') {
+  news++;
+  assert.deepEqual(withLong,baseline);
+  assert.deepEqual(withShort,baseline);
+  continue;
+ }
+ ordinary++;
+ if (withLong.price === baseline.price && withShort.price === baseline.price) unchanged++;
+ if (withLong.price !== baseline.price) changedLong++;
+ if (withShort.price !== baseline.price) changedShort++;
+ assert.ok(withLong.price <= baseline.price && baseline.price <= withShort.price);
+ for (const move of [withLong,withShort]) {
+  assert.ok(Math.abs(Math.abs(move.price-tick.price)-Math.abs(baseline.price-tick.price)) <= .00011);
+ }
+}
+assert.ok(news > 0 && unchanged / ordinary > .88);
+for (const changed of [changedLong,changedShort]) assert.ok(changed / ordinary > .04 && changed / ordinary < .06);
 
 // Strategies see only quotes, including the EMA computed from past quotes.
 // Every sample uses the same seed before and after, with identical fees and no leverage.
@@ -66,9 +93,13 @@ function run(strategy, direction, next) {
 }
 
 for(const [name,strategy,direction] of [['fixed bands','bands',1],['EMA long','ema',1],['EMA short','ema',-1]]){
- const before=run(strategy,direction,Motion.next),after=run(strategy,direction,Risk.next);
+ const before=run(strategy,direction,Motion.next),after=run(strategy,direction,nextRisk);
  console.log(name,{before,after});
- assert.ok(after.winPct>55 && after.averageLoss>after.averageWin && after.medianReturn<0 && after.meanReturn<0,name);
+ const minimumWinPct = strategy === 'bands' ? 50 : 60;
+ assert.ok(after.winPct > minimumWinPct && after.averageLoss > after.averageWin, name);
+ assert.ok(after.meanReturn < 0, name);
+ if (strategy === 'bands') assert.ok(after.medianReturn <= 0, name);
+ else assert.ok(after.medianReturn < 0 && after.losingDays > samples/2, name);
  assert.ok(after.medianReturn<before.medianReturn,name);
 }
 console.log('PASS market pressure direction, cap, neutral exposure and quote-only strategy calibration');

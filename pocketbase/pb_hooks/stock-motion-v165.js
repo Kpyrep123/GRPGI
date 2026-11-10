@@ -32,17 +32,19 @@ function next(options){
  var offset=Math.floor(random(campaign+'|'+item+'|phase-offset')*PHASE_SECONDS),time=tick+offset,block=Math.floor(time/PHASE_SECONDS),a=phase(campaign,item,block);
  var k=Math.LN2/HALF_LIFE_SECONDS,decay=Math.exp(-k*seconds);
  // Zero-mean innovations; time-scaled OU variance keeps 1s and 10s backends comparable.
- var seed=campaign+'|'+item+'|tick|'+tick,z=(random(seed+'|a')+random(seed+'|b')+random(seed+'|c')-1.5)*2;
+ var seed=options.tickSeed||campaign+'|'+item+'|tick|'+tick,z=(random(seed+'|a')+random(seed+'|b')+random(seed+'|c')-1.5)*2;
  var noise=z*NOISE_PER_SQRT_SECOND*vol*a.noise*Math.sqrt((1-decay*decay)/(2*k));
  var jump=0,newsInterval=Math.max(60,finite(options.newsIntervalSeconds,14400));
  // Draw news per second, even when the service advances in ten-second batches.
  for(var eventTick=Math.floor(tick-seconds)+1;eventTick<=Math.floor(tick);eventTick++){
-  var news=campaign+'|'+item+'|news-v169|'+eventTick;
+  var news=options.tickSeed ? seed+'|news|'+eventTick : campaign+'|'+item+'|news-v169|'+eventTick;
   if(random(news+'|arrival')<1/newsInterval)jump+=(random(news+'|direction')<.5?-1:1)*(.025+random(news+'|size')*.05)*vol;
  }
  if(options.randomWalk){
   // Arithmetic returns keep equally sized positive and negative innovations symmetric.
-  var nextPrice=Math.max(MIN_PRICE,Math.round(price*(1+jump+noise)*10000)/10000);
+  // Exposure can change the odds of an ordinary move, never its size or a news jump.
+  var upChance=finite(options.upChance,.5),move=jump ? jump+noise : Math.abs(noise)*(random(seed+'|direction')<upChance ? 1 : -1);
+  var nextPrice=Math.max(MIN_PRICE,Math.round(price*(1+move)*10000)/10000);
   return {price:nextPrice,regime:jump?'news-shock':a.id==='calm'||a.id==='volatile'?a.id:'range',anchor:nextPrice};
  }
  var fraction=(time-block*PHASE_SECONDS)/PHASE_SECONDS,weight=fraction*fraction*(3-2*fraction),b=phase(campaign,item,block+1);

@@ -122,8 +122,8 @@ function nextPrice(campaign, motionKey, quote, time, exposure) {
   const finish = impulses.some(event => time+TICK_SECONDS>=event.end_tick);
   return {price,regime:'dm-impulse',anchor:finish ? price : null};
  }
- return MarketRisk.next({campaignId:motionKey,itemId:quote.item_id,tick:time,stepSeconds:TICK_SECONDS,
-  price:quote.price,anchor:quote.anchor,volatility:quote.volatility},exposure);
+ return MarketRisk.next({campaignId:campaign,itemId:quote.item_id,tick:time,stepSeconds:TICK_SECONDS,
+  price:quote.price,anchor:quote.anchor,volatility:quote.volatility},exposure,motionKey);
 }
 function writeCandle(campaign,itemId,tick,price){const bucket=Math.floor(tick/60)*60,volume=round(random(`${itemId}|volume|${tick}`)*40+1,2);market.prepare(`INSERT INTO candles(campaign_id,item_id,bucket_time,open,high,low,close,volume) VALUES(?,?,?,?,?,?,?,?)
  ON CONFLICT(campaign_id,item_id,bucket_time) DO UPDATE SET high=max(high,excluded.high),low=min(low,excluded.low),close=excluded.close,volume=volume+excluded.volume`).run(campaign,itemId,bucket,price,price,price,price,volume);market.prepare(`DELETE FROM candles WHERE campaign_id=? AND item_id=? AND bucket_time NOT IN (SELECT bucket_time FROM candles WHERE campaign_id=? AND item_id=? ORDER BY bucket_time DESC LIMIT ?)`).run(campaign,itemId,campaign,itemId,MAX_CANDLES);}
@@ -213,7 +213,7 @@ function tick(campaign=DEFAULT_CAMPAIGN){
   const target=Math.floor(nowSec()/TICK_SECONDS)*TICK_SECONDS,meta=market.prepare('SELECT last_tick FROM meta WHERE campaign_id=?').get(campaign);
   if(meta&&meta.last_tick>=target)return false;
   const start=Math.max(meta?.last_tick||target-TICK_SECONDS,target-TICK_SECONDS*120);
-  const motionKey = campaign + '|' + motionSeed(campaign);
+  const motionKey = motionSeed(campaign);
   const profiles = pocketbase.prepare('SELECT playerJson FROM campaign_players WHERE campaignId=?').all(campaign);
   const exposure = MarketRisk.openExposure(profiles.map(row => parseJson(row.playerJson)));
   market.exec('BEGIN IMMEDIATE');
@@ -247,7 +247,7 @@ async function route(req,res){
  if(req.method==='OPTIONS')return send(res,204,{});
  const url=new URL(req.url,`http://${req.headers.host||'localhost'}`),path=url.pathname;
  try{
-  if(path==='/health')return send(res,200,{ok:true,service:'grpgi-market-v2',tickSeconds:TICK_SECONDS,ticking});
+  if(path==='/health')return send(res,200,{ok:true,service:'grpgi-market-v2',motion:'risk-v222',tickSeconds:TICK_SECONDS,ticking});
   if(path.endsWith('/stream')){res.writeHead(200,{'content-type':'text/event-stream','cache-control':'no-cache','connection':'keep-alive','access-control-allow-origin':'*'});res.write('retry: 5000\n\n');streams.add(res);req.on('close',()=>streams.delete(res));return;}
   if(req.method==='GET'&&path.endsWith('/stock-exchange-v148')){const campaign=url.searchParams.get('campaignId')||DEFAULT_CAMPAIGN,playerId=url.searchParams.get('playerId')||'',itemId=url.searchParams.get('itemId')||'';if(!playerId)return send(res,400,{ok:false,message:'playerId required'});await authorize(req,campaign,playerId);return send(res,200,publicState(campaign,playerId,itemId));}
   const body=await readBody(req),campaign=String(body.campaignId||DEFAULT_CAMPAIGN);
