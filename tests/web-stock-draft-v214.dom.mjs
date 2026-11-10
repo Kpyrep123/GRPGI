@@ -11,7 +11,7 @@ const read = name => fs.readFileSync('deploy/site/app/' + name, 'utf8');
 w.document.write(read('index.html').replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, ''));
 for (const file of ['item-facts-v141.js','stock-ticket-v214.js','rich-text-scope.js','market-engine.js','player-sync-core.js','damage-types-v202.js','weapon-handling-v203.js','player-credentials-v212.js','player-auth-v212.js']) run(read(file));
 const source = read('app.js').replace('  init().catch(error => {', `
-  window.ticket214={App,compileData,currentPlayer,render:()=>renderMarket(),stock:id=>{marketTabWebV1073='stocks';stockSelectionWebV1074={source:'market',itemId:id};stockExchangeWebV148={fees:{tradeRate:.001},quotes:[{itemId:'s',price:100},{itemId:'b',price:1000}],orders:[],candles:{}};renderMarket();}};
+  window.ticket214={App,compileData,currentPlayer,patch:patchStockExchangeWebV149,render:()=>renderMarket(),stock:id=>{marketTabWebV1073='stocks';stockSelectionWebV1074={source:'market',itemId:id};stockExchangeWebV148={fees:{tradeRate:.001},quotes:[{itemId:'s',price:100},{itemId:'b',price:1000}],orders:[],candles:{}};renderMarket();}};
   renderCurrentScreen=()=>{};startRealtimeSync=()=>{};notify=()=>{};
   if(false) init().catch(error => {`);
 run(source);
@@ -61,6 +61,7 @@ submit();await pause();await pause();
 assert.equal(requests[0].operationId,requests[1].operationId);
 assert.deepEqual({...requests[1],operationId:null},{campaignId:'main',playerId:'p',itemId:'s',intent:'close_short',type:'market',quantity:2,operationId:null});
 assert.equal(close().querySelector('input').max,'1');
+T.patch();
 assert.match(holding('short').textContent,/1 шт/);
 close().querySelector('[data-close-all]').click();submit();await pause();await pause();
 assert.equal(requests[2].quantity,1);
