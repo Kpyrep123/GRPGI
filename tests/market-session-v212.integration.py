@@ -80,6 +80,7 @@ with tempfile.TemporaryDirectory(prefix='grpgi-market-session-') as folder:
                 env=env, stdout=log, stderr=subprocess.STDOUT)
             processes.append(market)
             wait(MARKET_URL + '/health', market)
+            assert request(MARKET_URL + '/health')[1]['motion'] == 'risk-v222'
 
             def auth(action, body=None, token=''):
                 return request(PB_URL + '/api/grpgi/auth-v212/' + action, body, token)
@@ -134,6 +135,14 @@ with tempfile.TemporaryDirectory(prefix='grpgi-market-session-') as folder:
             assert after['lastTick'] > before['lastTick'], 'quote timer stopped'
             assert after['candles']['alpha'], 'no candle history'
             assert after['quotes'][0]['price'] != before['quotes'][0]['price'], 'quotes did not move'
+            dm_state = request(API + '?campaignId=main&playerId=gm&itemId=alpha', token=dm)[1]
+            assert dm_state['lastTick'] >= after['lastTick']
+            if dm_state['lastTick'] == after['lastTick']:
+                assert dm_state['quotes'] == after['quotes']
+                assert dm_state['candles'] == after['candles']
+            with sqlite3.connect(tmp / 'market.sqlite') as db:
+                motion_seed = db.execute("SELECT seed FROM motion_seeds WHERE campaign_id='main'").fetchone()[0]
+            assert motion_seed not in json.dumps(after)
             # v213: authenticated grants use the real backend campaign, not window.Sync.
             grant = {'campaignId': 'main', 'playerId': 'p', 'operationId': 'grant-213', 'creditGrantV138': {'amount': 50}}
             assert auth('credits/grant', grant)[0] == 401
@@ -238,6 +247,8 @@ with tempfile.TemporaryDirectory(prefix='grpgi-market-session-') as folder:
             wait(MARKET_URL + '/health', market)
             result = request(API + query, token=player)[1]
             assert result['candles']['alpha'] and result['player']['stockPortfolio']['positions']['alpha']['knownQty'] == 3
+            with sqlite3.connect(tmp / 'market.sqlite') as db:
+                assert db.execute("SELECT seed FROM motion_seeds WHERE campaign_id='main'").fetchone()[0] == motion_seed
             assert request(API + '/portfolio', admin, dm)[1]['player']['stockPortfolio']['shortPositions'] == {}
 
             assert auth('recovery/request', {'campaignId': 'main', 'playerId': 'p'})[0] == 200
