@@ -27,7 +27,7 @@ const html=fs.readFileSync(path.join(root,'renderer/index.html'),'utf8');
 w.document.write(html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi,''));
 // Every renderer script is evaluated unmodified, in index.html order, sharing
 // browser-style lexical globals. Only OS/cloud/bootstrap boundaries are mocked.
-for(const m of html.matchAll(/<script src="\.\/([^"?]+)[^"]*"/g))vm.runInContext(fs.readFileSync(path.join(root,'renderer',m[1]),'utf8').replace('// New module is DM-only;', 'window.test225={local,applyStore,collectStoreFromRuntime,luaUnitRows119,applyLuaCommands119,runInteractiveLuaHookV138,requestAttackRolls119,playerVisionSources112,droneActions225,droneShareVision225,deviceCommandReason200,checkpointCombat120,conditionEvents225,positionEvents204,refreshRuntimeSources122,centerOf,updatePlayerHp105,mergeCombatProfile225,importCombatProfiles225,battleWeaponRows226};\n// New module is DM-only;'),context,{filename:m[1]});
+for(const m of html.matchAll(/<script src="\.\/([^"?]+)[^"]*"/g))vm.runInContext(fs.readFileSync(path.join(root,'renderer',m[1]),'utf8').replace('// New module is DM-only;', 'window.test225={local,applyStore,collectStoreFromRuntime,luaUnitRows119,applyLuaCommands119,runInteractiveLuaHookV138,requestAttackRolls119,playerVisionSources112,droneActions225,droneShareVision225,deviceCommandReason200,checkpointCombat120,conditionEvents225,positionEvents204,refreshRuntimeSources122,centerOf,updatePlayerHp105,mergeCombatProfile225,importCombatProfiles225,battleWeaponRows226,buildCombatSnapshot104};\n// New module is DM-only;'),context,{filename:m[1]});
 const {Worker}=await import('node:worker_threads');
 w.electronAPI.runCombatLuaHook=payload=>new Promise((resolve,reject)=>{
  const worker=new Worker(path.join(root,'lua-sandbox-worker.cjs'));
@@ -54,6 +54,12 @@ try{
  const token=id=>run('Combat.getRuntime().tokens').find(row=>row.id===id),q=selector=>w.document.querySelector(selector);
  const click=selector=>{const node=q(selector);assert(node,'missing '+selector);assert(!node.disabled,'disabled '+selector);node.click();};
  assert(q('.scene-tactical-v226'),'battle presentation missing');
+ const viewport=q('#combat-stage-viewport');Object.defineProperty(viewport,'clientWidth',{value:1100,configurable:true});Object.defineProperty(viewport,'clientHeight',{value:400,configurable:true});
+ const dimensions=run('Combat.syncViewportBoardFrame(Combat.getScene())');
+ assert.equal(dimensions.boardWidth/dimensions.boardHeight,24/20,'map remains proportional in a wide viewport');
+ assert.equal(dimensions.boardWidth/24,dimensions.boardHeight/20,'world-space token dimensions use the same pixel scale');
+ assert(q('#mod-combat').classList.contains('tactical-layout-v227'));
+
  assert(!q('.scene-command-deck-v118'),'editor action rows hidden in combat');
  assert(!q('.battle-tools-v226'),'DM drawer closed by default');
  assert.equal(q('.battle-order-unit-v226.is-current').dataset.battleUnit226,'a');
@@ -61,8 +67,10 @@ try{
  assert.equal(q('[data-battle-weapon226="gun"] strong').textContent,'4 / 12');
  assert(q('[data-battle-weapon226="gun"]').textContent.includes('29 патр. ≈ 2 полн. магаз.'));
  assert(q('.battle-effects-v226').textContent.includes('Подавление 2 ход.'));
- assert(q('[data-scene-skill-v118="aim"]'));
- click('[data-scene-skill-v118="aim"]');
+ assert(!q('.battle-ability-list-v226'),'skills do not occupy the dock');
+ assert(q('.battle-map-v226>.battle-order-overlay-v227'),'initiative is over the map');
+ assert(!q('.battle-top-v226 .battle-order-v226'),'initiative takes no header row');
+ click('[data-abilities-open192="skills"]');click('[data-ability-select192="aim"]');click('[data-ability-use192]');
  await wait(()=>token('a').actionUsed&&!q('#scene-next-turn-v104').disabled);
  assert(run('Combat.getRuntime().log').some(row=>row.text.includes('Прицеливание')),'skill card executes the existing ability command');
  token('a').actionUsed=false;run('Combat.render()');
@@ -76,7 +84,8 @@ try{
  token('a').actionUsed=true;token('a').reactionUsedV119=true;token('a').conditionsV138.prone=true;
  run('Combat.render()');
  assert(q('[data-scene-action-v104="attack"]').disabled);
- assert(q('[data-scene-skill-v118="aim"]').disabled);
+ click('[data-abilities-open192="skills"]');
+ assert(q('[data-ability-use192]').disabled);click('[data-abilities-close192]');
  assert(q('.battle-effects-v226').textContent.includes('Лежит'));
  token('a').hpCurrent=3;run('Combat.render()');
  assert(q('.battle-unit-v226 .battle-health-v226').classList.contains('is-critical'));
@@ -102,5 +111,35 @@ try{
   const styles=[...html.matchAll(/<link[^>]+href="\.\/([^"?]+)[^"]*"/g)].map(m=>fs.readFileSync(path.join(root,'renderer',m[1]),'utf8')).join('\n');
   fs.writeFileSync(process.env.COMBAT_HUD_HTML,'<!doctype html><meta charset="utf-8"><style>'+styles+'\nhtml,body{margin:0;height:100%;background:#080e15}#combat-content{height:100vh}</style><div id="combat-content">'+q('#combat-content').innerHTML+'</div>');
  }
+ const snapshot=JSON.parse(JSON.stringify(api.buildCombatSnapshot104('s')));
+ assert.equal(snapshot.runtime.playerCards227.length,1,'only player characters get public stats');
+ assert.equal(snapshot.runtime.playerCards227[0].weapon.name,'Пистолет');
+ const display=new Window({url:'https://grpgi.test',settings:{disableJavaScriptFileLoading:true,disableCSSFileLoading:true}});
+ try{
+  display.document.body.innerHTML='<div id="player-display-root"></div>';
+  display.requestAnimationFrame=()=>0;display.electronAPI={};
+  const displayContext=vm.isContext(display)?display:vm.createContext(display);
+  for(const file of ['unit-size-v184.js','combat-presentation-v227.js','combat-vision-v225.js','player-display.js'])vm.runInContext(fs.readFileSync(path.join(root,'renderer',file),'utf8'),displayContext,{filename:file});
+  display.snapshot227=snapshot;
+  const paint=()=>vm.runInContext('renderCombatSnapshot(window.snapshot227)',displayContext);
+  paint();const dq=selector=>display.document.querySelector(selector);
+  assert.equal(dq('.player-battle-party-v227').querySelectorAll('article').length,1);
+  assert(dq('.player-battle-party-v227').textContent.includes('Пистолет'));
+  assert(!dq('.player-battle-party-v227').textContent.includes('Охранник'));
+  assert(dq('.player-battle-turn-v227').textContent.includes('Оператор'));
+  snapshot.runtime.turnIndex=1;paint();
+  assert(dq('.player-battle-turn-v227').textContent.includes('Охранник'));
+  assert(!dq('.battle-order-unit-v226[aria-current] .battle-health-v226'),'NPC health is not shown in the ribbon');
+  snapshot.runtime.tokens.find(token=>token.id==='b').hidden=true;paint();
+  assert(!dq('.player-battle-initiative-v227').textContent.includes('Охранник'));
+  assert(dq('.player-battle-turn-v227').textContent.includes('Скрытый участник'));
+  const styles=display.document.createElement('style');styles.textContent=fs.readFileSync(path.join(root,'renderer/combat-hud-v226.css'),'utf8')+'\n'+fs.readFileSync(path.join(root,'renderer/combat-layout-v227.css'),'utf8');display.document.head.appendChild(styles);
+  const geometry=display.document.createElement('div');geometry.className='scene-tactical-v226';geometry.innerHTML='<div id="combat-stage"><button class="combat-object combat-token scene-token-v104" style="width:20px;height:20px"></button></div>';display.document.body.appendChild(geometry);
+  const computed=display.getComputedStyle(geometry.querySelector('button'));
+  assert.equal(parseFloat(computed.minHeight),0,'HUD button minimum must not distort world-space tokens');
+  assert.equal(parseFloat(computed.paddingTop),0);
+  const large=display.document.createElement('div');large.className='player-scene-token-v104 unit-sized-v184';large.innerHTML='<span class="player-scene-token-visual-v104"></span>';display.document.body.appendChild(large);
+  const largePortrait=display.getComputedStyle(large.firstElementChild);assert.equal(largePortrait.aspectRatio.replace(/\s/g,''),'1/1');assert.equal(largePortrait.height,'auto','large-unit portrait must not follow a rectangular footprint');
+ }finally{await display.happyDOM.abort();}
  console.log('PASS real combat HUD: weapons and reserves, effects, selection, spent actions, burst locks, empty magazine, DM drawer and pause presentation');
 }finally{await w.happyDOM.abort();fs.rmSync(scratch,{recursive:true,force:true});}
