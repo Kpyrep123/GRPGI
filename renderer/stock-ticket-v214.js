@@ -7,8 +7,8 @@ const key=o=>String(o.accountKey||''),attr=(prefix,name)=>'[data-'+prefix+'stock
 function capture(panel,prefix){const options=panels.get(panel);if(!options)return;const draft={...(drafts.get(key(options))||{})};for(const name of names){const input=panel.querySelector(attr(prefix,name));if(input)draft[name]=input.value;}drafts.set(key(options),draft);}
 function maximum({player={},quotePrice,tradeRate},draft){
  const intent=draft['order-intent-v148']||'open_long',id=draft.itemId,book=player.stockPortfolio||{};
- if(intent==='close_long')return Math.max(0,Math.trunc(Number(book.positions?.[id]?.knownQty)||0));
- if(intent==='close_short')return Math.max(0,Math.trunc(Number(book.shortPositions?.[id]?.quantity)||0));
+ if(intent==='close_long')return Math.max(0,Math.min(1e6,Math.trunc(Number(book.positions?.[id]?.knownQty)||0)));
+ if(intent==='close_short')return Math.max(0,Math.min(1e6,Math.trunc(Number(book.shortPositions?.[id]?.quantity)||0)));
  const limit=Number(draft['order-limit-v148']),price=Math.max(.01,draft['order-type-v148']==='limit'&&limit>0?limit:Number(quotePrice)),lev=Math.max(1,Math.min(3,Number(draft['order-leverage-v148'])||1)),fee=Number(tradeRate),cash=Math.max(0,Number(player.credits)||0);
  if(!(price>0)||!Number.isFinite(fee)||fee<0)return null;
  const cost=q=>round(price*q/lev)+round(price*q*fee);
@@ -31,11 +31,81 @@ function apply(panel,options,restore=true){
 }
 function render(html,options){const template=document.createElement('template');template.innerHTML=html;const panel=template.content.querySelector('.stock-orders-v148');if(panel&&panel.querySelector(attr(options.prefix||'','order-quantity-v148'))){apply(panel,options);for(const input of panel.querySelectorAll('input'))input.setAttribute('value',input.value);for(const select of panel.querySelectorAll('select'))for(const option of select.options)option.toggleAttribute('selected',option.value===select.value);}return template.innerHTML;}
 function hydrate(panel,options){if(panel)apply(panel,options);}
+function positionCloser({send,filled,report}){
+ let draft, pending=false, update;
+ const retries=new Map();
+ return function mount(root,{accountKey,player,ready}){
+  const row=root?.querySelector('.stock-holding-v1074.selected[data-position-side]');
+  let form=root?.querySelector('[data-stock-position-close]');
+  if(!row){
+   form?.remove();
+   draft=update=null;
+   return;
+  }
+  const {itemId,positionSide}=row.dataset,intent='close_'+positionSide;
+  const key=JSON.stringify([accountKey,itemId,intent]);
+  const newSelection=draft?.key!==key;
+  if(newSelection)draft={key,quantity:'1'};
+  const current=draft;
+  const max=maximum({player},{itemId,'order-intent-v148':intent});
+  if(form?.dataset.key!==key||row.nextElementSibling!==form){
+   form?.remove();
+   row.insertAdjacentHTML('afterend',`
+    <form data-stock-position-close>
+     <div class="stock-order-grid-v148" style="grid-template-columns:minmax(0,1fr) auto">
+      <label>Количество акций<input class="input" name="quantity" type="number" min="1" step="1" required></label>
+      <button class="secondary" type="button" data-close-all>Все</button>
+      <button class="primary" type="submit" style="grid-column:1/-1">Закрыть ${positionSide==='short'?'шорт':'лонг'}</button>
+     </div>
+     <p class="small-note" data-close-available></p>
+    </form>`);
+   form=row.nextElementSibling;
+   form.dataset.key=key;
+  }
+  const input=form.querySelector('input'),all=form.querySelector('[data-close-all]'),button=form.querySelector('[type="submit"]');
+  if(input.value!==current.quantity)input.value=current.quantity;
+  input.max=String(max);
+  form.querySelector('[data-close-available]').textContent=ready?`Доступно к закрытию: ${max} шт. Исполнение по рынку.`:'Ожидание серверной котировки.';
+  update=()=>{
+   const quantity=Number(current.quantity);
+   input.disabled=all.disabled=!ready||pending||max===0;
+   button.disabled=input.disabled||!Number.isSafeInteger(quantity)||quantity<1||quantity>max;
+  };
+  input.oninput=()=>{current.quantity=input.value;update();};
+  all.onclick=()=>{current.quantity=input.value=String(max);update();};
+  form.onsubmit=async event=>{
+   event.preventDefault();
+   if(button.disabled||draft!==current||pending)return;
+   const quantity=Number(current.quantity),job=JSON.stringify([key,quantity]);
+   const operationId=retries.get(job)||crypto.randomUUID();
+   retries.set(job,operationId);
+   pending=true;
+   update();
+   try{
+    const result=await send(player.id,{itemId,intent,quantity,type:'market',operationId});
+    if(!result?.ok||result.status!=='filled'){
+     if(result?.status==='rejected'||(result?.httpStatus>=400&&result.httpStatus<500))retries.delete(job);
+     throw Error(result?.message||'Закрытие позиции не подтверждено');
+    }
+    retries.delete(job);
+    filled(result,accountKey);
+   }catch(error){
+    if(error.status>=400&&error.status<500)retries.delete(job);
+    report(error.message||String(error));
+   }finally{
+    pending=false;
+    update?.();
+   }
+  };
+  update();
+  if(newSelection)form.scrollIntoView?.({block:'nearest'});
+ };
+}
 // Capture before a stock-selection listener replaces its ticket DOM.
 if(root.document)for(const type of ['input','change','click'])document.addEventListener(type,event=>{
  const panel=event.target?.closest?.('.stock-orders-v148');
  if(panel){const options=panels.get(panel);if(options){capture(panel,options.prefix||'');if(type!=='click')apply(panel,options,false);}}
  else if(type==='click')for(const live of document.querySelectorAll('.stock-orders-v148')){const o=panels.get(live);if(o)capture(live,o.prefix||'');}
 },true);
-root.GRPGStockTicketV214={maximum,render,hydrate,capture};
+root.GRPGStockTicketV214={maximum,render,hydrate,capture,positionCloser};
 })(typeof window==='undefined'?globalThis:window);

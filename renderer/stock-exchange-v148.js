@@ -8,6 +8,23 @@ const money=v=>Number(v||0).toLocaleString('ru-RU',{minimumFractionDigits:2,maxi
 const quote=id=>exchange?.quotes?.find(row=>row.itemId===id)||null;
 const selected=()=>document.querySelector('#market-items [data-market-v1074].selected')?.dataset.itemId||'';
 const master=()=>['gm','dm','master'].includes(String(App?.currentUser?.role||'').toLowerCase());
+const accountKey=()=>String(Sync?.config?.campaignId||'')+':'+App.currentUser?.id;
+let portfolioRevision=0;
+const closePosition=window.GRPGStockTicketV214.positionCloser({
+ send:(playerId,payload)=>window.electronAPI.submitStockOrder({playerId,...payload}),
+ filled:(result,key)=>{
+  if(key!==accountKey())return;
+  applyStockFill(result);
+  Toast.show('Позиция закрыта в указанном количестве','ok');
+ },
+ report:message=>Toast.show(message,'err')
+});
+function applyStockFill(result){
+ portfolioRevision++;
+ exchange=result;
+ if(result.player)Object.assign(App.currentUser,result.player);
+ renderStockMarket([],true);
+}
 const periodCounts={'1h':60,'3h':180,'6h':360},periodLabels={'1h':'1 ч','3h':'3 ч','6h':'6 ч'};
 const typeLabels={market:'Рыночная',limit:'Лимитная',stop_loss:'Стоп-лосс',take_profit:'Тейк-профит',trailing_stop:'Трейлинг-стоп'};
 const intentLabels={open_long:'Открыть лонг',close_long:'Закрыть лонг',open_short:'Открыть шорт',close_short:'Закрыть шорт'};
@@ -38,6 +55,7 @@ function dm(id){return master()?`<div class="stock-dm-v149"><div class="stock-or
 function decorate({forceOrders=false}={}){
   if(!document.querySelector('#market-items [data-market-tab-v1074="stocks"].active'))return;
   const id=selected();document.querySelectorAll('#market-items [data-market-v1074][data-item-id]').forEach(tile=>{const q=quote(tile.dataset.itemId),price=tile.querySelector('strong'),change=tile.querySelector('small');if(!q)return;const period=tile.dataset.itemId===id&&periodRows(id).length?periodChange(id):{change:Number(q.change||0),percent:Number(q.changePercent||0)},up=period.change>=0;tile.classList.remove('up','down','flat');tile.classList.add(period.change>0?'up':period.change<0?'down':'flat');if(price)price.textContent=money(q.price);if(change)change.textContent=`${up?'▲':'▼'} ${Math.abs(period.percent).toFixed(2)}% · ${up?'+':''}${money(period.change)}${tile.dataset.itemId===id?` за ${periodLabels[timeframe]}`:''}`;});
+  closePosition(document.querySelector('#market-items'),{accountKey:accountKey(),player:App.currentUser,ready:Boolean(quote(id))});
   const box=document.querySelector('#market-items .stock-selection-v1074');if(!id||!box)return;
   const editing=document.activeElement?.closest?.('.stock-orders-v148,.stock-dm-v149'),old=box.querySelector('.stock-chart-v1074,.stock-ta-v148,.stock-chart-empty-v148');
   if(old&&!editing)old.outerHTML=chart(id);else if(!old)box.querySelector('.stock-selection-head-v1074')?.insertAdjacentHTML('afterend',chart(id));
@@ -52,8 +70,31 @@ function decorate({forceOrders=false}={}){
   }
   const q=quote(id),price=box.querySelector('.stock-selection-quote-v1074'),period=periodChange(id);if(q&&price){price.classList.remove('up','down','flat');price.classList.add(period.change>0?'up':period.change<0?'down':'flat');price.innerHTML=`<span>Серверная цена · ${esc(q.regime||'ожидание')}</span><b>${money(q.price)}</b><small>Изменение от начала выбранного периода</small>${changeMarkup(id)}`;}
 }
-async function refresh({forceOrders=false}={}){if(busy||!App?.currentUser?.id)return;busy=true;try{const r=await window.electronAPI.getStockExchange({playerId:App.currentUser.id,itemId:selected()});if(r?.ok){exchange=r;if(r.player)Object.assign(App.currentUser,r.player);decorate({forceOrders});}}finally{busy=false;}}
-const renderMarketBeforeStockV150=UI.renderMarket?.bind(UI);if(renderMarketBeforeStockV150)UI.renderMarket=function(...args){const stockOpen=Boolean(document.querySelector('#market-items [data-market-tab-v1074="stocks"].active')),editing=Boolean(document.activeElement?.closest?.('#market-items input,#market-items select,#market-items textarea'));if(stockOpen&&editing){decorate();return;}const scrolls=Array.from(document.querySelectorAll('.fs-module.open,#market-items')).map(el=>[el,el.scrollTop,el.scrollLeft]);const result=renderMarketBeforeStockV150(...args);if(exchange)decorate({forceOrders:!editing});else refresh();for(const [el,top,left]of scrolls){el.scrollTop=top;el.scrollLeft=left;}return result;};
+async function refresh({forceOrders=false}={}){
+ if(busy||!App?.currentUser?.id)return;
+ const revision=portfolioRevision,key=accountKey();
+ busy=true;
+ try{
+  const r=await window.electronAPI.getStockExchange({playerId:App.currentUser.id,itemId:selected()});
+  if(r?.ok&&revision===portfolioRevision&&key===accountKey()){
+   exchange=r;
+   if(r.player)Object.assign(App.currentUser,r.player);
+   decorate({forceOrders});
+  }
+ }finally{busy=false;}
+}
+const renderMarketBeforeStockV150=UI.renderMarket?.bind(UI);
+function renderStockMarket(args,portfolioChanged=false){
+ const stockOpen=Boolean(document.querySelector('#market-items [data-market-tab-v1074="stocks"].active'));
+ const editing=Boolean(document.activeElement?.closest?.('#market-items input,#market-items select,#market-items textarea'));
+ if(stockOpen&&editing&&!portfolioChanged){decorate();return;}
+ const scrolls=Array.from(document.querySelectorAll('.fs-module.open,#market-items')).map(el=>[el,el.scrollTop,el.scrollLeft]);
+ const result=renderMarketBeforeStockV150?.(...args);
+ if(exchange)decorate({forceOrders:!editing});else refresh();
+ for(const [el,top,left]of scrolls){el.scrollTop=top;el.scrollLeft=left;}
+ return result;
+}
+if(renderMarketBeforeStockV150)UI.renderMarket=(...args)=>renderStockMarket(args);
 document.addEventListener('change',async event=>{
  const control=event.target.closest?.('[data-stock-loss-mode]');
  if(!control||control.disabled||!master()||lossModePending)return;
