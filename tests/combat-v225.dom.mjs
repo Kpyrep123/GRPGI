@@ -70,8 +70,8 @@ try{
  assert.equal(api.droneActions225(token('a')),2,'equipped implant grants actions');
  assert.equal(api.droneShareVision225(token('d')),true);
  const vision=()=>Array.from(api.playerVisionSources112(run('Combat.getScene()'),run('Combat.getRuntime()')),row=>row.token.id);
- assert.deepEqual(vision(),['a','d']);
- run("Combat.getRuntime().turnIndex=1");assert.deepEqual(vision(),['b']);
+ assert.deepEqual(vision(),['a','b','d']);
+ run("Combat.getRuntime().turnIndex=1");assert.deepEqual(vision(),['a','b','d']);
  run("Combat.getRuntime().turnIndex=0");
  const shared=w.GRPGCombatVisionV225;
  assert.deepEqual(Array.from(shared.sources({mode:'standard'},{tokens:[{id:'p',playerId:'p'},{id:'d',type:'drone',sharesVisionWithPlayers:true,droneShareVision225:false}]}),t=>t.id),['p']);
@@ -128,5 +128,5 @@ try{
  const archive=JSON.parse(JSON.stringify(api.local.store));
  api.applyStore(archive);api.importCombatProfiles225(freshProfiles);
  assert.equal(token('a').hpCurrent,5,'persisted combat draft survives archive restore over unchanged remote profile');
- console.log('PASS v225 real renderer: implant drone actions, turn-owner vision, Lua getters and events, deferred profiles, retry and fresh entry');
+ console.log('PASS v225 real renderer: implant drone actions, party vision, Lua getters and events, deferred profiles, retry and fresh entry');
 }finally{await w.happyDOM.abort();fs.rmSync(scratch,{recursive:true,force:true});}

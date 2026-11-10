@@ -67,7 +67,7 @@ function staticSceneSignature(scene){return JSON.stringify([scene.id,scene.width
 function ensureCombatBoard(scene){
   if(combatDisplaySceneId!==scene.id||!root.querySelector('.player-scene-v104')){
     combatDisplaySceneId=scene.id;combatDisplayStaticSig='';combatDisplayFogSig='';combatTokenState.clear();
-    root.innerHTML=`<div class="player-scene-v104"><div class="player-scene-board-v104"><div class="player-scene-stage-v104"><div class="combat-stage-bg"></div><div class="player-scene-grid-v104"></div><div class="player-scene-layer-v104 player-scene-assets-v104"></div><div class="player-scene-layer-v104 player-scene-zones-v104"></div><div class="player-scene-layer-v104 player-scene-tokens-v104"></div><canvas class="player-scene-fog-v104"></canvas><div class="player-scene-preview-v104"></div></div></div><div class="player-scene-initiative-v112"></div></div>`;
+    root.innerHTML=`<div class="player-scene-v104"><div class="player-scene-board-v104"><div class="player-scene-stage-v104"><div class="combat-stage-bg"></div><div class="player-scene-grid-v104"></div><div class="player-scene-layer-v104 player-scene-assets-v104"></div><div class="player-scene-layer-v104 player-scene-zones-v104"></div><div class="player-scene-layer-v104 player-scene-tokens-v104"></div><canvas class="player-scene-fog-v104"></canvas><div class="player-scene-preview-v104"></div></div></div><div class="player-battle-initiative-v227"></div><div class="player-battle-party-v227" aria-label="Персонажи игроков"></div></div>`;
   }
   const sig=staticSceneSignature(scene);if(sig!==combatDisplayStaticSig){
     combatDisplayStaticSig=sig;
@@ -97,10 +97,28 @@ function visionBoundaryEdges112(scene,sources){
 }
 function tokenKnownToPlayers112(scene,sources,token){const centers=token.footprintV184?GRPGUnitSizeV184.cells(token):[{x:token.x+token.w/2,y:token.y+token.h/2}];return !fogActive112(scene)||Boolean(token.playerId)||Boolean(token.sharesVisionWithPlayers)||centers.some(center=>pointVisibleToPlayers(scene,sources,center));}
 function updateInitiative112(scene,runtime){
-  const el=root.querySelector('.player-scene-initiative-v112');if(!el)return;if(!scene.showInitiativeToPlayers){el.hidden=true;el.innerHTML='';return;}
-  const sources=combatVisionSources(runtime,scene),tokens=new Map(list(runtime.tokens).map(t=>[t.id,normalizeToken(t)])),order=list(runtime.initiativeOrder),turn=Math.max(0,Math.min(order.length-1,num(runtime.turnIndex,0)));
-  const rows=order.map((id,index)=>({token:tokens.get(id),index})).filter(row=>row.token&&!row.token.hidden&&row.token.visibleToPlayers&&tokenKnownToPlayers112(scene,sources,row.token));
-  el.hidden=false;el.innerHTML=`<b>ИНИЦИАТИВА</b><div>${rows.map(row=>`<span class="${row.index===turn?'active':''}"><i>${row.index+1}</i>${esc(row.token.showNameToPlayers!==false?row.token.name:'Неизвестный юнит')}</span>`).join('')||'<span>—</span>'}</div>`;
+  const el=root.querySelector('.player-battle-initiative-v227');if(!el)return;
+  const combat=scene.mode==='combat';el.hidden=!combat;if(!combat){el.innerHTML='';delete el.dataset.signature;return;}
+  const tokens=new Map(list(runtime.tokens).map(t=>[t.id,normalizeToken(t)])),currentId=list(runtime.initiativeOrder)[Math.max(0,num(runtime.turnIndex))]||'',current=tokens.get(currentId),sources=combatVisionSources(runtime,scene);
+  const rows=list(runtime.initiativeOrder).map(id=>tokens.get(id)).filter(token=>token&&!token.hidden&&token.visibleToPlayers&&tokenKnownToPlayers112(scene,sources,token));
+  const knownCurrent=rows.some(token=>token.id===currentId);
+  const signature=JSON.stringify([currentId,runtime.round,rows.map(t=>[t.id,t.name,t.image,t.initiative,t.playerId,t.hpCurrent,t.hpMax])]);
+  if(el.dataset.signature===signature)return;el.dataset.signature=signature;
+  const scroll=el.querySelector('.battle-order-v226')?.scrollLeft||0;
+  el.innerHTML=`<div class="player-battle-turn-v227">РАУНД ${Math.max(1,num(runtime.round,1))} · ТЕКУЩИЙ ХОД: <b>${esc(knownCurrent?current.name:current?'Скрытый участник':'Нет участника')}</b></div><div class="battle-order-v226">${GRPGCombatPresentationV227.order(rows,{currentId})}</div>`;
+  el.querySelector('.battle-order-v226').scrollLeft=scroll;
+  if(el.dataset.current!==currentId){el.querySelector('.is-current')?.scrollIntoView?.({block:'nearest',inline:'nearest'});el.dataset.current=currentId;}
+}
+function updatePlayerCards227(scene,runtime){
+  const el=root.querySelector('.player-battle-party-v227');if(!el)return;
+  el.hidden=scene.mode!=='combat';if(el.hidden)return;
+  const currentId=list(runtime.initiativeOrder)[Math.max(0,num(runtime.turnIndex))]||'';
+  const ids=new Set(list(runtime.tokens).filter(token=>token.playerId&&!token.hidden&&token.visibleToPlayers!==false).map(token=>token.id));
+  const cards=list(runtime.playerCards227).filter(card=>card.playerId&&ids.has(card.id)),signature=JSON.stringify([cards,currentId]);
+  if(el.dataset.signature===signature)return;el.dataset.signature=signature;
+  const scroll=el.scrollLeft;
+  el.innerHTML=cards.map(card=>`<article class="player-battle-card-v227 ${card.id===currentId?'is-current':''}"><header><span class="battle-portrait-v226">${card.image?`<img src="${esc(card.image)}" alt=""/>`:esc(initials(card.name))}</span><div><b>${esc(card.name)}</b><small>${card.id===currentId?'ХОДИТ СЕЙЧАС':'ПЕРСОНАЖ ИГРОКА'}</small></div><strong>${num(card.hpCurrent)} / ${Math.max(1,num(card.hpMax))} HP</strong></header><div class="battle-health-v226"><i style="width:${clamp(num(card.hpCurrent)/Math.max(1,num(card.hpMax))*100,0,100)}%"></i></div><div class="player-battle-weapon-v227">${esc(card.weapon?.name||'Без оружия')}${card.weapon?.size?` <b>${num(card.weapon.loaded)} / ${num(card.weapon.size)}</b>`:''}</div><div class="player-battle-stats-v227"><span>КБ <b>${num(card.armorClass)}</b></span><span>Защита <b>${num(card.defense)}</b></span><span>Движение <b>${num(card.movement)}</b></span><span>Действие <b>${card.action?1:0}</b></span><span>Реакция <b>${card.reaction?1:0}</b></span></div></article>`).join('');
+  el.scrollLeft=scroll;
 }
 function animateTokenAlongRoute(node,token,scene,preview,previous){if(!node||preview?.kind!=='route'||preview.mode!=='move'||!Array.isArray(preview.points)||preview.points.length<2||!previous)return;const offset=token.footprintV184?{x:GRPGUnitSizeV184.info(token.unitSize).ox,y:GRPGUnitSizeV184.info(token.unitSize).oy}:{x:token.w/2,y:token.h/2},final={x:token.x+offset.x,y:token.y+offset.y},end=preview.end||preview.points[preview.points.length-1];if(Math.hypot(num(end.x)-final.x,num(end.y)-final.y)>.7)return;const start=preview.points[0];if(Math.hypot(num(start.x)-(previous.x+offset.x),num(start.y)-(previous.y+offset.y))>1.2)return;const frames=preview.points.map(p=>({left:pct(num(p.x)-offset.x,scene.width),top:pct(num(p.y)-offset.y,scene.height)}));try{node.getAnimations().forEach(a=>a.cancel());node.animate(frames,{duration:Math.max(500,Math.min(2200,(preview.points.length-1)*160)),easing:'ease-in-out'});}catch{}}
 function updateTokens(scene,runtime,preview){
@@ -122,7 +140,7 @@ function updateFog(scene,runtime){
   if(mode==='objects'&&sources.length){const edges=visionBoundaryEdges112(scene,sources);ctx.save();ctx.strokeStyle='rgba(170,226,255,.82)';ctx.lineWidth=1.35;ctx.shadowColor='rgba(90,190,255,.48)';ctx.shadowBlur=5;ctx.lineCap='round';ctx.beginPath();for(const e of edges){ctx.moveTo(e.a.x*sx,e.a.y*sy);ctx.lineTo(e.b.x*sx,e.b.y*sy);}ctx.stroke();ctx.restore();}
 }
 function previewKnownToPlayers128(scene,runtime,preview){if(!preview)return null;const sourceId=String(preview.sourceTokenId||preview.movedTokenId||'');if(!sourceId)return preview;const source=list(runtime.tokens).find(token=>String(token.id)===sourceId),sources=combatVisionSources(runtime,scene);return source&&!source.hidden&&source.visibleToPlayers&&tokenKnownToPlayers112(scene,sources,source)?preview:null;}
-function renderCombatSnapshot(snapshot){if(!snapshot?.scene){root.innerHTML='<div class="player-display-stage player-display-stage--blank"></div>';combatDisplaySceneId='';return;}const scene=normalizeScene(snapshot.scene),runtime={...snapshot.runtime,tokens:list(snapshot.runtime?.tokens).map(normalizeToken),initiativeOrder:list(snapshot.runtime?.initiativeOrder)},publicPreview=previewKnownToPlayers128(scene,runtime,snapshot.preview);ensureCombatBoard(scene);updateCombatCamera(scene);updateStaticVisibility112(scene,runtime);updateTokens(scene,runtime,publicPreview);updateInitiative112(scene,runtime);const preview=root.querySelector('.player-scene-preview-v104');if(preview)preview.innerHTML=previewMarkup(scene,publicPreview);requestAnimationFrame(()=>updateFog(scene,runtime));}
+function renderCombatSnapshot(snapshot){if(!snapshot?.scene){root.innerHTML='<div class="player-display-stage player-display-stage--blank"></div>';combatDisplaySceneId='';return;}const scene=normalizeScene(snapshot.scene),runtime={...snapshot.runtime,tokens:list(snapshot.runtime?.tokens).map(normalizeToken),initiativeOrder:list(snapshot.runtime?.initiativeOrder)},publicPreview=previewKnownToPlayers128(scene,runtime,snapshot.preview);ensureCombatBoard(scene);updateCombatCamera(scene);updateStaticVisibility112(scene,runtime);updateTokens(scene,runtime,publicPreview);updateInitiative112(scene,runtime);updatePlayerCards227(scene,runtime);const preview=root.querySelector('.player-scene-preview-v104');if(preview)preview.innerHTML=previewMarkup(scene,publicPreview);requestAnimationFrame(()=>updateFog(scene,runtime));}
 async function refresh(){if(playerDisplayRefreshInFlight)return;playerDisplayRefreshInFlight=true;try{if(playerDisplayMirror.mode==='combat'&&playerDisplayMirror.combatSnapshot){renderCombatSnapshot(playerDisplayMirror.combatSnapshot);return;}root.innerHTML='<div class="player-display-stage player-display-stage--blank"></div>';}catch(error){console.error('player-display refresh failed',error);root.innerHTML='<div class="player-display-stage player-display-stage--blank"></div>';}finally{playerDisplayRefreshInFlight=false;}}
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)refresh();});
 window.addEventListener('resize',()=>refresh());
