@@ -4,9 +4,9 @@ const http = require('node:http');
 const { URL } = require('node:url');
 const { DatabaseSync } = require('node:sqlite');
 const crypto = require('node:crypto');
-const StockMotion = require('./stock-motion-v165.js');
 const Accounting = require('./accounting-v213.js');
 const FEES = Accounting.rates();
+const MarketRisk = Accounting.marketRisk;
 
 const PORT = Number(process.env.MARKET_PORT || 8091);
 const HOST = process.env.MARKET_HOST || '127.0.0.1';
@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS events(
 CREATE INDEX IF NOT EXISTS active_events ON events(campaign_id,item_id,start_tick,end_tick);
 CREATE TABLE IF NOT EXISTS admin_operations(campaign_id TEXT NOT NULL,player_id TEXT NOT NULL,id TEXT NOT NULL,fingerprint TEXT NOT NULL,protection_ids TEXT NOT NULL DEFAULT '[]',PRIMARY KEY(campaign_id,player_id,id));
 CREATE TABLE IF NOT EXISTS meta(campaign_id TEXT PRIMARY KEY,last_tick INTEGER NOT NULL,world_hash TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS motion_seeds(campaign_id TEXT PRIMARY KEY,seed TEXT NOT NULL);
 `);
 for(const column of ['start_price REAL','target_price REAL']){try{market.exec(`ALTER TABLE events ADD COLUMN ${column}`);}catch(error){if(!String(error.message).includes('duplicate column name'))throw error;}}
 
@@ -100,7 +101,30 @@ function syncStocks(campaign){
 }
 function activeImpulses(campaign,itemId,tick){return market.prepare('SELECT percent,start_tick,end_tick,start_price,target_price FROM events WHERE campaign_id=? AND item_id=? AND start_tick<=? AND end_tick>?').all(campaign,itemId,tick,tick);}
 function eventImpulse(rows){return rows.reduce((sum,event)=>{const steps=Math.max(1,Math.ceil((event.end_tick-event.start_tick)/TICK_SECONDS)),start=Math.max(MIN_PRICE,Number(event.start_price)||1),target=Math.max(MIN_PRICE,Number(event.target_price)||start*(1+Number(event.percent||0)/100));return sum+Math.log(target/start)/steps;},0);}
-function nextPrice(campaign,q,tick){const impulses=activeImpulses(campaign,q.item_id,tick);if(impulses.length){const delta=eventImpulse(impulses),price=Math.max(MIN_PRICE,round(q.price*Math.exp(delta))),finish=impulses.some(event=>tick+TICK_SECONDS>=event.end_tick);return{price,regime:'dm-impulse',anchor:finish?price:null};}return StockMotion.next({campaignId:campaign,itemId:q.item_id,tick,stepSeconds:TICK_SECONDS,price:q.price,anchor:q.anchor,volatility:q.volatility});}
+const motionSeeds = new Map();
+function motionSeed(campaign) {
+ if (!motionSeeds.has(campaign)) {
+  const read = market.prepare('SELECT seed FROM motion_seeds WHERE campaign_id=?');
+  let row = read.get(campaign);
+  if (!row) {
+   market.prepare('INSERT OR IGNORE INTO motion_seeds(campaign_id,seed) VALUES(?,?)')
+    .run(campaign,crypto.randomBytes(24).toString('hex'));
+   row = read.get(campaign);
+  }
+  motionSeeds.set(campaign,row.seed);
+ }
+ return motionSeeds.get(campaign);
+}
+function nextPrice(campaign, motionKey, quote, time, exposure) {
+ const impulses = activeImpulses(campaign,quote.item_id,time);
+ if (impulses.length) {
+  const price = Math.max(MIN_PRICE,round(quote.price*Math.exp(eventImpulse(impulses))));
+  const finish = impulses.some(event => time+TICK_SECONDS>=event.end_tick);
+  return {price,regime:'dm-impulse',anchor:finish ? price : null};
+ }
+ return MarketRisk.next({campaignId:motionKey,itemId:quote.item_id,tick:time,stepSeconds:TICK_SECONDS,
+  price:quote.price,anchor:quote.anchor,volatility:quote.volatility},exposure);
+}
 function writeCandle(campaign,itemId,tick,price){const bucket=Math.floor(tick/60)*60,volume=round(random(`${itemId}|volume|${tick}`)*40+1,2);market.prepare(`INSERT INTO candles(campaign_id,item_id,bucket_time,open,high,low,close,volume) VALUES(?,?,?,?,?,?,?,?)
  ON CONFLICT(campaign_id,item_id,bucket_time) DO UPDATE SET high=max(high,excluded.high),low=min(low,excluded.low),close=excluded.close,volume=volume+excluded.volume`).run(campaign,itemId,bucket,price,price,price,price,volume);market.prepare(`DELETE FROM candles WHERE campaign_id=? AND item_id=? AND bucket_time NOT IN (SELECT bucket_time FROM candles WHERE campaign_id=? AND item_id=? ORDER BY bucket_time DESC LIMIT ?)`).run(campaign,itemId,campaign,itemId,MAX_CANDLES);}
 function playerRow(campaign,playerId){return pocketbase.prepare('SELECT id,playerJson,version FROM campaign_players WHERE campaignId=? AND playerId=? LIMIT 1').get(campaign,playerId);}
@@ -189,8 +213,30 @@ function tick(campaign=DEFAULT_CAMPAIGN){
   const target=Math.floor(nowSec()/TICK_SECONDS)*TICK_SECONDS,meta=market.prepare('SELECT last_tick FROM meta WHERE campaign_id=?').get(campaign);
   if(meta&&meta.last_tick>=target)return false;
   const start=Math.max(meta?.last_tick||target-TICK_SECONDS,target-TICK_SECONDS*120);
+  const motionKey = campaign + '|' + motionSeed(campaign);
+  const profiles = pocketbase.prepare('SELECT playerJson FROM campaign_players WHERE campaignId=?').all(campaign);
+  const exposure = MarketRisk.openExposure(profiles.map(row => parseJson(row.playerJson)));
   market.exec('BEGIN IMMEDIATE');
-  try{for(let time=start+TICK_SECONDS;time<=target;time+=TICK_SECONDS){for(const q of market.prepare('SELECT * FROM quotes WHERE campaign_id=?').all(campaign)){const next=nextPrice(campaign,q,time);market.prepare('UPDATE quotes SET previous_price=price,price=?,regime=?,last_tick=?,anchor=CASE WHEN ? IS NULL THEN anchor ELSE ? END WHERE campaign_id=? AND item_id=?').run(next.price,next.regime,time,next.anchor,next.anchor,campaign,q.item_id);writeCandle(campaign,q.item_id,time,next.price);}market.prepare('UPDATE meta SET last_tick=? WHERE campaign_id=?').run(time,campaign);}market.prepare('DELETE FROM events WHERE campaign_id=? AND end_tick<=?').run(campaign,target);market.exec('COMMIT');}catch(error){market.exec('ROLLBACK');throw error;}
+  try {
+   const quotes = market.prepare('SELECT * FROM quotes WHERE campaign_id=?');
+   const update = market.prepare('UPDATE quotes SET previous_price=price,price=?,regime=?,last_tick=?,anchor=COALESCE(?,anchor) WHERE campaign_id=? AND item_id=?');
+   const advance = market.prepare('UPDATE meta SET last_tick=? WHERE campaign_id=?');
+   for(let time=start+TICK_SECONDS;time<=target;time+=TICK_SECONDS){
+    // Only the live tick can use current positions. Historical catch-up must not backdate them.
+    const liveExposure = time===target ? exposure : null;
+    for(const quote of quotes.all(campaign)){
+     const next = nextPrice(campaign,motionKey,quote,time,liveExposure?.get(quote.item_id));
+     update.run(next.price,next.regime,time,next.anchor,campaign,quote.item_id);
+     writeCandle(campaign,quote.item_id,time,next.price);
+    }
+    advance.run(time,campaign);
+   }
+   market.prepare('DELETE FROM events WHERE campaign_id=? AND end_tick<=?').run(campaign,target);
+   market.exec('COMMIT');
+  } catch(error) {
+   market.exec('ROLLBACK');
+   throw error;
+  }
   accrueFees(campaign,target);processLiquidations(campaign,target);processOrders(campaign,target);broadcast(campaign);return true;
  }finally{ticking=false;}
 }

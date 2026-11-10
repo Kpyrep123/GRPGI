@@ -1,4 +1,5 @@
 'use strict';
+const StockMotion = require('./stock-motion-v165.js');
 const round=n=>Math.round(n*1e4)/1e4;
 function rate(value,fallback){const n=Number(value??fallback);if(!Number.isFinite(n)||n<0||n>1)throw Error('Invalid market fee rate');return n;}
 function rates(env=process.env){return {tradeRate:rate(env.MARKET_TRADE_FEE_RATE,.001),borrowDailyRate:rate(env.MARKET_BORROW_DAILY_RATE,.0003),custodyDailyRate:rate(env.MARKET_CUSTODY_DAILY_RATE,.0001)};}
@@ -52,4 +53,52 @@ function editPosition(profile,body,_price,tick){
  if(body.action!=='add')delete source[id];
  target[id]={itemId:id,[side==='long'?'knownQty':'quantity']:oldQty+qty,unpricedQty:Number(existing?.unpricedQty)||0,costBasis:basis,margin,leverage:basis/margin,lastFeeAt:tick};
 }
-module.exports={rates,accrue,protection,editPosition,round};
+
+const NEWS_INTERVAL_SECONDS = 3600;
+const PROFIT_THRESHOLD = .003;
+const FULL_PRESSURE_AT = .02;
+const MAX_LOG_MOVE_PER_SECOND = .000025;
+
+function openExposure(profiles) {
+ const result = new Map();
+ for (const profile of profiles) {
+  const book = profile?.stockPortfolio;
+  if (!book || profile.__deleted || String(profile.role || '').toLowerCase() === 'gm' ||
+      ['pending', 'rejected'].includes(profile.approvalStatus)) continue;
+  for (const [side, positions, quantityField] of [
+   ['long', book.positions, 'knownQty'], ['short', book.shortPositions, 'quantity']
+  ]) {
+   for (const [id, position] of Object.entries(positions || {})) {
+    const quantity = Number(position?.[quantityField]), basis = Number(position?.costBasis);
+    if (!Number.isSafeInteger(quantity) || quantity <= 0 || !Number.isFinite(basis) || basis <= 0) continue;
+    const row = result.get(id) || {longQty:0, shortQty:0, longBasis:0, shortBasis:0};
+    row[side + 'Qty'] += quantity;
+    row[side + 'Basis'] += basis;
+    result.set(id, row);
+   }
+  }
+ }
+ return result;
+}
+
+function pressure(price, exposure) {
+ if (!exposure) return 0;
+ const {longQty, shortQty, longBasis, shortBasis} = exposure;
+ const net = longQty - shortQty;
+ const basis = longBasis + shortBasis;
+ if (!net || !Number.isFinite(basis) || basis <= 0) return 0;
+ const pnl = price * net + shortBasis - longBasis;
+ const strength = Math.max(0, Math.min(1, (pnl / basis - PROFIT_THRESHOLD) / (FULL_PRESSURE_AT - PROFIT_THRESHOLD)));
+ return strength ? -net / (longQty + shortQty) * strength : 0;
+}
+
+function nextQuote(options, exposure) {
+ const motion = StockMotion.next({...options, newsIntervalSeconds:NEWS_INTERVAL_SECONDS,randomWalk:true});
+ const delta = pressure(options.price, exposure) * MAX_LOG_MOVE_PER_SECOND * options.stepSeconds;
+ if (!delta) return motion;
+ const factor = Math.exp(delta);
+ return {...motion, price:Math.max(StockMotion.MIN_PRICE, Math.round(motion.price * factor * 10000) / 10000),
+  anchor:Math.max(StockMotion.MIN_PRICE, motion.anchor * factor)};
+}
+
+module.exports={rates,accrue,protection,editPosition,round,marketRisk:{openExposure,pressure,next:nextQuote}};

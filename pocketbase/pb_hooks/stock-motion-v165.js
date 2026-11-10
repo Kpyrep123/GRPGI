@@ -29,20 +29,27 @@ function phase(campaign,item,block){
 }
 function next(options){
  var campaign=String(options.campaignId||'main'),item=String(options.itemId||''),tick=finite(options.tick,0),seconds=Math.max(.001,finite(options.stepSeconds,10)),price=Math.max(MIN_PRICE,finite(options.price,100)),anchor=Math.max(MIN_PRICE,finite(options.anchor,price)),vol=Math.max(.05,Math.min(8,finite(options.volatility,1)));
- var offset=Math.floor(random(campaign+'|'+item+'|phase-offset')*PHASE_SECONDS),time=tick+offset,block=Math.floor(time/PHASE_SECONDS),fraction=(time-block*PHASE_SECONDS)/PHASE_SECONDS,weight=fraction*fraction*(3-2*fraction),a=phase(campaign,item,block),b=phase(campaign,item,block+1);
- var target=(a.level*(1-weight)+b.level*weight)*EXCURSION*vol,k=Math.LN2/HALF_LIFE_SECONDS,decay=Math.exp(-k*seconds),deviation=Math.log(price/anchor);
+ var offset=Math.floor(random(campaign+'|'+item+'|phase-offset')*PHASE_SECONDS),time=tick+offset,block=Math.floor(time/PHASE_SECONDS),a=phase(campaign,item,block);
+ var k=Math.LN2/HALF_LIFE_SECONDS,decay=Math.exp(-k*seconds);
  // Zero-mean innovations; time-scaled OU variance keeps 1s and 10s backends comparable.
  var seed=campaign+'|'+item+'|tick|'+tick,z=(random(seed+'|a')+random(seed+'|b')+random(seed+'|c')-1.5)*2;
  var noise=z*NOISE_PER_SQRT_SECOND*vol*a.noise*Math.sqrt((1-decay*decay)/(2*k));
- // The reference can move: ordinary prices do not always return to the original entry band.
- var sentiment=(random(campaign+'|'+item+'|sentiment|'+Math.floor(tick/1800))*2-1);
- var anchorNoise=(random(seed+'|anchor-a')+random(seed+'|anchor-b')-1)*.00005*vol*Math.sqrt(seconds);
- var jump=0;
+ var jump=0,newsInterval=Math.max(60,finite(options.newsIntervalSeconds,14400));
  // Draw news per second, even when the service advances in ten-second batches.
  for(var eventTick=Math.floor(tick-seconds)+1;eventTick<=Math.floor(tick);eventTick++){
   var news=campaign+'|'+item+'|news-v169|'+eventTick;
-  if(random(news+'|arrival')<1/14400)jump+=(random(news+'|direction')<.5?-1:1)*(.025+random(news+'|size')*.05)*vol;
+  if(random(news+'|arrival')<1/newsInterval)jump+=(random(news+'|direction')<.5?-1:1)*(.025+random(news+'|size')*.05)*vol;
  }
+ if(options.randomWalk){
+  // Arithmetic returns keep equally sized positive and negative innovations symmetric.
+  var nextPrice=Math.max(MIN_PRICE,Math.round(price*(1+jump+noise)*10000)/10000);
+  return {price:nextPrice,regime:jump?'news-shock':a.id==='calm'||a.id==='volatile'?a.id:'range',anchor:nextPrice};
+ }
+ var fraction=(time-block*PHASE_SECONDS)/PHASE_SECONDS,weight=fraction*fraction*(3-2*fraction),b=phase(campaign,item,block+1);
+ var target=(a.level*(1-weight)+b.level*weight)*EXCURSION*vol,deviation=Math.log(price/anchor);
+ // The reference can move: ordinary prices do not always return to the original entry band.
+ var sentiment=(random(campaign+'|'+item+'|sentiment|'+Math.floor(tick/1800))*2-1);
+ var anchorNoise=(random(seed+'|anchor-a')+random(seed+'|anchor-b')-1)*.00005*vol*Math.sqrt(seconds);
  var anchorDelta=sentiment*.000004*vol*seconds+anchorNoise+jump;
  var nextAnchor=Math.max(MIN_PRICE,anchor*Math.exp(anchorDelta));
  var logPrice=Math.log(anchor)+anchorDelta+deviation*decay+target*(1-decay)+noise,result=Math.max(MIN_PRICE,Math.round(Math.exp(logPrice)*10000)/10000);
