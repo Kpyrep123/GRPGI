@@ -80,7 +80,7 @@ with tempfile.TemporaryDirectory(prefix='grpgi-market-session-') as folder:
                 env=env, stdout=log, stderr=subprocess.STDOUT)
             processes.append(market)
             wait(MARKET_URL + '/health', market)
-            assert request(MARKET_URL + '/health')[1]['motion'] == 'risk-v222'
+            assert request(MARKET_URL + '/health')[1]['motion'] == 'risk-v223'
 
             def auth(action, body=None, token=''):
                 return request(PB_URL + '/api/grpgi/auth-v212/' + action, body, token)
@@ -106,6 +106,18 @@ with tempfile.TemporaryDirectory(prefix='grpgi-market-session-') as folder:
             assert request(API + '/order', {**order, 'playerId': 'gm'}, player)[0] == 403
             assert request(API + '/order', {**order, 'campaignId': 'other'}, player)[0] == 403
             assert request(API + '?campaignId=main&playerId=gm', token=player)[0] == 403
+            dm_query = '?campaignId=main&playerId=gm&itemId=alpha'
+            mode = {'campaignId': 'main', 'playerId': 'gm', 'lossMode': True}
+            assert request(API + dm_query, token=dm)[1]['lossMode'] is False
+            assert 'lossMode' not in request(API + query, token=player)[1]
+            assert request(API + '/mode', mode)[0] == 401
+            assert request(API + '/mode', mode, player)[0] == 403
+            assert request(API + '/mode', {**mode, 'campaignId': 'other'}, dm)[0] == 403
+            assert request(API + '/mode', {**mode, 'lossMode': 'false'}, dm)[0] == 400
+            assert request(API + '/mode', mode, dm)[1]['lossMode'] is True
+            assert request(API + dm_query, token=dm)[1]['lossMode'] is True
+            assert request(API + query, token=player)[1]['fees']['tradeRate'] == .001
+            assert request(API + '/mode', {**mode, 'lossMode': False}, dm)[1]['lossMode'] is False
             impulse = {'campaignId': 'main', 'playerId': 'p', 'itemId': 'alpha', 'targetPrice': 100}
             # A mutable public profile role does not grant private DM authority.
             with sqlite3.connect(db_path) as db:
@@ -116,9 +128,10 @@ with tempfile.TemporaryDirectory(prefix='grpgi-market-session-') as folder:
             code, result, _ = request(API + '/order', order, player)
             assert code == 200, result
             assert result['player']['stockPortfolio']['positions']['alpha']['knownQty'] == 2
-            assert math.isclose(result['player']['credits'], 9799.8, abs_tol=.01)
+            assert result['fees']['tradeRate'] == .0005
+            assert math.isclose(result['player']['credits'], 9799.9, abs_tol=.01)
             assert result['orders'][0]['status'] == 'filled'
-            assert math.isclose(request(API + '/order', order, player)[1]['player']['credits'], 9799.8, abs_tol=.01)
+            assert math.isclose(request(API + '/order', order, player)[1]['player']['credits'], 9799.9, abs_tol=.01)
             pending = {**order, 'type': 'limit', 'limitPrice': .01, 'operationId': 'limit-1'}
             assert request(API + '/order', pending, player)[0] == 200
             cancel = {'campaignId': 'main', 'playerId': 'p', 'orderId': 'limit-1'}
@@ -210,7 +223,11 @@ with tempfile.TemporaryDirectory(prefix='grpgi-market-session-') as folder:
             # Short protection reverses trigger directions and does not create a long.
             price(100)
             _, parent = place(intent='open_short', quantity=3, leverage=2, stopLoss=110, takeProfit=80)
+            assert request(API + '/mode', mode, dm)[1]['lossMode'] is True
             result = process_at(111)
+            short_exit = next(o for o in result['player']['stockPortfolio']['ledger'] if o['id'] == parent + ':stop_loss')
+            assert math.isclose(short_exit['fee'], 111 * 3 * .001, abs_tol=.0001)
+            assert request(API + '/mode', {**mode, 'lossMode': False}, dm)[1]['lossMode'] is False
             children = {o['type']: o for o in result['orders'] if o['parentId'] == parent}
             assert children['stop_loss']['status'] == 'filled'
             assert children['take_profit']['status'] == 'cancelled'
@@ -240,6 +257,7 @@ with tempfile.TemporaryDirectory(prefix='grpgi-market-session-') as folder:
             assert math.isclose(result['player']['credits'], balance - .09, abs_tol=.001), result['player']['credits']
             assert any(o['type'] == 'fees' for o in result['player']['stockPortfolio']['ledger'])
             # Service restart preserves positions, OCO state, history and idempotent DM receipts.
+            assert request(API + '/mode', mode, dm)[1]['lossMode'] is True
             market.terminate()
             market.wait(timeout=10)
             market = subprocess.Popen(['node', str(ROOT / 'market-service/server.js')], env=env, stdout=log, stderr=subprocess.STDOUT)
@@ -247,6 +265,8 @@ with tempfile.TemporaryDirectory(prefix='grpgi-market-session-') as folder:
             wait(MARKET_URL + '/health', market)
             result = request(API + query, token=player)[1]
             assert result['candles']['alpha'] and result['player']['stockPortfolio']['positions']['alpha']['knownQty'] == 3
+            assert request(API + dm_query, token=dm)[1]['lossMode'] is True
+            assert request(API + '/mode', {**mode, 'lossMode': False}, dm)[1]['lossMode'] is False
             with sqlite3.connect(tmp / 'market.sqlite') as db:
                 assert db.execute("SELECT seed FROM motion_seeds WHERE campaign_id='main'").fetchone()[0] == motion_seed
             assert request(API + '/portfolio', admin, dm)[1]['player']['stockPortfolio']['shortPositions'] == {}
@@ -262,7 +282,7 @@ with tempfile.TemporaryDirectory(prefix='grpgi-market-session-') as folder:
             pb.terminate()
             pb.wait(timeout=10)
             assert request(API + query, token=dm)[0] == 503
-            print('PASS CORS/auth, grants/idempotency, DM portfolio, long/short OCO, partial close, deferred limit protection, daily fees, restart persistence, quotes/history and session revocation')
+            print('PASS CORS/auth, grants/idempotency, DM portfolio, long/short OCO, partial close, deferred limit protection, daily fees, persistent DM-only loss mode, quotes/history and session revocation')
         except BaseException:
             log.flush()
             log.seek(0)

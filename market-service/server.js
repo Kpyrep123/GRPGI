@@ -6,6 +6,7 @@ const { DatabaseSync } = require('node:sqlite');
 const crypto = require('node:crypto');
 const Accounting = require('./accounting-v213.js');
 const FEES = Accounting.rates();
+const NORMAL_FEES = Accounting.modeFees(FEES,false);
 const MarketRisk = Accounting.marketRisk;
 
 const PORT = Number(process.env.MARKET_PORT || 8091);
@@ -48,6 +49,8 @@ CREATE INDEX IF NOT EXISTS active_events ON events(campaign_id,item_id,start_tic
 CREATE TABLE IF NOT EXISTS admin_operations(campaign_id TEXT NOT NULL,player_id TEXT NOT NULL,id TEXT NOT NULL,fingerprint TEXT NOT NULL,protection_ids TEXT NOT NULL DEFAULT '[]',PRIMARY KEY(campaign_id,player_id,id));
 CREATE TABLE IF NOT EXISTS meta(campaign_id TEXT PRIMARY KEY,last_tick INTEGER NOT NULL,world_hash TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS motion_seeds(campaign_id TEXT PRIMARY KEY,seed TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS market_settings(
+ campaign_id TEXT PRIMARY KEY,loss_mode INTEGER NOT NULL CHECK(loss_mode IN (0,1)));
 `);
 for(const column of ['start_price REAL','target_price REAL']){try{market.exec(`ALTER TABLE events ADD COLUMN ${column}`);}catch(error){if(!String(error.message).includes('duplicate column name'))throw error;}}
 
@@ -115,6 +118,9 @@ function motionSeed(campaign) {
  }
  return motionSeeds.get(campaign);
 }
+function lossModeEnabled(campaign) {
+ return market.prepare('SELECT loss_mode FROM market_settings WHERE campaign_id=?').get(campaign)?.loss_mode === 1;
+}
 function nextPrice(campaign, motionKey, quote, time, exposure) {
  const impulses = activeImpulses(campaign,quote.item_id,time);
  if (impulses.length) {
@@ -131,10 +137,10 @@ function playerRow(campaign,playerId){return pocketbase.prepare('SELECT id,playe
 function playerProfile(campaign,playerId){const row=playerRow(campaign,playerId);if(!row)throw Error('Player not found');return{row,profile:parseJson(row.playerJson)};}
 function savePlayer(campaign,playerId,profile,expectedVersion){const writer=new DatabaseSync(POCKETBASE_DB);writer.exec('PRAGMA busy_timeout=5000; BEGIN IMMEDIATE');try{const result=writer.prepare(`UPDATE campaign_players SET playerJson=?,version=version+1,updatedBy='market-service-v2',clientUpdatedAt=? WHERE campaignId=? AND playerId=? AND version=?`).run(JSON.stringify(profile),new Date().toISOString(),campaign,playerId,expectedVersion);if(Number(result.changes)!==1)throw Error('Player changed concurrently');writer.exec('COMMIT');}catch(error){writer.exec('ROLLBACK');throw error;}finally{writer.close();}}
 function portfolio(profile){profile.stockPortfolio=profile.stockPortfolio&&typeof profile.stockPortfolio==='object'?profile.stockPortfolio:{};profile.stockPortfolio.positions=profile.stockPortfolio.positions||{};profile.stockPortfolio.shortPositions=profile.stockPortfolio.shortPositions||{};profile.stockPortfolio.ledger=Array.isArray(profile.stockPortfolio.ledger)?profile.stockPortfolio.ledger:[];return profile.stockPortfolio;}
-function executeOrder(order,price,tick){
+function executeOrder(order,price,tick,tradeRate){
  const {row,profile}=playerProfile(order.campaign_id,order.player_id),book=portfolio(profile);
  if(book.ledger.some(x=>x.id===order.id))return;
- const qty=order.quantity,total=round(price*qty),tradeFee=round(total*FEES.tradeRate),requestedLeverage=clamp(order.leverage,1,3),margin=round(total/requestedLeverage),credits=Number(profile.credits)||0;let lev=requestedLeverage,p,average,share,pnl=0,cashFlow=0;
+ const qty=order.quantity,total=round(price*qty),tradeFee=round(total*tradeRate),requestedLeverage=clamp(order.leverage,1,3),margin=round(total/requestedLeverage),credits=Number(profile.credits)||0;let lev=requestedLeverage,p,average,share,pnl=0,cashFlow=0;
  if(order.intent==='open_long'){if(credits+1e-9<margin+tradeFee)throw Error(`Недостаточно средств: обеспечение и комиссия ${round(margin+tradeFee)}`);profile.credits=round(credits-margin);p=book.positions[order.item_id]||{itemId:order.item_id,knownQty:0,costBasis:0,margin:0,leverage:lev};const oldBasis=Number(p.costBasis||0);p.knownQty+=qty;p.costBasis=round(oldBasis+total);p.margin=round(Number(p.margin??oldBasis)+margin);p.leverage=round(p.costBasis/Math.max(MIN_PRICE,p.margin),2);book.positions[order.item_id]=p;cashFlow=-margin;}
  else if(order.intent==='close_long'){p=book.positions[order.item_id];if(!p||p.knownQty<qty)throw Error('Недостаточно акций');average=p.costBasis/p.knownQty;const positionMargin=Number(p.margin??p.costBasis);share=positionMargin*qty/p.knownQty;lev=p.costBasis/Math.max(MIN_PRICE,positionMargin);pnl=(price-average)*qty;cashFlow=Math.max(0,share+pnl);profile.credits=round(credits+cashFlow);p.knownQty-=qty;p.costBasis=round(p.costBasis-average*qty);p.margin=round(positionMargin-share);if(p.knownQty<=0)delete book.positions[order.item_id];}
  else if(order.intent==='open_short'){if(credits+1e-9<margin+tradeFee)throw Error(`Недостаточно средств: обеспечение и комиссия ${round(margin+tradeFee)}`);profile.credits=round(credits-margin);p=book.shortPositions[order.item_id]||{itemId:order.item_id,quantity:0,costBasis:0,margin:0,leverage:lev};const oldBasis=Number(p.costBasis||0);p.quantity+=qty;p.costBasis=round(oldBasis+total);p.margin=round(Number(p.margin??oldBasis)+margin);p.leverage=round(p.costBasis/Math.max(MIN_PRICE,p.margin),2);book.shortPositions[order.item_id]=p;cashFlow=-margin;}
@@ -165,6 +171,8 @@ function reconcileProtection(campaign,playerId,itemId){
 }
 function processOrders(campaign,tick){
  const pending=market.prepare("SELECT * FROM orders WHERE campaign_id=? AND status='pending' ORDER BY created_at,id").all(campaign);
+ if(!pending.length)return;
+ const {tradeRate}=lossModeEnabled(campaign)?FEES:NORMAL_FEES;
  const receipts=new Map();for(const order of pending)if(!receipts.has(order.player_id)){try{receipts.set(order.player_id,new Map(portfolio(playerProfile(campaign,order.player_id).profile).ledger.map(x=>[x.id,x])));}catch{receipts.set(order.player_id,new Map());}}
  pending.sort((a,b)=>Number(receipts.get(b.player_id).has(b.id))-Number(receipts.get(a.player_id).has(a.id)));
  for(let order of pending){
@@ -174,7 +182,7 @@ function processOrders(campaign,tick){
   const executed=receipts.get(order.player_id).get(order.id);
   if(!q||(!executed&&!shouldFill(order,q.price)))continue;
   const fillPrice=Number(executed?.unitPrice)||q.price;
-  try{executeOrder(order,fillPrice,tick);ensureProtection(order,tick);
+  try{executeOrder(order,fillPrice,tick,tradeRate);ensureProtection(order,tick);
    market.prepare("UPDATE orders SET status='filled',fill_price=?,filled_at=? WHERE id=? AND status='pending'").run(fillPrice,iso(tick),order.id);
    if(order.parent_id)market.prepare("UPDATE orders SET status='cancelled',cancelled_at=? WHERE parent_id=? AND id!=? AND status='pending'").run(iso(tick),order.parent_id,order.id);
    reconcileProtection(campaign,order.player_id,order.item_id);
@@ -214,8 +222,11 @@ function tick(campaign=DEFAULT_CAMPAIGN){
   if(meta&&meta.last_tick>=target)return false;
   const start=Math.max(meta?.last_tick||target-TICK_SECONDS,target-TICK_SECONDS*120);
   const motionKey = motionSeed(campaign);
-  const profiles = pocketbase.prepare('SELECT playerJson FROM campaign_players WHERE campaignId=?').all(campaign);
-  const exposure = MarketRisk.openExposure(profiles.map(row => parseJson(row.playerJson)));
+  let exposure;
+  if (lossModeEnabled(campaign)) {
+   const profiles = pocketbase.prepare('SELECT playerJson FROM campaign_players WHERE campaignId=?').all(campaign);
+   exposure = MarketRisk.openExposure(profiles.map(row => parseJson(row.playerJson)));
+  }
   market.exec('BEGIN IMMEDIATE');
   try {
    const quotes = market.prepare('SELECT * FROM quotes WHERE campaign_id=?');
@@ -241,18 +252,25 @@ function tick(campaign=DEFAULT_CAMPAIGN){
  }finally{ticking=false;}
 }
 function indicators(rows){const closes=rows.map(x=>Number(x.close)),avg=n=>closes.length<n?null:round(closes.slice(-n).reduce((a,b)=>a+b,0)/n),sample=closes.slice(-15);let gains=0,losses=0;for(let i=1;i<sample.length;i++){const d=sample[i]-sample[i-1];d>=0?gains+=d:losses-=d;}return{sma5:avg(5),sma20:avg(20),rsi14:sample.length<15?null:round(100-100/(1+(losses?gains/losses:100)),2)};}
-function publicState(campaign,playerId,itemId){syncStocks(campaign);const quotes=market.prepare('SELECT item_id AS itemId,ticker,price,previous_price AS previousPrice,price-previous_price AS change,CASE WHEN previous_price>0 THEN (price-previous_price)*100/previous_price ELSE 0 END AS changePercent,volatility,regime,last_tick AS tick FROM quotes WHERE campaign_id=? ORDER BY ticker').all(campaign);const candles={};if(itemId){const rows=market.prepare('SELECT bucket_time AS time,open,high,low,close,volume FROM candles WHERE campaign_id=? AND item_id=? ORDER BY bucket_time DESC LIMIT ?').all(campaign,itemId,MAX_CANDLES).reverse();candles[itemId]=rows;const q=quotes.find(x=>x.itemId===itemId);if(q)q.indicators=indicators(rows);}const orders=market.prepare("SELECT id,parent_id AS parentId,stop_loss AS stopLoss,take_profit AS takeProfit,item_id AS itemId,type,intent,quantity,leverage,trigger_price AS triggerPrice,limit_price AS limitPrice,trailing_percent AS trailingPercent,status,fill_price AS fillPrice,message,created_at AS createdAt,filled_at AS filledAt,cancelled_at AS cancelledAt FROM orders WHERE campaign_id=? AND player_id=? ORDER BY created_at DESC LIMIT 100").all(campaign,playerId);const owner=playerProfile(campaign,playerId);return{ok:true,version:213,fees:FEES,playerVersion:Number(owner.row.version),serverTime:new Date().toISOString(),lastTick:market.prepare('SELECT last_tick FROM meta WHERE campaign_id=?').get(campaign)?.last_tick||0,quotes,candles,orders,player:owner.profile};}
+function publicState(campaign,playerId,itemId,dm=false){syncStocks(campaign);const quotes=market.prepare('SELECT item_id AS itemId,ticker,price,previous_price AS previousPrice,price-previous_price AS change,CASE WHEN previous_price>0 THEN (price-previous_price)*100/previous_price ELSE 0 END AS changePercent,volatility,regime,last_tick AS tick FROM quotes WHERE campaign_id=? ORDER BY ticker').all(campaign);const candles={};if(itemId){const rows=market.prepare('SELECT bucket_time AS time,open,high,low,close,volume FROM candles WHERE campaign_id=? AND item_id=? ORDER BY bucket_time DESC LIMIT ?').all(campaign,itemId,MAX_CANDLES).reverse();candles[itemId]=rows;const q=quotes.find(x=>x.itemId===itemId);if(q)q.indicators=indicators(rows);}const orders=market.prepare("SELECT id,parent_id AS parentId,stop_loss AS stopLoss,take_profit AS takeProfit,item_id AS itemId,type,intent,quantity,leverage,trigger_price AS triggerPrice,limit_price AS limitPrice,trailing_percent AS trailingPercent,status,fill_price AS fillPrice,message,created_at AS createdAt,filled_at AS filledAt,cancelled_at AS cancelledAt FROM orders WHERE campaign_id=? AND player_id=? ORDER BY created_at DESC LIMIT 100").all(campaign,playerId);const owner=playerProfile(campaign,playerId),lossMode=lossModeEnabled(campaign);return{ok:true,version:213,fees:lossMode?FEES:NORMAL_FEES,...(dm?{lossMode}:{}),playerVersion:Number(owner.row.version),serverTime:new Date().toISOString(),lastTick:market.prepare('SELECT last_tick FROM meta WHERE campaign_id=?').get(campaign)?.last_tick||0,quotes,candles,orders,player:owner.profile};}
 function broadcast(campaign){const data=`event: quotes\ndata: ${JSON.stringify({campaignId:campaign,lastTick:market.prepare('SELECT last_tick FROM meta WHERE campaign_id=?').get(campaign)?.last_tick||0})}\n\n`;for(const client of streams){try{client.write(data);}catch{streams.delete(client);}}}
 async function route(req,res){
  if(req.method==='OPTIONS')return send(res,204,{});
  const url=new URL(req.url,`http://${req.headers.host||'localhost'}`),path=url.pathname;
  try{
-  if(path==='/health')return send(res,200,{ok:true,service:'grpgi-market-v2',motion:'risk-v222',tickSeconds:TICK_SECONDS,ticking});
+  if(path==='/health')return send(res,200,{ok:true,service:'grpgi-market-v2',motion:'risk-v223',tickSeconds:TICK_SECONDS,ticking});
   if(path.endsWith('/stream')){res.writeHead(200,{'content-type':'text/event-stream','cache-control':'no-cache','connection':'keep-alive','access-control-allow-origin':'*'});res.write('retry: 5000\n\n');streams.add(res);req.on('close',()=>streams.delete(res));return;}
-  if(req.method==='GET'&&path.endsWith('/stock-exchange-v148')){const campaign=url.searchParams.get('campaignId')||DEFAULT_CAMPAIGN,playerId=url.searchParams.get('playerId')||'',itemId=url.searchParams.get('itemId')||'';if(!playerId)return send(res,400,{ok:false,message:'playerId required'});await authorize(req,campaign,playerId);return send(res,200,publicState(campaign,playerId,itemId));}
+  if(req.method==='GET'&&path.endsWith('/stock-exchange-v148')){const campaign=url.searchParams.get('campaignId')||DEFAULT_CAMPAIGN,playerId=url.searchParams.get('playerId')||'',itemId=url.searchParams.get('itemId')||'';if(!playerId)return send(res,400,{ok:false,message:'playerId required'});const actor=await authorize(req,campaign,playerId);return send(res,200,publicState(campaign,playerId,itemId,actor.dm===true));}
   const body=await readBody(req),campaign=String(body.campaignId||DEFAULT_CAMPAIGN);
+  if(req.method==='POST'&&path.endsWith('/mode')){
+   await authorize(req,campaign,String(body.playerId),true);
+   if(typeof body.lossMode!=='boolean')return send(res,400,{ok:false,message:'Укажите состояние режима потерь'});
+   market.prepare(`INSERT INTO market_settings(campaign_id,loss_mode) VALUES(?,?)
+    ON CONFLICT(campaign_id) DO UPDATE SET loss_mode=excluded.loss_mode`).run(campaign,Number(body.lossMode));
+   return send(res,200,{ok:true,lossMode:body.lossMode});
+  }
   if(req.method==='POST'&&path.endsWith('/order')){
-   await authorize(req,campaign,String(body.playerId));syncStocks(campaign);
+   const actor=await authorize(req,campaign,String(body.playerId));syncStocks(campaign);
    const id=String(body.operationId||crypto.randomUUID()),type=String(body.type||'market'),intent=String(body.intent||'open_long');
    const qty=Number(body.quantity),lev=Number(body.leverage||1),limit=Number(body.limitPrice||0),trigger=Number(body.triggerPrice||0),trailing=Number(body.trailingPercent||1);
    if(id.includes(':')||id.length>100||!Number.isSafeInteger(qty)||qty<1||qty>MAX_ORDER_QUANTITY||!Number.isFinite(lev)||lev<1||lev>3)
@@ -272,7 +290,7 @@ async function route(req,res){
       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(id,campaign,String(body.playerId),String(body.itemId),type,intent,qty,lev,Math.max(0,trigger),Math.max(0,limit),clamp(trailing,.1,50),0,'pending',new Date().toISOString(),protection.stopLoss,protection.takeProfit);
    }
    const orderTick=nowSec();accrueFees(campaign,orderTick);processLiquidations(campaign,orderTick);processOrders(campaign,orderTick);
-   const state=publicState(campaign,String(body.playerId),String(body.itemId)),placed=market.prepare('SELECT status,message FROM orders WHERE id=?').get(id);
+   const state=publicState(campaign,String(body.playerId),String(body.itemId),actor.dm===true),placed=market.prepare('SELECT status,message FROM orders WHERE id=?').get(id);
    return send(res,200,{...state,ok:placed.status!=='rejected',status:placed.status,message:placed.message||''});
   }
   if(req.method==='POST'&&path.endsWith('/cancel')){await authorize(req,campaign,String(body.playerId));const result=market.prepare("UPDATE orders SET status='cancelled',cancelled_at=? WHERE id=? AND campaign_id=? AND player_id=? AND status='pending'").run(new Date().toISOString(),String(body.orderId),campaign,String(body.playerId));if(result.changes){const cancelled=market.prepare('SELECT parent_id FROM orders WHERE id=?').get(String(body.orderId));if(cancelled?.parent_id)market.prepare("UPDATE orders SET status='cancelled',cancelled_at=? WHERE parent_id=? AND status='pending'").run(new Date().toISOString(),cancelled.parent_id);}return send(res,result.changes?200:404,{ok:Boolean(result.changes),status:result.changes?'cancelled':'not_found'});}

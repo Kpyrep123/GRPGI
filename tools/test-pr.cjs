@@ -13,6 +13,7 @@ const checks = [
   ['tests/v134-world-config-full-load.mjs'],
   ['tests/v140-world-integrity.cjs'],
   ['tests/market-risk-v222.cjs'],
+  ['tests/stock-orders-v213.dom.mjs'],
   ['tests/galagram-v159.cjs'],
   ['tests/task-destinations-v216.dom.mjs'],
   ['tests/v135-player-sync-web.mjs'],

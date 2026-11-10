@@ -2,7 +2,7 @@
 'use strict';
 if(window.__stockExchangeV148||!window.electronAPI?.getStockExchange)return;
 window.__stockExchangeV148=true;
-let exchange=null,timeframe='1h',orderView='new',busy=false;
+let exchange=null,timeframe='1h',orderView='new',busy=false,lossModePending=false;
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money=v=>Number(v||0).toLocaleString('ru-RU',{minimumFractionDigits:2,maximumFractionDigits:4});
 const quote=id=>exchange?.quotes?.find(row=>row.itemId===id)||null;
@@ -34,7 +34,7 @@ function ordersMarkupV214(id){
   if(orderView!=='new')return`<div class="stock-orders-v148" data-order-type="market">${tabs}${orderList(id)}</div>`;
   return`<div class="stock-orders-v148" data-order-type="market">${tabs}<div class="stock-order-tabs-v148"><b>Параметры</b><span>Исполняется сервером при закрытом приложении</span></div><div class="stock-order-grid-v148"><label>Операция<select class="input" data-stock-order-intent-v148><option value="open_long">Открыть лонг</option><option value="close_long">Закрыть лонг</option><option value="open_short">Открыть шорт</option><option value="close_short">Закрыть шорт</option></select></label><label>Тип<select class="input" data-stock-order-type-v148><option value="market">Рыночная</option><option value="limit">Лимитная</option></select></label><label>Количество акций<input class="input" type="number" min="1" max="1000000" value="1" data-stock-order-quantity-v148></label><label class="stock-field-limit-v149">Лимит<input class="input" type="number" min=".01" step=".01" data-stock-order-limit-v148></label><label class="stock-field-trigger-v149">Активация<input class="input" type="number" min=".01" step=".01" data-stock-order-trigger-v148></label><label class="stock-field-trailing-v149">Отклонение, %<input class="input" type="number" min=".1" max="50" step=".1" value="1" data-stock-order-trailing-v148></label><label>Стоп-лосс (необязательно)<input class="input" type="number" min="0.01" step="0.01" placeholder="Не задан" data-stock-stop-loss-v213></label><label>Тейк-профит (необязательно)<input class="input" type="number" min="0.01" step="0.01" placeholder="Не задан" data-stock-take-profit-v213></label><label>Плечо (уменьшает залог)<select class="input" data-stock-order-leverage-v148><option value="1">×1</option><option value="2">×2</option><option value="3">×3</option></select></label><button class="primary stock-submit-v149" type="button" data-stock-submit-v148="${esc(id)}">РАЗМЕСТИТЬ</button></div><p class="small-note">Защита относится к открываемой позиции: после исполнения стоп-лосс и тейк-профит закроют её автоматически; срабатывание одного отменяет второй. Частичное закрытие уменьшает защиту. ${stockFeesV213(exchange?.fees)} Сборы за плечо и хранение начисляются по реальному времени, включая время без входа. Баланс может стать отрицательным; открытие новых позиций требует достаточных средств.</p></div>`;
 }
-function dm(id){return master()?`<div class="stock-dm-v149"><div class="stock-order-tabs-v148"><b>Управление ДМа</b><span>Импульс приводит цену к указанному изменению за весь срок. Новый импульс заменяет предыдущий.</span></div><div class="stock-dm-grid-v149"><label>Точная цена<input class="input" type="number" min=".01" step=".01" placeholder="Без изменения" data-stock-dm-price-v149></label><label>Изменение за срок, %<input class="input" type="number" min="-50" max="50" step=".1" value="5" data-stock-dm-percent-v149></label><label>Длительность, секунд<input class="input" type="number" min="10" max="3600" step="10" value="60" data-stock-dm-duration-v149></label><button class="secondary" data-stock-impulse-v149="${esc(id)}">ПРИМЕНИТЬ</button></div><div class="stock-dm-presets-v149">${[-10,-5,5,10].map(v=>`<button class="secondary" data-stock-preset-v149="${v}">${v>0?'+':''}${v}%</button>`).join('')}</div></div>`:'';}
+function dm(id){return master()?`<div class="stock-dm-v149"><div class="stock-order-tabs-v148"><b>Управление ДМа</b><span>Импульс приводит цену к указанному изменению за весь срок. Новый импульс заменяет предыдущий.</span></div><label><input type="checkbox" data-stock-loss-mode disabled> Режим потерь для всей кампании</label><div class="stock-dm-grid-v149"><label>Точная цена<input class="input" type="number" min=".01" step=".01" placeholder="Без изменения" data-stock-dm-price-v149></label><label>Изменение за срок, %<input class="input" type="number" min="-50" max="50" step=".1" value="5" data-stock-dm-percent-v149></label><label>Длительность, секунд<input class="input" type="number" min="10" max="3600" step="10" value="60" data-stock-dm-duration-v149></label><button class="secondary" data-stock-impulse-v149="${esc(id)}">ПРИМЕНИТЬ</button></div><div class="stock-dm-presets-v149">${[-10,-5,5,10].map(v=>`<button class="secondary" data-stock-preset-v149="${v}">${v>0?'+':''}${v}%</button>`).join('')}</div></div>`:'';}
 function decorate({forceOrders=false}={}){
   if(!document.querySelector('#market-items [data-market-tab-v1074="stocks"].active'))return;
   const id=selected();document.querySelectorAll('#market-items [data-market-v1074][data-item-id]').forEach(tile=>{const q=quote(tile.dataset.itemId),price=tile.querySelector('strong'),change=tile.querySelector('small');if(!q)return;const period=tile.dataset.itemId===id&&periodRows(id).length?periodChange(id):{change:Number(q.change||0),percent:Number(q.changePercent||0)},up=period.change>=0;tile.classList.remove('up','down','flat');tile.classList.add(period.change>0?'up':period.change<0?'down':'flat');if(price)price.textContent=money(q.price);if(change)change.textContent=`${up?'▲':'▼'} ${Math.abs(period.percent).toFixed(2)}% · ${up?'+':''}${money(period.change)}${tile.dataset.itemId===id?` за ${periodLabels[timeframe]}`:''}`;});
@@ -45,10 +45,28 @@ function decorate({forceOrders=false}={}){
   const currentOrders=box.querySelector('.stock-orders-v148');if(currentOrders&&(forceOrders||!editing))currentOrders.outerHTML=orders(id);else if(!currentOrders)box.insertAdjacentHTML('beforeend',orders(id)+dm(id));
   window.GRPGStockTicketV214.hydrate(box.querySelector('.stock-orders-v148'),{accountKey:String(Sync?.config?.campaignId||'')+':'+App.currentUser?.id,itemId:id,player:App.currentUser||{},quotePrice:quote(id)?.price,tradeRate:exchange?.fees?.tradeRate});
   if(!box.querySelector('.stock-dm-v149')&&master())box.insertAdjacentHTML('beforeend',dm(id));
+  const lossMode=box.querySelector('[data-stock-loss-mode]');
+  if(lossMode){
+   lossMode.checked=exchange?.lossMode===true;
+   lossMode.disabled=lossModePending||typeof exchange?.lossMode!=='boolean';
+  }
   const q=quote(id),price=box.querySelector('.stock-selection-quote-v1074'),period=periodChange(id);if(q&&price){price.classList.remove('up','down','flat');price.classList.add(period.change>0?'up':period.change<0?'down':'flat');price.innerHTML=`<span>Серверная цена · ${esc(q.regime||'ожидание')}</span><b>${money(q.price)}</b><small>Изменение от начала выбранного периода</small>${changeMarkup(id)}`;}
 }
 async function refresh({forceOrders=false}={}){if(busy||!App?.currentUser?.id)return;busy=true;try{const r=await window.electronAPI.getStockExchange({playerId:App.currentUser.id,itemId:selected()});if(r?.ok){exchange=r;if(r.player)Object.assign(App.currentUser,r.player);decorate({forceOrders});}}finally{busy=false;}}
 const renderMarketBeforeStockV150=UI.renderMarket?.bind(UI);if(renderMarketBeforeStockV150)UI.renderMarket=function(...args){const stockOpen=Boolean(document.querySelector('#market-items [data-market-tab-v1074="stocks"].active')),editing=Boolean(document.activeElement?.closest?.('#market-items input,#market-items select,#market-items textarea'));if(stockOpen&&editing){decorate();return;}const scrolls=Array.from(document.querySelectorAll('.fs-module.open,#market-items')).map(el=>[el,el.scrollTop,el.scrollLeft]);const result=renderMarketBeforeStockV150(...args);if(exchange)decorate({forceOrders:!editing});else refresh();for(const [el,top,left]of scrolls){el.scrollTop=top;el.scrollLeft=left;}return result;};
+document.addEventListener('change',async event=>{
+ const control=event.target.closest?.('[data-stock-loss-mode]');
+ if(!control||control.disabled||!master()||lossModePending)return;
+ const playerId=App.currentUser.id;
+ lossModePending=true;
+ control.disabled=true;
+ try{
+  const result=await window.electronAPI.setStockLossMode({playerId,lossMode:control.checked});
+  if(!result?.ok)throw Error(result?.message||'Не удалось сохранить режим биржи');
+  if(App.currentUser?.id===playerId&&exchange)exchange.lossMode=result.lossMode;
+ }catch(error){Toast.show(error.message,'err');}
+ finally{lossModePending=false;decorate();refresh();}
+});
 document.addEventListener('change',event=>{const intent=event.target.closest?.('[data-stock-order-intent-v148]');if(!intent)return;const panel=intent.closest('.stock-orders-v148'),closing=intent.value.startsWith('close_');panel.querySelectorAll('[data-stock-stop-loss-v213],[data-stock-take-profit-v213]').forEach(input=>{input.disabled=closing;if(closing)input.value='';});});
 document.addEventListener('change',e=>{const t=e.target.closest?.('[data-stock-order-type-v148]');if(t)t.closest('.stock-orders-v148').dataset.orderType=t.value;});
 document.addEventListener('click',e=>{

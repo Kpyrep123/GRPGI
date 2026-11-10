@@ -3878,6 +3878,14 @@ ipcMain.handle('stock-exchange:portfolio', async (_event, payload = {}) => {
   } catch(error) { return {ok:false,message:error.message}; }
 });
 
+ipcMain.handle('stock-exchange:mode', async (_event, payload = {}) => {
+  try {
+    const config = await loadSyncConfig();
+    if (!config.enabled || !isPocketBaseSyncConfig(config)) return {ok:false,message:'Для смены режима требуется сервис биржи'};
+    return await pocketbaseFetch(config, '/api/grpgi/stock-exchange-v148/mode', {method:'POST',json:{...payload,campaignId:config.campaignId}});
+  } catch (error) { return {ok:false,message:error.message}; }
+});
+
 ipcMain.handle('stock-exchange:impulse', async (_event, payload = {}) => {
   try {
     const config = await loadSyncConfig();
