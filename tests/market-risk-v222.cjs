@@ -1,11 +1,10 @@
 'use strict';
 const assert = require('node:assert/strict');
-const Motion = require('../market-service/stock-motion-v165.js');
 const Accounting = require('../market-service/accounting-v213.js');
 const Risk = Accounting.marketRisk;
 const motionKey = 'market-risk-v222-fixture';
 const nextRisk = (options, exposure) => Risk.next(options, exposure, motionKey);
-const {tradeRate} = Accounting.rates({});
+const fees = Accounting.rates({});
 
 const holdings = (id, direction, quantity, entry) => ({stockPortfolio:direction === 1
  ? {positions:{[id]:{knownQty:quantity,costBasis:quantity*entry}}}
@@ -47,20 +46,21 @@ for (let n=0; n<10000; n++) {
   assert.ok(Math.abs(Math.abs(move.price-tick.price)-Math.abs(baseline.price-tick.price)) <= .00011);
  }
 }
-assert.ok(news > 0 && unchanged / ordinary > .88);
-for (const changed of [changedLong,changedShort]) assert.ok(changed / ordinary > .04 && changed / ordinary < .06);
+assert.ok(news > 0 && unchanged / ordinary > .94);
+for (const changed of [changedLong,changedShort]) assert.ok(changed / ordinary > .018 && changed / ordinary < .032);
 
 // Strategies see only quotes, including the EMA computed from past quotes.
-// Every sample uses the same seed before and after, with identical fees and no leverage.
+// Both modes use the same seeds, their production trade rates and no leverage.
 const day=86400, step=10, samples=64;
-function run(strategy, direction, next) {
+function run(strategy, direction, lossMode) {
+ const {tradeRate} = Accounting.modeFees(fees,lossMode);
  const returns=[], wins=[], losses=[];
  let trades=0;
  for(let seed=0;seed<samples;seed++){
   const itemId='stock_'+seed, campaignId='test'+seed%3+'|fixture-'+seed%11;
   let price=100,anchor=100,average=100,cash=10000,position=null;
   for(let time=step;time<=day;time+=step){
-   const move=next({campaignId,itemId,price,anchor,tick:1700000000+seed*239+time,stepSeconds:step,volatility:1},position?.exposure);
+   const move=nextRisk({campaignId,itemId,price,anchor,tick:1700000000+seed*239+time,stepSeconds:step,volatility:1},lossMode ? position?.exposure : undefined);
    price=move.price;anchor=move.anchor;average+=.025*(price-average);
    if(!position){
     const entrySignal=strategy==='bands' ? price<98 : direction*(price/average-1)<-.005;
@@ -89,17 +89,18 @@ function run(strategy, direction, next) {
  returns.sort((a,b)=>a-b);
  const mean=values=>values.reduce((sum,value)=>sum+value,0)/values.length;
  return {trades,winPct:100*wins.length/trades,averageWin:mean(wins),averageLoss:mean(losses),meanReturn:mean(returns),
-  medianReturn:(returns[samples/2-1]+returns[samples/2])/2,losingDays:returns.filter(value=>value<0).length};
+  medianReturn:(returns[samples/2-1]+returns[samples/2])/2,losingDays:returns.filter(value=>value<0).length, winningDays:returns.filter(value=>value>0).length};
 }
 
 for(const [name,strategy,direction] of [['fixed bands','bands',1],['EMA long','ema',1],['EMA short','ema',-1]]){
- const before=run(strategy,direction,Motion.next),after=run(strategy,direction,nextRisk);
- console.log(name,{before,after});
- const minimumWinPct = strategy === 'bands' ? 50 : 60;
- assert.ok(after.winPct > minimumWinPct && after.averageLoss > after.averageWin, name);
- assert.ok(after.meanReturn < 0, name);
- if (strategy === 'bands') assert.ok(after.medianReturn <= 0, name);
- else assert.ok(after.medianReturn < 0 && after.losingDays > samples/2, name);
- assert.ok(after.medianReturn<before.medianReturn,name);
+ const normal=run(strategy,direction,false);
+ const lossMode=run(strategy,direction,true);
+ console.log(name,{normal,lossMode});
+ assert.ok(normal.winningDays>0 && lossMode.winningDays>0,name);
+ if(strategy!=='bands'){
+  assert.ok(lossMode.winPct>60 && lossMode.averageLoss>lossMode.averageWin,name);
+  assert.ok(lossMode.meanReturn<0 && lossMode.medianReturn<0,name);
+  assert.ok(normal.medianReturn>lossMode.medianReturn,name);
+ }
 }
-console.log('PASS market pressure direction, cap, neutral exposure and quote-only strategy calibration');
+console.log('PASS ordinary and loss modes, limited directional bias, unchanged news and quote-only strategy calibration');

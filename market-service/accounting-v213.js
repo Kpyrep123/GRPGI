@@ -4,6 +4,9 @@ const StockMotion = require('./stock-motion-v165.js');
 const round=n=>Math.round(n*1e4)/1e4;
 function rate(value,fallback){const n=Number(value??fallback);if(!Number.isFinite(n)||n<0||n>1)throw Error('Invalid market fee rate');return n;}
 function rates(env=process.env){return {tradeRate:rate(env.MARKET_TRADE_FEE_RATE,.001),borrowDailyRate:rate(env.MARKET_BORROW_DAILY_RATE,.0003),custodyDailyRate:rate(env.MARKET_CUSTODY_DAILY_RATE,.0001)};}
+function modeFees(base, lossMode) {
+ return lossMode ? base : {...base,tradeRate:base.tradeRate / 2};
+}
 function accrue(profile,prices,tick,fees){
  const book=profile.stockPortfolio;if(!book)return false;let changed=false,borrow=0,custody=0;
  for(const [side,positions] of [['long',book.positions],['short',book.shortPositions]])for(const [id,p] of Object.entries(positions||{})){
@@ -55,10 +58,10 @@ function editPosition(profile,body,_price,tick){
  target[id]={itemId:id,[side==='long'?'knownQty':'quantity']:oldQty+qty,unpricedQty:Number(existing?.unpricedQty)||0,costBasis:basis,margin,leverage:basis/margin,lastFeeAt:tick};
 }
 
-const NEWS_INTERVAL_SECONDS = 3600;
+const NEWS_INTERVAL_SECONDS = 7200;
 const PROFIT_THRESHOLD = .003;
 const FULL_PRESSURE_AT = .02;
-const MAX_DIRECTION_BIAS = .05;
+const MAX_DIRECTION_BIAS = .025;
 
 function openExposure(profiles) {
  const result = new Map();
@@ -101,4 +104,4 @@ function nextQuote(options, exposure, motionKey) {
  return StockMotion.next({...options, tickSeed, upChance, newsIntervalSeconds:NEWS_INTERVAL_SECONDS, randomWalk:true});
 }
 
-module.exports={rates,accrue,protection,editPosition,round,marketRisk:{openExposure,pressure,next:nextQuote}};
+module.exports={rates,modeFees,accrue,protection,editPosition,round,marketRisk:{openExposure,pressure,next:nextQuote}};

@@ -46,6 +46,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   submitStockOrder: payload => ipcRenderer.invoke('stock-exchange:order', payload),
   cancelStockOrder: payload => ipcRenderer.invoke('stock-exchange:cancel', payload),
   editStockPortfolio: payload => ipcRenderer.invoke('stock-exchange:portfolio', payload),
+  setStockLossMode: payload => ipcRenderer.invoke('stock-exchange:mode', payload),
   applyStockImpulse: payload => ipcRenderer.invoke('stock-exchange:impulse', payload),
   pushSync: payload => ipcRenderer.invoke('sync:push', payload),
   onSyncSnapshotEvent: callback => {
