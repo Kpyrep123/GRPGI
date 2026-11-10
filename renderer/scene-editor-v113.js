@@ -1784,7 +1784,7 @@
     if(options.render===true)this.render?.();
   };
 
-  function renderBoard104(scene,runtime){
+  function renderBoard104(scene,runtime,tactical226=false){
     const current=Combat.getCurrentTurnToken?.();
     const camera=Combat.getViewTransform?.(scene.id, document.getElementById('combat-stage-viewport')) || 'translate(0px,0px) scale(1)';
     return `<div class="scene-board-shell-v104">
@@ -1796,11 +1796,11 @@
         ${visionOverlayMarkup112(scene,runtime)}
         <div class="scene-preview-layer-v104">${previewMarkup(scene)}</div>
       </div></div></div>
-      ${inBattle191(scene)&&local.ui.initiativeOpen?renderInitiativePanel112(runtime):''}
-      <div class="scene-command-deck-v118">
+      ${!tactical226&&inBattle191(scene)&&local.ui.initiativeOpen?renderInitiativePanel112(runtime):''}
+      ${tactical226?'':`<div class="scene-command-deck-v118">
         <div class="scene-measurebar-v118"><span class="scene-bar-label-v118">ИНСТРУМЕНТЫ</span>${actionButton('select','ВЫБОР')}${actionButton('pan','РУКА')}${actionButton('measure','ЛИНЕЙКА')}${actionButton('circle','КРУГ')}${actionButton('cone','КОНУС')}${actionButton('wall','СТЕНА')}${actionButton('area','ОБЛАСТЬ')}<button class="ghost" type="button" data-scene-action-v104="clear">ОЧИСТИТЬ</button></div>
         <div class="scene-actionbar-v104 scene-character-actions-v118"><span class="scene-bar-label-v118">ДЕЙСТВИЯ</span>${actionButton('move','ДВИЖЕНИЕ')}${renderPostureAction128()}${renderDash198()}${actionButton('attack','АТАКА')}${actionButton('grenade','ГРАНАТА')}${renderDisengageAction122()}${renderReloadAction120()}${renderMalfunctionAction122()}${renderBurstFinish122()}${renderSearchAction118()}${renderActiveSkills118()}${renderActiveEquipment129()}${renderDeviceActions129()}${renderActionEquipment105(scene,runtime)}<button class="ghost ${local.ui.initiativeOpen?'active':''}" id="scene-initiative-toggle-v112" type="button">ПОРЯДОК</button><span class="scene-action-spacer-v104"></span><span class="scene-round-v104">${inBattle191(scene)?'Раунд '+Math.max(1,num(runtime.round,1)):'Без инициативы'}</span><button class="primary" id="scene-next-turn-v104" type="button" ${!inBattle191(scene)||operationReason191()?'disabled':''}>СЛЕДУЮЩИЙ ХОД</button></div>
-      </div>
+      </div>`}
     </div>`;
   }
   function renderInitiativePanel112(runtime){
@@ -1812,6 +1812,7 @@
   function reloadAvailability120(token=selectedToken104()){
     const weapon=weaponForToken105(token);
     if(!token)return{enabled:false,reason:'Сначала выберите действующего юнита'};
+    if(!canCombatAct129(token))return{enabled:false,reason:'Участник сейчас не может действовать',token,weapon};
     if(isControlledDevice200(token)&&!canCombatAct129(token))return{enabled:false,reason:'Нет сложной команды с доступной операцией',token,weapon};
     if(!weapon)return{enabled:false,reason:'У юнита нет выбранного оружия'};
     if(token.burstStateV122)return{enabled:false,reason:'Сначала завершите скорострельную очередь',token,weapon};
@@ -2172,12 +2173,73 @@
       ${local.ui.soundsOpen?renderSounds104(scene):''}</header>`;
   }
 
+  // Tactical presentation uses the same actions and runtime as the scene editor.
+  function portrait226(row,extra=''){
+    return `<span class="battle-portrait-v226 ${extra}" aria-hidden="true">${row.image?`<img src="${html(row.image)}" alt="" loading="lazy"/>`:`<span>${html(String(row.name||'?').slice(0,2).toUpperCase())}</span>`}</span>`;
+  }
+  function health226(token,compact=false){
+    const max=Math.max(1,num(token.hpMax,1)),hp=Math.max(0,num(token.hpCurrent)),percent=clamp104(hp/max*100,0,100);
+    return `<div class="battle-health-v226 ${hp/max<=.3?'is-critical':''}" role="meter" aria-label="Здоровье ${html(token.name)}" aria-valuemin="0" aria-valuemax="${max}" aria-valuenow="${hp}"><i style="width:${percent}%"></i>${compact?'':`<span>ЗДОРОВЬЕ <b>${hp} / ${max}</b></span>`}</div>`;
+  }
+  function battleWeaponRows226(token){
+    if(!token)return[];
+    const selected=weaponForToken105(token),rows=isControlledDevice200(token)?(selected?[selected]:[]):ownedItems105(token,'weapon');
+    if(!rows.length&&selected)rows.push(selected);
+    return rows.map(weapon=>{
+      const magazine=magazineState118(token,weapon),reserve=magazine.size?reserveAmmo118(token,weapon,magazine):null;
+      // Inventory stores rounds, not detachable magazine objects. Full loads are an estimate.
+      const rounds=reserve?reserve.compatible.reduce((sum,row)=>sum+num(row.ownedQty),0):0;
+      return{weapon,magazine,rounds,loads:magazine.size?Math.floor(rounds/magazine.size):0,selected:weapon.id===selected?.id,broken:itemBrokenV138(token,weapon),jammed:weaponMalfunction122(token,weapon)};
+    });
+  }
+  function renderBattleWeapons226(token){
+    return `<section class="battle-weapons-v226" aria-label="Оружие и боезапас"><h3>ВООРУЖЕНИЕ</h3><div class="battle-weapon-list-v226">${battleWeaponRows226(token).map(({weapon,magazine,rounds,loads,selected,broken,jammed})=>`<button type="button" class="battle-weapon-v226 ${selected?'is-selected':''}" data-battle-weapon226="${html(weapon.id)}" aria-pressed="${selected}" ${token.burstStateV122||isControlledDevice200(token)?'disabled':''} title="${html(weapon.name)} · ${html(weapon.damage||'—')} урона · ${hexLabel109(num(weapon.range ?? token.attackRange ?? DEFAULT_ATTACK_WORLD))}">${portrait226(weapon)}<span><b>${html(weapon.name||'Безоружная атака')}</b><small>Урон ${html(weapon.damage||'—')} · ${hexLabel109(num(weapon.range ?? token.attackRange ?? DEFAULT_ATTACK_WORLD))}</small>${magazine.size?`<strong class="${magazine.loaded?'':'is-empty'}">${magazine.loaded}<em> / ${magazine.size}</em></strong><small>Запас: ${rounds} патр. ≈ ${loads} полн. магаз.</small><small>${html(ammoForWeapon118(weapon,magazine)?.name||'Патроны не выбраны')}</small>`:'<small>Без магазина</small>'}${broken?'<small class="battle-danger-v226">СЛОМАНО</small>':jammed?'<small class="battle-danger-v226">ОТКАЗ</small>':''}</span></button>`).join('')||'<p>Оружие отсутствует</p>'}</div></section>`;
+  }
+  function renderBattleAbilities226(token){
+    const skills=activeSkillsForToken118(token),equipment=activeEquipmentForToken129(token),sources=scriptSourcesForToken119(token);
+    const cards=(rows,kind)=>rows.map(raw=>{
+      const source=kind==='skill'?sources.find(row=>row.kind==='skill'&&row.id===raw.id):raw,item=kind==='skill'?raw:raw.raw;
+      const reason=abilityReason192(token)||(actionSpent191(token)&&!scripted204(source)&&!/GetCostMode/.test(source?.script||'')?'Действие потрачено':'');
+      const custom=scripted204(source)||/GetCostMode/.test(source?.script||'');
+      return `<button class="battle-ability-v226" type="button" ${kind==='skill'?`data-scene-skill-v118="${html(raw.id)}"`:`data-scene-equipment-use-v129="${html(raw.id)}"`} ${reason?'disabled':''} title="${html(reason||abilityText192(item?.description||item?.name||raw.name))}">${portrait226(item||raw)}<span><b>${html(item?.activeUseLabel||raw.name||raw.id)}</b><small>${html(reason|| (custom?'Стоимость по навыку':'1 действие'))}</small></span></button>`;
+    }).join('');
+    return `<section class="battle-abilities-v226" aria-label="Навыки и снаряжение"><div class="battle-section-heading-v226"><h3>НАВЫКИ И СНАРЯЖЕНИЕ</h3><span>${renderActiveSkills118()}${renderActiveEquipment129()}</span></div><div class="battle-ability-list-v226">${cards(skills,'skill')}${cards(equipment,'equipment')||''}${!skills.length&&!equipment.length?'<p>Активные способности отсутствуют</p>':''}</div></section>`;
+  }
+  function renderBattleStatus226(token){
+    const labels={dying:'Умирает',stabilized:'Стабилизирован',prone:'Лежит',stunned:'Оглушён',grappled:'Захвачен',unconscious:'Без сознания',handsBusy:'Руки заняты'};
+    const states=Object.entries(conditionStateV138(token)).filter(([,value])=>value).map(([key])=>`<span class="battle-effect-v226 is-condition">${html(labels[key]||key)}</span>`);
+    if(withdrawn194(token))states.push('<span class="battle-effect-v226 is-condition">Выведен из боя</span>');
+    if(injurySeverity129(token))states.push(`<span class="battle-effect-v226 is-condition" title="${html(INJURY_LABELS_V129[injurySeverity129(token)])}">Травма ${injurySeverity129(token)} · проверки −${injuryCheckPenalty129(token)}</span>`);
+    for(const morale of moraleEffects199(token))states.push(`<span class="battle-effect-v226 is-condition">${morale.kind==='panic'?'Паника':'Потрясение'}</span>`);
+    for(const modifier of list(token.timedModifiersV122)){
+      const details=list(modifier.effects).map(effect=>{const key=effect.property||effect.target,label=window.GRPGStatsV113?.TARGETS?.find(row=>row[0]===key)?.[1]||'Эффект',value=effect.value;return `${label}: ${num(value)>0?'+':''}${value??''}`;}).join(', ');
+      states.push(`<span class="battle-effect-v226" title="${html(details)}">${html(modifier.name||modifier.id)}${details?` · ${html(details)}`:''} <b>${num(modifier.remainingTurns)} ход.</b></span>`);
+    }
+    return `<div class="battle-effects-v226" aria-label="Состояния и модификаторы">${states.join('')||'<span class="battle-neutral-v226">Нет активных состояний и временных модификаторов</span>'}</div>`;
+  }
+  function battleAction226(action,label,enabled,reason=''){
+    return `<button type="button" class="battle-command-v226 ${local.ui.action===action?'active':''}" data-scene-action-v104="${action}" ${enabled?'':'disabled'} aria-pressed="${local.ui.action===action}" title="${html(reason||label)}">${label}</button>`;
+  }
+  function renderBattleHud226(scene,runtime){
+    const token=selectedToken104();
+    if(!token)return `<footer class="battle-hud-v226 is-empty"><b>Выберите участника на карте или в очереди ходов</b><button type="button" data-battle-current226>ТЕКУЩИЙ ЮНИТ</button></footer>`;
+    const current=Combat.getCurrentTurnToken?.(),movement=movementState198(token,scene),can=canCombatAct129(token)&&!operationReason191(),weapon=weaponForToken105(token),magazine=magazineState118(token,weapon),freeAction=can&&!actionSpent191(token),attackReady=can&&(!actionSpent191(token)||Boolean(token.burstStateV122))&&weapon&&!itemBrokenV138(token,weapon)&&!weaponMalfunction122(token,weapon)&&(magazine.size===0||magazine.loaded>=ammoPerShot118(weapon));
+    const defense=incomingDefense119(token,'light'),ownTurn=current?.id===token.id;
+    return `<footer class="battle-hud-v226" aria-label="Панель выбранного участника"><section class="battle-unit-v226"><div class="battle-unit-heading-v226">${portrait226(token)}<div><small>${ownTurn?'ТЕКУЩИЙ ХОД':isControlledDevice200(token)?'УСТРОЙСТВО':'ВЫБРАННЫЙ УЧАСТНИК'}</small><h2>${html(token.name)}</h2></div></div>${health226(token)}<div class="battle-stats-v226"><span title="Бонус к защите от попадания">КБ <b>${defense.defenseBonus}</b></span><span title="Поглощение урона лёгкого оружия">Защита <b>${defense.damageReduction}</b></span><span>Обзор <b>${tokenVisionCells(token,scene)}</b></span></div><div class="battle-resources-v226"><span class="${freeAction?'is-ready':''}">Действие <b>${actionSpent191(token)?'0':'1'}</b></span><span class="${reactionAvailable195(token)?'is-ready':''}">Реакция <b>${reactionAvailable195(token)?'1':'0'}</b></span><span class="${movement.remaining>0?'is-ready':''}">Движение <b>${movement.remaining} / ${movement.budget}</b></span>${!isControlledDevice200(token)?`<span>DroneActions <b>${droneActions225(token)} / ${num(token.droneActions)}</b></span>`:''}</div></section><div class="battle-kit-v226">${renderBattleWeapons226(token)}${renderBattleAbilities226(token)}</div><div class="battle-hud-bottom-v226">${renderBattleStatus226(token)}<div class="battle-commands-v226" aria-label="Боевые действия">${battleAction226('move','ДВИЖЕНИЕ',canMechanicalMove108(token)&&movement.remaining>0&&!operationReason191(),'Выберите гекс назначения')}${battleAction226('attack',token.burstStateV122?'ПРОДОЛЖИТЬ ОЧЕРЕДЬ':'АТАКА',attackReady,'Выберите цель на карте. Для атаки нужны действие или продолжение очереди и заряженное исправное оружие.')}${battleAction226('grenade','ГРАНАТА',freeAction&&!isControlledDevice200(token)&&ownedItems105(token,'grenade').length>0)}${renderReloadAction120()}${renderPostureAction128()}${renderDash198()}${renderDisengageAction122()}${renderMalfunctionAction122()}${renderBurstFinish122()}${renderSearchAction118()}${renderDeviceActions129()}${local.ui.action==='grenade'?renderActionEquipment105(scene,runtime):''}<button class="battle-end-turn-v226" id="scene-next-turn-v104" type="button" ${!current||operationReason191()?'disabled':''}>ЗАВЕРШИТЬ ХОД <small>${html(current?.name||'Нет участника')}</small></button></div></div></footer>`;
+  }
+  function renderTactical226(scene,runtime){
+    const current=Combat.getCurrentTurnToken?.(),selected=selectedToken104(),tokens=new Map(list(runtime.tokens).map(token=>[token.id,token]));
+    return `<div class="scene-tactical-v226"><header class="battle-top-v226"><div class="battle-title-v226"><small>БОЕВОЙ РЕЖИМ · РАУНД ${Math.max(1,num(runtime.round,1))}</small><b>${html(scene.name)}</b></div><div class="battle-top-actions-v226"><button type="button" data-battle-current226>ТЕКУЩИЙ ЮНИТ</button><button type="button" data-publish191>ПОКАЗАТЬ ИГРОКАМ</button><button type="button" data-battle-mode191>ПАУЗА БОЯ</button><button type="button" data-battle-tools226 aria-expanded="${Boolean(local.ui.battleTools226)}" aria-controls="battle-tools226">ИНСТРУМЕНТЫ ДМа</button></div><nav class="battle-order-v226" aria-label="Очередь ходов">${list(runtime.initiativeOrder).map((id,index)=>{const row=tokens.get(id);return row?`<button type="button" class="battle-order-unit-v226 ${id===current?.id?'is-current':''} ${id===selected?.id?'is-selected':''}" data-battle-unit226="${html(id)}" aria-pressed="${id===selected?.id}" ${id===current?.id?'aria-current="step"':''} title="${html(row.name)} · инициатива ${num(row.initiative)} · HP ${num(row.hpCurrent)} / ${num(row.hpMax)}"><i>${index+1}</i>${portrait226(row)}<span><b>${html(row.name)}</b><small>${id===current?.id?'ХОДИТ СЕЙЧАС':'Инициатива '+num(row.initiative)}</small>${health226(row,true)}</span></button>`:'';}).join('')||'<span>Нет участников в очереди</span>'}</nav></header><main class="battle-map-v226">${renderBoard104(scene,runtime,true)}<div class="battle-map-tools-v226">${actionButton('select','ВЫБОР')}${actionButton('pan','РУКА')}${actionButton('measure','ЛИНЕЙКА')}<button type="button" data-battle-center226>ЦЕНТР КАРТЫ</button><span>${html({move:'Выберите гекс назначения',attack:'Выберите цель атаки',grenade:'Укажите точку броска гранаты'}[local.ui.action]||'Выберите участника')}</span></div><div class="battle-feedback-v226">${renderInstinct199()}${renderOperation194()}<span role="status" data-operation191>${html(operationReason191()||'')}</span></div></main>${renderBattleHud226(scene,runtime)}${local.ui.battleTools226?`<aside class="battle-tools-v226" id="battle-tools226" aria-label="Инструменты ДМа"><header><b>ИНСТРУМЕНТЫ ДМа</b><button type="button" data-battle-tools226 aria-label="Закрыть инструменты ДМа">ЗАКРЫТЬ</button></header><details open><summary>Сцена и участники</summary>${renderLifecycle193(scene,runtime)}</details><details><summary>Карты и объекты</summary>${renderLeft104()}</details><details open><summary>Инспектор</summary>${renderInspector104(scene,runtime)}</details><details><summary>Экран, звук и архив</summary>${renderTop104(scene,runtime)}</details><details><summary>Шаблоны и измерения</summary>${actionButton('circle','КРУГ')}${actionButton('cone','КОНУС')}${actionButton('wall','СТЕНА')}${actionButton('area','ОБЛАСТЬ')}${actionButton('clear','ОЧИСТИТЬ')}</details></aside>`:''}</div>`;
+  }
+
   const panelScrollV137=new Map();
-  const scrollSelectorsV137=['.scene-unit-scroll-v105','.scene-palette-grid-v104','.scene-tree-v104','.scene-sound-drawer-v104','.scene-inspector-v104'];
+  const scrollSelectorsV137=['.scene-unit-scroll-v105','.scene-palette-grid-v104','.scene-tree-v104','.scene-sound-drawer-v104','.scene-inspector-v104','.battle-order-v226','.battle-weapon-list-v226','.battle-ability-list-v226','.battle-hud-v226','.battle-tools-v226'];
   let renderedSceneV137='';
   Combat.render = function() {
     ensureCombatModuleMarkup();
     const root=document.getElementById('combat-content'); if(!root)return;
+    const drawerDetails226=[...root.querySelectorAll('.battle-tools-v226>details')].map(node=>node.open);
+    if(drawerDetails226.length)local.ui.hudDetails226=drawerDetails226;
     if(!this.isDm()) { root.innerHTML='<div class="card pad18">Сцены доступны только ДМу.</div>'; return; }
     if(!local.loaded){ root.innerHTML='<div class="card pad18">Загрузка локальных сцен…</div>'; loadLocalStore().then(()=>this.render()); return; }
     if(!this.selectedSceneId || !COMBAT_SCENES[this.selectedSceneId]) this.selectedSceneId=COMBAT_SCENE_LIST[0]?.id||null;
@@ -2188,9 +2250,14 @@
     const runtime=this.getRuntime(scene.id);
     if(!activeMap193())Session193.project(local.store.session193,scene.id,runtime);
     syncUnitSizes184(scene,runtime);
-    root.innerHTML=`<div class="scene-editor-v104">${renderTop104(scene,runtime)}${renderLeft104()}<main class="scene-center-v104"><div class="scene-session-stack-v193">${renderSession191(scene,runtime)}${renderInstinct199()}${renderLifecycle193(scene,runtime)}${renderOperation194()}</div>${renderBoard104(scene,runtime)}</main>${renderInspector104(scene,runtime)}</div>`;
+    if(inBattle191(scene)&&!this.selectedObject&&local.ui.hudScene226!==scene.id){const current=this.getCurrentTurnToken?.();if(current)this.selectedObject={kind:'token',id:current.id};}
+    local.ui.hudScene226=inBattle191(scene)?scene.id:'';
+    root.innerHTML=inBattle191(scene)?renderTactical226(scene,runtime):`<div class="scene-editor-v104">${renderTop104(scene,runtime)}${renderLeft104()}<main class="scene-center-v104"><div class="scene-session-stack-v193">${renderSession191(scene,runtime)}${renderInstinct199()}${renderLifecycle193(scene,runtime)}${renderOperation194()}</div>${renderBoard104(scene,runtime)}</main>${renderInspector104(scene,runtime)}</div>`;
+    root.querySelectorAll('.battle-tools-v226>details').forEach((node,index)=>{if(local.ui.hudDetails226?.[index]!=null)node.open=local.ui.hudDetails226[index];});
     renderedSceneV137=scene.id;
     for(const selector of scrollSelectorsV137){const node=root.querySelector(selector),pos=panelScrollV137.get(scene.id+selector);if(node&&pos){node.scrollTop=pos.top;node.scrollLeft=pos.left;}}
+    const turn226=scene.id+':'+(this.getCurrentTurnToken?.()?.id||'');
+    if(inBattle191(scene)&&local.ui.hudTurn226!==turn226){root.querySelector('.battle-order-unit-v226.is-current')?.scrollIntoView?.({block:'nearest',inline:'nearest'});local.ui.hudTurn226=turn226;}
     // Keep board sizing and camera transform in the same JS task as DOM replacement: no one-frame jump to a default frame.
     try{const viewport=document.getElementById('combat-stage-viewport');this.syncViewportBoardFrame?.(scene,viewport);this.applyViewTransform?.(viewport);}catch{}
     broadcastScene104();
@@ -3721,6 +3788,9 @@
     if(operation194){event.preventDefault();Toast.show(operationReason191(),'info');return;}
     if(recovery194&&!t.hasAttribute('data-operation-retry194')){event.preventDefault();Toast.show('Сначала сохраните подтверждённый результат','info');return;}
     if(t.hasAttribute('data-operation-retry194')){event.preventDefault();void retryOperation194();return;}
+    if(t.hasAttribute('data-battle-tools226')){event.preventDefault();local.ui.battleTools226=!local.ui.battleTools226;Combat.render();return;}
+    if(t.hasAttribute('data-battle-current226')||t.dataset.battleUnit226){event.preventDefault();const token=t.dataset.battleUnit226?tokenById119(t.dataset.battleUnit226):Combat.getCurrentTurnToken?.();if(token){Combat.selectedObject={kind:'token',id:token.id};local.preview=null;Combat.render();}return;}
+    if(t.dataset.battleWeapon226){event.preventDefault();const token=selectedToken104(),row=battleWeaponRows226(token).find(row=>row.weapon.id===t.dataset.battleWeapon226);if(token&&row&&!token.burstStateV122&&!isControlledDevice200(token)){token.weaponId=row.weapon.id;local.preview=null;queueStoreSave();Combat.render();broadcastScene104();}return;}
     if(t.dataset.lifecycle193){event.preventDefault();void runCommand191(()=>lifecycleCommand193(t.dataset.lifecycle193));return;}
     if(t.dataset.abilitiesOpen192){event.preventDefault();openAbilityWindow192(t.dataset.abilitiesOpen192);return;}
     if(t.hasAttribute('data-battle-mode191')){event.preventDefault();void runCommand191(()=>Combat.setBattleMode191());return;}
@@ -3750,10 +3820,10 @@
     if(t.hasAttribute('data-scene-treat-injury195')||t.hasAttribute('data-scene-clear-injuries-v129')){event.preventDefault();void runCommand191(()=>treatInjury195());return;}
     if(t.dataset.sceneSearchV118){event.preventDefault();searchNpc118(t.dataset.sceneSearchV118);return;}
     if(t.hasAttribute('data-scene-loot-close-v118')){event.preventDefault();closeLootOverlay118();return;}
-    if(t.dataset.sceneActionV104){const action=t.dataset.sceneActionV104;local.ui.pendingPlacement=null;if(action==='clear'){local.preview=null;refreshPreviewDom104();return;}if(['move','attack','grenade'].includes(action)){const current=Combat.getCurrentTurnToken?.();const selected=selectedToken104();if(current&&selected?.id!==current.id&&!isControlledDevice200(selected))Combat.selectedObject={kind:'token',id:current.id};}local.ui.action=action;Combat.render();return;}
+    if(t.dataset.sceneActionV104){const action=t.dataset.sceneActionV104;local.ui.pendingPlacement=null;if(action==='clear'){local.preview=null;refreshPreviewDom104();return;}if(['move','attack','grenade'].includes(action)){const current=Combat.getCurrentTurnToken?.();const selected=selectedToken104();if(current&&!selected)Combat.selectedObject={kind:'token',id:current.id};}local.ui.action=action;Combat.render();return;}
     if(t.id==='scene-initiative-toggle-v112'){local.ui.initiativeOpen=!local.ui.initiativeOpen;Combat.render();return;}
     if(t.id==='scene-next-turn-v104'){void Combat.nextTurn?.();return;}
-    if(t.id==='scene-center-v108'){Combat.resetViewState?.(Combat.getSceneIdForView?.(),{persist:true,render:false});return;}
+    if(t.id==='scene-center-v108'||t.hasAttribute('data-battle-center226')){Combat.resetViewState?.(Combat.getSceneIdForView?.(),{persist:true,render:false});return;}
     if(t.id==='scene-sounds-toggle-v104'){local.ui.soundsOpen=!local.ui.soundsOpen;Combat.render();return;}
     if(t.id==='scene-ambient-stop-v104'){audioApi()?.stopAmbient?.(Combat.getScene()?.id);Combat.render();return;}
     if(t.id==='scene-display-v104'){Combat.displayWindowOpen?Combat.closePlayerDisplay():Combat.openPlayerDisplay();return;}

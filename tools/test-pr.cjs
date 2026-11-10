@@ -13,6 +13,7 @@ const checks = [
   ['tests/v134-world-config-full-load.mjs'],
   ['tests/combat-devices-v200.cjs'],
   ['tests/combat-v225.dom.mjs'],
+  ['tests/combat-hud-v226.dom.mjs'],
   ['tests/v140-world-integrity.cjs'],
   ['tests/market-risk-v222.cjs'],
   ['tests/stock-orders-v213.dom.mjs'],
