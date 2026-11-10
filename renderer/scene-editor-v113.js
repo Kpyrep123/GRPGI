@@ -2238,6 +2238,8 @@
   Combat.render = function() {
     ensureCombatModuleMarkup();
     const root=document.getElementById('combat-content'); if(!root)return;
+    const drawerDetails226=[...root.querySelectorAll('.battle-tools-v226>details')].map(node=>node.open);
+    if(drawerDetails226.length)local.ui.hudDetails226=drawerDetails226;
     if(!this.isDm()) { root.innerHTML='<div class="card pad18">Сцены доступны только ДМу.</div>'; return; }
     if(!local.loaded){ root.innerHTML='<div class="card pad18">Загрузка локальных сцен…</div>'; loadLocalStore().then(()=>this.render()); return; }
     if(!this.selectedSceneId || !COMBAT_SCENES[this.selectedSceneId]) this.selectedSceneId=COMBAT_SCENE_LIST[0]?.id||null;
@@ -2251,6 +2253,7 @@
     if(inBattle191(scene)&&!this.selectedObject&&local.ui.hudScene226!==scene.id){const current=this.getCurrentTurnToken?.();if(current)this.selectedObject={kind:'token',id:current.id};}
     local.ui.hudScene226=inBattle191(scene)?scene.id:'';
     root.innerHTML=inBattle191(scene)?renderTactical226(scene,runtime):`<div class="scene-editor-v104">${renderTop104(scene,runtime)}${renderLeft104()}<main class="scene-center-v104"><div class="scene-session-stack-v193">${renderSession191(scene,runtime)}${renderInstinct199()}${renderLifecycle193(scene,runtime)}${renderOperation194()}</div>${renderBoard104(scene,runtime)}</main>${renderInspector104(scene,runtime)}</div>`;
+    root.querySelectorAll('.battle-tools-v226>details').forEach((node,index)=>{if(local.ui.hudDetails226?.[index]!=null)node.open=local.ui.hudDetails226[index];});
     renderedSceneV137=scene.id;
     for(const selector of scrollSelectorsV137){const node=root.querySelector(selector),pos=panelScrollV137.get(scene.id+selector);if(node&&pos){node.scrollTop=pos.top;node.scrollLeft=pos.left;}}
     const turn226=scene.id+':'+(this.getCurrentTurnToken?.()?.id||'');

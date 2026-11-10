@@ -88,6 +88,8 @@ try{
  assert(q('[data-scene-action-v104="attack"]').disabled,'empty magazine cannot attack');
  assert(!q('[data-scene-reload-v118]').disabled,'reload uses existing reserve checks');
  click('[data-battle-tools226]');assert(q('.battle-tools-v226 [data-object-form-v104="token"]'));
+ q('.battle-tools-v226>details:nth-of-type(4)').open=true;run('Combat.render()');
+ assert(q('.battle-tools-v226>details:nth-of-type(4)').open,'expanded tools survive scene refresh');
  click('.battle-tools-v226 [data-battle-tools226]');assert(!q('.battle-tools-v226'));
  run('Combat.selectedObject=null;Combat.render()');assert(q('.battle-hud-v226.is-empty'),'cleared selection stays cleared for scene inspection');
  click('[data-battle-current226]');assert.equal(run('Combat.selectedObject.id'),'a');
