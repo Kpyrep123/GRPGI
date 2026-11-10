@@ -13,7 +13,7 @@
     ['strength','Сила'],['dexterity','Ловкость'],['endurance','Выносливость'],['intelligence','Интеллект'],['will','Воля'],['glory','Слава'],
     ['max_hp','Максимальное HP'],['armor_class','Класс брони'],['defense','Защита (снижение урона)'],['initiative_bonus','Бонус инициативы'],
     ['movement','Дальность движения'],['vision','Дальность видимости'],['inventory_slots','Ячейки инвентаря'],['carry_capacity','Переносимый вес'],['implant_slots','Слоты имплантов'],
-    ['social_bonus','Социальный бонус'],['attack_bonus','Бонус попадания'],['damage_bonus','Бонус урона'],['weapon_hit_stat','Характеристика попадания'],['weapon_hit_extra_stat','Доп. характеристика к попаданию']
+    ['drone_actions','Дополнительные действия дронам'],['social_bonus','Социальный бонус'],['attack_bonus','Бонус попадания'],['damage_bonus','Бонус урона'],['weapon_hit_stat','Характеристика попадания'],['weapon_hit_extra_stat','Доп. характеристика к попаданию']
   ];
   const OPS = [['add','Добавить'],['set','Установить'],['replace_stat','Заменить характеристику'],['add_stat','Добавить характеристику']];
   const SCOPES = [['global','Всегда'],['weapon_category','Категория оружия'],['weapon_id','Конкретная модель оружия']];
@@ -270,7 +270,7 @@
     derived.armorClass=applyStatFormula(base.armorClass,'dexterity','armor_class',mods,abilities,formulaContext,breakdown.armorClass,1,'База КБ');
     const entries = [
       ['defense','defense',base.defense],
-      ['movement','movement',base.movement],['vision','vision',base.vision],['inventorySlots','inventory_slots',base.inventorySlots],
+      ['droneActions','drone_actions',0],['movement','movement',base.movement],['vision','vision',base.vision],['inventorySlots','inventory_slots',base.inventorySlots],
       ['implantSlots','implant_slots',base.implantSlots]
     ];
     entries.forEach(([key,target,seed])=>{breakdown[key]=[];derived[key]=applyValue(seed,target,mods,formulaContext,breakdown[key]);});
@@ -289,6 +289,7 @@
     derived.vision=Math.max(0,n(derived.vision,0));
     derived.inventorySlots=Math.max(0,i(derived.inventorySlots,0));
     derived.carryCapacity=Math.max(0,n(derived.carryCapacity,0));
+    derived.droneActions=Math.max(0,i(derived.droneActions));
     derived.implantSlots=Math.max(0,i(derived.implantSlots,0));
     return { version:VERSION, abilities, values:derived, base, modifiers:mods, breakdown };
   }

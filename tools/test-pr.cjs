@@ -11,6 +11,8 @@ const checks = [
   ['tests/hub-storage-v222.dom.mjs'],
   ['tests/v120-combat-ammo-inventory.cjs'],
   ['tests/v134-world-config-full-load.mjs'],
+  ['tests/combat-devices-v200.cjs'],
+  ['tests/combat-v225.dom.mjs'],
   ['tests/v140-world-integrity.cjs'],
   ['tests/market-risk-v222.cjs'],
   ['tests/stock-orders-v213.dom.mjs'],

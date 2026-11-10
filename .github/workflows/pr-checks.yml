@@ -16,8 +16,9 @@ jobs:
         with:
           node-version: 22
       - name: Install DOM test runtime
-        run: npm install --prefix "$RUNNER_TEMP/grpgi-tests" --no-package-lock --ignore-scripts --no-audit --no-fund happy-dom@20.11.1
+        run: npm install --prefix "$RUNNER_TEMP/grpgi-tests" --no-package-lock --ignore-scripts --no-audit --no-fund happy-dom@20.11.1 wasmoon@1.16.0
       - name: Check shared files and run regressions
         run: |
           export HAPPY_DOM_MODULE="$RUNNER_TEMP/grpgi-tests/node_modules/happy-dom/lib/index.js"
+          export NODE_PATH="$RUNNER_TEMP/grpgi-tests/node_modules"
           npm run test:pr

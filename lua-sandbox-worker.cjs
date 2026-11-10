@@ -2,6 +2,7 @@ const { parentPort } = require('worker_threads');
 const { LuaFactory } = require('wasmoon');
 
 const SUPPORTED_HOOKS = Object.freeze([
+  'BeforeRoll','AfterRoll','OnKnockedDown','OnStandUp','OnForcedMove',
   'OnActionDeclared','OnActionFinished','BeforeAttackRoll','AfterAttackRoll','OnAttackResolved','OnMiss','OnDamageApplied','OnHealApplied','OnMoveStart','OnMoveStep','OnMoveEnd','OnPositionChanged','OnUnitEnter','OnUnitLeave','OnConditionChanged','OnModifierChanged','OnRoundStart','OnRoundEnd','OnBattleStart','OnSceneStart','GetCostMode','GetEventScope',
   'OnAttackDeclared',
   'BeforeAttackStart',
@@ -113,6 +114,12 @@ function Unit:GetDexterity() return self:GetStat('dexterity') end
 function Unit:GetEndurance() return self:GetStat('endurance') end
 function Unit:GetIntelligence() return self:GetStat('intelligence') end
 function Unit:GetWill() return self:GetStat('will') end
+function Unit:GetDroneActions() return math.max(0,__num(self.__data.droneActions225)) end
+function Unit:DroneActions() return self:GetDroneActions() end
+function Unit:GetMaxDroneActions() return math.max(0,__num(self.__data.droneActionsMax225)) end
+function Unit:IsDroneShareVision() return self.__data.droneShareVision225 == true end
+function DroneActions(unit) local u=__unit(unit);return u and u:GetDroneActions() or 0 end
+function IsDroneShareVision(unit) local u=__unit(unit);return u ~= nil and u:IsDroneShareVision() end
 function Unit:GetGlory() return self:GetStat('glory') end
 function Unit:GetDefense() return self:GetStat('defense') end
 function Unit:GetArmorClass() return self:GetStat('armorClass') end
@@ -517,10 +524,14 @@ function RequestNumber(name, label, spec)
   local key = tostring(name or spec.key or 'value')
   local inputs = (__input.params or {}).inputs or {}
   if inputs[key] ~= nil then return __num(inputs[key]) end
-  __push({ kind = 'request_number', name = key, key = key, label = tostring(label or name or 'Значение'), min = spec.min and __num(spec.min) or nil, max = spec.max and __num(spec.max) or nil, default = spec.default and __num(spec.default) or nil, required = spec.required ~= false })
+  __push({ kind = 'request_number', rollType = spec.rollType, unitId = spec.unit and __id(spec.unit) or nil, name = key, key = key, label = tostring(label or name or 'Значение'), min = spec.min and __num(spec.min) or nil, max = spec.max and __num(spec.max) or nil, default = spec.default and __num(spec.default) or nil, required = spec.required ~= false })
   return spec.default and __num(spec.default) or 0
 end
-function RequestRoll(name, label, spec) return RequestNumber(name, label, spec) end
+function RequestRoll(name, label, spec)
+  spec = type(spec) == 'table' and spec or {}
+  spec.rollType = tostring(spec.rollType or 'check')
+  return RequestNumber(name, label, spec)
+end
 function CreateParticle(effectId, spec)
   spec = type(spec) == 'table' and spec or {}
   return __push({ kind = 'particle', effectId = tostring(effectId or 'pulse'), unitId = __id(spec.unit), x = spec.x and __num(spec.x) or nil, y = spec.y and __num(spec.y) or nil, color = tostring(spec.color or '#7df9ff'), duration = math.max(100, __num(spec.duration, 700)) })
@@ -712,10 +723,15 @@ function RequestConfirm(key,spec) return __answer204('request_confirm204',key,sp
 function RequestChecklist(key,spec) return __answer204('request_checklist204',key,spec) end
 function RequestPoint(key,spec) local answer=__answer204('request_point204',key,spec);return type(answer)=='table' and Vector(answer.x,answer.y) or nil end
 function ShowReminder(key,text) return __answer204('request_confirm204',key,{title='Напоминание',text=tostring(text or ''),reminder=true}) end
-function CancelEvent(reason) if not ({OnActionDeclared=true,OnAttackDeclared=true,BeforeAttackRoll=true,AfterAttackRoll=true,BeforeAttackStart=true,BeforeDamage=true,OnMoveStart=true})[tostring((__input.params or {}).event)] then error('CancelEvent разрешён только до применения результата') end;return __push({kind='cancel_event204',reason=tostring(reason or 'Событие отменено скриптом')}) end
+function CancelEvent(reason) if not ({BeforeRoll=true,AfterRoll=true,OnActionDeclared=true,OnAttackDeclared=true,BeforeAttackRoll=true,AfterAttackRoll=true,BeforeAttackStart=true,BeforeDamage=true,OnMoveStart=true})[tostring((__input.params or {}).event)] then error('CancelEvent разрешён только до применения результата') end;return __push({kind='cancel_event204',reason=tostring(reason or 'Событие отменено скриптом')}) end
 params.eventId=tostring(rawParams.eventId204 or '')
 params.parentEventId=tostring(rawParams.parentEventId204 or '')
 params.unit=__unit(rawParams.unitId204)
+params.rollType=tostring(rawParams.rollType225 or '')
+params.roll=rawParams.roll225
+params.rollingUnit=__unit(rawParams.rollingUnitId225)
+params.condition=tostring(rawParams.condition225 or '')
+params.enabled=rawParams.enabled225
 params.action=tostring(rawParams.action204 or '')
 params.movementKind=tostring(rawParams.movementKind204 or '')
 params.oldPosition=rawParams.oldPosition204
