@@ -1,0 +1,12 @@
+.config-catalog h2{margin:0 0 16px}
+.config-catalog h3{margin:22px 0 10px;color:#d8e2eb}
+.config-catalog-controls{display:flex;align-items:end;flex-wrap:wrap;gap:12px;margin-bottom:16px}
+.config-catalog-controls label{display:grid;gap:5px;min-width:130px;color:#a8b7c6;font-size:12px}
+.config-catalog-controls label:first-child{flex:1 1 240px}
+.config-catalog-controls label[hidden]{display:none}
+.config-catalog-tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(150px,100%),1fr));gap:10px}
+.config-catalog-tile{display:flex;flex-direction:column;justify-content:flex-start;align-items:flex-start;gap:8px;min-height:100px;text-align:left;overflow-wrap:anywhere;background:#101d29;border:1px solid #52647766;border-radius:9px;padding:12px;color:#e5edf4}
+.config-catalog-tile:hover,.config-catalog-tile:focus-visible{border-color:#9bb4c8;background:#192b3c}
+.config-catalog-tile small{color:#a8b7c6}
+.config-catalog-tile .entity-thumb{align-self:center}
+.config-catalog-back{margin-bottom:12px}

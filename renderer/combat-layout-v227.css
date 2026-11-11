@@ -42,7 +42,11 @@
 .player-battle-facing-v231{position:fixed;z-index:220;left:50%;top:50%;width:100vw;height:100vh;pointer-events:none;transform:translate(-50%,-50%) rotate(var(--player-angle-v231,0deg))}
 .player-facing-side-v231>.player-battle-facing-v231{width:100vh;height:100vw}
 .player-battle-facing-v231>.player-battle-initiative-v227,.player-battle-facing-v231>.player-battle-party-v227{position:absolute}
-.player-scene-token-name-v104,.player-scene-token-prone-v128,.player-scene-token-hp-v104{rotate:var(--player-angle-v231,0deg)}
+.player-token-annotations-v234{position:absolute;left:50%;top:50%;width:100%;height:100%;transform:translate(-50%,-50%) rotate(var(--player-angle-v231,0deg));pointer-events:none}
+.player-facing-side-v231 .player-token-annotations-v234{width:var(--token-annotation-width,100%);height:var(--token-annotation-height,100%)}
+.player-token-annotations-v234 .player-scene-token-hp-v104{top:calc(100% + 2px);bottom:auto}
+.player-token-annotations-v234 .player-scene-token-name-v104{top:100%;transform:translate(-50%,2px)}
+.has-hp-v234 .player-scene-token-name-v104{transform:translate(-50%,8px)}
 
 .scene-grid-lines-v232{fill:none;stroke:rgba(205,225,238,.40);stroke-width:var(--scene-grid-stroke-v232,.025)}
 .player-scene-v104 .scene-grid-lines-v232{stroke:rgba(205,225,238,.30)}
