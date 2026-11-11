@@ -48,6 +48,7 @@ function orient(a,b,c){return (b.x-a.x)*(c.y-a.y)-(b.y-a.y)*(c.x-a.x);}
 function segIntersects(a,b,c,d){const o1=orient(a,b,c),o2=orient(a,b,d),o3=orient(c,d,a),o4=orient(c,d,b);if(((o1>0&&o2<0)||(o1<0&&o2>0))&&((o3>0&&o4<0)||(o3<0&&o4>0)))return true;return false;}
 function segmentIntersectsRect(a,b,r){const corners=[{x:r.x,y:r.y},{x:r.x+r.w,y:r.y},{x:r.x+r.w,y:r.y+r.h},{x:r.x,y:r.y+r.h}];if((a.x>=r.x&&a.x<=r.x+r.w&&a.y>=r.y&&a.y<=r.y+r.h)||(b.x>=r.x&&b.x<=r.x+r.w&&b.y>=r.y&&b.y<=r.y+r.h))return true;for(let i=0;i<4;i++)if(segIntersects(a,b,corners[i],corners[(i+1)%4]))return true;return false;}
 function blocksSightBetween(scene,a,b){
+  if(GRPGCombatVisionV225.elevationBlocksSight(scene,a,b))return true;
   for(const asset of scene.assets){if(asset.blockSight&&segmentIntersectsRect(a,b,{x:num(asset.x),y:num(asset.y),w:num(asset.w,1),h:num(asset.h,1)}))return true;}
   for(const zone of scene.templates){if(!zone.blockSight)continue;const points=list(zone.points).map(p=>({x:num(p.x),y:num(p.y)}));if(zone.shape==='wall'&&points.length>1){for(let i=1;i<points.length;i++)if(segIntersects(a,b,points[i-1],points[i]))return true;}else if(zone.shape==='polygon'&&points.length>2){if(pointInPolygon(b,points))return true;for(let i=0;i<points.length;i++)if(segIntersects(a,b,points[i],points[(i+1)%points.length]))return true;}else if(segmentIntersectsRect(a,b,{x:num(zone.x),y:num(zone.y),w:num(zone.w,1),h:num(zone.h,1)}))return true;}
   return false;
@@ -94,7 +95,12 @@ function visionBoundaryEdges112(scene,sources){
   const edges=new Map();for(const cell of cells.values()){const pts=[];for(let i=0;i<6;i++){const a=Math.PI/3*i;pts.push({x:cell.x+side*Math.cos(a),y:cell.y+side*Math.sin(a)});}for(let i=0;i<6;i++){const a=pts[i],b=pts[(i+1)%6],ka=`${a.x.toFixed(3)},${a.y.toFixed(3)}`,kb=`${b.x.toFixed(3)},${b.y.toFixed(3)}`,key=ka<kb?`${ka}|${kb}`:`${kb}|${ka}`;if(edges.has(key))edges.delete(key);else edges.set(key,{a,b});}}
   return [...edges.values()];
 }
-function tokenKnownToPlayers112(scene,sources,token){const centers=token.footprintV184?GRPGUnitSizeV184.cells(token):[{x:token.x+token.w/2,y:token.y+token.h/2}];return !fogActive112(scene)||Boolean(token.playerId)||Boolean(token.sharesVisionWithPlayers)||centers.some(center=>pointVisibleToPlayers(scene,sources,center));}
+function tokenKnownToPlayers112(scene,sources,token){const centers=token.footprintV184?GRPGUnitSizeV184.cells(token):[{x:token.x+token.w/2,y:token.y+token.h/2}];if(token.playerId||token.sharesVisionWithPlayers)return true;
+  if(!fogActive112(scene)){
+    if(!sources.length||!GRPGCombatVisionV225.elevationZones(scene).length)return true;
+    return centers.some(center=>sources.some(source=>!GRPGCombatVisionV225.elevationBlocksSight(scene,source.origin,center)));
+  }
+  return centers.some(center=>pointVisibleToPlayers(scene,sources,center));}
 function updateInitiative112(scene,runtime){
   const el=root.querySelector('.player-battle-initiative-v227');if(!el)return;
   const combat=scene.mode==='combat';el.hidden=!combat;if(!combat){el.innerHTML='';delete el.dataset.signature;return;}
@@ -133,7 +139,7 @@ function updateTokens(scene,runtime,preview){
 }
 function updateFog(scene,runtime){
   const canvas=root.querySelector('.player-scene-fog-v104');if(!canvas)return;const mode=scene.fogMode|| (scene.fogEnabled===false?'off':'cover');if(mode==='off'){canvas.style.display='none';combatDisplayFogSig='';return;}canvas.style.display='block';
-  const fogSig=JSON.stringify([mode,scene.mode,runtime.turnIndex,runtime.initiativeOrder,scene.width,scene.height,scene.assets.filter(a=>a.blockSight),scene.templates.filter(z=>z.blockSight),list(runtime.tokens).map(t=>[t.id,t.x,t.y,t.w,t.h,t.playerId,t.sharesVisionWithPlayers,t.droneShareVision225,t.operatorTokenIdV129,t.hidden,t.visibleToPlayers,t.resolvedVisionCells])]);if(fogSig===combatDisplayFogSig)return;combatDisplayFogSig=fogSig;
+  const fogSig=JSON.stringify([mode,scene.mode,runtime.turnIndex,runtime.initiativeOrder,scene.width,scene.height,scene.assets.filter(a=>a.blockSight),scene.templates.filter(z=>z.blockSight||GRPGCombatVisionV225.isElevation(z)),list(runtime.tokens).map(t=>[t.id,t.x,t.y,t.w,t.h,t.playerId,t.sharesVisionWithPlayers,t.droneShareVision225,t.operatorTokenIdV129,t.hidden,t.visibleToPlayers,t.resolvedVisionCells])]);if(fogSig===combatDisplayFogSig)return;combatDisplayFogSig=fogSig;
   const stage=root.querySelector('.player-scene-stage-v104'),cssW=Math.max(1,Math.round(stage?.clientWidth||1000)),cssH=Math.max(1,Math.round(stage?.clientHeight||700)),dpr=Math.min(2,devicePixelRatio||1);canvas.width=Math.round(cssW*dpr);canvas.height=Math.round(cssH*dpr);const ctx=canvas.getContext('2d');ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,cssW,cssH);const sources=combatVisionSources(runtime,scene),sx=cssW/scene.width,sy=cssH/scene.height,{side}=hexMetrics109();
   if(mode==='cover'){ctx.fillStyle='rgba(0,0,0,.985)';ctx.fillRect(0,0,cssW,cssH);if(sources.length){ctx.globalCompositeOperation='destination-out';ctx.fillStyle='rgba(0,0,0,1)';ctx.beginPath();for(const src of sources){for(const cell of visibleHexesForSource109(scene,src)){for(let i=0;i<6;i++){const a=Math.PI/3*i,x=(cell.x+side*Math.cos(a))*sx,y=(cell.y+side*Math.sin(a))*sy;if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);}ctx.closePath();}}ctx.fill();ctx.globalCompositeOperation='source-over';}}
   if(mode==='objects'&&sources.length){const edges=visionBoundaryEdges112(scene,sources);ctx.save();ctx.strokeStyle='rgba(170,226,255,.82)';ctx.lineWidth=1.35;ctx.shadowColor='rgba(90,190,255,.48)';ctx.shadowBlur=5;ctx.lineCap='round';ctx.beginPath();for(const e of edges){ctx.moveTo(e.a.x*sx,e.a.y*sy);ctx.lineTo(e.b.x*sx,e.b.y*sy);}ctx.stroke();ctx.restore();}

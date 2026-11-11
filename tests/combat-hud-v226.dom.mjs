@@ -27,7 +27,7 @@ const html=fs.readFileSync(path.join(root,'renderer/index.html'),'utf8');
 w.document.write(html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi,''));
 // Every renderer script is evaluated unmodified, in index.html order, sharing
 // browser-style lexical globals. Only OS/cloud/bootstrap boundaries are mocked.
-for(const m of html.matchAll(/<script src="\.\/([^"?]+)[^"]*"/g))vm.runInContext(fs.readFileSync(path.join(root,'renderer',m[1]),'utf8').replace('// New module is DM-only;', 'window.test225={local,applyStore,collectStoreFromRuntime,luaUnitRows119,applyLuaCommands119,runInteractiveLuaHookV138,requestAttackRolls119,playerVisionSources112,droneActions225,droneShareVision225,deviceCommandReason200,checkpointCombat120,conditionEvents225,positionEvents204,refreshRuntimeSources122,centerOf,updatePlayerHp105,mergeCombatProfile225,importCombatProfiles225,battleWeaponRows226,buildCombatSnapshot104,makeRoutePreview104,commitMove104:()=>commitMove104(),fitTokenToHex107,deviceEpoch200,createEquipmentUnit105};\n// New module is DM-only;'),context,{filename:m[1]});
+for(const m of html.matchAll(/<script src="\.\/([^"?]+)[^"]*"/g))vm.runInContext(fs.readFileSync(path.join(root,'renderer',m[1]),'utf8').replace('// New module is DM-only;', 'window.test225={local,applyStore,collectStoreFromRuntime,luaUnitRows119,applyLuaCommands119,runInteractiveLuaHookV138,requestAttackRolls119,playerVisionSources112,droneActions225,droneShareVision225,deviceCommandReason200,checkpointCombat120,conditionEvents225,positionEvents204,refreshRuntimeSources122,centerOf,updatePlayerHp105,mergeCombatProfile225,importCombatProfiles225,battleWeaponRows226,buildCombatSnapshot104,makeRoutePreview104,commitMove104:()=>commitMove104(),fitTokenToHex107,deviceEpoch200,createEquipmentUnit105,endBoardPointer104,coverBetween120};\n// New module is DM-only;'),context,{filename:m[1]});
 const {Worker}=await import('node:worker_threads');
 w.electronAPI.runCombatLuaHook=payload=>new Promise((resolve,reject)=>{
  const worker=new Worker(path.join(root,'lua-sandbox-worker.cjs'));
@@ -174,6 +174,11 @@ try{
   snapshot.runtime.tokens.find(token=>token.id==='b').hidden=true;paint();
   assert(!dq('.player-battle-initiative-v227').textContent.includes('Охранник'));
   assert(dq('.player-battle-turn-v227').textContent.includes('Скрытый участник'));
+  display.floorView233={mode:'combat',fogMode:'objects',fogEnabled:true,assets:[],templates:[{shape:'polygon',elevation233:2,points:[{x:10,y:0},{x:20,y:0},{x:20,y:18},{x:10,y:18}]}]};
+  display.floorSource233=[{origin:{x:4,y:7},radiusHexes:25}];
+  const seeAt=x=>vm.runInContext(`tokenKnownToPlayers112(window.floorView233,window.floorSource233,{x:${x-.5},y:6.5,w:1,h:1})`,displayContext);
+  assert(seeAt(10.5),'the second screen shows a target on the upper edge');
+  assert(!seeAt(14),'the second screen hides a target behind the edge');
   const styles=display.document.createElement('style');styles.textContent=fs.readFileSync(path.join(root,'renderer/combat-hud-v226.css'),'utf8')+'\n'+fs.readFileSync(path.join(root,'renderer/combat-layout-v227.css'),'utf8');display.document.head.appendChild(styles);
   const geometry=display.document.createElement('div');geometry.className='scene-tactical-v226';geometry.innerHTML='<div id="combat-stage"><button class="combat-object combat-token scene-token-v104" style="width:20px;height:20px"></button></div>';display.document.body.appendChild(geometry);
   const computed=display.getComputedStyle(geometry.querySelector('button'));
@@ -206,5 +211,30 @@ try{
  assert.equal(recovered.qty,1);
  assert.equal(recovered.instancesV215[0].id,'drone-copy');
  assert.equal(recovered.instancesV215[0].droneState231.hpCurrent,1);
+ run('Combat.render()');
+ click('[data-battle-tools226]');
+ click('[data-scene-action-v104="height"]');
+ await wait(()=>q('[name="elevation233"]'));
+ q('[name="elevation233"]').value='2';confirm();
+ await wait(()=>api.local.ui.action==='height');
+ const points=[{x:10,y:0},{x:20,y:0},{x:20,y:18},{x:10,y:18}];
+ api.local.draw={kind:'area',elevation233:api.local.ui.elevation233,points};
+ api.endBoardPointer104();
+ assert.equal(api.collectStoreFromRuntime().scenes.s.templates.at(-1).elevation233,2);
+ assert(q('.scene-elevation-label-v233').textContent.includes('+2'));
+ const view=w.GRPGCombatVisionV225,lower={x:4,y:7},nearWall={x:9.87,y:7},edge={x:10.5,y:7},behind={x:11.0,y:7},deep={x:14,y:7};
+ assert.equal(view.elevationAt(scene,edge),2);
+ assert.equal(view.elevationAt(scene,lower),0);
+ assert(!view.elevationBlocksSight(scene,lower,edge),'the upper edge is visible from below');
+ assert(view.elevationBlocksSight(scene,lower,behind),'the wall occludes deeper cells from far below');
+ assert(!view.elevationBlocksSight(scene,nearWall,behind),'moving closer reveals a deeper strip');
+ assert(view.elevationBlocksSight(scene,nearWall,deep));
+ assert(!view.elevationBlocksSight(scene,deep,lower),'downhill sight is allowed');
+ assert.equal(api.coverBetween120(scene,lower,edge,true).armorBonus,2);
+ assert.equal(api.coverBetween120(scene,edge,lower,true).armorBonus,0);
+ assert.equal(api.coverBetween120(scene,lower,edge).armorBonus,0,'area effects do not receive height cover');
+ const high={...scene,templates:[{shape:'polygon',points,elevation233:3}]};
+ assert.equal(view.elevationCover(high,lower,edge),3);
+ assert(view.elevationBlocksSight(high,nearWall,behind),'a higher floor narrows the visible strip');
  console.log('PASS real combat HUD: weapons and reserves, effects, selection, spent actions, burst locks, empty magazine, DM drawer and pause presentation');
 }finally{await w.happyDOM.abort();fs.rmSync(scratch,{recursive:true,force:true});}
