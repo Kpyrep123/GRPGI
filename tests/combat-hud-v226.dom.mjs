@@ -46,7 +46,7 @@ const confirm=()=>{
  form.dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));
 };
 try{
- w.world225={players:{PLAYER_TEMPLATES:{gm:{id:'gm',role:'gm'},p:{id:'p',role:'player',displayName:'Оператор',stats:{hpCurrent:8,hpMax:10},baseStats:{hpBase:10},traumaV195:{schema:195,degree:0},inventory:[{itemId:'gun',qty:1},{itemId:'sidearm',qty:1},{itemId:'round',qty:29}],equipmentSlots:{primaryWeapon:'gun',secondaryWeapon:'sidearm'},weaponMagazines:{gun:{loaded:4,ammoTypeId:'round'},sidearm:{loaded:2,ammoTypeId:'round'}},skills:['aim']}}},equipment:{EQUIPMENT:{gun:{id:'gun',type:'weapon',name:'Тестовая винтовка',damage:'2',range:16,ammoTypeId:'round',magazineSize:12},sidearm:{id:'sidearm',type:'weapon',name:'Пистолет',damage:'1',range:10,ammoTypeId:'round',magazineSize:6},round:{id:'round',name:'Патроны',type:'ammo',stackable:true,stackLimit:100}}},skills:{SKILLS:{aim:{id:'aim',name:'Прицеливание',activationType:'active',description:'Точное прицеливание.'}}}};
+ w.world225={players:{PLAYER_TEMPLATES:{gm:{id:'gm',role:'gm'},p:{id:'p',role:'player',displayName:'Оператор',stats:{hpCurrent:8,hpMax:10},baseStats:{hpBase:10},traumaV195:{schema:195,degree:0},inventory:[{itemId:'gun',qty:1},{itemId:'sidearm',qty:1},{itemId:'round',qty:29}],equipmentSlots:{primaryWeapon:'gun',secondaryWeapon:'sidearm'},weaponMagazines:{gun:{loaded:4,ammoTypeId:'round'},sidearm:{loaded:2,ammoTypeId:'round'}},skills:['aim']}}},equipment:{EQUIPMENT:{gun:{id:'gun',type:'weapon',name:'Тестовая винтовка',image:'./rifle.png',damage:'2',range:16,ammoTypeId:'round',magazineSize:12},sidearm:{id:'sidearm',type:'weapon',name:'Пистолет',image:'./pistol.webp',damage:'1',range:10,ammoTypeId:'round',magazineSize:6},round:{id:'round',name:'Патроны',type:'ammo',stackable:true,stackLimit:100}}},skills:{SKILLS:{aim:{id:'aim',name:'Прицеливание',activationType:'active',description:'Точное прицеливание.'}}}};
  run("applyWorldData(window.world225);App.state=makeDefaultState();App.currentUserId='gm';Sync.config={enabled:false};App.renderLive=()=>{};App.refreshAfterLocalWrite=()=>{};App.writeLocalMirrors=async()=>({ok:true});Persistence.save=async()=>({ok:true});Toast.show=()=>{};");
  const api=w.test225;
  api.applyStore({rangeSchema:109,cameraSchema:109,scenes:{s:{id:'s',name:'Сухой док Астериона',mode:'combat',width:24,height:20,fogMode:'off',assets:[],templates:[]}},runtimes:{s:{tokens:[{id:'a',playerId:'p',name:'Оператор',x:3,y:3,hpCurrent:8,hpMax:10,initiative:20,initiativeOverrideV147:true,weaponId:'gun',ownTurnV199:1,timedModifiersV122:[{id:'bonus',name:'Подавление',remainingTurns:2,effects:[]}]},{id:'b',name:'Охранник',x:10,y:10,hpCurrent:5,hpMax:6,initiative:10,initiativeOverrideV147:true}],initiativeOrder:['a','b'],turnIndex:0,battleStarted191:true}},selectedSceneId:'s'});
@@ -114,6 +114,7 @@ try{
  const snapshot=JSON.parse(JSON.stringify(api.buildCombatSnapshot104('s')));
  assert.equal(snapshot.runtime.playerCards227.length,1,'only player characters get public stats');
  assert.equal(snapshot.runtime.playerCards227[0].weapon.name,'Пистолет');
+ assert.equal(snapshot.runtime.playerCards227[0].weapon.image,'./pistol.webp');
  const display=new Window({url:'https://grpgi.test',settings:{disableJavaScriptFileLoading:true,disableCSSFileLoading:true}});
  try{
   display.document.body.innerHTML='<div id="player-display-root"></div>';
@@ -125,6 +126,15 @@ try{
   paint();const dq=selector=>display.document.querySelector(selector);
   assert.equal(dq('.player-battle-party-v227').querySelectorAll('article').length,1);
   assert(dq('.player-battle-party-v227').textContent.includes('Пистолет'));
+  assert.equal(dq('.player-battle-weapon-art-v230').getAttribute('src'),'./pistol.webp');
+  click('[data-battle-weapon226="gun"]');
+  snapshot.runtime.playerCards227=JSON.parse(JSON.stringify(api.buildCombatSnapshot104('s').runtime.playerCards227));
+  paint();
+  assert.equal(dq('.player-battle-weapon-art-v230').getAttribute('src'),'./rifle.png');
+  snapshot.runtime.playerCards227[0].weapon.image='';
+  paint();
+  assert(!dq('.player-battle-weapon-art-v230'),'missing art adds no placeholder');
+  assert(dq('.player-battle-weapon-v227').textContent.includes('Тестовая винтовка'));
   assert(!dq('.player-battle-party-v227').textContent.includes('Охранник'));
   assert(dq('.player-battle-turn-v227').textContent.includes('Оператор'));
   snapshot.runtime.turnIndex=1;paint();
