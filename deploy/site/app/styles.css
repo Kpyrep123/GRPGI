@@ -2284,3 +2284,29 @@ html[data-era-theme="medieval"] .origin-citizenship-v1087{background:rgba(116,69
   .social-sidebar { padding: 8px; gap: 8px; }
   .social-nav { grid-template-columns: 1fr 1fr; }
 }
+
+/* Archive article lead: square art alongside the title and summary. */
+.article-card:has(> [data-article-body]){
+  display:grid;
+  grid-template-columns:minmax(0,44%) minmax(0,1fr);
+  grid-template-rows:auto auto 1fr;
+  column-gap:clamp(8px,2vw,18px);
+  align-items:start;
+}
+.article-card:has(> [data-article-body])>*{grid-column:1 / -1;min-width:0}
+.article-card:has(> [data-article-body])>.entity-hero-image{
+  grid-column:1;
+  grid-row:1 / 4;
+  width:100%;
+  height:auto;
+  margin:0;
+  aspect-ratio:1;
+  border-radius:12px;
+}
+.article-card:has(> [data-article-body])>:is(.eyebrow,h3,.small-note){
+  grid-column:2;
+  overflow-wrap:anywhere;
+}
+.article-card:has(> [data-article-body])>.eyebrow{grid-row:1}
+.article-card:has(> [data-article-body])>h3{grid-row:2}
+.article-card:has(> [data-article-body])>.small-note{grid-row:3}
