@@ -2947,3 +2947,19 @@ html[data-graphics-mode="lite"] #galaxy {
   padding: 16px 12px max(18px, env(safe-area-inset-bottom));
 }
 .task-reader-content > article { max-width: 860px; margin: 0 auto; overflow-wrap: anywhere; }
+
+/* Archive article lead: square art alongside the title and summary. */
+#mod-wiki .wiki-hero:has(+ .wiki-article-body){
+  grid-template-columns:minmax(0,44%) minmax(0,1fr);
+  gap:clamp(8px,2vw,18px);
+}
+#mod-wiki .wiki-hero:has(+ .wiki-article-body) .entity-thumb.hero{
+  width:100%;
+  max-width:none;
+  height:auto;
+  aspect-ratio:1;
+}
+#mod-wiki .wiki-hero:has(+ .wiki-article-body)>div:last-child{
+  min-width:0;
+  overflow-wrap:anywhere;
+}
