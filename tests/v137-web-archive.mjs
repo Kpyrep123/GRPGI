@@ -36,6 +36,13 @@ const requirements=api.renderEntityBody({_type:'item',id:'requirements',type:'ar
 assert.match(requirements,/Требования:<\/b> Сила: 3 · Интеллект: 2 · Выносливость: 1 · Воля: 4 · Слава: 5/);
 assert(!requirements.includes('Ловкость: 0'));
 assert(!api.renderEntityBody({_type:'item',id:'zero',requirements:{strength:0}}).includes('Требования:'));
+const zeroFacts=api.renderEntityBody({_type:'item',id:'zero-facts',type:'armor',defense:0,shieldCoverBonus:0,armorClass:3});
+assert(!zeroFacts.includes('<b>Защита:</b>'));
+assert(!zeroFacts.includes('<b>Защита щита:</b>'));
+assert(zeroFacts.includes('<b>Класс брони:</b> 3'));
+const weaponFacts=api.renderEntityBody({_type:'item',id:'zero-weapon',type:'weapon',hitBonus:0,weaponSkillBonus:0});
+assert(!weaponFacts.includes('<b>Попадание:</b>'));
+assert(!weaponFacts.includes('<b>Бонус навыка к попаданию:</b>'));
 const archive=w.document.getElementById('screen-archive');
 archive.innerHTML=requirements;
 const style=w.document.createElement('style');

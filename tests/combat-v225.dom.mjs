@@ -27,7 +27,7 @@ const html=fs.readFileSync(path.join(root,'renderer/index.html'),'utf8');
 w.document.write(html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi,''));
 // Every renderer script is evaluated unmodified, in index.html order, sharing
 // browser-style lexical globals. Only OS/cloud/bootstrap boundaries are mocked.
-for(const m of html.matchAll(/<script src="\.\/([^"?]+)[^"]*"/g))vm.runInContext(fs.readFileSync(path.join(root,'renderer',m[1]),'utf8').replace('// New module is DM-only;', 'window.test225={local,applyStore,collectStoreFromRuntime,luaUnitRows119,applyLuaCommands119,runInteractiveLuaHookV138,requestAttackRolls119,playerVisionSources112,droneActions225,droneShareVision225,deviceCommandReason200,checkpointCombat120,conditionEvents225,positionEvents204,refreshRuntimeSources122,centerOf,updatePlayerHp105,mergeCombatProfile225,importCombatProfiles225,runAutomaticHooks119,commitMove104:()=>commitMove104(),makeRoutePreview104,hexStepDistance109,activeSkillsForToken118,useActiveSkill118:id=>useActiveSkill118(id),fitTokenToHex107};\n// New module is DM-only;'),context,{filename:m[1]});
+for(const m of html.matchAll(/<script src="\.\/([^"?]+)[^"]*"/g))vm.runInContext(fs.readFileSync(path.join(root,'renderer',m[1]),'utf8').replace('// New module is DM-only;', 'window.test225={local,applyStore,collectStoreFromRuntime,luaUnitRows119,applyLuaCommands119,runInteractiveLuaHookV138,requestAttackRolls119,commitAttack105:id=>commitAttack105(id),performLuaStandardAttackV138,itemRuntimeStateV138,playerVisionSources112,droneActions225,droneShareVision225,deviceCommandReason200,checkpointCombat120,conditionEvents225,positionEvents204,refreshRuntimeSources122,centerOf,updatePlayerHp105,mergeCombatProfile225,importCombatProfiles225,runAutomaticHooks119,commitMove104:()=>commitMove104(),makeRoutePreview104,hexStepDistance109,activeSkillsForToken118,useActiveSkill118:id=>useActiveSkill118(id),fitTokenToHex107};\n// New module is DM-only;'),context,{filename:m[1]});
 const {Worker}=await import('node:worker_threads');
 w.electronAPI.runCombatLuaHook=payload=>new Promise((resolve,reject)=>{
  const worker=new Worker(path.join(root,'lua-sandbox-worker.cjs'));
@@ -52,7 +52,7 @@ try{
    p:{id:'p',role:'player',displayName:'Оператор',stats:{hpCurrent:8,hpMax:10},baseStats:{hpBase:10,implantSlots:1},implantSlotCount:1,traumaV195:{schema:195,degree:0},abilityBase:{intelligence:3,will:2},equipmentSlots:{primaryWeapon:'test_rifle'},inventory:[{itemId:'implant',qty:1}],implantSlots:['implant'],installedImplantIds:['implant'],skills:['events']},
    q:{id:'q',role:'player',displayName:'Другой игрок',stats:{hpCurrent:10,hpMax:10},baseStats:{hpBase:10}}
   }},
-  equipment:{EQUIPMENT:{test_rifle:{id:'test_rifle',name:'Тестовая винтовка',type:'weapon',weaponCategory:'light',damage:'1',range:10,rapidFireShots:3},implant:{id:'implant',name:'Дополнительные команды',type:'implant',modifiers:[{target:'drone_actions',op:'add',value:2}]}}},
+  equipment:{EQUIPMENT:{test_rifle:{id:'test_rifle',name:'Тестовая винтовка',type:'weapon',weaponCategory:'light',damage:'1',range:10,rapidFireShots:3,durabilityMax:5,magazineSize:3,ammoTypeId:'test_round'},test_round:{id:'test_round',name:'Тестовые патроны',type:'ammo',modifiers:[{target:'damage_bonus',op:'add',value:4}],luaEnabled:true,luaScript:"function OnShotFired(self,p) assert(p.ammo.id=='test_round' and p.ammoSpent==1 and p.weaponSlot=='primaryWeapon' and not p.hit);local roll=RequestRoll('wear','Износ от патрона',{min=1,max=20});if roll==20 then DamageItem(p.attacker,p.weaponSlot,1) end end"},implant:{id:'implant',name:'Дополнительные команды',type:'implant',modifiers:[{target:'drone_actions',op:'add',value:2}]}}},
   skills:{SKILLS:{events:{id:'events',name:'События',activationType:'passive',luaEnabled:true,luaScript:"function BeforeRoll(self,p) self:SetData('before_'..p.rollType,self:GetData('before_'..p.rollType,0)+1) end function AfterRoll(self,p) assert(p.rollingUnit ~= nil);self:SetData('after_'..p.rollType,p.roll) end function OnKnockedDown(self,p) assert(p.condition=='prone' and p.enabled);self:SetData('down',self:GetData('down',0)+1) end function OnStandUp(self,p) self:SetData('up',self:GetData('up',0)+1) end function OnForcedMove(self,p) self:SetData('shift',self:GetData('shift',0)+1) end"}}}
  };
  run("applyWorldData(window.world225);App.state=makeDefaultState();App.currentUserId='gm';Sync.config={enabled:false};App.renderLive=()=>{};App.refreshAfterLocalWrite=()=>{};App.writeLocalMirrors=async()=>({ok:true});Persistence.save=async()=>({ok:true});window.notices225=[];Toast.show=(message,type)=>notices225.push([message,type]);");
@@ -176,6 +176,29 @@ try{
  assert.equal(aimedRoll.defenseBonusDelta204,3,'Help applies to an active defense without changing the natural die');
  assert.equal(aimedRoll.defenseRoll,8);
  assert.equal(token('b').help229,null,'help is consumed by the selected check');
+ token('a').actionUsed=false;
+ token('a').weaponMagazinesV118={test_rifle:{loaded:2,ammoTypeId:'test_round'}};
+ run("Combat.selectedObject={kind:'token',id:'a'}");
+ const fired=api.commitAttack105('b');
+ await wait(()=>w.document.querySelector('[name=attackRoll]'));
+ w.document.querySelector('[name=attackRoll]').value='2';
+ w.document.querySelector('[name=defenseRoll]').value='20';
+ w.document.querySelector('[name=damageRoll]').value='1';confirm();
+ await wait(()=>w.document.querySelector('[name=luaNumber]'));
+ w.document.querySelector('[name=luaNumber]').value='20';confirm();await fired;
+ assert.equal(token('a').weaponMagazinesV118.test_rifle.loaded,1);
+ assert.equal(api.itemRuntimeStateV138(token('a'),'test_rifle','primaryWeapon').durability,4);
+ token('a').burstStateV122=null;
+ const scripted=api.performLuaStandardAttackV138({attackerId:'a',targetId:'b',slot:'primaryWeapon',consumeAction:false});
+ await wait(()=>w.document.querySelector('[name=attackRoll]'));
+ assert.match(w.document.querySelector('.scene-lua-overlay-v119').textContent,/Бонус урона: \+4/);
+ w.document.querySelector('[name=attackRoll]').value='2';
+ w.document.querySelector('[name=defenseRoll]').value='20';
+ w.document.querySelector('[name=damageRoll]').value='1';confirm();
+ await wait(()=>w.document.querySelector('[name=luaNumber]'));
+ w.document.querySelector('[name=luaNumber]').value='1';confirm();await scripted;
+ assert.equal(token('a').weaponMagazinesV118.test_rifle.loaded,0);
+ assert.equal(api.itemRuntimeStateV138(token('a'),'test_rifle','primaryWeapon').durability,4);
  const patches=[],pulls=[];
  let releasePush;
  const remote=JSON.parse(run('JSON.stringify(App.state.users)'));
