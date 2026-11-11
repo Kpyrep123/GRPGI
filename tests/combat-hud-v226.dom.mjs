@@ -27,7 +27,7 @@ const html=fs.readFileSync(path.join(root,'renderer/index.html'),'utf8');
 w.document.write(html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi,''));
 // Every renderer script is evaluated unmodified, in index.html order, sharing
 // browser-style lexical globals. Only OS/cloud/bootstrap boundaries are mocked.
-for(const m of html.matchAll(/<script src="\.\/([^"?]+)[^"]*"/g))vm.runInContext(fs.readFileSync(path.join(root,'renderer',m[1]),'utf8').replace('// New module is DM-only;', 'window.test225={local,applyStore,collectStoreFromRuntime,luaUnitRows119,applyLuaCommands119,runInteractiveLuaHookV138,requestAttackRolls119,playerVisionSources112,droneActions225,droneShareVision225,deviceCommandReason200,checkpointCombat120,conditionEvents225,positionEvents204,refreshRuntimeSources122,centerOf,updatePlayerHp105,mergeCombatProfile225,importCombatProfiles225,battleWeaponRows226,buildCombatSnapshot104};\n// New module is DM-only;'),context,{filename:m[1]});
+for(const m of html.matchAll(/<script src="\.\/([^"?]+)[^"]*"/g))vm.runInContext(fs.readFileSync(path.join(root,'renderer',m[1]),'utf8').replace('// New module is DM-only;', 'window.test225={local,applyStore,collectStoreFromRuntime,luaUnitRows119,applyLuaCommands119,runInteractiveLuaHookV138,requestAttackRolls119,playerVisionSources112,droneActions225,droneShareVision225,deviceCommandReason200,checkpointCombat120,conditionEvents225,positionEvents204,refreshRuntimeSources122,centerOf,updatePlayerHp105,mergeCombatProfile225,importCombatProfiles225,battleWeaponRows226,buildCombatSnapshot104,makeRoutePreview104,commitMove104:()=>commitMove104(),fitTokenToHex107,deviceEpoch200,createEquipmentUnit105};\n// New module is DM-only;'),context,{filename:m[1]});
 const {Worker}=await import('node:worker_threads');
 w.electronAPI.runCombatLuaHook=payload=>new Promise((resolve,reject)=>{
  const worker=new Worker(path.join(root,'lua-sandbox-worker.cjs'));
@@ -46,7 +46,7 @@ const confirm=()=>{
  form.dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));
 };
 try{
- w.world225={players:{PLAYER_TEMPLATES:{gm:{id:'gm',role:'gm'},p:{id:'p',role:'player',displayName:'Оператор',stats:{hpCurrent:8,hpMax:10},baseStats:{hpBase:10},traumaV195:{schema:195,degree:0},inventory:[{itemId:'gun',qty:1},{itemId:'sidearm',qty:1},{itemId:'round',qty:29}],equipmentSlots:{primaryWeapon:'gun',secondaryWeapon:'sidearm'},weaponMagazines:{gun:{loaded:4,ammoTypeId:'round'},sidearm:{loaded:2,ammoTypeId:'round'}},skills:['aim']}}},equipment:{EQUIPMENT:{gun:{id:'gun',type:'weapon',name:'Тестовая винтовка',image:'./rifle.png',damage:'2',range:16,ammoTypeId:'round',magazineSize:12},sidearm:{id:'sidearm',type:'weapon',name:'Пистолет',image:'./pistol.webp',damage:'1',range:10,ammoTypeId:'round',magazineSize:6},round:{id:'round',name:'Патроны',type:'ammo',stackable:true,stackLimit:100}}},skills:{SKILLS:{aim:{id:'aim',name:'Прицеливание',activationType:'active',description:'Точное прицеливание.'}}}};
+ w.world225={players:{PLAYER_TEMPLATES:{gm:{id:'gm',role:'gm'},p:{id:'p',role:'player',displayName:'Оператор',stats:{hpCurrent:8,hpMax:10},baseStats:{hpBase:10},traumaV195:{schema:195,degree:0},inventory:[{itemId:'gun',qty:1},{itemId:'sidearm',qty:1},{itemId:'round',qty:29}],equipmentSlots:{primaryWeapon:'gun',secondaryWeapon:'sidearm'},weaponMagazines:{gun:{loaded:4,ammoTypeId:'round'},sidearm:{loaded:2,ammoTypeId:'round'}},skills:['aim']}}},equipment:{EQUIPMENT:{gun:{id:'gun',type:'weapon',name:'Тестовая винтовка',image:'./rifle.png',damage:'2',range:16,ammoTypeId:'round',magazineSize:12},sidearm:{id:'sidearm',type:'weapon',name:'Пистолет',image:'./pistol.webp',damage:'1',range:10,ammoTypeId:'round',magazineSize:6},drone231:{id:'drone231',name:'Дрон',type:'drone',inventoryWidth:1,inventoryHeight:1,unitMoveRange:6,unitHp:5,durabilityMax:4},round:{id:'round',name:'Патроны',type:'ammo',stackable:true,stackLimit:100}}},skills:{SKILLS:{aim:{id:'aim',name:'Прицеливание',activationType:'active',description:'Точное прицеливание.'}}}};
  run("applyWorldData(window.world225);App.state=makeDefaultState();App.currentUserId='gm';Sync.config={enabled:false};App.renderLive=()=>{};App.refreshAfterLocalWrite=()=>{};App.writeLocalMirrors=async()=>({ok:true});Persistence.save=async()=>({ok:true});Toast.show=()=>{};");
  const api=w.test225;
  api.applyStore({rangeSchema:109,cameraSchema:109,scenes:{s:{id:'s',name:'Сухой док Астериона',mode:'combat',width:24,height:20,fogMode:'off',assets:[],templates:[]}},runtimes:{s:{tokens:[{id:'a',playerId:'p',name:'Оператор',x:3,y:3,hpCurrent:8,hpMax:10,initiative:20,initiativeOverrideV147:true,weaponId:'gun',ownTurnV199:1,timedModifiersV122:[{id:'bonus',name:'Подавление',remainingTurns:2,effects:[]}]},{id:'b',name:'Охранник',x:10,y:10,hpCurrent:5,hpMax:6,initiative:10,initiativeOverrideV147:true}],initiativeOrder:['a','b'],turnIndex:0,battleStarted191:true}},selectedSceneId:'s'});
@@ -111,7 +111,16 @@ try{
   const styles=[...html.matchAll(/<link[^>]+href="\.\/([^"?]+)[^"]*"/g)].map(m=>fs.readFileSync(path.join(root,'renderer',m[1]),'utf8')).join('\n');
   fs.writeFileSync(process.env.COMBAT_HUD_HTML,'<!doctype html><meta charset="utf-8"><style>'+styles+'\nhtml,body{margin:0;height:100%;background:#080e15}#combat-content{height:100vh}</style><div id="combat-content">'+q('#combat-content').innerHTML+'</div>');
  }
+ click('[data-player-sides231]');
+ await wait(()=>q('[name="side231_0"]'));
+ q('[name="side231_0"]').value='270';confirm();
+ await wait(()=>run("Combat.getScene().playerSides231?.p===270"));
+ assert.equal(api.collectStoreFromRuntime().scenes.s.playerSides231.p,270);
  const snapshot=JSON.parse(JSON.stringify(api.buildCombatSnapshot104('s')));
+ assert.equal(snapshot.runtime.playerDisplayAngle231,270);
+ run('Combat.getRuntime().turnIndex=1');
+ assert.equal(api.buildCombatSnapshot104('s').runtime.playerDisplayAngle231,0);
+ run('Combat.getRuntime().turnIndex=0');
  assert.equal(snapshot.runtime.playerCards227.length,1,'only player characters get public stats');
  assert.equal(snapshot.runtime.playerCards227[0].weapon.name,'Пистолет');
  assert.equal(snapshot.runtime.playerCards227[0].weapon.image,'./pistol.webp');
@@ -137,8 +146,13 @@ try{
   assert(dq('.player-battle-weapon-v227').textContent.includes('Тестовая винтовка'));
   assert(!dq('.player-battle-party-v227').textContent.includes('Охранник'));
   assert(dq('.player-battle-turn-v227').textContent.includes('Оператор'));
+  assert.equal(dq('.player-scene-v104').style.getPropertyValue('--player-angle-v231'),'270deg');
+  assert(dq('.player-facing-side-v231'));
+  assert.match(dq('[data-player-token-v104="a"] .player-scene-token-visual-v104').style.rotate,/player-angle/);
+  snapshot.runtime.playerDisplayAngle231=0;
   snapshot.runtime.turnIndex=1;paint();
   assert(dq('.player-battle-turn-v227').textContent.includes('Охранник'));
+  assert.equal(dq('.player-scene-v104').style.getPropertyValue('--player-angle-v231'),'0deg');
   assert(!dq('.battle-order-unit-v226[aria-current] .battle-health-v226'),'NPC health is not shown in the ribbon');
   snapshot.runtime.tokens.find(token=>token.id==='b').hidden=true;paint();
   assert(!dq('.player-battle-initiative-v227').textContent.includes('Охранник'));
@@ -151,5 +165,29 @@ try{
   const large=display.document.createElement('div');large.className='player-scene-token-v104 unit-sized-v184';large.innerHTML='<span class="player-scene-token-visual-v104"></span>';display.document.body.appendChild(large);
   const largePortrait=display.getComputedStyle(large.firstElementChild);assert.equal(largePortrait.aspectRatio.replace(/\s/g,''),'1/1');assert.equal(largePortrait.height,'auto','large-unit portrait must not follow a rectangular footprint');
  }finally{await display.happyDOM.abort();}
+ const owner=token('a'),runtime=run('Combat.getRuntime()'),scene=run('Combat.getScene()');
+ owner.blockMovement=true;
+ const drone=api.createEquipmentUnit105('drone231');
+ Object.assign(drone,{id:'drone-token',operatorTokenIdV129:owner.id,deployedItemIdV129:'drone231',itemInstanceIdV215:'drone-copy',hpCurrent:1,hpMax:5,moveRange:6,moveRangeOverrideV122:true,teamId:'players'});
+ api.fitTokenToHex107(drone,scene,{x:api.centerOf(owner).x,y:api.centerOf(owner).y+4});
+ runtime.tokens.push(drone);
+ w.GRPGCombatDevicesV200.issue(owner,drone,'simple',api.deviceEpoch200(owner),runtime.round);
+ run("Combat.selectedObject={kind:'token',id:'drone-token'}");
+ const profile=run("App.state.users.p"),inventory=JSON.parse(JSON.stringify(profile.inventory));
+ profile.inventory.push({itemId:'drone231',qty:100,positions:[]});
+ api.local.preview=api.makeRoutePreview104(api.centerOf(owner),false,owner.id);
+ assert(!api.local.preview.blocked&&api.local.preview.steps>0,'a click on the owner routes to a reachable adjacent hex');
+ await api.commitMove104();
+ assert(token('drone-token'),'a full inventory leaves the drone on the map');
+ run("Combat.selectedObject={kind:'token',id:'drone-token'}");
+ w.inventory231=inventory.filter(row=>row.itemId!=='round');run("App.state.users.p.inventory=window.inventory231;App.state.users.p.baseStats.inventorySlots=12;App.state.users.p.baseStats.carryBase=12");
+ api.local.preview=api.makeRoutePreview104(api.centerOf(owner),false,owner.id);
+ assert.equal(api.local.preview.steps,0,'the drone already reached the owner');
+ await api.commitMove104();
+ assert(!token('drone-token'),'return removes the token from the scene');
+ const recovered=run("App.state.users.p.inventory.find(row=>row.itemId==='drone231')");
+ assert.equal(recovered.qty,1);
+ assert.equal(recovered.instancesV215[0].id,'drone-copy');
+ assert.equal(recovered.instancesV215[0].droneState231.hpCurrent,1);
  console.log('PASS real combat HUD: weapons and reserves, effects, selection, spent actions, burst locks, empty magazine, DM drawer and pause presentation');
 }finally{await w.happyDOM.abort();fs.rmSync(scratch,{recursive:true,force:true});}

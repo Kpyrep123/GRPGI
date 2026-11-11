@@ -38,3 +38,8 @@
 .player-battle-weapon-v227>span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .player-battle-weapon-v227>b{flex:none;white-space:nowrap}
 .player-battle-weapon-art-v230{display:block;flex:0 0 48px;width:48px;height:30px;object-fit:contain;background:transparent;border:0}
+
+.player-battle-facing-v231{position:fixed;z-index:220;left:50%;top:50%;width:100vw;height:100vh;pointer-events:none;transform:translate(-50%,-50%) rotate(var(--player-angle-v231,0deg))}
+.player-facing-side-v231>.player-battle-facing-v231{width:100vh;height:100vw}
+.player-battle-facing-v231>.player-battle-initiative-v227,.player-battle-facing-v231>.player-battle-party-v227{position:absolute}
+.player-scene-token-name-v104,.player-scene-token-prone-v128,.player-scene-token-hp-v104{rotate:var(--player-angle-v231,0deg)}
