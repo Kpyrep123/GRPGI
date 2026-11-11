@@ -5,6 +5,7 @@ const SUPPORTED_HOOKS = Object.freeze([
   'BeforeRoll','AfterRoll','OnKnockedDown','OnStandUp','OnForcedMove',
   'OnActionDeclared','OnActionFinished','BeforeAttackRoll','AfterAttackRoll','OnAttackResolved','OnMiss','OnDamageApplied','OnHealApplied','OnMoveStart','OnMoveStep','OnMoveEnd','OnPositionChanged','OnUnitEnter','OnUnitLeave','OnConditionChanged','OnModifierChanged','OnRoundStart','OnRoundEnd','OnBattleStart','OnSceneStart','GetCostMode','GetEventScope',
   'OnAttackDeclared',
+  'OnShotFired',
   'BeforeAttackStart',
   'OnHit',
   'BeforeDamage',
@@ -563,6 +564,9 @@ local params = {
   toggled = rawParams.toggled == true,
   thinker = rawParams.thinker or nil,
   weapon = rawParams.weapon or {},
+  ammo = rawParams.ammo or {},
+  ammoSpent = math.max(0, __num(rawParams.ammoSpent)),
+  weaponSlot = tostring(rawParams.weaponSlot or ''),
   ability = rawParams.ability or {}
 }
 params.inputs = rawParams.inputs or {}

@@ -70,7 +70,7 @@ function GetEventScope(self) return "scene" end
 | Этап | Hooks |
 | --- | --- |
 | Действие через панель сцены | `OnActionDeclared`, `OnActionFinished` (только при применённом результате) |
-| Атака | `OnAttackDeclared`, `BeforeAttackRoll`, `AfterAttackRoll`, прежний `BeforeAttackStart`, `OnAttackResolved`, `OnHit` или `OnMiss` |
+| Атака | `OnAttackDeclared`, `BeforeAttackRoll`, `AfterAttackRoll`, прежний `BeforeAttackStart`, `OnAttackResolved`, `OnHit` или `OnMiss`, `OnShotFired` |
 | Урон и лечение | `BeforeDamage`, `OnDamageApplied`, `OnHealApplied`; прежний `OnTakeDamage` для обычных атак сохранён |
 | Перемещение по маршруту | `OnMoveStart`, `OnPositionChanged`, `OnMoveStep` на каждом фактическом шаге, `OnMoveEnd` |
 | Области | `OnUnitEnter`, `OnUnitLeave` в подписанных thinkers |
@@ -1015,3 +1015,31 @@ if id ~= "" then DamageItem(defender, id, 1) end
 ```
 
 Натуральная 20 в броске атаки противника по персонажу снимает 1 прочность с надетой брони, если у неё задан предел. Износ применяется до проверок попадания и не зависит от результата. При нуле бонусы брони к классу брони, поглощению и защите от энергии исключаются уже в этой атаке. Правила критического попадания остаются в существующем разрешении броска.
+
+
+### Износ от выстрела и патронов
+
+`OnShotFired` вызывается после расчёта каждого выстрела, включая промах, в обычной атаке и в `StandardAttack`. Доступны `params.weapon`, `params.weaponSlot`, `params.ammo`, `params.ammoSpent` и `params.hit`. Скрипт загруженного типа патронов запускается в автоматическом режиме на этом событии, если у предмета включён Lua. Тип патрона также доступен через `params.ammo.id` в событиях атаки. У оружия без магазина `params.ammo.id` отсутствует и `params.ammoSpent` равно нулю.
+
+Пример для патронов, которые снижают прочность оружия с вероятностью 10%. ДМ вводит результат физического d20.
+
+```lua
+function OnShotFired(self, params)
+  local shooter = params.attacker
+  local slot = params.weaponSlot
+  if not shooter or shooter:GetDurability(slot) <= 0 then return end
+  local roll = RequestRoll("ammo_wear", "Износ оружия — d20", {min = 1, max = 20})
+  if roll >= 19 then DamageItem(shooter, slot, 1) end
+end
+```
+
+Чтобы снизить прочность брони цели при попадании, поместите этот обработчик на оружие. Износ применяется после расчёта выстрела.
+
+```lua
+function OnShotFired(self, params)
+  local target = params.target
+  if params.hit and target and target:GetDurability("armor") > 0 then
+    DamageItem(target, "armor", 1)
+  end
+end
+```

@@ -39,12 +39,12 @@
     const hasMod=target=>mods.some(mod=>mod.target===target);
     const excluded=new Set((options.excludeLabels||[]).map(value=>String(value).split(':')[0].trim().toLowerCase()));
     const add=(label,value,kind='property')=>{
-      if(value==null||value==='')return;
+      if(value==null||value===''||(kind==='property'&&Number(value)===0))return;
       if(kind==='property'&&excluded.has(label.toLowerCase()))return;
       result.push({label,value:String(value),kind});
     };
     const field=(label,keys,formatter=number,kind='property')=>{
-      const key=first(item,keys);if(key)add(label,formatter(item[key]),kind);
+      const key=first(item,keys);if(key&&Number(item[key])!==0)add(label,formatter(item[key]),kind);
     };
     if(options.includeBase!==false){
       add('Тип',categories[type]||pretty(type));
@@ -94,6 +94,7 @@
     field('Максимальная прочность',['durabilityMax','maxDurability'],value=>Number(value)>0?number(value):'');
     field('Максимум зарядов',['chargesMax','maxCharges'],value=>Number(value)>0?number(value):'');
     mods.forEach(mod=>{
+      if((mod.op||'add')==='add'&&own(mod,'value')&&Number(mod.value)===0)return;
       const label=names[mod.target]||pretty(mod.target)||'Модификатор';
       let value;
       switch(String(mod.op||'add')){

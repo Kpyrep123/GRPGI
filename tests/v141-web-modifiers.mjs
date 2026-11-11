@@ -11,7 +11,7 @@ const context=vm.isContext(w)?w:vm.createContext(w),run=source=>vm.runInContext(
 w.setInterval=()=>0;w.requestAnimationFrame=()=>0;w.fetch=async()=>{throw Error('Unexpected network')};
 try{
   w.document.write(fs.readFileSync(path.join(dir,'index.html'),'utf8').replace(/<script\b[^>]*>\s*<\/script>/gi,''));
-  for(const file of ['rich-text-scope.js','market-engine.js','player-sync-core.js','item-facts-v141.js'])run(fs.readFileSync(path.join(dir,file),'utf8'));
+  for(const file of ['rich-text-scope.js','market-engine.js','player-sync-core.js','weapon-handling-v203.js','damage-types-v202.js','player-credentials-v212.js','player-auth-v212.js','item-facts-v141.js'])run(fs.readFileSync(path.join(dir,file),'utf8'));
   let app=fs.readFileSync(path.join(dir,'app.js'),'utf8');
   const marker='  init().catch(error => {';assert.equal(app.split(marker).length,2);
   app=app.replace(marker,`window.testV141={archiveEquipmentFactsWebV131,marketItemDetailsWebV1071,normalizeItemWeb118,galaxyEraPaletteV1050};\nif(false) init().catch(error => {`);
@@ -25,8 +25,9 @@ try{
   assert.equal(w.testV141.normalizeItemWeb118(item).rapidFireShots,6);
   assert.equal(w.testV141.normalizeItemWeb118(item).modifiers.length,4);
   for(const html of [w.testV141.archiveEquipmentFactsWebV131(item),w.testV141.marketItemDetailsWebV1071(item,{})]){
-    for(const value of ['6 выстр./действие','Переносимый вес','+5','Ячейки инвентаря','установить 0','Обзор','+0','Максимум зарядов'])assert.ok(html.includes(value),value+' in '+html);
+    for(const value of ['6 выстр./действие','Переносимый вес','+5','Ячейки инвентаря','установить 0','Максимум зарядов'])assert.ok(html.includes(value),value+' in '+html);
     assert.ok(!html.includes('999'));
+    assert.ok(!html.includes('Обзор'));
   }
   w.document.documentElement.dataset.eraTheme='technological';
   const palette=w.testV141.galaxyEraPaletteV1050();
