@@ -43,3 +43,10 @@
 .player-facing-side-v231>.player-battle-facing-v231{width:100vh;height:100vw}
 .player-battle-facing-v231>.player-battle-initiative-v227,.player-battle-facing-v231>.player-battle-party-v227{position:absolute}
 .player-scene-token-name-v104,.player-scene-token-prone-v128,.player-scene-token-hp-v104{rotate:var(--player-angle-v231,0deg)}
+
+.scene-grid-lines-v232{fill:none;stroke:rgba(205,225,238,.40);stroke-width:var(--scene-grid-stroke-v232,.025)}
+.player-scene-v104 .scene-grid-lines-v232{stroke:rgba(205,225,238,.30)}
+.scene-player-sides-v232{width:100%;border-collapse:collapse;text-align:left}
+.scene-player-sides-v232 th,.scene-player-sides-v232 td{padding:8px 10px;border-bottom:1px solid #8b9aa744}
+.scene-player-sides-v232 td{width:45%}
+.scene-player-sides-v232 select{width:100%}
