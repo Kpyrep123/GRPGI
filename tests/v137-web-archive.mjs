@@ -11,7 +11,7 @@
     w.fetch=async()=>{throw new Error('Unexpected live network access')};
     const html=fs.readFileSync(path.join(root,'deploy/site/app/index.html'),'utf8');
     w.document.write(html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi,''));
-    for(const file of ['rich-text-scope.js','market-engine.js','player-sync-core.js'])run(fs.readFileSync(path.join(root,'deploy/site/app',file),'utf8'));
+    for(const file of ['rich-text-scope.js','market-engine.js','player-sync-core.js','damage-types-v202.js','weapon-handling-v203.js','item-facts-v141.js','player-credentials-v212.js','player-auth-v212.js'])run(fs.readFileSync(path.join(root,'deploy/site/app',file),'utf8'));
     let source=fs.readFileSync(path.join(root,'deploy/site/app/app.js'),'utf8');
     const marker='  init().catch(error => {';assert.equal(source.split(marker).length,2);
     source=source.replace(marker,[
@@ -32,5 +32,16 @@ for(const [type,mods,expected] of [
  if(type==='armor'){assert.ok(!output.includes('Класс брони:</b> 0'));assert.ok(!output.includes('Защита:</b> 0'));}
 }
 const output=api.renderEntityBody({_type:'item',id:'hidden',type:'armor',modifiers:[{target:'armor_class',value:999,enabled:false}]});assert.ok(!output.includes('999'));
+const requirements=api.renderEntityBody({_type:'item',id:'requirements',type:'armor',requirements:{strength:3,dexterity:0,intelligence:'2',endurance:1,will:4,glory:5}});
+assert.match(requirements,/Требования:<\/b> Сила: 3 · Интеллект: 2 · Выносливость: 1 · Воля: 4 · Слава: 5/);
+assert(!requirements.includes('Ловкость: 0'));
+assert(!api.renderEntityBody({_type:'item',id:'zero',requirements:{strength:0}}).includes('Требования:'));
+const archive=w.document.getElementById('screen-archive');
+archive.innerHTML=requirements;
+const style=w.document.createElement('style');
+style.textContent=fs.readFileSync(path.join(root,'deploy/site/app/styles.css'),'utf8');
+w.document.head.append(style);
+assert.equal(w.getComputedStyle(archive.querySelector('.archive-equipment-facts-v131')).gridColumn,'2');
+assert.equal(w.getComputedStyle(archive.querySelector('.entity-hero-image')).gridRow,'1 / 5');
 console.log('PASS web archive renders signed/decimal modifiers, set zero, stat references and conditions; hides disabled modifiers');
 await w.happyDOM.abort();

@@ -2584,7 +2584,7 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
     }
     if (type === 'item') {
       const req = entity.requirements && typeof entity.requirements === 'object' ? entity.requirements : {};
-      const requirementText = Object.entries(req).filter(([, value]) => value !== '' && value != null).map(([key, value]) => `${key.toUpperCase()}: ${value}`).join(' · ');
+      const requirementText = ABILITIES_V1052.filter(({key}) => Number(req[key]) > 0).map(({key,label}) => `${label}: ${Number(req[key])}`).join(' · ');
       const soldOn = planetsSellingItemWebV1100(entity.id);
       return `
         <article class="article-card archive-item-detail-v1060">
