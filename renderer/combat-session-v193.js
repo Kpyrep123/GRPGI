@@ -5,6 +5,7 @@
   const rows=value=>Array.isArray(value)?value:[];
   const localFields=new Set(['x','y','w','h','rotation','hidden','locked','visibleToPlayers','sharesVisionWithPlayers','showNameToPlayers','blockMovement','blockSight','notes','color']);
   const budgets=['dashUsedV198','actionUsed','movedThisTurn','reactionUsedV119','burstStateV122','disengagedV122','freeDroneCommandUsedV129','droneCommandV129'];
+  function takesTurn(token){return Boolean(token&&!token.dead229&&(Number(token.hpCurrent)>0||token.conditionsV138?.dying));}
   function identity(token,mapId){return token.playerId?'player:'+token.playerId:String(token.participantId193||'instance:'+mapId+':'+token.id);}
   function state(token){return Object.fromEntries(Object.entries(copy(token)).filter(([key])=>!localFields.has(key)));}
   function place(actor,token){return {...copy(actor),...Object.fromEntries(Object.entries(copy(token)).filter(([key])=>localFields.has(key)))};}
@@ -56,7 +57,7 @@
     const existingOrder=session.order.slice();
     for(const token of rows(runtime.tokens)){
       const pid=register(session,token,mapId);Object.assign(token,place(session.participants[pid],token));
-      if(Number(token.hpCurrent)>0&&!['drone','turret'].includes(token.equipmentType)&&!existingOrder.includes(token.id))existingOrder.push(token.id);
+      if(takesTurn(token)&&!['drone','turret'].includes(token.equipmentType)&&!existingOrder.includes(token.id))existingOrder.push(token.id);
     }
     session.mapIds=[...new Set([...rows(session.mapIds),mapId])];
     session.activeMapId=mapId;session.order=existingOrder;
@@ -73,6 +74,8 @@
     for(const actor of Object.values(session.participants)){
       actor.initiativeBattle193='';
       for(const key of budgets)actor[key]=key==='movedThisTurn'?0:['burstStateV122','droneCommandV129'].includes(key)?null:false;
+      actor.aim229=null;actor.brace229=null;
+      if(kind==='scene')actor.help229=null;
       actor.usage193={...(actor.usage193||{}),battle:{},...(kind==='scene'?{scene:{}}:{})};
       actor.timedModifiersV122=rows(actor.timedModifiersV122).filter(m=>m.resetScope193!=='battle'&&(kind!=='scene'||m.resetScope193!=='scene'));
     }
@@ -82,8 +85,8 @@
     const placed=rows(runtime.tokens),states=new Map(Object.values(session.participants).map(t=>[t.id,t]));
     placed.forEach(t=>states.set(t.id,t));
     let ids=resetTurn?placed.map(t=>t.id):[...new Set([...session.order,...rows(runtime.initiativeOrder),...placed.map(t=>t.id)])];
-    ids=ids.filter(id=>Number(states.get(id)?.hpCurrent)>0&&!['drone','turret'].includes(states.get(id)?.equipmentType)&&!rows(session.withdrawn194).includes(states.get(id)?.participantId193));
-    ids.sort((a,b)=>(Number(states.get(b).initiative)||0)-(Number(states.get(a).initiative)||0)||String(states.get(a).name||'').localeCompare(String(states.get(b).name||''),'ru'));
+    ids=ids.filter(id=>takesTurn(states.get(id))&&!['drone','turret'].includes(states.get(id)?.equipmentType)&&!rows(session.withdrawn194).includes(states.get(id)?.participantId193));
+    ids.sort((a,b)=>(Number(states.get(b).initiative)||0)-(Number(states.get(a).initiative)||0)||(Number(states.get(b).initiativeWill229)||0)-(Number(states.get(a).initiativeWill229)||0)||String(states.get(a).name||'').localeCompare(String(states.get(b).name||''),'ru'));
     runtime.initiativeOrder=ids;runtime.turnIndex=resetTurn?0:Math.max(0,ids.indexOf(current));if(resetTurn)runtime.round=1;
     session.order=ids.slice();session.turnTokenId=ids[runtime.turnIndex]||'';
   }
@@ -93,6 +96,6 @@
     for(const token of rows(next.tokens))if(!token.playerId)token.participantId193='';
     return next;
   }
-  const api={identity,state,place,create,capture,register,project,transfer,reset,order,forkMap,budgets};
+  const api={identity,state,place,create,capture,register,project,transfer,reset,order,forkMap,budgets,takesTurn};
   root.GRPGCombatSessionV193=api;if(typeof module!=='undefined')module.exports=api;
 })(typeof window!=='undefined'?window:globalThis);
