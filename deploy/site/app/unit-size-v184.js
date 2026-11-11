@@ -32,5 +32,30 @@
  function probes(token,at){return info(token.unitSize).probes.map(p=>({x:at.x+p.x,y:at.y+p.y}));}
  function svg(token){const m=info(token.unitSize);if(m.count===1)return '';return `<svg class="unit-footprint-v184" viewBox="0 0 ${m.w} ${m.h}" preserveAspectRatio="none" aria-hidden="true">${m.points.map(p=>`<polygon points="${Array.from({length:6},(_,i)=>{const a=Math.PI*i/3;return `${p.x+m.ox+side*.98*Math.cos(a)},${p.y+m.oy+side*.98*Math.sin(a)}`;}).join(' ')}"/>`).join('')}</svg>`;}
  function distance(a,b,atA,atB){let min=Infinity;for(const p of cells(a,atA))for(const q of cells(b,atB)){const x=nearest(p),y=nearest(q),ar=x.row-(x.col-(x.col&1))/2,br=y.row-(y.col-(y.col&1))/2;min=Math.min(min,Math.max(Math.abs(x.col-y.col),Math.abs(ar-br),Math.abs(x.col+ar-y.col-br)));}return min;}
- const api={labels,normalize,info,anchor,cells,node,nearest,inBounds,fit,contains,probes,svg,distance,side,hexH};root.GRPGUnitSizeV184=api;if(typeof module!=='undefined')module.exports=api;
+ function gridSvg(width,height){
+  const edges=new Set(),segments=[];
+  for(let col=0,cx=side;cx<=width+side;cx=side+(++col)*stepX){
+   const top=hexH/2+(col%2)*hexH/2;
+   for(let row=0,cy=top;cy<=height+hexH/2;cy=top+(++row)*hexH){
+    const vertices=Array.from({length:6},(_,i)=>{
+     const angle=i*Math.PI/3;
+     return `${(cx+side*Math.cos(angle)).toFixed(3)},${(cy+side*Math.sin(angle)).toFixed(3)}`;
+    });
+    for(let i=0;i<6;i++){
+     const a=vertices[i],b=vertices[(i+1)%6],key=a<b?a+' '+b:b+' '+a;
+     if(edges.has(key))continue;
+     edges.add(key);
+     segments.push(`M${a}L${b}`);
+    }
+   }
+  }
+  return `<svg class="scene-hex-grid-v104" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" aria-hidden="true"><path class="scene-grid-lines-v232" d="${segments.join('')}"/></svg>`;
+ }
+ function gridStroke(worldWidth,worldHeight,boardWidth,boardHeight,zoom){
+  const scale=Math.min(boardWidth/worldWidth,boardHeight/worldHeight);
+  if(!(scale>0)||!(zoom>0))return .025;
+  const screenWidth=Math.min(.78,scale*hexH*.027)/Math.sqrt(zoom);
+  return screenWidth/(scale*zoom);
+ }
+ const api={labels,normalize,info,anchor,cells,node,nearest,inBounds,fit,contains,probes,svg,distance,side,hexH,gridSvg,gridStroke};root.GRPGUnitSizeV184=api;if(typeof module!=='undefined')module.exports=api;
 })(typeof window==='undefined'?globalThis:window);
