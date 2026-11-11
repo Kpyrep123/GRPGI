@@ -995,7 +995,7 @@ async function writeCombatLocalStore(payload = {}) {
   try {
     if (fs.existsSync(file)) await fs.promises.copyFile(file, bak);
   } catch {}
-  await fs.promises.writeFile(tmp, JSON.stringify(clean, null, 2), 'utf8');
+  await fs.promises.writeFile(tmp, JSON.stringify(clean), 'utf8');
   try {
     await fs.promises.rename(tmp, file);
   } catch (error) {

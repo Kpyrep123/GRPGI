@@ -162,9 +162,12 @@
     next.actionUsed = Boolean(token.actionUsed);
     next.dashUsedV198 = Boolean(token.dashUsedV198);
     next.luaResources204=clone(token.luaResources204||{});next.luaState204=clone(token.luaState204||{});next.reactionDebt204=Math.max(0,num(token.reactionDebt204));next.reactionWithheld204=String(token.reactionWithheld204||'');
+    next.critical229=clone(token.critical229||null);next.dead229=token.dead229===true;
+    next.aim229=clone(token.aim229||null);next.brace229=clone(token.brace229||null);next.help229=clone(token.help229||null);
     next.ownTurnV199=Math.max(0,Math.trunc(num(token.ownTurnV199)));
     next.moraleV199=window.GRPGCombatInstinctV199.effects(token.moraleV199);
     next.instinctPendingV199=clone(list(token.instinctPendingV199));
+    next.initiativeWill229=num(token.initiativeWill229);
     next.initiativeBonus = num(token.initiativeBonus,0);
     next.initiativeOverrideV147 = token.initiativeOverrideV147 === true;
     next.reactionUsedV119 = Boolean(token.reactionUsedV119);
@@ -453,7 +456,7 @@
       const rolls=await combatModal119({title:'Перенести игровую сцену',subtitle:'Сохраняются текущий ход, раунд, расходы и состояния. Отсутствующих участников можно разместить позже. Показ игрокам переключается отдельно.',body:`<p>Из «${html(COMBAT_SCENES[session.activeMapId]?.name)}» в «${html(scene.name)}».</p>${session.started?newUnits.map((t,i)=>`<label class="field">Новый участник: ${html(t.name)} · d20 инициативы<input class="input" type="number" required min="1" max="20" name="join193_${i}"/></label>`).join(''):''}`,confirm:'ПЕРЕНЕСТИ',decline:'ОТМЕНИТЬ',read:form=>session.started?newUnits.map((t,i)=>Number(form.elements['join193_'+i].value)):[]});
       if(!rolls)return;const backup=clone(collectStoreFromRuntime());
       try{
-        newUnits.forEach((t,i)=>{if(session.started){t.initiative=num(rolls[i])+initiativeBonus195(t);t.initiativeOverrideV147=true;t.initiativeBattle193=session.battleId;}});
+        newUnits.forEach((t,i)=>{if(session.started){recordInitiative229(t,num(rolls[i]));t.initiativeOverrideV147=true;t.initiativeBattle193=session.battleId;}});
         scene.mode=Session193.transfer(session,scene.id,runtime);moveFollowers193(runtime);
         Combat.selectedObject=null;local.preview=null;Combat.syncInitiative(scene.id,false);await checkpointCombat120('Перенос игровой сцены',false);
       }catch(error){if(!recovery194)applyStore(backup);throw error;}Combat.render();return;
@@ -467,8 +470,8 @@
       const units=runtime.tokens.filter(t=>num(t.hpCurrent)>0&&!isControlledDevice200(t)&&!memberOut194(t));if(!units.length){Toast.show('Добавьте участников боя','info');return;}
       const rolls=await combatModal119({rolls225:units.map(unit=>({unit,type:'initiative'})),rollValue225:(value,index)=>value[index],title:'Новый бой',subtitle:'Новая инициатива и бюджеты хода. Реальные ресурсы сохраняются. Введите физические d20; бонус участника прибавляется автоматически.',body:units.map((t,i)=>`<label class="field">${html(t.name)} · бонус ${initiativeBonus195(t)}<input class="input" type="number" min="1" max="20" required name="initiative191_${i}"/></label>`).join(''),confirm:'НАЧАТЬ НОВЫЙ БОЙ',decline:'ОТМЕНИТЬ',read:form=>units.map((t,i)=>Number(form.elements['initiative191_'+i].value))});
       if(!rolls)return;const backup=clone(collectStoreFromRuntime());
-      try{resetSession193('battle');units.forEach((t,i)=>{t.initiative=num(rolls[i])+initiativeBonus195(t);t.initiativeOverrideV147=true;t.initiativeBattle193=session.battleId;t.reactionUsedV119=false;});Combat.syncInitiative(scene.id,true);await checkpointCombat120('Новый бой',false);}catch(error){if(!recovery194)applyStore(backup);throw error;}
-      await lifecycle204('OnBattleStart');const first=Combat.getCurrentTurnToken();if(first){startMoraleTurn199(first);Combat.selectedObject={kind:'token',id:first.id};const effects={damage:0,effects:[]};await emit204('OnTurnStart',first,{caster:first,attacker:first,target:first,targets:[first],event:'OnTurnStart'},effects);flushLuaEffects119(effects);await checkpointCombat120('Начало хода нового боя',true);}Combat.render();
+      try{resetSession193('battle');units.forEach((t,i)=>{recordInitiative229(t,num(rolls[i]));t.initiativeOverrideV147=true;t.initiativeBattle193=session.battleId;t.reactionUsedV119=false;});Combat.syncInitiative(scene.id,true);await checkpointCombat120('Новый бой',false);}catch(error){if(!recovery194)applyStore(backup);throw error;}
+      await lifecycle204('OnBattleStart');const first=Combat.getCurrentTurnToken();if(first){startMoraleTurn199(first);Combat.selectedObject={kind:'token',id:first.id};const effects={damage:0,effects:[]};await processCriticalTurn229(first,'start');if(!conditionStateV138(first).unconscious)await emit204('OnTurnStart',first,{caster:first,attacker:first,target:first,targets:[first],event:'OnTurnStart'},effects);flushLuaEffects119(effects);await checkpointCombat120('Начало хода нового боя',true);}Combat.render();
     }
   }
   async function placeParticipant193(pid,point){
@@ -489,8 +492,8 @@
     if(activeMap193()&&runtime.pendingTurnStart193===token.id){
       const startOrder=list(runtime.initiativeOrder).slice(),startIndex=runtime.turnIndex;
       runtime.pendingTurnStart193='';startMoraleTurn199(token);token.dashUsedV198=false;token.movedThisTurn=0;token.actionUsed=false;token.reactionUsedV119=false;token.disengagedV122=false;token.freeDroneCommandUsedV129=false;
-      const effects={damage:0,effects:[]};await processTimedModifiers122(token,'start',effects);if(num(token.hpCurrent)>0)await emit204('OnTurnStart',token,{caster:token,attacker:token,target:token,targets:[token],event:'OnTurnStart'},effects);flushLuaEffects119(effects);Combat.syncInitiative(scene.id,false);
-      if(num(token.hpCurrent)<=0)await Combat.nextTurn({allowMissing194:true,ignoreCommand194:true,skipEnd194:true,previousId194:token.id,orderBefore194:startOrder,indexBefore194:startIndex});
+      const effects={damage:0,effects:[]};await processCriticalTurn229(token,'start');await processTimedModifiers122(token,'start',effects);if(num(token.hpCurrent)>0&&!conditionStateV138(token).unconscious)await emit204('OnTurnStart',token,{caster:token,attacker:token,target:token,targets:[token],event:'OnTurnStart'},effects);flushLuaEffects119(effects);Combat.syncInitiative(scene.id,false);
+      if(!Session193.takesTurn(token))await Combat.nextTurn({allowMissing194:true,ignoreCommand194:true,skipEnd194:true,previousId194:token.id,orderBefore194:startOrder,indexBefore194:startIndex});
     }
   }
 
@@ -757,15 +760,15 @@
       const rolls=await combatModal119({rolls225:units.map(unit=>({unit,type:'initiative'})),rollValue225:(value,index)=>value[index],title:'Начать бой',subtitle:'Введите физические броски инициативы. К каждому прибавляется Воля и модификаторы участника.',body:units.map((t,i)=>`<label class="field">${html(t.name)} · бонус ${initiativeBonus195(t)}<input class="input" required type="number" min="1" max="20" name="initiative191_${i}"/></label>`).join(''),confirm:'НАЧАТЬ БОЙ',decline:'ОТМЕНИТЬ',read:form=>units.map((t,i)=>Number(form.elements['initiative191_'+i].value))});
       if(!rolls)return;
       resetSession193('battle');
-      units.forEach((t,i)=>{t.initiative=rolls[i]+initiativeBonus195(t);t.initiativeOverrideV147=true;t.initiativeBattle193=local.store.session193.battleId;});
+      units.forEach((t,i)=>{recordInitiative229(t,rolls[i]);t.initiativeOverrideV147=true;t.initiativeBattle193=local.store.session193.battleId;});
       for(const t of runtime.tokens){t.dashUsedV198=false;t.actionUsed=false;t.movedThisTurn=0;t.reactionUsedV119=false;t.burstStateV122=null;t.disengagedV122=false;t.freeDroneCommandUsedV129=false;t.droneCommandV129=null;}
       runtime.battleStarted191=true;scene.mode='combat';this.syncInitiative(scene.id,true);
-      await lifecycle204('OnBattleStart');const first=this.getCurrentTurnToken();if(first){startMoraleTurn199(first);this.selectedObject={kind:'token',id:first.id};const effects={damage:0,effects:[]};await emit204('OnTurnStart',first,{caster:first,attacker:first,target:first,targets:[first],event:'OnTurnStart'},effects);flushLuaEffects119(effects);}
+      await lifecycle204('OnBattleStart');const first=this.getCurrentTurnToken();if(first){startMoraleTurn199(first);this.selectedObject={kind:'token',id:first.id};const effects={damage:0,effects:[]};await processCriticalTurn229(first,'start');if(!conditionStateV138(first).unconscious)await emit204('OnTurnStart',first,{caster:first,attacker:first,target:first,targets:[first],event:'OnTurnStart'},effects);flushLuaEffects119(effects);}
     }
     local.preview=null;await checkpointCombat120('Сцена: режим боя',true);this.render();
   };
   const canActBefore191=Combat.canActWithToken.bind(Combat),currentBefore191=Combat.getCurrentTurnToken.bind(Combat);
-  Combat.canActWithToken=function(token){if(withdrawn194(token))return false;if(!activeMap193())return false;return !inBattle191()?Boolean(token&&this.isDm()&&num(token.hpCurrent)>0):canActBefore191(token);};
+  Combat.canActWithToken=function(token){if(withdrawn194(token)||token?.dead229||conditionStateV138(token||{}).unconscious||conditionStateV138(token||{}).dying)return false;if(!activeMap193())return false;return !inBattle191()?Boolean(token&&this.isDm()&&num(token.hpCurrent)>0):canActBefore191(token);};
   Combat.getCurrentTurnToken=function(){const token=activeMap193()&&inBattle191()?currentBefore191():null;return withdrawn194(token)?null:token;};
   function renderSession191(scene,runtime){
     const token=selectedToken104(),mods=list(token?.timedModifiersV122),conditions=token?Object.entries(conditionStateV138(token)).filter(([,v])=>v).map(([k])=>({dying:'Умирает',stabilized:'Стабилизирован',prone:'Лежит',stunned:'Оглушён',grappled:'Захвачен',unconscious:'Без сознания',handsBusy:'Руки заняты'})[k]||k):[];
@@ -784,7 +787,8 @@
     local.lua119.busy=true;
     try{
       const effects={damage:0,effects:[]},previous=list(runtime.tokens).find(token=>String(token.id)===previousId)||null;
-      if(previous&&num(previous.hpCurrent)>0&&!options.skipEnd194){previous.burstStateV122=null;previous.dashUsedV198=false;for(const drone of list(runtime.tokens).filter(row=>isControlledDevice200(row)&&String(row.operatorTokenIdV129)===String(previous.id))){if(drone.droneCommandV129)drone.droneCommandV129.completed=true;drone.burstStateV122=null;}await emit204('OnTurnEnd',previous,{caster:previous,attacker:previous,target:previous,targets:[previous],event:'OnTurnEnd'},effects);await processTimedModifiers122(previous,'end',effects);endMoraleTurn199(previous);}
+      if(previous&&!options.skipEnd194)await processCriticalTurn229(previous,'end');
+      if(previous&&num(previous.hpCurrent)>0&&!conditionStateV138(previous).unconscious&&!options.skipEnd194){previous.burstStateV122=null;previous.dashUsedV198=false;for(const drone of list(runtime.tokens).filter(row=>isControlledDevice200(row)&&String(row.operatorTokenIdV129)===String(previous.id))){if(drone.droneCommandV129)drone.droneCommandV129.completed=true;drone.burstStateV122=null;}await emit204('OnTurnEnd',previous,{caster:previous,attacker:previous,target:previous,targets:[previous],event:'OnTurnEnd'},effects);await processTimedModifiers122(previous,'end',effects);endMoraleTurn199(previous);}
       this.syncInitiative?.(this.getSceneIdForView?.(),false);
       const chooseAfter=(order,index)=>{
         const living=new Set(list(runtime.initiativeOrder).map(String));
@@ -802,8 +806,12 @@
       while(current&&guard-->0){
         const startOrder=list(runtime.initiativeOrder).map(String),startIndex=Math.max(0,startOrder.indexOf(String(current.id)));
         runtime.pendingTurnStart193='';startMoraleTurn199(current);current.dashUsedV198=false;current.movedThisTurn=0;current.actionUsed=false;current.reactionUsedV119=false;current.disengagedV122=false;current.freeDroneCommandUsedV129=false;
+        await processCriticalTurn229(current,'start');
         await processTimedModifiers122(current,'start',effects);
-        if(num(current.hpCurrent)>0){await emit204('OnTurnStart',current,{caster:current,attacker:current,target:current,targets:[current],event:'OnTurnStart'},effects);if(num(current.hpCurrent)>0)break;}
+        if(Session193.takesTurn(current)){
+          if(num(current.hpCurrent)>0&&!conditionStateV138(current).unconscious)await emit204('OnTurnStart',current,{caster:current,attacker:current,target:current,targets:[current],event:'OnTurnStart'},effects);
+          if(Session193.takesTurn(current))break;
+        }
         appendCombatLog105(runtime,`${current.name} выбывает из инициативы: здоровье равно 0.`);
         this.syncInitiative?.(this.getSceneIdForView?.(),false);
         choice=chooseAfter(startOrder,startIndex);
@@ -884,7 +892,7 @@
     runtime.tokens.forEach(token=>Object.assign(token,normalizeCombatToken(token)));
     if(activeMap193(sceneId)&&local.store?.session193){Session193.order(local.store.session193,runtime,resetTurn);return;}
     const currentId=!resetTurn?String(runtime.initiativeOrder?.[Math.max(0,num(runtime.turnIndex,0))]||''):'';
-    runtime.initiativeOrder=runtime.tokens.filter(token=>num(token.hpCurrent,0)>0&&!isControlledDevice200(token)).sort((a,b)=>(num(b.initiative)-num(a.initiative))||String(a.name||'').localeCompare(String(b.name||''),'ru')).map(token=>token.id);
+    runtime.initiativeOrder=runtime.tokens.filter(token=>Session193.takesTurn(token)&&!isControlledDevice200(token)).sort((a,b)=>(num(b.initiative)-num(a.initiative))||(num(b.initiativeWill229)-num(a.initiativeWill229))||String(a.name||'').localeCompare(String(b.name||''),'ru')).map(token=>token.id);
     if(resetTurn){runtime.turnIndex=0;runtime.round=1;}else if(currentId&&runtime.initiativeOrder.includes(currentId))runtime.turnIndex=runtime.initiativeOrder.indexOf(currentId);else runtime.turnIndex=clamp104(runtime.turnIndex,0,Math.max(0,runtime.initiativeOrder.length-1));
   };
 
@@ -908,10 +916,22 @@
   }
   function setConditionV138(token,name,enabled=true){
     if(!token||!CONDITION_NAMES_V138.has(String(name||'')))return false;
-    const conditions=conditionStateV138(token);conditions[name]=Boolean(enabled);
+    const conditions=conditionStateV138(token),previous=conditions[name];conditions[name]=Boolean(enabled);
     if(name==='prone')token.proneV122=conditions.prone;
-    if(name==='stabilized'&&enabled)conditions.dying=false;
-    if(name==='dying'&&enabled)conditions.stabilized=false;
+    if(name==='unconscious'&&token.critical229&&(conditions.dying||conditions.stabilized)){
+      token.critical229.unconsciousAlready=Boolean(enabled);
+      if(conditions.dying||token.hpCurrent<=0)conditions.unconscious=true;
+    }
+    if(name==='stabilized'&&enabled){
+      conditions.dying=false;
+      if(token.hpCurrent>0&&!token.critical229?.unconsciousAlready)conditions.unconscious=false;
+    }
+    if(name==='prone'&&previous!==conditions.prone)clearStance229(token);
+    if(name==='dying'&&enabled){
+      conditions.stabilized=false;
+      if(!previous)token.critical229={damage:0,fallTurn:num(token.ownTurnV199),unconsciousAlready:conditions.unconscious};
+      conditions.unconscious=true;conditions.prone=true;token.proneV122=true;clearStance229(token);
+    }
     return true;
   }
   function itemStateContainerV138(token={}){
@@ -969,7 +989,12 @@
   function reactionBlocked195(token={}){return Trauma195.effects(token).noReaction;}
   function reactionAvailable195(token={}){if(isControlledDevice200(token))return false;const state=conditionStateV138(token);return num(token.hpCurrent)>0&&(resources204(token).reaction?resources204(token).reaction.value>0:!token.reactionUsedV119)&&token.reactionWithheld204!==Lua204.epoch('turn',epochContext204(token))&&!reactionBlocked195(token)&&!withdrawn194(token)&&!state.unconscious&&!state.dying&&!state.stunned;}
   function heavyBlocked195(token={}){return Trauma195.effects(token).noHeavyWeapon;}
-  function initiativeBonus195(token={}){return num(token.initiativeBonus,token.initiative)-checkPenalty199(token);}
+  function initiativeBonus195(token={}){return num(token.initiativeBonus,token.initiative)-checkPenalty199(token)+(helpFor229(token,'initiative')?.bonus||0);}
+  function recordInitiative229(token,roll){
+    token.initiative=roll+initiativeBonus195(token);
+    token.initiativeWill229=abilityScore229(token,'will');
+    consumeHelp229(token,'initiative',helpFor229(token,'initiative'));
+  }
   const INJURY_LABELS_V129={1:'лёгкая: −1 к скорости',2:'заметная: −1 ко всем проверкам, −2 к скорости',3:'тяжёлая: половина скорости вверх, нельзя тяжёлое оружие, −1 к проверкам',4:'критическая: половина скорости вниз, нет реакции, −2 к проверкам',5:'смертельная: помеха на проверки, скорость 1, −5 к проверкам'};
   function isHeavyWeapon129(item={}){const value=[item.weaponCategory,item.weightClass,item.name,...list(item.tags)].map(row=>String(row||'').toLowerCase()).join(' ');return item.heavyWeapon===true||/heavy|тяж[её]л/.test(value);}
   function syncTraumaProfile195(token){
@@ -983,6 +1008,12 @@
   function moraleEffects199(token){return window.GRPGCombatInstinctV199.effects(token?.moraleV199);}
   function checkPenalty199(token){return injuryCheckPenalty129(token)+window.GRPGCombatInstinctV199.penalty(token?.moraleV199);}
   function startMoraleTurn199(token){token.ownTurnV199=Math.max(0,num(token.ownTurnV199))+1;const pool=resources204(token).reaction;if(num(token.reactionDebt204)>0){if(pool){const n=Math.min(pool.value,token.reactionDebt204);Lua204.spend(token.luaResources204,'reaction',n,epochContext204(token));token.reactionDebt204-=n;}else{token.reactionDebt204--;token.reactionWithheld204=Lua204.epoch('turn',epochContext204(token));}}}
+  async function processCriticalTurn229(token,phase){
+    const before=clone(conditionStateV138(token)),outcome=window.GRPGCombatRulesV119.criticalTurn(token,phase);
+    if(!outcome)return;
+    appendCombatLog105(Combat.getRuntime(),outcome==='dead'?`${token.name}: погибает в конце пятого хода.`:`${token.name}: выходит из критического состояния на пятом ходу.`);
+    await conditionEvents225(token,before,{reason204:'critical-state'});
+  }
   function endMoraleTurn199(token){const before=moraleEffects199(token);token.moraleV199=window.GRPGCombatInstinctV199.expire(before,token.ownTurnV199);if(before.length!==token.moraleV199.length)appendCombatLog105(Combat.getRuntime(),`${token.name}: завершилось Потрясение/Паника по длительности.`);}
   function instinctOwners199(){const session=local.store?.session193,actors=new Map(Object.entries(session?.participants||{})),runtime=App?.state?.toolState?.[COMBAT_STATE_KEY]?.scenes?.[session?.activeMapId]||Combat.getRuntime();for(const token of list(runtime?.tokens))actors.set(String(token.participantId193||token.id),token);return [...actors.values()];}
   function pendingInstinct199(){return instinctOwners199().flatMap(owner=>list(owner.instinctPendingV199).map(packet=>({owner,packet})));}
@@ -992,19 +1023,22 @@
     const current=()=>instinctOwners199().find(row=>String(row.participantId193||row.id)===String(owner.participantId193||owner.id))||owner;
     owner=current();if(!list(owner.instinctPendingV199).some(row=>row.id===packet.id))return;
     if(num(owner.hpCurrent)<=0||Trauma195.mechanical(owner)){owner.instinctPendingV199=list(owner.instinctPendingV199).filter(row=>row.id!==packet.id);await sealOperation194('Проверка Инстинкта не требуется при 0 HP');return;}
-    const body=`<div class="scene-instinct-note-v199"><b>${html(owner.name)}</b><p>Источник: ${html(packet.source?.name)}. Фактически потеряно HP: ${packet.lost}. Травма уже применена.</p><p>Проверка: d20 + Воля ${packet.will}${packet.penalty?` − штрафы ${packet.penalty}`:''} против ${10+packet.lost}.</p>${packet.disadvantage?'<p>ПОМЕХА: бросьте на столе и введите выбранный d20.</p>':''}<p>Провал: Потрясение. Провал на 5+ или натуральная 1: Паника.</p></div><label class="field">Натуральный d20<input class="input" name="instinctRoll199" type="number" min="1" max="20" step="1" required/></label><p class="small-note">Урон уже сохранён. «Отложить» сохраняет ожидающую проверку, без повторения атаки.</p>`;
+    const body=`<div class="scene-instinct-note-v199"><b>${html(owner.name)}</b><p>Источник: ${html(packet.source?.name)}. Фактически потеряно HP: ${packet.lost}. Травма уже применена.</p><p>Проверка: d20 + Воля ${packet.will}${helpFor229(owner,'instinct')?` + Помощь ${helpFor229(owner,'instinct').bonus}`:''}${packet.penalty?` − штрафы ${packet.penalty}`:''} против ${10+packet.lost}.</p>${packet.disadvantage?'<p>ПОМЕХА: бросьте на столе и введите выбранный d20.</p>':''}<p>Провал: Потрясение. Провал на 5+ или натуральная 1: Паника.</p></div><label class="field">Натуральный d20<input class="input" name="instinctRoll199" type="number" min="1" max="20" step="1" required/></label><p class="small-note">Урон уже сохранён. «Отложить» сохраняет ожидающую проверку, без повторения атаки.</p>`;
     const roll=await combatModal119({rolls225:[{unit:owner,type:'instinct'}],title:'Инстинкт самосохранения',subtitle:'Физический бросок · урон уже применён',body,confirm:'ПРИМЕНИТЬ РЕЗУЛЬТАТ',decline:'ОТЛОЖИТЬ',read:form=>Number(form.elements.instinctRoll199.value)});
     if(roll===null)throw Error('Проверка Инстинкта отложена. Урон сохранён; завершите проверку отдельной кнопкой.');
-    owner=current();const result=window.GRPGCombatInstinctV199.resolve({...packet,roll});
+    owner=current();const help=helpFor229(owner,'instinct');consumeHelp229(owner,'instinct',help);
+    const result=window.GRPGCombatInstinctV199.resolve({...packet,roll,will:packet.will+(help?.bonus||0)});
     owner.instinctPendingV199=list(owner.instinctPendingV199).filter(row=>row.id!==packet.id);
     owner.moraleV199=window.GRPGCombatInstinctV199.add(owner.moraleV199,result.kind,packet.source,num(owner.ownTurnV199),packet.id);
     if(result.kind==='shaken')owner.reactionUsedV119=true;
-    appendCombatLog105(Combat.getRuntime(),`${owner.name}: Инстинкт d20 ${roll} + Воля ${packet.will} − штрафы ${packet.penalty} = ${result.total} против ${result.dc}: ${result.kind==='panic'?'ПАНИКА — ДМ выбирает безопасный уход, падение или укрытие':result.kind==='shaken'?'ПОТРЯСЕНИЕ — проверки −1, доступная реакция потеряна, нельзя приближаться к источнику':'успех'}.`);
+    appendCombatLog105(Combat.getRuntime(),`${owner.name}: Инстинкт d20 ${roll} + Воля ${packet.will} − штрафы ${packet.penalty}${help?` + Помощь ${help.bonus}`:''} = ${result.total} против ${result.dc}: ${result.kind==='panic'?'ПАНИКА — ДМ выбирает безопасный уход, падение или укрытие':result.kind==='shaken'?'ПОТРЯСЕНИЕ — проверки −1, доступная реакция потеряна, нельзя приближаться к источнику':'успех'}.`);
     await sealOperation194('Подтверждён результат Инстинкта');Combat.render();
   }
   async function resumeInstinct199(){if(!activeMap193()){Toast.show('Откройте действующую карту для завершения проверки','info');return;}for(const {owner,packet} of pendingInstinct199())await resolveInstinct199(owner,packet);await checkpointCombat120('Завершение проверок Инстинкта',true);}
   async function applyHit199(token,amount,name,source,options={}){
-    const priorConditions225=clone(conditionStateV138(token)),result=applyDamage195(token,amount,name);updatePlayerHp105(token);
+    const priorConditions225=clone(conditionStateV138(token)),result=applyDamage195(token,amount,name);
+    if(token.conditionsV138?.unconscious&&!priorConditions225.unconscious)clearStance229(token);
+    updatePlayerHp105(token);
     await conditionEvents225(token,priorConditions225,{attacker:source,caster:source,reason204:name});
     await emit204('OnDamageApplied',token,{attacker:source,caster:source,target:token,targets:[token],damage:result.applied,hpLost204:result.applied,rawDamage204:options.rawDamage??amount,absorbed204:options.absorbed||0,damageType:options.damageType||'kinetic',sourceName:name});
     const entity=entityForToken(token)||{},computed=window.GRPGStatsV113?.compute?.(entity,{kind:token.npcId?'npc':'player',inCombat:true,temporaryModifiers:timedStatModifiers122(token)})||{},will=Math.max(0,num(computed.abilities?.will));
@@ -1063,7 +1097,7 @@
   }
   function canCombatAct129(token){
     if(!token||num(token.hpCurrent)<=0||withdrawn194(token)||!activeMap193())return false;
-    const conditions=conditionStateV138(token);if(conditions.stunned||conditions.unconscious||conditions.dying)return false;
+    const conditions=conditionStateV138(token);if(token.dead229||conditions.stunned||conditions.unconscious||conditions.dying)return false;
     if(!inBattle191())return Boolean(Combat.isDm()&&!token.destroyedV200);
     if(isControlledDevice200(token))return window.GRPGCombatDevicesV200.operationAllowed(token,activeDroneCommand129(token));
     return Boolean(Combat.canActWithToken?.(token));
@@ -1236,11 +1270,11 @@
   }
   function validateShot197(attacker,target,weapon,scene){
     if(isControlledDevice200(attacker)&&inBattle191()&&!droneLinkState129(attacker).ok)throw Error('После реакции связь с устройством или оператор недоступны');
-    if(!attacker||!target||num(attacker.hpCurrent)<=0)throw Error('Атака больше недоступна: участник отсутствует или не может действовать');
+    if(!attacker||!target||target.dead229||num(attacker.hpCurrent)<=0||conditionStateV138(attacker).unconscious)throw Error('Атака больше недоступна: участник отсутствует или не может действовать');
     if(itemBrokenV138(attacker,weapon))throw Error('Выбранное оружие сломано');
     if(weaponMalfunction122(attacker,weapon))throw Error('Сначала устраните ранее сохранённый отказ оружия');
     if(heavyBlocked195(attacker)&&isHeavyWeapon129(weapon))throw Error('Травма 3-й степени запрещает тяжёлое оружие');
-    if(window.GRPGUnitSizeV184.distance(attacker,target)>Math.floor(tokenAttackCells(attacker,scene)+1e-6))throw Error('После реакции цель вне дальности');
+    if(window.GRPGUnitSizeV184.distance(attacker,target)>Math.floor(shotRange229(attacker,weapon)+1e-6))throw Error('После реакции цель вне дальности');
     const cover=coverBetween120(scene,centerOf(attacker),centerOf(target));
     if(cover.blocksAttack||sightSegmentBlocked105(scene,centerOf(attacker),centerOf(target),[attacker.id,target.id]))throw Error('После реакции линия огня перекрыта');
     return cover;
@@ -1345,7 +1379,12 @@
     }
     if(isTurretToken129(token))base=0;
     const speed=injurySpeed129(Math.max(0,base),token),result=window.GRPGCombatMovementV198.resolve({speed,weight,capacity:carries?num(computed.values?.carryCapacity,5+2*num(computed.abilities?.strength)):Number.MAX_SAFE_INTEGER,dash:inBattle191(scene)&&Boolean(token?.dashUsedV198||activeDroneCommand129(token)?.kindV200==='dash'),spent:token?.movedThisTurn});
-    return {...result,baseSpeed:Math.max(0,base),injuredSpeed:speed,carries};
+    const fullSpeed=result.speed;
+    if(token?.proneV122||token?.movementModeV138==='climb'){
+      const speed=Math.ceil(fullSpeed/(token.proneV122?4:2)),budget=speed*(inBattle191(scene)&&token.dashUsedV198?2:1);
+      return {...result,speed,budget,remaining:Math.max(0,budget-result.spent),fullSpeed,baseSpeed:Math.max(0,base),injuredSpeed:speed,carries};
+    }
+    return {...result,fullSpeed,baseSpeed:Math.max(0,base),injuredSpeed:speed,carries};
   }
   function tokenMoveCells(token,scene){return movementState198(token,scene).speed;}
   function tokenMoveBudget198(token,scene){return movementState198(token,scene).budget;}
@@ -1370,6 +1409,23 @@
     if (num(token?.attackRange, 0) > 0) return Math.max(0, num(token.attackRange));
     const weapon = weaponForToken105(token) || {};
     return Math.max(0, num(weapon.range ?? weapon.attackRange ?? weapon.maxRange ?? weapon.distance, 0));
+  }
+  function shotBaseRange229(token,weapon){return weapon?.id===weaponForToken105(token)?.id?tokenAttackCells(token,Combat.getScene()):Math.max(0,num(weapon?.range));}
+  function shotRange229(token,weapon){return shotBaseRange229(token,weapon)*(weapon?.weaponCategory==='melee'?1:2);}
+  function longRangePenalty229(token,target,weapon){
+    return weapon?.weaponCategory!=='melee'&&window.GRPGUnitSizeV184.distance(token,target)>Math.floor(shotBaseRange229(token,weapon)+1e-6)?2:0;
+  }
+  function postureDefense229(attacker,target,weapon){
+    if(!target?.proneV122)return 0;
+    return weapon?.weaponCategory!=='melee'&&window.GRPGUnitSizeV184.distance(attacker,target)>3?1:0;
+  }
+  function postureAttack229(target,weapon){return target?.proneV122&&weapon?.weaponCategory==='melee'?2:0;}
+  function weaponDisadvantage229(token,weapon){
+    const entity=entityForToken(token)||{};
+    if(weapon.weaponSkillId&&!list(entity.skills).includes(weapon.weaponSkillId)&&!skillForScene118(weapon.weaponSkillId)?.isBasic)return true;
+    const key=weapon.requiredAbility,value=num(weapon.requiredAbilityValue);
+    const requirements=weapon.requiredAbilities&&typeof weapon.requiredAbilities==='object'?weapon.requiredAbilities:{};
+    return [...Object.entries(requirements),...(key?[[key,value]]:[])].some(([stat,minimum])=>num(minimum)>abilityScore229(token,stat)+(stat==='strength'&&token.proneV122&&isHeavyWeapon129(weapon)?1:0));
   }
   function grenadeRangeCells105(item,scene){return Math.max(0,num(item?.grenadeRange??item?.throwRange??item?.range,0));}
   function grenadeRadiusCells105(item,scene){return Math.max(0,num(item?.grenadeRadius??item?.blastRadius??item?.radius,0));}
@@ -1417,11 +1473,11 @@
     const spans=Array.isArray(m.rows?.[gy])?m.rows[gy]:[];
     return spans.some(span=>gx>=span[0]&&gx<=span[1]);
   }
-  function movementBlockedAt(scene, x, y, ignoreTokenId = '', clearance = 0, probe184 = false) {
-    const sizes=window.GRPGUnitSizeV184,moving=!probe184&&list(Combat.getRuntime(scene.id)?.tokens).find(t=>t.id===ignoreTokenId);
+  function movementBlockedAt(scene, x, y, ignoreTokenId = '', clearance = 0, probe184 = false, passingAllies229 = false) {
+    const sizes=window.GRPGUnitSizeV184,tokens=list(Combat.getRuntime(scene.id)?.tokens),moving=(!probe184||passingAllies229)&&tokens.find(t=>t.id===ignoreTokenId);
     if(moving&&!probe184&&sizes.info(moving.unitSize).count>1){
       if(!sizes.inBounds(moving.unitSize,scene,{x,y}))return true;
-      return sizes.probes(moving,{x,y}).some(p=>movementBlockedAt(scene,p.x,p.y,ignoreTokenId,0,true));
+      return sizes.probes(moving,{x,y}).some(p=>movementBlockedAt(scene,p.x,p.y,ignoreTokenId,0,true,passingAllies229));
     }
     const p={x,y}, pad=Math.max(0,num(clearance,0));
     for (const asset of list(scene.assets)) {
@@ -1437,16 +1493,15 @@
         for (let i=0;i<zone.points.length;i++) if (pointSegmentDistance(p, zone.points[i], zone.points[(i+1)%zone.points.length]) <= pad) return true;
       } else if (x >= zone.x-pad && x <= zone.x + zone.w+pad && y >= zone.y-pad && y <= zone.y + zone.h+pad) return true;
     }
-    const runtime = Combat.getRuntime(scene.id);
-    for (const token of list(runtime?.tokens)) {
-      if (token.id === ignoreTokenId || !token.blockMovement) continue;
+    for (const token of tokens) {
+      if (token.id === ignoreTokenId || !token.blockMovement || (passingAllies229&&moving&&tokenTeam122(moving)===tokenTeam122(token))) continue;
       if (token.footprintV184 ? window.GRPGUnitSizeV184.contains(token,x,y,pad) : x >= token.x-pad && x <= token.x + token.w+pad && y >= token.y-pad && y <= token.y + token.h+pad) return true;
     }
     return false;
   }
-  function movementSegmentBlocked(scene,a,b,ignoreTokenId='',clearance=0){
+  function movementSegmentBlocked(scene,a,b,ignoreTokenId='',clearance=0,passingAllies229=false){
     const length=dist(a,b),steps=Math.max(1,Math.ceil(length/.12));
-    for(let i=1;i<=steps;i++){const t=i/steps,x=a.x+(b.x-a.x)*t,y=a.y+(b.y-a.y)*t;if(movementBlockedAt(scene,x,y,ignoreTokenId,clearance))return true;}
+    for(let i=1;i<=steps;i++){const t=i/steps,x=a.x+(b.x-a.x)*t,y=a.y+(b.y-a.y)*t;if(movementBlockedAt(scene,x,y,ignoreTokenId,clearance,false,passingAllies229))return true;}
     return false;
   }
   function sightBlockedAt105(scene,x,y,ignoreIds=new Set()){
@@ -1616,6 +1671,7 @@
   function fitTokenToHex107(token,scene,center=null){
     if(!token||!scene)return token;
     const source=unitSource184(token),point=center||centerOf(token);
+    if(center&&dist(point,centerOf(token))>.001)clearStance229(token);
     token.unitSize=window.GRPGUnitSizeV184.normalize(source?source.unitSize:token.unitSize);
     window.GRPGUnitSizeV184.fit(token,scene,point);return token;
   }
@@ -1663,21 +1719,24 @@
       let ck='',cur=null;for(const [k,v] of open){if(!cur||v.f<cur.f){ck=k;cur=v;}}open.delete(ck);
       if(ck===gk){const out=[cur];let k=ck;while(came.has(k)){k=came.get(k);const [c,r]=k.split(':').map(Number);const n=hexNode108(scene,c,r);if(n)out.push(n);}out.reverse();return out.map(n=>({x:n.x,y:n.y}));}
       for(const n of hexNeighbours108(scene,cur)){
-        if(movementSegmentBlocked(scene,{x:cur.x,y:cur.y},{x:n.x,y:n.y},tokenId,clearance))continue;
+        if(movementSegmentBlocked(scene,{x:cur.x,y:cur.y},{x:n.x,y:n.y},tokenId,clearance,true))continue;
         const nk=key(n),tent=(score.get(ck)??Infinity)+terrainCostAt122(scene,n);if(tent>=(score.get(nk)??Infinity))continue;
         came.set(nk,ck);score.set(nk,tent);const heuristic=dist(n,g)/Math.max(.001,hexMetrics107().hexH);open.set(nk,{...n,f:tent+heuristic});
       }
     }
     return null;
   }
-  function truncateHexPath108(path,maxCells){
+  function truncateHexPath108(path,maxCells,moverId=''){
     const scene=Combat.getScene(),maxCost=maxCells===Infinity?Infinity:Math.max(0,Math.floor(num(maxCells,0)+1e-6));let cost=0,used=0;
     for(let index=1;index<path.length;index++){const next=terrainCostAt122(scene,path[index]);if(cost+next>maxCost)break;cost+=next;used=index;}
+    while(used>0&&moverId&&movementBlockedAt(scene,path[used].x,path[used].y,moverId,hexMetrics107().tokenSize*.18)){
+      cost-=terrainCostAt122(scene,path[used]);used--;
+    }
     const points=path.slice(0,used+1),steps=Math.max(0,path.length-1);
     return {points,steps:used,cost,limited:used<steps,end:points[points.length-1]||path[0]};
   }
   function canMechanicalMove108(token){
-    if(!token||num(token.hpCurrent)<=0)return false;const conditions204=conditionStateV138(token);if(conditions204.stunned||conditions204.unconscious||conditions204.dying||conditions204.grappled)return false;
+    if(!token||token.dead229||num(token.hpCurrent)<=0)return false;const conditions204=conditionStateV138(token);if(conditions204.stunned||conditions204.unconscious||conditions204.dying||conditions204.grappled)return false;
     if(withdrawn194(token))return false;
     if(!activeMap193())return false;
     if(isTurretToken129(token))return false;
@@ -1840,20 +1899,30 @@
   function renderDisengageAction122(){const token=selectedToken104(),enabled=Boolean(token&&Combat.canActWithToken?.(token)&&!actionSpent191(token)&&!token.disengagedV122&&!token.burstStateV122);return `<button class="secondary" type="button" data-scene-disengage-v122 ${enabled?'':'disabled'} title="Потратить действие: движение не вызывает атаку по возможности">ОТХОД</button>`;}
   function postureAvailability128(token=selectedToken104()){
     const scene=Combat.getScene();if(!token||!scene)return{enabled:false,cost:0,remaining:0,reason:'Сначала выберите действующего юнита'};
-    const total=Math.max(0,Math.floor(tokenMoveBudget198(token,scene)+1e-6)),cost=total>0?Math.max(1,Math.ceil(tokenMoveCells(token,scene)/2)):0,spent=Math.max(0,Math.floor(num(token.movedThisTurn,0)+1e-6)),remaining=Math.max(0,total-spent);
+    const total=Math.max(0,Math.floor(tokenMoveBudget198(token,scene)+1e-6)),cost=total>0?(token.proneV122?Math.max(1,Math.ceil(movementState198(token,scene).fullSpeed/2)):1):0,spent=Math.max(0,Math.floor(num(token.movedThisTurn,0)+1e-6)),remaining=Math.max(0,total-spent);
     if(!canMechanicalMove108(token))return{enabled:false,cost,remaining,reason:'Сейчас не ход этого юнита'};
     if(token.burstStateV122)return{enabled:false,cost,remaining,reason:'Сначала завершите скорострельную очередь'};
     if(local.moveBusyV122||local.lua119.busy)return{enabled:false,cost,remaining,reason:'Предыдущее боевое действие ещё не завершено'};
-    if(cost<=0||remaining<cost)return{enabled:false,cost,remaining,reason:`Недостаточно движения: нужно ${cost}, осталось ${remaining}`};
+    const postureRemaining=token.proneV122?Math.max(0,movementState198(token,scene).fullSpeed*(token.dashUsedV198?2:1)-spent):remaining;
+    if(cost<=0||postureRemaining<cost)return{enabled:false,cost,remaining,reason:`Недостаточно движения: нужно ${cost}, осталось ${remaining}`};
     return{enabled:true,cost,remaining,reason:`Стоимость: ${cost} из ${total} движения`,token};
   }
   function renderPostureAction128(){const state=postureAvailability128(),token=selectedToken104();return `<button class="secondary scene-posture-action-v128" type="button" data-scene-posture-v128 ${state.enabled?'':'disabled'} title="${html(state.reason)}">${token?.proneV122?'ВСТАТЬ':'ЛЕЧЬ'}${state.cost?` · ${state.cost}`:''}</button>`;}
   function renderBurstFinish122(){const token=selectedToken104();return token?.burstStateV122?`<button class="secondary active" type="button" data-scene-burst-finish-v122>ЗАВЕРШИТЬ ОЧЕРЕДЬ (${Math.max(0,token.burstStateV122.maxShots-token.burstStateV122.nextShot+1)})</button>`:'';}
   function renderMalfunctionAction122(){const token=selectedToken104(),weapon=weaponForToken105(token),jammed=weaponMalfunction122(token,weapon),enabled=jammed&&canCombatAct129(token)&&!actionSpent191(token);return jammed?`<button class="secondary" type="button" data-scene-clear-malfunction-v122 ${enabled?'':'disabled'}>УСТРАНИТЬ ОТКАЗ</button>`:'';}
   function skillForScene118(id){try{return Data.getSkill?.(id)||Data.skills?.[id]||worldData?.skills?.SKILLS?.[id]||null;}catch{return null;}}
+  const basicSkills229=Object.fromEntries([
+    ['skill_766282','Прицеливание','Действие. До +3 к попаданию и урону по выбранной цели для одного выстрела.'],
+    ['skill_378845','Помощь','Действие один раз за сцену. +1 + Воля помощника к одной выбранной проверке.'],
+    ['skill_stabilization','Стабилизация','Действие. Доступная цель должна умирать. d20 + Интеллект против 12 + УКС.'],
+    ['skill_brace','Упор','ДМ подтверждает фактическую опору оружия. Штраф очередности выстрела уменьшается на 1.']
+  ].map(([id,name,description])=>[id,{id,name,description,isBasic:true,activationType:'active',native229:true}]));
   function activeSkillsForToken118(token=selectedToken104()){
+    if(!token)return [];
     const entity=entityForToken(token)||{};
-    return list(entity.skills).map(id=>skillForScene118(id)).filter(skill=>skill&&String(skill.skillType||skill.type||'skill')!=='specialization'&&String(skill.activationType||'passive')==='active');
+    const rows=list(entity.skills).map(id=>skillForScene118(id)).filter(skill=>skill&&!basicSkills229[skill.id]&&String(skill.skillType||skill.type||'skill')!=='specialization'&&String(skill.activationType||'passive')==='active');
+    return isControlledDevice200(token)?rows:[...rows,...Object.values(basicSkills229)];
+
   }
   function renderActiveSkills118(){
     const count=activeSkillsForToken118().length;
@@ -1878,7 +1947,7 @@
     if(operationReason191())return operationReason191();
     if(!canCombatAct129(token))return 'Сейчас не ход этого участника или нет активной команды';
     if(token.burstStateV122)return 'Сначала завершите скорострельную очередь';
-    if(actionSpent191(token)&&!scriptSourcesForToken119(token).some(source=>scripted204(source)||/GetCostMode/.test(source.script)))return 'Действие этого участника уже потрачено';
+    if(actionSpent191(token)&&!activeSkillsForToken118(token).some(row=>row.id==='skill_brace')&&!scriptSourcesForToken119(token).some(source=>scripted204(source)||/GetCostMode/.test(source.script)))return 'Действие этого участника уже потрачено';
     return '';
   }
   function closeAbilityWindow192(restore=true){
@@ -1890,7 +1959,7 @@
     const state=abilityWindow192;if(!state)return;
     const token=selectedToken104();
     if(UI.activeModuleId!=='combat'||Combat.getScene()?.id!==state.sceneId||token?.id!==state.tokenId){closeAbilityWindow192(false);return;}
-    const source204=state.sources?.find(row=>row.id===state.selectedId),baseReason204=abilityReason192(token),reason=baseReason204||(actionSpent191(token)&&!scripted204(source204)?'Действие этого участника уже потрачено':''),button=state.overlay.querySelector('[data-ability-use192]');
+    const source204=state.sources?.find(row=>row.id===state.selectedId),baseReason204=abilityReason192(token),reason=baseReason204||(actionSpent191(token)&&state.selectedId!=='skill_brace'&&!scripted204(source204)?'Действие этого участника уже потрачено':''),button=state.overlay.querySelector('[data-ability-use192]');
     button.disabled=Boolean(reason)||!state.selectedId;
     state.overlay.querySelector('[data-ability-status192]').textContent=reason||(scripted204(source204)?'Стоимость применения задаёт Lua-скрипт.':'Применение расходует действие. Результат — по Lua или вручную по описанию.');
   }
@@ -1908,7 +1977,7 @@
       state.selectedId=id;const row=state.rows.find(r=>String(r.id)===id);
       for(const button of listNode.querySelectorAll('[data-ability-select192]')){const active=button.dataset.abilitySelect192===id;button.classList.toggle('active',active);button.setAttribute('aria-pressed',String(active));}
       detail.scrollTop=0;
-      detail.innerHTML=row?`<h3>${html(row.name||row.id)}</h3>${list(row.tags).length?`<p class="scene-ability-tags-v192">${list(row.tags).map(t=>html(t)).join(' · ')}</p>`:''}<div class="sc-rich176">${window.GRPGSkillCatalogV176?.rich(row.description)||html(row.description||'Описание не задано.')}</div>${row.luaEnabled===true&&String(row.luaScript||'').trim()?'':'<p class="scene-ability-manual-v192">Автоматизация не настроена. После применения действие будет потрачено; результат по описанию применяет ДМ.</p>'}`:'<p>Нет подходящих способностей.</p>';
+      detail.innerHTML=row?`<h3>${html(row.name||row.id)}</h3>${list(row.tags).length?`<p class="scene-ability-tags-v192">${list(row.tags).map(t=>html(t)).join(' · ')}</p>`:''}<div class="sc-rich176">${window.GRPGSkillCatalogV176?.rich(row.description)||html(row.description||'Описание не задано.')}</div>${row.native229||row.luaEnabled===true&&String(row.luaScript||'').trim()?'':'<p class="scene-ability-manual-v192">Автоматизация не настроена. После применения действие будет потрачено; результат по описанию применяет ДМ.</p>'}`:'<p>Нет подходящих способностей.</p>';
       refreshAbilityWindow192();
     };
     const draw=()=>{
@@ -2205,8 +2274,12 @@
     return `<section class="battle-weapons-v226" aria-label="Оружие и боезапас"><h3>ВООРУЖЕНИЕ</h3><div class="battle-weapon-list-v226">${battleWeaponRows226(token).map(({weapon,magazine,rounds,loads,selected,broken,jammed})=>`<button type="button" class="battle-weapon-v226 ${selected?'is-selected':''}" data-battle-weapon226="${html(weapon.id)}" aria-pressed="${selected}" ${token.burstStateV122||isControlledDevice200(token)?'disabled':''} title="${html(weapon.name)} · ${html(weapon.damage||'—')} урона · ${hexLabel109(num(weapon.range ?? token.attackRange ?? DEFAULT_ATTACK_WORLD))}">${portrait226(weapon)}<span><b>${html(weapon.name||'Безоружная атака')}</b><small>Урон ${html(weapon.damage||'—')} · ${hexLabel109(num(weapon.range ?? token.attackRange ?? DEFAULT_ATTACK_WORLD))}</small>${magazine.size?`<strong class="${magazine.loaded?'':'is-empty'}">${magazine.loaded}<em> / ${magazine.size}</em></strong><small>Запас: ${rounds} патр. ≈ ${loads} полн. магаз.</small><small>${html(ammoForWeapon118(weapon,magazine)?.name||'Патроны не выбраны')}</small>`:'<small>Без магазина</small>'}${broken?'<small class="battle-danger-v226">СЛОМАНО</small>':jammed?'<small class="battle-danger-v226">ОТКАЗ</small>':''}</span></button>`).join('')||'<p>Оружие отсутствует</p>'}</div></section>`;
   }
   function renderBattleStatus226(token){
-    const labels={dying:'Умирает',stabilized:'Стабилизирован',prone:'Лежит',stunned:'Оглушён',grappled:'Захвачен',unconscious:'Без сознания',handsBusy:'Руки заняты'};
+    const labels={dying:`Умирает · УКС ${num(token.critical229?.damage)} · сложность ${window.GRPGCombatRulesV119.stabilizationDifficulty(token)}`,stabilized:'Стабилизирован',prone:'Лежит',stunned:'Оглушён',grappled:'Захвачен',unconscious:'Без сознания',handsBusy:'Руки заняты'};
     const states=Object.entries(conditionStateV138(token)).filter(([,value])=>value).map(([key])=>`<span class="battle-effect-v226 is-condition">${html(labels[key]||key)}</span>`);
+    if(token.dead229)states.push('<span class="battle-effect-v226 is-condition">Погиб</span>');
+    if(token.aim229)states.push(`<span class="battle-effect-v226">Прицеливание +${token.aim229.bonus}</span>`);
+    if(token.brace229)states.push('<span class="battle-effect-v226">Упор</span>');
+    if(token.help229)states.push(`<span class="battle-effect-v226">Помощь +${token.help229.bonus}</span>`);
     if(withdrawn194(token))states.push('<span class="battle-effect-v226 is-condition">Выведен из боя</span>');
     if(injurySeverity129(token))states.push(`<span class="battle-effect-v226 is-condition" title="${html(INJURY_LABELS_V129[injurySeverity129(token)])}">Травма ${injurySeverity129(token)} · проверки −${injuryCheckPenalty129(token)}</span>`);
     for(const morale of moraleEffects199(token))states.push(`<span class="battle-effect-v226 is-condition">${morale.kind==='panic'?'Паника':'Потрясение'}</span>`);
@@ -2252,7 +2325,7 @@
     syncUnitSizes184(scene,runtime);
     if(inBattle191(scene)&&!this.selectedObject&&local.ui.hudScene226!==scene.id){const current=this.getCurrentTurnToken?.();if(current)this.selectedObject={kind:'token',id:current.id};}
     local.ui.hudScene226=inBattle191(scene)?scene.id:'';
-    root.innerHTML=inBattle191(scene)?renderTactical226(scene,runtime):`<div class="scene-editor-v104">${renderTop104(scene,runtime)}${renderLeft104()}<main class="scene-center-v104"><div class="scene-session-stack-v193">${renderSession191(scene,runtime)}${renderInstinct199()}${renderLifecycle193(scene,runtime)}${renderOperation194()}</div>${renderBoard104(scene,runtime)}</main>${renderInspector104(scene,runtime)}</div>`;
+    root.innerHTML=inBattle191(scene)?renderTactical226(scene,runtime):`<div class="scene-editor-v104">${renderTop104(scene,runtime)}${renderLeft104()}<main class="scene-center-v104"><div class="scene-session-stack-v193">${renderSession191(scene,runtime)}${renderInstinct199()}${renderCriticalAdvance229()}${renderLifecycle193(scene,runtime)}${renderOperation194()}</div>${renderBoard104(scene,runtime)}</main>${renderInspector104(scene,runtime)}</div>`;
     root.querySelectorAll('.battle-tools-v226>details').forEach((node,index)=>{if(local.ui.hudDetails226?.[index]!=null)node.open=local.ui.hudDetails226[index];});
     renderedSceneV137=scene.id;
     for(const selector of scrollSelectorsV137){const node=root.querySelector(selector),pos=panelScrollV137.get(scene.id+selector);if(node&&pos){node.scrollTop=pos.top;node.scrollLeft=pos.left;}}
@@ -2380,8 +2453,8 @@
   function selectedToken104(){const sel=selectedObject104();return sel?.kind==='token'?sel.obj:null;}
   function makeRoutePreview104(point,attack=false){
     const scene=Combat.getScene(),token=selectedToken104();if(!scene||!token)return null;const start=centerOf(token);
-    if(attack){const weapon=weaponForToken105(token);if(!weapon)return {kind:'route',mode:'attack',sourceTokenId:token.id,points:[start,start],end:start,limited:true,blocked:true,label:'Нет выбранного оружия'};const max=tokenAttackCells(token,scene),snapped=nearestHexCenter107(scene,point),target=list(Combat.getRuntime(scene.id)?.tokens).find(t=>t.id!==token.id&&window.GRPGUnitSizeV184.contains(t,point.x,point.y)),distance=target?window.GRPGUnitSizeV184.distance(token,target):hexDistancePoints109(scene,start,snapped),rangeEnd=target?snapped:hexEndpointAtRange109(scene,start,snapped,max),end={x:rangeEnd.x,y:rangeEnd.y},limited=distance>Math.floor(max+1e-6),blocked=!limited&&sightSegmentBlocked105(scene,start,end,[token.id]);return {kind:'route',mode:'attack',sourceTokenId:token.id,points:[start,end],end,hexes:Math.min(distance,Math.floor(max+1e-6)),maxHexes:Math.floor(max+1e-6),limited,blocked,label:`${weapon.name||'Выстрел'}: ${hexLabel109(Math.min(distance,max))} / ${hexLabel109(max)}${blocked?' · ЛИНИЯ ОГНЯ БЛОКИРОВАНА':''}`};}
-    if(token.burstStateV122)return {kind:'route',mode:'move',sourceTokenId:token.id,points:[start],end:start,steps:0,cost:0,limited:true,blocked:true,label:'Сначала завершите скорострельную очередь'};if(!canMechanicalMove108(token))return {kind:'route',mode:'move',sourceTokenId:token.id,points:[start],end:start,steps:0,cost:0,limited:true,blocked:true,label:'Выбран не текущий юнит инициативы'};const snappedTarget=nearestHexCenter107(scene,point),path=findHexPath108(scene,start,snappedTarget,token.id),totalMax=Math.max(0,Math.floor(tokenMoveBudget198(token,scene)+1e-6)),spentCells=Math.max(0,Math.floor(num(token.movedThisTurn,0)+1e-6)),max=inBattle191()?Math.max(0,totalMax-spentCells):Infinity;if(!path){return {kind:'route',mode:'move',sourceTokenId:token.id,points:[start],end:start,steps:0,cost:0,limited:true,blocked:true,label:'Путь заблокирован'};}const cut=truncateHexPath108(path,max),remaining=Math.max(0,max-cut.cost),terrainExtra=Math.max(0,cut.cost-cut.steps),command=activeDroneCommand129(token),operator=command?.returnOnly?operatorForDrone129(token):null,wrongDirection=Boolean(operator&&hexDistancePoints109(scene,cut.end,centerOf(operator))>=hexDistancePoints109(scene,start,centerOf(operator)));const moraleProblem=approachProblem199(token,cut.points,scene);if(moraleProblem)return{kind:'route',mode:'move',sourceTokenId:token.id,points:[start],end:start,steps:0,cost:0,limited:true,blocked:true,label:moraleProblem};return {kind:'route',mode:'move',sourceTokenId:token.id,points:cut.points,end:cut.end,steps:cut.steps,cost:cut.cost,limited:cut.limited||wrongDirection,blocked:wrongDirection,label:wrongDirection?'Без связи дрон может двигаться только к оператору':`Движение: ${hexLabel109(cut.steps)} · стоимость ${cut.cost}${terrainExtra?` (+${terrainExtra} за трудную местность)`:''} / останется ${inBattle191()?remaining:'без лимита'}`};
+    if(attack){const weapon=weaponForToken105(token);if(!weapon)return {kind:'route',mode:'attack',sourceTokenId:token.id,points:[start,start],end:start,limited:true,blocked:true,label:'Нет выбранного оружия'};const max=shotRange229(token,weapon),snapped=nearestHexCenter107(scene,point),target=list(Combat.getRuntime(scene.id)?.tokens).find(t=>t.id!==token.id&&window.GRPGUnitSizeV184.contains(t,point.x,point.y)),distance=target?window.GRPGUnitSizeV184.distance(token,target):hexDistancePoints109(scene,start,snapped),rangeEnd=target?snapped:hexEndpointAtRange109(scene,start,snapped,max),end={x:rangeEnd.x,y:rangeEnd.y},limited=distance>Math.floor(max+1e-6),blocked=!limited&&sightSegmentBlocked105(scene,start,end,[token.id]);return {kind:'route',mode:'attack',sourceTokenId:token.id,points:[start,end],end,hexes:Math.min(distance,Math.floor(max+1e-6)),maxHexes:Math.floor(max+1e-6),limited,blocked,label:`${weapon.name||'Выстрел'}: ${hexLabel109(Math.min(distance,max))} / ${hexLabel109(max)}${blocked?' · ЛИНИЯ ОГНЯ БЛОКИРОВАНА':''}`};}
+    if(token.burstStateV122)return {kind:'route',mode:'move',sourceTokenId:token.id,points:[start],end:start,steps:0,cost:0,limited:true,blocked:true,label:'Сначала завершите скорострельную очередь'};if(!canMechanicalMove108(token))return {kind:'route',mode:'move',sourceTokenId:token.id,points:[start],end:start,steps:0,cost:0,limited:true,blocked:true,label:'Выбран не текущий юнит инициативы'};const snappedTarget=nearestHexCenter107(scene,point),path=findHexPath108(scene,start,snappedTarget,token.id),totalMax=Math.max(0,Math.floor(tokenMoveBudget198(token,scene)+1e-6)),spentCells=Math.max(0,Math.floor(num(token.movedThisTurn,0)+1e-6)),max=inBattle191()?Math.max(0,totalMax-spentCells):Infinity;if(!path){return {kind:'route',mode:'move',sourceTokenId:token.id,points:[start],end:start,steps:0,cost:0,limited:true,blocked:true,label:'Путь заблокирован'};}const cut=truncateHexPath108(path,max,token.id),remaining=Math.max(0,max-cut.cost),terrainExtra=Math.max(0,cut.cost-cut.steps),command=activeDroneCommand129(token),operator=command?.returnOnly?operatorForDrone129(token):null,wrongDirection=Boolean(operator&&hexDistancePoints109(scene,cut.end,centerOf(operator))>=hexDistancePoints109(scene,start,centerOf(operator)));const moraleProblem=approachProblem199(token,cut.points,scene);if(moraleProblem)return{kind:'route',mode:'move',sourceTokenId:token.id,points:[start],end:start,steps:0,cost:0,limited:true,blocked:true,label:moraleProblem};return {kind:'route',mode:'move',sourceTokenId:token.id,points:cut.points,end:cut.end,steps:cut.steps,cost:cut.cost,limited:cut.limited||wrongDirection,blocked:wrongDirection,label:wrongDirection?'Без связи дрон может двигаться только к оператору':`Движение: ${hexLabel109(cut.steps)} · стоимость ${cut.cost}${terrainExtra?` (+${terrainExtra} за трудную местность)`:''} / останется ${inBattle191()?remaining:'без лимита'}`};
   }
   function makeGrenadePreview105(point){const scene=Combat.getScene(),token=selectedToken104(),grenade=grenadeForToken105(token);if(!scene||!token||!grenade)return null;const start=centerOf(token),max=grenadeRangeCells105(grenade,scene),snapped=nearestHexCenter107(scene,point),distance=hexDistancePoints109(scene,start,snapped),rangeEnd=hexEndpointAtRange109(scene,start,snapped,max),end={x:rangeEnd.x,y:rangeEnd.y},radiusHexes=Math.max(0,Math.floor(grenadeRadiusCells105(grenade,scene)+1e-6)),radius=radiusHexes*hexStepDistance109(),limited=distance>Math.floor(max+1e-6);return {kind:'grenade',mode:'grenade',sourceTokenId:token.id,start,end,radius,radiusHexes,hexes:Math.min(distance,max),maxHexes:max,limited,itemId:grenade.id,label:`${grenade.name}: бросок ${hexLabel109(Math.min(distance,max))} / ${hexLabel109(max)} · радиус ${hexLabel109(radiusHexes)}`};}
   function tokenTeam122(token={}){return String(token.teamId||token.factionId||(token.playerId?'players':token.npcId?'npcs':token.type||'units'));}
@@ -2389,7 +2462,7 @@
   async function resolveOpportunityAttack122(source,target,weapon,options={}){
     const scene=Combat.getScene(),rules=window.GRPGCombatRulesV119,transaction=beginCombatTransaction120('opportunity',scene?.id,source.id,[target.id]);if(!transaction)return num(target.hpCurrent)>0;
     try{
-      let refs=combatTransactionRefs120(transaction),attacker=refs.attacker,victim=refs.target;const entity=entityForToken(attacker)||{},attack=window.GRPGStatsV113?.weaponAttack?.(entity,weapon,{kind:attacker.npcId?'npc':'player',inCombat:true,damageType:damageType202(weapon),temporaryModifiers:timedStatModifiers122(attacker)}),hitBonus=num(attack?.bonus??weapon.hitBonus)-2-checkPenalty199(attacker),damageBonus=num(attack?.damageBonus),defense=incomingDefense119(victim,'melee',null,damageType202(weapon));defense.defenseBonus-=checkPenalty199(victim);
+      let refs=combatTransactionRefs120(transaction),attacker=refs.attacker,victim=refs.target;const entity=entityForToken(attacker)||{},attack=window.GRPGStatsV113?.weaponAttack?.(entity,weapon,{kind:attacker.npcId?'npc':'player',inCombat:true,damageType:damageType202(weapon),temporaryModifiers:timedStatModifiers122(attacker)}),hitBonus=num(attack?.bonus??weapon.hitBonus)+postureAttack229(victim,weapon)-checkPenalty199(attacker),damageBonus=num(attack?.damageBonus),defense=incomingDefense119(victim,'melee',null,damageType202(weapon));defense.defenseBonus-=checkPenalty199(victim);
       const declaredContext={attacker,target:victim,caster:attacker,targets:[victim],weapon,damageType:damageType202(weapon),sourceName:`Атака по возможности: ${weapon.name}`},declared={damage:0,attackBonus:hitBonus,defenseBonus:defense.defenseBonus,effects:[]};await runAutomaticHooks119(attacker,'OnAttackDeclared',declaredContext,declared);await chooseReaction119('OnAttackDeclared',declaredContext,declared);
       const entered=await requestAttackRolls119({attacker,target:victim,weapon,attackBonus:declared.attackBonus,defenseBonus:declared.defenseBonus,damageBonus,attackDisadvantage:injuryDisadvantage129(attacker),defenseDisadvantage:injuryDisadvantage129(victim)});if(!entered)return num(victim.hpCurrent)>0;
       attacker.reactionUsedV119=true;if(entered.attackRoll===1)await applyWeaponFumble196(attacker,weapon);
@@ -2402,7 +2475,7 @@
       const result=rules.resolveManualAttack({attackRoll:entered.attackRoll,defenseRoll:entered.defenseRoll,attackBonus:pre.attackBonus+num(entered.attackBonusDelta204),defenseBonus:pre.defenseBonus+num(entered.defenseBonusDelta204),damageRoll:entered.damageRoll,damageBonus,damageReduction:0});await emit204('OnAttackResolved',attacker,{...context,hit:result.hit,critical:result.critical},pre);if(!result.hit)await emit204('OnMiss',attacker,{...context,hit:false});
       refs=combatTransactionRefs120(transaction);attacker=refs.attacker;victim=refs.target;let finalDamage=result.damageApplied,hp={before:num(victim?.hpCurrent),after:num(victim?.hpCurrent),applied:0},state={damage:result.hit?result.damageApplied:0,damagePartsV138:result.hit?[{amount:result.damageApplied,absorptionSource:'all'}]:[],effects:pre.effects};
       if(result.hit&&victim){await runAutomaticHooks119(attacker,'OnHit',{...context,attacker,target:victim,damage:state.damage},state);await chooseReaction119('OnHit',{...context,attacker,target:victim,damage:state.damage},state);refs=combatTransactionRefs120(transaction);victim=refs.target;attacker=refs.attacker;if(victim){await runAutomaticHooks119(victim,'BeforeDamage',{...context,attacker,target:victim,damage:state.damage},state);await chooseReaction119('BeforeDamage',{...context,attacker,target:victim,damage:state.damage},state);finalDamage=applyAbsorptionV138(state,incomingDefense119(victim,'melee',null,damageType202(weapon))).applied;if(result.defenseCritical)finalDamage=Math.floor(finalDamage/2);hp=await applyHit199(victim,finalDamage,weapon.name,attacker,{damageType:damageType202(weapon)});updatePlayerHp105(victim);const afterContext={...context,attacker,target:victim,damage:finalDamage};await runAutomaticHooks119(victim,'OnTakeDamage',afterContext,state);await chooseReaction119('OnTakeDamage',afterContext,state);refs=combatTransactionRefs120(transaction);victim=refs.target;hp.after=num(victim?.hpCurrent,hp.after);hp.applied=Math.max(0,hp.before-hp.after);if(victim)updatePlayerHp105(victim);}}
-      appendCombatLog105(refs.runtime,`${attacker.name} ${result.hit?'попадает':'промахивается'} атакой по возможности по ${victim?.name||target.name} (−2 к попаданию)${result.hit?`: ${hp.before} → ${hp.after} HP`:''}${result.fumble?' · натуральная 1':''}.`);
+      appendCombatLog105(refs.runtime,`${attacker.name} ${result.hit?'попадает':'промахивается'} атакой по возможности по ${victim?.name||target.name}${result.hit?`: ${hp.before} → ${hp.after} HP`:''}${result.fumble?' · натуральная 1':''}.`);
       Combat.syncInitiative(scene.id,false);flushLuaEffects119(state);await sealOperation194('Подтверждена атака по возможности');if(!options.deferCheckpoint)await checkpointCombat120('Сцена: атака по возможности',true);return num(victim?.hpCurrent,0)>0;
     }catch(error){
       operationFailure194(error);console.error('SCENE_OPPORTUNITY_ATTACK_V122_FAILED',error);
@@ -2413,7 +2486,7 @@
   async function resolveOpportunityAttacks122(mover,path){
     const scene=Combat.getScene(),runtime=Combat.getRuntime();if(!scene||!runtime)return{alive:true,reactionUsed:false};const start=centerOf(mover),travel=list(path).slice(1),candidates=list(runtime.tokens).filter(token=>token.id!==mover.id&&num(token.hpCurrent)>0&&reactionAvailable195(token)&&tokenTeam122(token)!==tokenTeam122(mover)&&window.GRPGUnitSizeV184.distance(token,mover)<=1&&travel.some(point=>window.GRPGUnitSizeV184.distance(token,mover,undefined,point)>1));
     let reactionUsed=false;
-    for(const source of candidates){const weapons=meleeWeapons122(source).filter(item=>!weaponMalfunction122(source,item)&&(!heavyBlocked195(source)||!isHeavyWeapon129(item)));if(!weapons.length)continue;const body=`<div class="scene-lua-participants-v119"><b>${html(source.name)}</b><span>→</span><b>${html(mover.name)}</b></div><div class="field"><label>Ближняя атака</label><select class="select" name="opportunityWeapon">${weapons.map((item,index)=>`<option value="${html(item.id)}" ${index===0?'selected':''}>${html(item.name)} · ${html(item.damage||'1')} · попадание −2</option>`).join('')}</select></div><div class="small-note">Противник покидает соседний гекс без Отхода. ДМ может отклонить реакцию без её расхода.</div>`;const weaponId=await combatModal119({title:'Атака по возможности',subtitle:'Решение ДМа',body,confirm:'ИСПОЛЬЗОВАТЬ РЕАКЦИЮ',decline:'ОТКЛОНИТЬ',read:form=>String(form.elements.opportunityWeapon?.value||'')});if(!weaponId)continue;reactionUsed=true;const weapon=weapons.find(item=>String(item.id)===weaponId)||weapons[0];if(!await resolveOpportunityAttack122(source,mover,weapon,{deferCheckpoint:true}))return{alive:false,reactionUsed};}
+    for(const source of candidates){const weapons=meleeWeapons122(source).filter(item=>!weaponMalfunction122(source,item)&&(!heavyBlocked195(source)||!isHeavyWeapon129(item)));if(!weapons.length)continue;const body=`<div class="scene-lua-participants-v119"><b>${html(source.name)}</b><span>→</span><b>${html(mover.name)}</b></div><div class="field"><label>Ближняя атака</label><select class="select" name="opportunityWeapon">${weapons.map((item,index)=>`<option value="${html(item.id)}" ${index===0?'selected':''}>${html(item.name)} · ${html(item.damage||'1')}</option>`).join('')}</select></div><div class="small-note">Противник покидает соседний гекс без Отхода. ДМ может отклонить реакцию без её расхода.</div>`;const weaponId=await combatModal119({title:'Атака по возможности',subtitle:'Решение ДМа',body,confirm:'ИСПОЛЬЗОВАТЬ РЕАКЦИЮ',decline:'ОТКЛОНИТЬ',read:form=>String(form.elements.opportunityWeapon?.value||'')});if(!weaponId)continue;reactionUsed=true;const weapon=weapons.find(item=>String(item.id)===weaponId)||weapons[0];if(!await resolveOpportunityAttack122(source,mover,weapon,{deferCheckpoint:true}))return{alive:false,reactionUsed};}
     return{alive:num(mover.hpCurrent)>0,reactionUsed};
   }
   async function commitMove104(){
@@ -2437,9 +2510,10 @@
       const stepByStep=stepHooks||opportunityPossible||list(runtime.thinkersV125).length>0;
       let moved=false;
       for(const next of preview.points.slice(1)){
+        if(next===preview.points.at(-1)&&movementBlockedAt(scene,next.x,next.y,token.id,hexMetrics107().tokenSize*.18))break;
         const before=centerOf(token);if(!canMechanicalMove108(token))break;
         if(stepByStep&&inBattle191()&&!token.disengagedV122){const resolved=await resolveOpportunityAttacks122(token,[before,next]);opportunity.reactionUsed ||=resolved.reactionUsed;if(!resolved.alive)break;}
-        if(!canMechanicalMove108(token)||dist(centerOf(token),before)>.001||movementSegmentBlocked(scene,before,next,token.id,hexMetrics107().tokenSize*.18)||approachProblem199(token,[before,next],scene))break;
+        if(!canMechanicalMove108(token)||dist(centerOf(token),before)>.001||movementSegmentBlocked(scene,before,next,token.id,hexMetrics107().tokenSize*.18,true)||approachProblem199(token,[before,next],scene))break;
         const cost=terrainCostAt122(scene,next);if(inBattle191()&&cost>tokenMoveBudget198(token,scene)-num(token.movedThisTurn))break;
         fitTokenToHex107(token,scene,next);token.movedThisTurn=Math.max(0,num(token.movedThisTurn))+cost;
         moved=true;
@@ -2450,7 +2524,7 @@
         }
         if(dist(centerOf(token),next)>.001)break;
       }
-      if(moved&&!stepByStep)await sealOperation194('Подтверждено перемещение');
+      if(moved&&!stepByStep){for(const actor of list(runtime.tokens))expireAim229(actor);await sealOperation194('Подтверждено перемещение');}
       await emit204('OnMoveEnd',token,{attacker:token,target:token,movementKind204:'normal'},effects);flushLuaEffects119(effects);
       local.preview={...preview,effect:'move',movedTokenId:token.id};
       await checkpointCombat120(opportunity.reactionUsed?'Сцена: атака по возможности и перемещение':'Сцена: перемещение',opportunity.reactionUsed);
@@ -2466,6 +2540,7 @@
     try{
       const before=clone(conditionStateV138(token));
       setConditionV138(token,'prone',!token.proneV122);
+      clearStance229(token);
       await conditionEvents225(token,before,{reason204:'voluntary'});
       token.movedThisTurn=Math.max(0,num(token.movedThisTurn))+state.cost;
       appendCombatLog105(Combat.getRuntime(),`${token.name} ${token.proneV122?'ложится':'встаёт'}, расходуя ${state.cost} движения.`);
@@ -2567,6 +2642,7 @@
     return value;
   }
   function combatModalBase225({title='',subtitle='',body='',confirm='ПОДТВЕРДИТЬ',decline='ОТКЛОНИТЬ',read=null,validate=null}={}){
+    if(navigation194&&UI.activeModuleId!=='combat')return Promise.resolve(null);
     closeCombatModal119(null);
     return new Promise(resolve=>{
       const overlay=document.createElement('div');overlay.className='scene-lua-overlay-v119';
@@ -2581,12 +2657,14 @@
     });
   }
   function manualDamageLabel119(expression=''){return window.GRPGCombatRulesV119?.requiresManualDamage?.(expression)?`Итог броска урона (${expression||'по описанию'})`:`Базовый урон (${expression||0})`;}
-  async function requestAttackRolls119({attacker,target,weapon,attackBonus,defenseBonus,damageBonus,disadvantage=false,attackDisadvantage=disadvantage,defenseDisadvantage=false,shotIndex=1,targetSwitches=0}){
+  async function requestAttackRolls119({attacker,target,weapon,attackBonus,defenseBonus,damageBonus,disadvantage=false,attackDisadvantage=disadvantage,defenseDisadvantage=false,shotIndex=1,targetSwitches=0,burstPenalty=-(shotIndex-1)-targetSwitches,aimBonus=0,allowDeferAim=false}){
+    const attackHelp=helpFor229(attacker,'attack'),defenseHelp=helpFor229(target,'defense');
+    attackBonus+=attackHelp?.bonus||0;defenseBonus+=defenseHelp?.bonus||0;
     const rollState204={damage:0,attackBonus,defenseBonus,effects:[]},rollContext204={attacker,target,caster:attacker,targets:[target],weapon,damageType:attackDamageType202(attacker,weapon)};await rollEvents225('BeforeRoll',[{unit:attacker,type:'attack',context:rollContext204},{unit:target,type:'defense',context:rollContext204},{unit:attacker,type:'damage',context:rollContext204}],rollState204);await emit204('BeforeAttackRoll',attacker,rollContext204,rollState204);attackBonus=rollState204.attackBonus;defenseBonus=rollState204.defenseBonus;
     const expression=String(weapon?.damage||'').trim(),suggested=window.GRPGCombatRulesV119?.suggestedDamage?.(expression)||0;
-    const body=`<div class="small-note">Тип урона: ${html(damageLabel202(attackDamageType202(attacker,weapon)))}</div><div class="scene-lua-participants-v119"><b>${html(attacker?.name||'Атакующий')}</b><span>→</span><b>${html(target?.name||'Цель')}</b>${shotIndex>1?`<strong>Выстрел ${shotIndex} · штраф −${shotIndex-1+targetSwitches}${targetSwitches?` (смен целей: ${targetSwitches})`:''}</strong>`:''}</div>${attackDisadvantage?'<div class="small-note scene-injury-note-v195">ПОМЕХА К АТАКЕ: выполните бросок на столе и введите выбранный d20.</div>':''}${defenseDisadvantage?'<div class="small-note scene-injury-note-v195">ПОМЕХА К ЗАЩИТЕ: выполните бросок на столе и введите выбранный d20.</div>':''}<div class="cols4"><div class="field"><label>Результат d20 атаки</label><input class="input" required type="number" min="1" max="20" name="attackRoll"/><small>Бонус атаки: ${num(attackBonus)>=0?'+':''}${num(attackBonus)} (включая штраф травмы)</small></div><div class="field"><label>Результат d20 цели</label><input class="input" required type="number" min="1" max="20" name="defenseRoll"/><small>Бонус защиты: ${num(defenseBonus)>=0?'+':''}${num(defenseBonus)} (включая штраф травмы)</small></div><div class="field"><label>${html(manualDamageLabel119(expression))}</label><input class="input" required type="number" min="0" name="damageRoll" value="${suggested||''}"/><small>Бонус урона: ${num(damageBonus)>=0?'+':''}${num(damageBonus)}</small></div></div><div class="small-note">Все кубики бросаются на столе. Натуральные значения проверяются до бонусов. Помеха — напоминание; приложение не выбирает кубик за игроков.</div><div class="scene-lua-modal-error-v119" data-lua-modal-error-v119></div>`;
-    const answer204=await combatModal119({rollsAfter225:[{unit:attacker,type:'attack',context:rollContext204},{unit:target,type:'defense',context:rollContext204},{unit:attacker,type:'damage',context:rollContext204}],rollValue225:(value,index)=>[value.attackRoll,value.defenseRoll,value.damageRoll][index],rollState225:rollState204,title:`Атака: ${weapon?.name||'оружие'}`,subtitle:'Введите результаты физических бросков',body,confirm:'РАССЧИТАТЬ И ПРИМЕНИТЬ',decline:'ОТМЕНИТЬ АТАКУ',read:form=>{const attackRoll=num(form.elements.attackRoll.value),defenseRoll=num(form.elements.defenseRoll.value);return{attackRoll,attackRolls:[attackRoll],defenseRoll,defenseRolls:[defenseRoll],damageRoll:num(form.elements.damageRoll.value)};},validate:value=>value.attackRoll<1||value.defenseRoll<1?'Введите все результаты d20.':''});
-    if(answer204){await emit204('AfterAttackRoll',attacker,{...rollContext204,...answer204},rollState204);answer204.attackBonusDelta204=rollState204.attackBonus-arguments[0].attackBonus;answer204.defenseBonusDelta204=rollState204.defenseBonus-arguments[0].defenseBonus;flushLuaEffects119(rollState204);}return answer204;
+    const body=`<div class="small-note">Тип урона: ${html(damageLabel202(attackDamageType202(attacker,weapon)))}</div><div class="scene-lua-participants-v119"><b>${html(attacker?.name||'Атакующий')}</b><span>→</span><b>${html(target?.name||'Цель')}</b>${shotIndex>1?`<strong>Выстрел ${shotIndex} · штраф ${burstPenalty}${targetSwitches?` (смен целей: ${targetSwitches})`:''}</strong>`:''}</div>${aimBonus?`<div class="small-note">Прицеливание: +${aimBonus} к попаданию и урону.${allowDeferAim?' <label><input type="checkbox" name="deferAim229"/> Оставить бонус для следующего выстрела</label>':''}</div>`:''}${attackDisadvantage?'<div class="small-note scene-injury-note-v195">ПОМЕХА К АТАКЕ: выполните бросок на столе и введите выбранный d20.</div>':''}${defenseDisadvantage?'<div class="small-note scene-injury-note-v195">ПОМЕХА К ЗАЩИТЕ: выполните бросок на столе и введите выбранный d20.</div>':''}<div class="cols4"><div class="field"><label>Результат d20 атаки</label><input class="input" required type="number" min="1" max="20" name="attackRoll"/><small>Бонус атаки: ${num(attackBonus)>=0?'+':''}${num(attackBonus)} (включая штраф травмы)</small></div><div class="field"><label>Результат d20 цели</label><input class="input" required type="number" min="1" max="20" name="defenseRoll"/><small>Бонус защиты: ${num(defenseBonus)>=0?'+':''}${num(defenseBonus)} (включая штраф травмы)</small></div><div class="field"><label>${html(manualDamageLabel119(expression))}</label><input class="input" required type="number" min="0" name="damageRoll" value="${suggested||''}"/><small>Бонус урона: ${num(damageBonus)>=0?'+':''}${num(damageBonus)}</small></div></div><div class="small-note">Все кубики бросаются на столе. Натуральные значения проверяются до бонусов. Помеха — напоминание; приложение не выбирает кубик за игроков.</div><div class="scene-lua-modal-error-v119" data-lua-modal-error-v119></div>`;
+    const answer204=await combatModal119({rollsAfter225:[{unit:attacker,type:'attack',context:rollContext204},{unit:target,type:'defense',context:rollContext204},{unit:attacker,type:'damage',context:rollContext204}],rollValue225:(value,index)=>[value.attackRoll,value.defenseRoll,value.damageRoll][index],rollState225:rollState204,title:`Атака: ${weapon?.name||'оружие'}`,subtitle:'Введите результаты физических бросков',body,confirm:'РАССЧИТАТЬ И ПРИМЕНИТЬ',decline:'ОТМЕНИТЬ АТАКУ',read:form=>{const attackRoll=num(form.elements.attackRoll.value),defenseRoll=num(form.elements.defenseRoll.value);return{attackRoll,attackRolls:[attackRoll],defenseRoll,defenseRolls:[defenseRoll],damageRoll:num(form.elements.damageRoll.value),aimApplied229:form.elements.deferAim229?.checked?0:aimBonus};},validate:value=>value.attackRoll<1||value.defenseRoll<1?'Введите все результаты d20.':''});
+    if(answer204){consumeHelp229(attacker,'attack',attackHelp);consumeHelp229(target,'defense',defenseHelp);await emit204('AfterAttackRoll',attacker,{...rollContext204,...answer204},rollState204);answer204.attackBonusDelta204=rollState204.attackBonus-arguments[0].attackBonus+answer204.aimApplied229;answer204.defenseBonusDelta204=rollState204.defenseBonus-arguments[0].defenseBonus;flushLuaEffects119(rollState204);}return answer204;
   }
   function requestDamageRoll119({title,source,expression,damageBonus=0,targets=[]}){
     const suggested=window.GRPGCombatRulesV119?.suggestedDamage?.(expression)||0;
@@ -2598,7 +2676,7 @@
     token=token&&typeof token==='object'?token:{};
     const entity=entityForToken(token)||{},rows=[],seen=new Set();
     const add=(raw,kind)=>{if(!raw?.id||raw.luaEnabled!==true||!String(raw.luaScript||'').trim())return;const key=`${kind}:${raw.id}`;if(seen.has(key))return;seen.add(key);const activation=String(raw.activationType||'passive');rows.push({id:String(raw.id),name:String(raw.name||raw.id),kind,ownerToken:token,script:String(raw.luaScript),mode:kind==='skill'?(activation==='reaction'?'reaction':activation==='active'?'active':'automatic'):(raw.activeUse===true?'active':String(raw.luaTriggerMode||'automatic')==='reaction'?'reaction':'automatic'),reactionLabel:String(raw.luaReactionLabel||raw.name||raw.id),raw});};
-    list(entity.skills).forEach(id=>add(skillForScene118(id),'skill'));
+    list(entity.skills).filter(id=>!basicSkills229[id]).forEach(id=>add(skillForScene118(id),'skill'));
     const slots=Object.values(entity.equipmentSlots||{}),implants=list(entity.implantSlots?.length?entity.implantSlots:entity.installedImplantIds);
     unique([...slots,...implants,token.weaponId,token.grenadeId,token.equipmentItemId]).forEach(id=>{const item=equipmentItem105(id);if(item&&!itemBrokenV138(token,item,equippedEntriesV138(token).find(row=>row.item.id===item.id)?.slot||''))add(item,item.type==='implant'?'implant':'equipment');});
     for(const entry of list(tokenInventoryOwner120(token).rows)){const item=equipmentItem105(entry?.itemId);if(item?.activeUse&&num(entry?.qty,0)>0)add(item,item.type==='implant'?'implant':'equipment');}
@@ -2878,9 +2956,13 @@
     return combatModal119({title:String(request.title||'Выберите цели'),subtitle:context.sourceName||'',body,confirm:'ВЫБРАТЬ',decline:'ОТМЕНИТЬ НАВЫК',read:form=>Array.from(form.querySelectorAll('input[name="target"]:checked')).map(input=>tokenById119(input.value)).filter(Boolean),validate:value=>value.length<minimum||value.length>maximum?`Выберите от ${minimum} до ${maximum} целей.`:''});
   }
   async function requestLuaNumber119(request={},context={}){
+    const unit=tokenById119(request.unitId)||context.caster,help=request.rollType&&request.rollType!=='damage'?helpFor229(unit,request.rollType):null;
+    let confirmedHelp=false;
     const min=Number.isFinite(Number(request.min))?Number(request.min):null,max=Number.isFinite(Number(request.max))?Number(request.max):null,initial=Number.isFinite(Number(request.default))?Number(request.default):'';
-    const body=`${injuryReminder195(context.caster)}${moraleEffects199(context.caster).length?renderMorale199(context.caster):''}<div class="scene-lua-participants-v119"><b>${html(context.caster?.name||'Юнит')}</b><span>·</span><b>${html(context.sourceName||'Lua')}</b></div><div class="field"><label>${html(request.label||request.name||'Значение')}</label><input class="input" type="number" step="any" name="luaNumber" ${min!==null?`min="${min}"`:''} ${max!==null?`max="${max}"`:''} value="${initial}" ${request.required!==false?'required':''}/></div><div class="small-note">Введите итог физического броска или другое значение, запрошенное скриптом. Приложение ничего не генерирует.</div>`;
-    return combatModal119({rolls225:request.rollType?[{unit:tokenById119(request.unitId)||context.caster,type:request.rollType}]:undefined,title:'Ввод значения для навыка',subtitle:request.name||'value',body,confirm:'ПЕРЕДАТЬ В СКРИПТ',decline:'ОТМЕНИТЬ НАВЫК',read:form=>num(form.elements.luaNumber?.value,0)});
+    const body=`${injuryReminder195(context.caster)}${moraleEffects199(context.caster).length?renderMorale199(context.caster):''}<div class="scene-lua-participants-v119"><b>${html(context.caster?.name||'Юнит')}</b><span>·</span><b>${html(context.sourceName||'Lua')}</b></div><div class="field"><label>${html(request.label||request.name||'Значение')}</label><input class="input" type="number" step="any" name="luaNumber" ${min!==null?`min="${min}"`:''} ${max!==null?`max="${max}"`:''} value="${initial}" ${request.required!==false?'required':''}/></div><div class="small-note">Введите итог физического броска или другое значение, запрошенное скриптом. Приложение ничего не генерирует.</div>${help?`<label><input type="checkbox" name="helpCounted229"/> ДМ учёл Помощь +${help.bonus} в этой проверке. В поле d20 введите натуральный результат.</label>`:''}`;
+    const value=await combatModal119({rolls225:request.rollType?[{unit:tokenById119(request.unitId)||context.caster,type:request.rollType}]:undefined,title:'Ввод значения для навыка',subtitle:request.name||'value',body,confirm:'ПЕРЕДАТЬ В СКРИПТ',decline:'ОТМЕНИТЬ НАВЫК',read:form=>{confirmedHelp=Boolean(form.elements.helpCounted229?.checked);return num(form.elements.luaNumber?.value,0);}});
+    if(value!==null&&confirmedHelp)consumeHelp229(unit,request.rollType,help);
+    return value;
   }
   async function runInteractiveLuaHookV138(source,hook,context={},state={damage:num(context.damage),effects:[]}){
     const interactive={...context,eventId204:context.eventId204||makeId('event'),scriptSource:source,sourceName:source.name,inputs:{...(context.inputs||{})},targetRequests:{...(context.targetRequests||{})},answers204:{...(context.answers204||{})}};
@@ -2927,7 +3009,7 @@
         .filter(actor=>num(actor.hpCurrent)>0&&!withdrawn194(actor))
         .flatMap(actor=>scriptSourcesForToken119(actor).filter(source=>source.mode==='reaction')));
       for(const source of sources){
-        const actor=source.ownerToken,id=actor.id+':'+source.kind+':'+source.id;
+        const actor=source.ownerToken,id=actor.id;
         if(handled.has(id)||!handlesHook228(source,hook)||(!reactionAvailable195(actor)&&!scripted204(source)))continue;
         const result=await runLuaSource119(source,hook,{...context,caster:actor,damage:state.damage},'check');
         if(result.hasHook&&result.eligible)candidates.push(source);
@@ -2935,7 +3017,7 @@
       if(!candidates.length)return state;
       const body=`<div class="scene-lua-participants-v119"><b>${html(context.attacker?.name||'—')}</b><span>→</span><b>${html(context.target?.name||'—')}</b></div><div class="scene-lua-reactions-v119">${candidates.map((source,index)=>`<label><input type="radio" name="reaction" value="${index}" ${index===0?'checked':''}/><span><b>${html(source.reactionLabel||source.name)}</b><small>${html(source.ownerToken?.name||'Юнит')} · ${html(source.name)}</small></span></label>`).join('')}</div>`;
       const choice=await combatModal119({title:'Доступна реакция',subtitle:'После применения условия остальных реакций проверяются заново',body,confirm:'ИСПОЛЬЗОВАТЬ РЕАКЦИЮ',decline:'ОТКЛОНИТЬ ОСТАЛЬНЫЕ',read:form=>candidates[Math.max(0,Math.trunc(num(form.elements.reaction?.value,0)))]||null});if(!choice)return state;
-      handled.add(choice.ownerToken.id+':'+choice.kind+':'+choice.id);
+      handled.add(choice.ownerToken.id);
       const beforeReaction204=resources204(choice.ownerToken).reaction?.value;const executed=await runInteractiveLuaHookV138(choice,hook,{...context,caster:choice.ownerToken,sourceName:choice.name,scriptSource:choice,damage:state.damage},state);if(executed.cancelled)continue;
       if(!scripted204(choice)&&reactionAvailable195(choice.ownerToken)&&beforeReaction204===resources204(choice.ownerToken).reaction?.value)spendReaction204(choice.ownerToken);
       appendCombatLog105(Combat.getRuntime(),`${choice.ownerToken.name} использует реакцию «${choice.reactionLabel||choice.name}» (${hook}).`);await sealOperation194('Подтверждена реакция: '+(choice.reactionLabel||choice.name));
@@ -2956,6 +3038,8 @@
   async function positionEvents204(unit,before,kind,state={damage:0,effects:[]}){
     const runtime=Combat.getRuntime(),after=centerOf(unit),context={caster:unit,attacker:unit,target:unit,targets:[unit],unit,movementKind204:kind,oldPosition204:before,newPosition204:after};
     if(before.x===after.x&&before.y===after.y)return;
+    clearStance229(unit);
+    for(const actor of list(runtime?.tokens))expireAim229(actor);
     await emit204('OnPositionChanged',unit,context,state);
     if(kind!=='normal')await emit204('OnForcedMove',unit,context,state);
     for(const id of list(runtime?.thinkersV125).map(row=>row.id)){const thinker=runtime.thinkersV125.find(row=>row.id===id);if(!thinker||thinker.visualOnly204)continue;const g=thinker.geometry204?{...thinker.geometry204,...thinkerPoint125(thinker,runtime)}:Lua204.geometry({...thinker,...thinkerPoint125(thinker,runtime)},hexStepDistance109()),was=Lua204.contains(g,before),now=Lua204.contains(g,after);if(was===now)continue;const hook=now?'OnUnitEnter':'OnUnitLeave';if(!list(thinker.events204).includes(hook))continue;const source=sourceForThinker125(thinker);if(source){const execution=await runInteractiveLuaHookV138(source,hook,{...thinkerContext125(thinker),...context,caster:source.ownerToken,thinker:thinkerContext125(thinker).thinker},state);if(execution.cancelled)throw Error('Ввод отменён');}}
@@ -2968,12 +3052,12 @@
     const refresh=()=>{attacker=tokenById119(command.attackerId);target=tokenById119(command.targetId);if(!scene||!rules||!attacker||!target)throw new Error('StandardAttack: атакующий или цель не найдены');};refresh();
     const selected=weaponForSlotV138(attacker,command.slot||command.weaponId),weapon=selected?.item;if(!weapon)throw new Error('StandardAttack: оружие не найдено');
     const validateWeapon=()=>{if(isControlledDevice200(attacker)&&inBattle191()&&!droneLinkState129(attacker).ok)throw Error('StandardAttack: устройство не имеет связи с действующим оператором');if(weaponMalfunction122(attacker,weapon))throw new Error('StandardAttack: сначала устраните отказ оружия');if(heavyBlocked195(attacker)&&isHeavyWeapon129(weapon))throw Error('StandardAttack: травма 3-й степени запрещает тяжёлое оружие');if(itemBrokenV138(attacker,weapon,selected.slot))throw new Error(`StandardAttack: «${weapon.name||weapon.id}» сломано`);};validateWeapon();
-    const distance=window.GRPGUnitSizeV184.distance(attacker,target),range=Math.max(0,num(weapon.range??weapon.attackRange,1)),cover=coverBetween120(scene,centerOf(attacker),centerOf(target));if(distance>Math.floor(range+1e-6))throw new Error(`StandardAttack: цель вне дальности (${hexLabel109(distance)} / ${hexLabel109(range)})`);if(cover.blocksAttack||sightSegmentBlocked105(scene,centerOf(attacker),centerOf(target),[attacker.id,target.id]))throw new Error('StandardAttack: линия огня перекрыта');
+    const distance=window.GRPGUnitSizeV184.distance(attacker,target),range=shotRange229(attacker,weapon),cover=coverBetween120(scene,centerOf(attacker),centerOf(target));if(distance>Math.floor(range+1e-6))throw new Error(`StandardAttack: цель вне дальности (${hexLabel109(distance)} / ${hexLabel109(range)})`);if(cover.blocksAttack||sightSegmentBlocked105(scene,centerOf(attacker),centerOf(target),[attacker.id,target.id]))throw new Error('StandardAttack: линия огня перекрыта');
     const shotCost=ammoPerShot118(weapon),validateMagazine=()=>{const value=magazineState118(attacker,weapon);if(value.size>0&&value.loaded<shotCost)throw new Error(`StandardAttack: магазин пуст (${value.loaded} / ${value.size})`);return value;};validateMagazine();
     let shotDamageType=attackDamageType202(attacker,weapon);
-    const entity=entityForToken(attacker)||{},attack=window.GRPGStatsV113?.weaponAttack?.(entity,weapon,{kind:attacker.npcId?'npc':'player',inCombat:true,damageType:shotDamageType,temporaryModifiers:timedStatModifiers122(attacker)})||{},damageBonus=num(attack.damageBonus),baseHit=isControlledDevice200(attacker)?operatorIntelligence129(operatorForDrone129(attacker))+num(weapon.hitBonus)-checkPenalty199(operatorForDrone129(attacker)||attacker):num(attack.bonus??weapon.hitBonus)-checkPenalty199(attacker),defense=incomingDefense119(target,weapon.weaponCategory||'light',cover,shotDamageType);defense.defenseBonus-=checkPenalty199(target);
+    const entity=entityForToken(attacker)||{},attack=window.GRPGStatsV113?.weaponAttack?.(entity,weapon,{kind:attacker.npcId?'npc':'player',inCombat:true,damageType:shotDamageType,temporaryModifiers:timedStatModifiers122(attacker)})||{},damageBonus=num(attack.damageBonus),baseHit=isControlledDevice200(attacker)?operatorIntelligence129(operatorForDrone129(attacker))+num(weapon.hitBonus)-checkPenalty199(operatorForDrone129(attacker)||attacker):num(attack.bonus??weapon.hitBonus)-checkPenalty199(attacker)-longRangePenalty229(attacker,target,weapon)+postureAttack229(target,weapon),defense=incomingDefense119(target,weapon.weaponCategory||'light',cover,shotDamageType);defense.defenseBonus+=postureDefense229(attacker,target,weapon)-checkPenalty199(target);
     const context=extra=>({attacker,target,caster:attacker,targets:[target],weapon,damageType:shotDamageType,sourceName:`StandardAttack: ${weapon.name||weapon.id}`,...extra});
-    const declared={damage:0,attackBonus:baseHit,defenseBonus:defense.defenseBonus,effects:[],standardAttackDepthV138:depth+1};await runAutomaticHooks119(attacker,'OnAttackDeclared',context(),declared);refresh();await chooseReaction119('OnAttackDeclared',context(),declared);refresh();validateWeapon();validateMagazine();shotDamageType=attackDamageType202(attacker,weapon);const settledDefense=incomingDefense119(target,weapon.weaponCategory||'light',cover,shotDamageType);settledDefense.defenseBonus-=checkPenalty199(target);declared.defenseBonus+=settledDefense.defenseBonus-defense.defenseBonus;
+    const declared={damage:0,attackBonus:baseHit,defenseBonus:defense.defenseBonus,effects:[],standardAttackDepthV138:depth+1};await runAutomaticHooks119(attacker,'OnAttackDeclared',context(),declared);refresh();await chooseReaction119('OnAttackDeclared',context(),declared);refresh();validateWeapon();validateMagazine();shotDamageType=attackDamageType202(attacker,weapon);const settledDefense=incomingDefense119(target,weapon.weaponCategory||'light',cover,shotDamageType);settledDefense.defenseBonus+=postureDefense229(attacker,target,weapon)-checkPenalty199(target);declared.defenseBonus+=settledDefense.defenseBonus-defense.defenseBonus;
     const entered=await requestAttackRolls119({attacker,target,weapon,attackBonus:declared.attackBonus,defenseBonus:declared.defenseBonus,damageBonus,attackDisadvantage:(cover.concealment&&!ignoresConcealment122(attacker))||injuryDisadvantage129(isControlledDevice200(attacker)?operatorForDrone129(attacker)||attacker:attacker),defenseDisadvantage:injuryDisadvantage129(target)});if(!entered)throw new Error('StandardAttack: атака отменена');
     refresh();validateWeapon();const magazine=validateMagazine();if(command.consumeAction!==false)attacker.actionUsed=true;
     if(magazine.size>0){magazine.loaded-=shotCost;writeMagazineState118(attacker,weapon,magazine);}
@@ -3071,11 +3155,99 @@
     finally{finishCombatTransaction120(transaction);}
   }
   async function disengage122(){const token=selectedToken104();if(!token||!Combat.canActWithToken?.(token)||actionSpent191(token)||token.burstStateV122)return;token.actionUsed=true;token.disengagedV122=true;appendCombatLog105(Combat.getRuntime(),`${token.name} выполняет Отход: перемещение этого хода не вызывает атаку по возможности.`);Combat.render();await checkpointCombat120('Сцена: Отход',false);}
-  async function finishBurst122(){const token=selectedToken104();if(!token?.burstStateV122)return;token.burstStateV122=null;token.actionUsed=true;completeDroneModule129(token);appendCombatLog105(Combat.getRuntime(),`${token.name} завершает скорострельную очередь.`);Combat.render();await checkpointCombat120('Сцена: завершение очереди',false);}
+  async function finishBurst122(){const token=selectedToken104();if(!token?.burstStateV122)return;token.burstStateV122=null;token.aim229=null;token.actionUsed=true;completeDroneModule129(token);appendCombatLog105(Combat.getRuntime(),`${token.name} завершает скорострельную очередь.`);Combat.render();await checkpointCombat120('Сцена: завершение очереди',false);}
   async function clearMalfunction122(){const token=selectedToken104(),weapon=weaponForToken105(token);if(!token||!weapon||!weaponMalfunction122(token,weapon)||actionSpent191(token)||!canCombatAct129(token))return;token.weaponMalfunctionsV122={...(token.weaponMalfunctionsV122||{})};delete token.weaponMalfunctionsV122[weapon.id];token.actionUsed=true;completeDroneModule129(token);appendCombatLog105(Combat.getRuntime(),`${token.name} тратит действие и устраняет отказ «${weapon.name}».`);Combat.render();await checkpointCombat120('Сцена: устранение отказа',false);}
+  function abilityScore229(token,key){
+    const entity=entityForToken(token)||{};
+    return num(window.GRPGStatsV113?.compute?.(entity,{kind:token.npcId?'npc':'player',inCombat:true,temporaryModifiers:timedStatModifiers122(token)})?.abilities?.[key]??entity.abilityBase?.[key]);
+  }
+  function accessible229(source,target,range){
+    const scene=Combat.getScene();
+    return source.id!==target.id&&!withdrawn194(target)&&!target.dead229
+      &&window.GRPGUnitSizeV184.distance(source,target)<=range
+      &&!sightSegmentBlocked105(scene,centerOf(source),centerOf(target),[source.id,target.id]);
+  }
+  function aimAvailable229(token,target,weapon){
+    return Boolean(weapon)&&weapon.weaponCategory!=='melee'&&!target.hidden&&accessible229(token,target,Math.min(shotRange229(token,weapon,Combat.getScene()),tokenVisionCells(token,Combat.getScene())));
+  }
+  function expireAim229(token){
+    const aim=token.aim229;if(!aim)return;
+    const weapon=weaponForToken105(token),target=tokenById119(aim.targetId);
+    if(!target||weapon?.id!==aim.weaponId||itemBrokenV138(token,weapon)||!aimAvailable229(token,target,weapon))token.aim229=null;
+  }
+  function clearStance229(token){token.aim229=null;token.brace229=null;}
+  function helpFor229(token,type){
+    const help=token?.help229;
+    return help&&(help.type==='any'||help.type===type)?help:null;
+  }
+  function consumeHelp229(token,type,expected){
+    if(expected&&helpFor229(token,type)?.id===expected.id)token.help229=null;
+  }
+  async function chooseBasicTarget229(token,skill,targets,extra='',readExtra=()=>({})){
+    if(!targets.length){Toast.show('Нет доступной цели','info');return null;}
+    return combatModal119({title:skill.name,body:`<label class="field">Цель<select class="select" name="basicTarget229">${targets.map(row=>`<option value="${html(row.id)}">${html(row.name)}</option>`).join('')}</select></label>${extra}`,read:form=>({id:form.elements.basicTarget229.value,...readExtra(form)})});
+  }
+  async function useBasicSkill229(token,skill){
+    const brace=skill.id==='skill_brace';
+    if(!canCombatAct129(token)||token.burstStateV122||(!brace&&actionSpent191(token)))return;
+    const runtime=Combat.getRuntime(),rules=window.GRPGCombatRulesV119,weapon=weaponForToken105(token),rows=list(runtime.tokens);
+    if(brace){
+      if(!weapon||weapon.weaponCategory==='melee')return Toast.show('Выберите стрелковое оружие','info');
+      if(token.brace229?.weaponId===weapon.id)token.brace229=null;
+      else{
+        const support=await combatModal119({title:skill.name,body:'<label class="field">Физическая опора<select class="select" name="support229"><option>Подходящее укрытие или предмет</option><option>Сошки</option><option>Земля</option></select></label>',confirm:'ПОДТВЕРДИТЬ УПОР',read:form=>form.elements.support229.value});
+        if(!support)return;
+        token.brace229={weaponId:weapon.id,support};
+      }
+    }else if(skill.id==='skill_766282'){
+      if(!weapon||weapon.weaponCategory==='melee')return Toast.show('Выберите стрелковое оружие','info');
+      const selection=await chooseBasicTarget229(token,skill,rows.filter(row=>aimAvailable229(token,row,weapon)));
+      if(!selection)return;
+      const previous=token.aim229,same=previous?.weaponId===weapon.id&&previous.targetId===selection.id&&(!inBattle191()||previous.turn+1===token.ownTurnV199);
+      token.aim229={weaponId:weapon.id,targetId:selection.id,bonus:same?Math.min(3,previous.bonus+1):1,turn:token.ownTurnV199};
+      token.actionUsed=true;
+    }else if(skill.id==='skill_378845'){
+      token.usage193||={};token.usage193.scene||={};
+      if(token.usage193.scene.help229)return Toast.show('Помощь уже использована в этой сцене','info');
+      const selection=await chooseBasicTarget229(token,skill,rows.filter(row=>row.id!==token.id&&!row.dead229&&!withdrawn194(row)&&!row.help229),'<label class="field">Проверка<select class="select" name="helpType229"><option value="any">Следующая проверка</option><option value="attack">Атака</option><option value="defense">Активная защита</option><option value="stabilization">Стабилизация</option><option value="initiative">Инициатива</option><option value="instinct">Инстинкт</option><option value="grenade">Бросок гранаты</option><option value="manual">Проверка на столе</option></select></label>',form=>({type:form.elements.helpType229.value}));
+      if(!selection)return;
+      const bonus=1+abilityScore229(token,'will');
+      if(selection.type!=='manual')tokenById119(selection.id).help229={id:makeId('help'),source:token.name,bonus,type:selection.type};
+      token.usage193.scene.help229=true;token.actionUsed=true;
+      appendCombatLog105(runtime,`${token.name} помогает ${tokenById119(selection.id).name}: +${bonus} к выбранной проверке.`);
+      Toast.show(`Помощь: +${bonus}`,'info');
+    }else{
+      const selection=await chooseBasicTarget229(token,skill,rows.filter(row=>row.conditionsV138?.dying&&accessible229(token,row,1)));
+      if(!selection)return;
+      const target=tokenById119(selection.id),help=helpFor229(token,'stabilization'),bonus=abilityScore229(token,'intelligence')-checkPenalty199(token)+(help?.bonus||0),dc=rules.stabilizationDifficulty(target);
+      const roll=await combatModal119({rolls225:[{unit:token,type:'stabilization'}],title:skill.name,subtitle:`${target.name} · d20 + (${bonus}) против ${dc}${injuryDisadvantage129(token)?' · ПОМЕХА':''}`,body:'<label class="field">Физический d20<input class="input" required type="number" min="1" max="20" name="stabilize229"/></label>',read:form=>Number(form.elements.stabilize229.value),validate:roll=>roll<1||roll>20?'Введите d20 от 1 до 20.':''});
+      if(roll===null)return;
+      token.actionUsed=true;consumeHelp229(token,'stabilization',help);
+      const before=clone(conditionStateV138(target)),success=roll!==1&&roll+bonus>=rules.stabilizationDifficulty(target)&&rules.stabilize(target);
+      if(success)await conditionEvents225(target,before,{caster:token,reason204:'stabilization'});
+      appendCombatLog105(runtime,`${target.name}: стабилизация ${success?'успешна':'не удалась'} (${roll+bonus} против ${dc}).`);
+    }
+    await checkpointCombat120('Сцена: '+skill.name,false);
+  }
+  function renderCriticalAdvance229(){
+    const token=selectedToken104();
+    if(!activeMap193()||!token?.conditionsV138?.dying)return '';
+    const turns=Math.min(5,Math.max(0,num(token.ownTurnV199)-num(token.critical229?.fallTurn,token.ownTurnV199)+num(token.critical229?.manualIntervals)));
+    return `<div class="scene-instinct-note-v199">${html(token.name)} · критическое состояние ${turns}/5 · УКС ${num(token.critical229?.damage)} <button type="button" class="secondary" data-critical-advance229>ЗАВЕРШИТЬ ИНТЕРВАЛ</button></div>`;
+  }
+  async function advanceCritical229(){
+    const token=selectedToken104();
+    if(!activeMap193()||inBattle191()||!token?.conditionsV138?.dying)return;
+    token.critical229||={damage:0,fallTurn:num(token.ownTurnV199),unconsciousAlready:false};
+    token.critical229.manualIntervals=num(token.critical229.manualIntervals)+1;
+    await processCriticalTurn229(token,'start');
+    await processCriticalTurn229(token,'end');
+    await checkpointCombat120('Интервал критического состояния',true);
+  }
   async function useActiveSkill118(skillId){
     const runtime=Combat.getRuntime(),token=selectedToken104(),skill=activeSkillsForToken118(token).find(row=>String(row.id)===String(skillId));
     if(!runtime||!token||!skill)return;
+    if(skill.native229)return useBasicSkill229(token,skill);
     if(!Combat.canActWithToken?.(token)){Toast.show('Сейчас не ход этого юнита','info');return;}
     const activeSource204=scriptSourcesForToken119(token).find(row=>row.kind==='skill'&&row.id===String(skill.id));if(activeSource204)await policy204(activeSource204);
     if(actionSpent191(token)&&!scripted204(activeSource204)){Toast.show('Действие этого юнита уже потрачено','info');return;}
@@ -3254,6 +3426,7 @@
     const scene = Combat.getScene(), runtime = Combat.getRuntime(), selectedAttacker = selectedToken104();
     const selectedTarget = list(runtime?.tokens).find(t => String(t.id) === String(targetId));
     if (!scene || !runtime || !selectedAttacker || !selectedTarget || selectedAttacker.id === selectedTarget.id) return;
+    if(selectedTarget.dead229)return;
     if (!canCombatAct129(selectedAttacker)) { Toast.show('Сейчас не ход этого юнита или дрон не получил команду', 'info'); return; }
     if (actionSpent191(selectedAttacker)&&!selectedAttacker.burstStateV122) { Toast.show('Действие этого юнита уже потрачено', 'info'); return; }
     const selectedWeapon = weaponForToken105(selectedAttacker);
@@ -3261,8 +3434,8 @@
     if(itemBrokenV138(selectedAttacker,selectedWeapon)){Toast.show('Выбранное оружие сломано','info');return;}
     if(heavyBlocked195(selectedAttacker)&&isHeavyWeapon129(selectedWeapon)){Toast.show('Травма 3-й степени не позволяет использовать тяжёлое оружие','info');return;}
     if(weaponMalfunction122(selectedAttacker,selectedWeapon)){Toast.show('Оружие отказало. Сначала устраните отказ отдельным действием.','info');return;}
-    const activeBurst=selectedAttacker.burstStateV122,shotIndex=activeBurst&&String(activeBurst.weaponId)===String(selectedWeapon.id)?activeBurst.nextShot:1,maxShots=inBattle191()?(activeBurst?.maxShots||rapidFireShots122(selectedWeapon)):1,targetSwitches=Math.max(0,num(activeBurst?.targetSwitches))+(activeBurst?.lastTargetId&&String(activeBurst.lastTargetId)!==String(selectedTarget.id)?1:0),burstPenalty=-(shotIndex-1)-targetSwitches;
-    const from = centerOf(selectedAttacker), to = centerOf(selectedTarget), max = tokenAttackCells(selectedAttacker, scene), distance = window.GRPGUnitSizeV184.distance(selectedAttacker,selectedTarget);
+    const activeBurst=selectedAttacker.burstStateV122,shotIndex=activeBurst&&String(activeBurst.weaponId)===String(selectedWeapon.id)?activeBurst.nextShot:1,maxShots=inBattle191()?(activeBurst?.maxShots||rapidFireShots122(selectedWeapon)):1,targetSwitches=Math.max(0,num(activeBurst?.targetSwitches))+(activeBurst?.lastTargetId&&String(activeBurst.lastTargetId)!==String(selectedTarget.id)?1:0),burstPenalty=window.GRPGCombatRulesV119.burstPenalty(shotIndex,targetSwitches,selectedAttacker.brace229?.weaponId===selectedWeapon.id);
+    const from = centerOf(selectedAttacker), to = centerOf(selectedTarget), max = shotRange229(selectedAttacker,selectedWeapon), distance = window.GRPGUnitSizeV184.distance(selectedAttacker,selectedTarget);
     local.preview = makeRoutePreview104(to, true); refreshPreviewDom104();
     if (distance > Math.floor(max + 1e-6)) { Toast.show(`Цель вне дальности: ${hexLabel109(distance)} / ${hexLabel109(max)}`, 'info'); return; }
     const initialCover=coverBetween120(scene,from,to);
@@ -3281,20 +3454,24 @@
       const temporaryModifiers=[...timedStatModifiers122(attacker),...list(ammo?.modifiers).map(mod=>({...mod,sourceId:ammo.id,sourceName:ammo.name||ammo.id,sourceKind:'ammo'}))];
       const attack = window.GRPGStatsV113?.weaponAttack?.(entity, weapon, { kind: attacker.npcId ? 'npc' : 'player', inCombat:true, damageType:damageType202(weapon,ammo), temporaryModifiers });
       const operator=isControlledDevice200(attacker)?operatorForDrone129(attacker):null;
-      const hitBonus = (operator?operatorIntelligence129(operator)+num(weapon.hitBonus):num(attack?.bonus??weapon.hitBonus,0))-checkPenalty199(operator||attacker)+burstPenalty;
+      expireAim229(attacker);
+      if(attacker.aim229?.targetId!==target.id)attacker.aim229=null;
+      const aimBonus=attacker.aim229?.bonus||0;
+      const hitBonus = (operator?operatorIntelligence129(operator)+num(weapon.hitBonus):num(attack?.bonus??weapon.hitBonus,0))-checkPenalty199(operator||attacker)+burstPenalty-longRangePenalty229(attacker,target,weapon)+postureAttack229(target,weapon);
       const damageBonus=num(attack?.damageBonus,0),damageExpression=String(attack?.damage||weapon.damage||'1d6');
-      let cover=initialCover,defense=incomingDefense119(target,weapon.weaponCategory||'light',cover,attackDamageType202(attacker,weapon));defense.defenseBonus-=checkPenalty199(target);const attackDisadvantage=(cover.concealment&&!ignoresConcealment122(attacker))||injuryDisadvantage129(operator||attacker),defenseDisadvantage=injuryDisadvantage129(target);
+      let cover=initialCover,defense=incomingDefense119(target,weapon.weaponCategory||'light',cover,attackDamageType202(attacker,weapon));defense.defenseBonus+=postureDefense229(attacker,target,weapon)-checkPenalty199(target);const attackDisadvantage=(cover.concealment&&!ignoresConcealment122(attacker))||injuryDisadvantage129(operator||attacker),defenseDisadvantage=injuryDisadvantage129(target);
       const declaredContext={attacker,target,caster:attacker,targets:[target],weapon,damageType:attackDamageType202(attacker,weapon),sourceName:weapon.name||'Атака'},declaredState={damage:0,attackBonus:hitBonus,defenseBonus:defense.defenseBonus,effects:[]};
       await runAutomaticHooks119(attacker,'OnAttackDeclared',declaredContext,declaredState);await chooseReaction119('OnAttackDeclared',declaredContext,declaredState);
       ({attacker,target}=combatTransactionRefs120(transaction));weapon=weaponForToken105(attacker);if(!target||!weapon)throw new Error('Атака изменилась во время реакции на объявление');magazine=magazineState118(attacker,weapon);ammo=magazine.size>0?ammoForWeapon118(weapon,magazine):null;if(magazine.size>0&&magazine.loaded<shotCost)throw new Error('После объявления атаки оружие всё ещё не заряжено');
       if(String(weapon.id)!==String(selectedWeapon.id))throw Error('Выбранное оружие изменилось во время реакции');
-      const shotDamageType=attackDamageType202(attacker,weapon);cover=validateShot197(attacker,target,weapon,scene);const updatedDefense=incomingDefense119(target,weapon.weaponCategory||'light',cover,shotDamageType);updatedDefense.defenseBonus-=checkPenalty199(target);declaredState.defenseBonus=num(declaredState.defenseBonus)-defense.defenseBonus+updatedDefense.defenseBonus;defense=updatedDefense;
-      const entered=await requestAttackRolls119({attacker,target,weapon:{...weapon,damage:damageExpression},attackBonus:num(declaredState.attackBonus,hitBonus),defenseBonus:num(declaredState.defenseBonus,defense.defenseBonus),damageBonus,attackDisadvantage:(cover.concealment&&!ignoresConcealment122(attacker))||injuryDisadvantage129(operator||attacker),defenseDisadvantage:injuryDisadvantage129(target),shotIndex,targetSwitches});if(!entered)return;
+      const shotDamageType=attackDamageType202(attacker,weapon);cover=validateShot197(attacker,target,weapon,scene);const updatedDefense=incomingDefense119(target,weapon.weaponCategory||'light',cover,shotDamageType);updatedDefense.defenseBonus+=postureDefense229(attacker,target,weapon)-checkPenalty199(target);declaredState.defenseBonus=num(declaredState.defenseBonus)-defense.defenseBonus+updatedDefense.defenseBonus;defense=updatedDefense;
+      const entered=await requestAttackRolls119({attacker,target,weapon:{...weapon,damage:damageExpression},attackBonus:num(declaredState.attackBonus,hitBonus),defenseBonus:num(declaredState.defenseBonus,defense.defenseBonus),damageBonus,attackDisadvantage:(cover.concealment&&!ignoresConcealment122(attacker))||injuryDisadvantage129(operator||attacker)||weaponDisadvantage229(attacker,weapon),defenseDisadvantage:injuryDisadvantage129(target),shotIndex,targetSwitches,burstPenalty,aimBonus,allowDeferAim:shotIndex<maxShots&&(magazine.size===0||magazine.loaded>=2*shotCost)});if(!entered)return;
       ({attacker,target}=combatTransactionRefs120(transaction));weapon=weaponForToken105(attacker);
       if(!target)throw new Error('Цель больше не находится на сцене');
       if(!weapon||String(weapon.id)!==String(selectedWeapon.id))throw new Error('Выбранное оружие изменилось во время атаки');
       cover=validateShot197(attacker,target,weapon,scene);
       attacker.actionUsed=true;
+      if(entered.aimApplied229)attacker.aim229=null;
       const plannedContinuation=entered.attackRoll!==1&&shotIndex<maxShots&&(magazine.size===0||magazine.loaded-shotCost>=shotCost);
       attacker.burstStateV122=plannedContinuation?{weaponId:weapon.id,nextShot:shotIndex+1,maxShots,lastTargetId:String(target.id),targetSwitches}:null;if(!plannedContinuation)completeDroneModule129(attacker);
       if(magazine.size>0){const currentMagazine=magazineState118(attacker,weapon);if(currentMagazine.loaded<shotCost)throw new Error('Патроны были израсходованы другим действием');currentMagazine.loaded-=shotCost;writeMagazineState118(attacker,weapon,currentMagazine);magazine.loaded=currentMagazine.loaded;magazine.ammoTypeId=currentMagazine.ammoTypeId;}
@@ -3305,8 +3482,8 @@
       ({attacker,target}=combatTransactionRefs120(transaction));
       // A confirmed reaction may move a target after payment. Keep that confirmed boundary, but never shoot through it.
       if(entered.attackRoll!==1)cover=validateShot197(attacker,target,weapon,scene);
-      const rollDefense=incomingDefense119(target,weapon.weaponCategory||'light',cover,shotDamageType);rollDefense.defenseBonus-=checkPenalty199(target);beforeState.defenseBonus=num(beforeState.defenseBonus)-defense.defenseBonus+rollDefense.defenseBonus;defense=rollDefense;
-      const result=rules.resolveManualAttack({attackRoll:entered.attackRoll,defenseRoll:entered.defenseRoll,attackBonus:num(beforeState.attackBonus,hitBonus)+num(entered.attackBonusDelta204),defenseBonus:num(beforeState.defenseBonus,defense.defenseBonus)+num(entered.defenseBonusDelta204),damageRoll:entered.damageRoll,damageBonus,damageReduction:0});await emit204('OnAttackResolved',attacker,{...context,hit:result.hit,critical:result.critical},beforeState);if(!result.hit)await emit204('OnMiss',attacker,{...context,hit:false});
+      const rollDefense=incomingDefense119(target,weapon.weaponCategory||'light',cover,shotDamageType);rollDefense.defenseBonus+=postureDefense229(attacker,target,weapon)-checkPenalty199(target);beforeState.defenseBonus=num(beforeState.defenseBonus)-defense.defenseBonus+rollDefense.defenseBonus;defense=rollDefense;
+      const result=rules.resolveManualAttack({attackRoll:entered.attackRoll,defenseRoll:entered.defenseRoll,attackBonus:num(beforeState.attackBonus,hitBonus)+num(entered.attackBonusDelta204),defenseBonus:num(beforeState.defenseBonus,defense.defenseBonus)+num(entered.defenseBonusDelta204),damageRoll:entered.damageRoll,damageBonus:damageBonus+num(entered.aimApplied229),damageReduction:0});await emit204('OnAttackResolved',attacker,{...context,hit:result.hit,critical:result.critical},beforeState);if(!result.hit)await emit204('OnMiss',attacker,{...context,hit:false});
       ({attacker,target}=combatTransactionRefs120(transaction));if(!target)throw new Error('Цель больше не находится на сцене');
       let hpChange={before:num(target.hpCurrent),after:num(target.hpCurrent),applied:0},finalDamage=result.damageApplied,absorptionV138={absorbed:0,applied:result.damageApplied};
       // Begin OnHit/BeforeDamage with the damage left after the entered roll,
@@ -3327,6 +3504,7 @@
       }
       ({attacker,target}=combatTransactionRefs120(transaction));magazine=magazineState118(attacker,weapon);
       const continues=!result.fumble&&!itemBrokenV138(attacker,weapon)&&shotIndex<maxShots&&(magazine.size===0||magazine.loaded>=shotCost);
+      if(!continues)attacker.aim229=null;
       if(continues){attacker.burstStateV122={weaponId:weapon.id,nextShot:shotIndex+1,maxShots,lastTargetId:String(target.id),targetSwitches};attacker.actionUsed=true;}else{attacker.burstStateV122=null;attacker.actionUsed=true;completeDroneModule129(attacker);}
       const attackRoll=`${result.attackDie}${result.attackBonus?` ${result.attackBonus>=0?'+':'−'} ${Math.abs(result.attackBonus)}`:''} = ${result.attackTotal}`;
       const defenseRoll=`${result.defenseDie}${result.defenseBonus?` ${result.defenseBonus>=0?'+':'−'} защита ${Math.abs(result.defenseBonus)}`:''} = ${result.defenseTotal}`;
@@ -3347,6 +3525,28 @@
     if(token?.playerId&&App.state?.users?.[token.playerId])App.state.users[token.playerId]=normalizePlayerProfileV2(entity);
     return true;
   }
+  async function grenadeImpact229(attacker,point,scene){
+    const help=helpFor229(attacker,'grenade'),bonus=abilityScore229(attacker,'dexterity')-checkPenalty199(attacker)+(help?.bonus||0);
+    const roll=await combatModal119({rolls225:[{unit:attacker,type:'grenade'}],title:'Бросок гранаты',subtitle:`d20 + (${bonus}) против 10${injuryDisadvantage129(attacker)?' · ПОМЕХА':''}`,body:'<label class="field">Физический d20<input class="input" type="number" min="1" max="20" name="grenadeRoll229"/></label><label><input type="checkbox" name="grenadeOverride229"/> Карточка гранаты задаёт другую проверку. ДМ уже определил точку взрыва.</label>',read:form=>({die:Number(form.elements.grenadeRoll229.value),override:form.elements.grenadeOverride229.checked}),rollValue225:value=>value.die,validate:value=>!value.override&&(value.die<1||value.die>20)?'Введите d20 от 1 до 20.':''});
+    if(!roll)return null;
+    if(roll.override)return point;
+    consumeHelp229(attacker,'grenade',help);
+    const total=roll.die+bonus,scatter=window.GRPGCombatRulesV119.grenadeScatter(roll.die,total);
+    if(!scatter)return point;
+    const start=nearestHexNode108(scene,point),directions=hexNeighbours108(scene,start);
+    const target=await combatModal119({title:`Отклонение гранаты на ${scatter} гекс.`,subtitle:'ДМ определяет направление. Стрелка показывает первый гекс.',body:`<label class="field">Направление<select class="select" name="scatter229">${directions.map((node,i)=>`<option value="${i}">${node.x<start.x?'←':node.x>start.x?'→':''}${node.y<start.y?'↑':node.y>start.y?'↓':''}</option>`).join('')}</select></label>`,read:form=>directions[Number(form.elements.scatter229.value)]});
+    if(!target)return null;
+    const startAxial=hexAxial229(start),endAxial=hexAxial229(target);
+    let impact=target;
+    for(let step=2;step<=scatter;step++){
+      const col=startAxial.q+(endAxial.q-startAxial.q)*step,axialRow=startAxial.r+(endAxial.r-startAxial.r)*step;
+      const node=hexNode108(scene,col,axialRow+Math.floor(col/2));
+      if(!node)break;
+      impact=node;
+    }
+    return impact;
+  }
+  function hexAxial229(node){return {q:node.col,r:node.row-Math.floor(node.col/2)};}
   async function commitGrenade105(point){
     if(local.commandBusy191){Toast.show(operationReason191(),'info');return;}
     const scene=Combat.getScene(),runtime=Combat.getRuntime(),selectedAttacker=selectedToken104(),selectedGrenade=grenadeForToken105(selectedAttacker);
@@ -3359,8 +3559,9 @@
     if(preview.limited){local.preview=preview;refreshPreviewDom104();Toast.show('Точка броска вне дальности — граната не израсходована','info');return;}
     const rules=window.GRPGCombatRulesV119;
     if(!rules){Toast.show('Модуль ручного расчёта боя не загружен','err');return;}
-    const impact=preview.end,radiusHexes=Math.max(0,num(preview.radiusHexes,grenadeRadiusCells105(selectedGrenade,scene))),targetIds=[];
-    for(const target of list(runtime.tokens)){const c=centerOf(target);if(window.GRPGUnitSizeV184.distance(target,{x:impact.x,y:impact.y,w:0,h:0})>radiusHexes)continue;if(sightSegmentBlocked105(scene,impact,c,[target.id]))continue;targetIds.push(String(target.id));}
+    const impact=await grenadeImpact229(selectedAttacker,preview.end,scene);if(!impact)return;
+    const radiusHexes=Math.max(0,num(preview.radiusHexes,grenadeRadiusCells105(selectedGrenade,scene))),targetIds=[];
+    for(const target of list(runtime.tokens)){const c=centerOf(target);if(window.GRPGUnitSizeV184.distance(target,{x:impact.x,y:impact.y,w:0,h:0})>radiusHexes)continue;if(coverBetween120(scene,impact,c).blocksAttack||sightSegmentBlocked105(scene,impact,c,[target.id]))continue;targetIds.push(String(target.id));}
     const transaction=beginCombatTransaction120('grenade',scene.id,selectedAttacker.id,targetIds);if(!transaction)return;
     try{
       let refs=combatTransactionRefs120(transaction),attacker=refs.attacker,targets=refs.targets,grenade=grenadeForToken105(attacker);
@@ -3394,7 +3595,7 @@
       const affectedText=affected.length?affected.map(row=>`${row.name}: −${row.damage} HP (${row.before} → ${row.after}${row.absorbed?`, защита ${row.absorbed}`:''}${row.cover?`, укрытие ${row.cover}`:''})`).join('; '):'нет целей';
       appendCombatLog105(refs.runtime,`${attacker.name} бросает «${grenade.name}» (${damageLabel202(incomingCategory)}): введённый урон ${entered.damageRoll}${num(grenade.damageBonus)?` + ${num(grenade.damageBonus)} = ${rolledTotal}`:''}, радиус ${hexLabel109(radiusHexes)}. ${affectedText}.`);
       if(pendingInstinct199().length){await sealOperation194('Взрыв рассчитан для всех целей; ожидается Инстинкт');for(const {owner,packet} of pendingInstinct199())await resolveInstinct199(owner,packet);}
-      local.preview={...preview,effect:'grenade',label:`${grenade.name}: базовый урон ${rolledTotal} · целей ${affected.length}`};
+      local.preview={...preview,end:impact,effect:'grenade',label:`${grenade.name}: базовый урон ${rolledTotal} · целей ${affected.length}`};
       Combat.syncInitiative(scene.id,false);Combat.render();flushLuaEffects119(allEffects);await checkpointCombat120('Сцена: граната и урон',true);
       setTimeout(()=>{if(local.preview?.effect==='grenade'){local.preview=null;refreshPreviewDom104();}},1300);
     }catch(error){operationFailure194(error);console.error('SCENE_GRENADE_V119_FAILED',error);Toast.show(String(error?.message||error),'err');}
@@ -3711,7 +3912,7 @@
       token.hpCurrent=clamp104(user.stats?.hpCurrent,0,Math.max(1,num(user.stats?.hpMax,token.hpMax)));
       token.hpMax=Math.max(1,num(user.stats?.hpMax,token.hpMax));
       token.traumaV195=clone(user.traumaV195?.schema===195?Trauma195.normalize(user.traumaV195):Trauma195.ensure({hpCurrent:token.hpCurrent,hpMax:token.hpMax,injuriesV129:user.injuriesV129}));
-      if(token.hpCurrent>0){const conditions=conditionStateV138(token);conditions.dying=false;conditions.unconscious=false;}
+      if(token.hpCurrent>0&&token.conditionsV138?.stabilized&&!token.critical229?.unconsciousAlready)conditionStateV138(token).unconscious=false;
       token.itemStateV138=clone(user.itemStateV138||{});
     };
     for(const [id,profile] of Object.entries(incoming))App.state.users[id]=clone(profile);
@@ -3730,12 +3931,10 @@
   async function exitCombatStability108(){
     if(!local.stability.active)return null;
     clearTimeout(local.saveTimer);local.saveTimer=0;
-    captureSession193();
     const actors=new Map(Object.values(local.store?.session193?.participants||{}).filter(t=>t.playerId).map(t=>[t.playerId,t]));
     for(const token of list(Combat.getRuntime(local.store?.session193?.activeMapId)?.tokens))if(token.playerId)actors.set(token.playerId,token);
     for(const token of actors.values())updatePlayerHp105(token);
-    const stored=await saveStoreNow();
-    if(stored?.ok===false)throw Error(stored.message||'Боевая сцена не сохранена');
+    const write=saveStoreNow();
     const drafts=clone(local.store.profileDrafts225||{base:{},profiles:{}});
     local.store.profileDrafts225=drafts;
     local.stability.profilesReady225=false;
@@ -3744,6 +3943,8 @@
     local.stability.remotePending=false;
     document.body.classList.remove('combat-stability-v108');
     clearTimeout(local.stability.localPersistTimer);local.stability.localPersistTimer=0;
+    const stored=await write;
+    if(stored?.ok===false)throw Error(stored.message||'Боевая сцена не сохранена');
     return drafts;
   }
   async function flushCombatDrafts228(drafts){
@@ -3784,16 +3985,15 @@
   }
   function leaveCombat225(navigate){
     if(combatExit225)return combatExit225;
-    combatExit225=Promise.resolve(combatEntry225).then(()=>exitCombatStability108()).then(drafts=>{
-      const result=navigate();
+    combatExit225=new Promise(resolve=>setTimeout(resolve,0)).then(()=>exitCombatStability108()).then(drafts=>{
       combatProfileSync228=flushCombatDrafts228(drafts)
         .catch(error=>Toast.show('Изменения профилей сохранены в сцене. Повторная отправка после открытия сцены. '+(error.message||error),'err'))
         .finally(()=>{combatProfileSync228=null;resumeCombatSync228();});
-      return result;
-    }).catch(error=>Toast.show('Выход отложен: '+(error.message||error),'err'))
+    }).catch(error=>{resumeCombatSync228();Toast.show('Сцена закрыта. Локальная запись не завершена: '+(error.message||error),'err');})
       .finally(()=>{combatExit225=null;if(UI.activeModuleId==='combat')Combat.render?.();});
+    const result=navigate();
     updateOperation191();
-    return combatExit225;
+    return result;
   }
   if(syncStartPollingBefore108)Sync.startPolling=function(...args){if(local.stability.active)return;return syncStartPollingBefore108(...args);};
   if(playerStartPollingBefore108)PlayerSync.startPolling=function(...args){if(local.stability.active)return;return playerStartPollingBefore108(...args);};
@@ -3830,8 +4030,7 @@
   const openModuleBefore104=UI.openModule.bind(UI);
   UI.openModule=function(id,options={}){
     if(id!=='combat'&&this.activeModuleId==='combat'){
-      if(deferNavigation194(()=>UI.openModule(id,options)))return;
-      return leaveCombat225(()=>openModuleBefore104(id,options));
+      return navigateFromCombat229(()=>{hideCombatEditor229();return openModuleBefore104(id,options);});
     }
     if(id!=='combat')return openModuleBefore104(id,options);
     if(!Combat.isDm()){Toast.show('Сцены доступны только ДМу','info');return;}
@@ -3864,14 +4063,17 @@
   const closeModuleBefore104=UI.closeModule.bind(UI);
   UI.closeModule=function(...args){
     if(this.activeModuleId!=='combat')return closeModuleBefore104(...args);
-    if(deferNavigation194(()=>UI.closeModule(...args)))return;
-    closeAbilityWindow192(false);closeCombatModal119(null);if(local.lua119.pointPicker)cancelAbilityPoint125();
-    return leaveCombat225(()=>{
-      let result;local.hidingEditor191=true;
-      try{result=closeModuleBefore104(...args);}finally{local.hidingEditor191=false;}
-      local.preview=null;return result;
-    });
+    return navigateFromCombat229(()=>hideCombatEditor229(...args));
   };
+  function navigateFromCombat229(navigate){
+    if(deferNavigation194(()=>{if(UI.activeModuleId!=='combat')leaveCombat225(()=>{});}))return navigate();
+    return leaveCombat225(navigate);
+  }
+  function hideCombatEditor229(...args){
+    closeAbilityWindow192(false);closeCombatModal119(null);if(local.lua119.pointPicker)cancelAbilityPoint125();
+    local.hidingEditor191=true;
+    try{return closeModuleBefore104(...args);}finally{local.hidingEditor191=false;local.preview=null;}
+  }
   const updateBootBefore104=App.updateBootView.bind(App);
   App.updateBootView=function(){const result=updateBootBefore104();ensureCombatModuleMarkup();const button=document.getElementById('open-combat');if(button){button.style.display=Combat.isDm()?'grid':'none';button.dataset.label='СЦЕНЫ';}return result;};
   window.addEventListener('focus',()=>{if(UI.activeModuleId==='combat')Combat.refreshPlayerDisplayStatus?.().catch?.(()=>{});});
@@ -3909,7 +4111,7 @@
     if(t.hasAttribute('data-operation-retry194')){event.preventDefault();void retryOperation194();return;}
     if(t.hasAttribute('data-battle-tools226')){event.preventDefault();local.ui.battleTools226=!local.ui.battleTools226;Combat.render();return;}
     if(t.hasAttribute('data-battle-current226')||t.dataset.battleUnit226){event.preventDefault();const token=t.dataset.battleUnit226?tokenById119(t.dataset.battleUnit226):Combat.getCurrentTurnToken?.();if(token){Combat.selectedObject={kind:'token',id:token.id};local.preview=null;Combat.render();}return;}
-    if(t.dataset.battleWeapon226){event.preventDefault();const token=selectedToken104(),row=battleWeaponRows226(token).find(row=>row.weapon.id===t.dataset.battleWeapon226);if(token&&row&&!token.burstStateV122&&!isControlledDevice200(token)){token.weaponId=row.weapon.id;local.preview=null;queueStoreSave();Combat.render();broadcastScene104();}return;}
+    if(t.dataset.battleWeapon226){event.preventDefault();const token=selectedToken104(),row=battleWeaponRows226(token).find(row=>row.weapon.id===t.dataset.battleWeapon226);if(token&&row&&!token.burstStateV122&&!isControlledDevice200(token)){if(token.weaponId!==row.weapon.id)clearStance229(token);token.weaponId=row.weapon.id;local.preview=null;queueStoreSave();Combat.render();broadcastScene104();}return;}
     if(t.dataset.lifecycle193){event.preventDefault();void runCommand191(()=>lifecycleCommand193(t.dataset.lifecycle193));return;}
     if(t.dataset.abilitiesOpen192){event.preventDefault();openAbilityWindow192(t.dataset.abilitiesOpen192);return;}
     if(t.hasAttribute('data-battle-mode191')){event.preventDefault();void runCommand191(()=>Combat.setBattleMode191());return;}
@@ -3941,6 +4143,7 @@
     if(t.hasAttribute('data-scene-loot-close-v118')){event.preventDefault();closeLootOverlay118();return;}
     if(t.dataset.sceneActionV104){const action=t.dataset.sceneActionV104;local.ui.pendingPlacement=null;if(action==='clear'){local.preview=null;refreshPreviewDom104();return;}if(['move','attack','grenade'].includes(action)){const current=Combat.getCurrentTurnToken?.();const selected=selectedToken104();if(current&&!selected)Combat.selectedObject={kind:'token',id:current.id};}local.ui.action=action;Combat.render();return;}
     if(t.id==='scene-initiative-toggle-v112'){local.ui.initiativeOpen=!local.ui.initiativeOpen;Combat.render();return;}
+    if(t.hasAttribute?.('data-critical-advance229')){void runOperation194('Интервал критического состояния',advanceCritical229);return;}
     if(t.id==='scene-next-turn-v104'){void Combat.nextTurn?.();return;}
     if(t.id==='scene-center-v108'||t.hasAttribute('data-battle-center226')){Combat.resetViewState?.(Combat.getSceneIdForView?.(),{persist:true,render:false});return;}
     if(t.id==='scene-sounds-toggle-v104'){local.ui.soundsOpen=!local.ui.soundsOpen;Combat.render();return;}
@@ -3976,7 +4179,7 @@
     if(t.id==='scene-ambient-v104'){const api=audioApi(),sid=Combat.getScene()?.id,value=String(t.value||'');if(!value)api?.stopAmbient?.(sid);else if(value.startsWith('sound:'))api?.setAmbient?.(sid,value.slice(6));else if(value.startsWith('section:')){const parts=value.split(':');api?.setSectionAmbient?.(sid,parts[1],parts[2]||'sequential');}return;}
     if(t.id==='scene-fog-mode-top-v112'){const scene=Combat.getScene();if(scene){scene.fogMode=['off','cover','objects'].includes(t.value)?t.value:'cover';scene.fogEnabled=scene.fogMode!=='off';queueStoreSave();Combat.render();broadcastScene104();}return;}
     if(t.id==='scene-show-initiative-top-v112'){const scene=Combat.getScene();if(scene){scene.showInitiativeToPlayers=t.checked;queueStoreSave();broadcastScene104();}return;}
-    if(t.id==='scene-weapon-v105'){if(!activeMap193())return;const token=selectedToken104();if(token){token.weaponId=String(t.value||'');queueStoreSave();Combat.render();broadcastScene104();}return;}
+    if(t.id==='scene-weapon-v105'){if(!activeMap193())return;const token=selectedToken104();if(token){if(token.weaponId!==String(t.value||''))clearStance229(token);token.weaponId=String(t.value||'');queueStoreSave();Combat.render();broadcastScene104();}return;}
     if(t.id==='scene-grenade-v105'){if(!activeMap193())return;const token=selectedToken104();if(token){token.grenadeId=String(t.value||'');queueStoreSave();Combat.render();}return;}
     if(t.matches?.('[data-context-hp-v104],[data-context-hpmax-v104],[data-context-init-v104]')){
       if(!activeMap193())return;const sel=selectedObject104(),menu=t.closest('.scene-context-v104');if(sel?.kind!=='token')return;

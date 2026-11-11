@@ -45,7 +45,17 @@
     const before=Math.max(0,number(target.hpCurrent,target.hpMax||0));
     const requested=Math.max(0,integer(Math.round(number(amount,0)),0));
     const after=Math.max(0,before-requested);target.hpCurrent=after;
-    if(after<=0){const conditions=target.conditionsV138&&typeof target.conditionsV138==='object'?target.conditionsV138:(target.conditionsV138={});conditions.dying=true;conditions.stabilized=false;conditions.unconscious=true;conditions.prone=true;target.proneV122=true;}
+    const conditions=target.conditionsV138||={};
+    if(requested>0&&after===0&&!target.dead229&&!root.GRPGCombatTraumaV195?.mechanical(target)){
+      if(!conditions.dying){
+        target.critical229={damage:0,fallTurn:integer(target.ownTurnV199),unconsciousAlready:before>0&&Boolean(conditions.unconscious)};
+      }
+      target.critical229||={damage:0,fallTurn:integer(target.ownTurnV199),unconsciousAlready:false};
+      target.critical229.damage+=requested;
+      conditions.dying=true;conditions.stabilized=false;conditions.unconscious=true;conditions.prone=true;target.proneV122=true;
+    }else if(requested>0&&conditions.dying&&target.critical229){
+      target.critical229.damage+=requested;
+    }
     root.GRPGCombatTraumaV195?.add(target,before-after);
     return {before,after,applied:before-after};
   }
@@ -53,10 +63,39 @@
     if(!target||typeof target!=='object')return {before:0,after:0,applied:0};
     root.GRPGCombatTraumaV195?.ensure(target);
     const before=Math.max(0,number(target.hpCurrent,0)),maximum=Math.max(before,number(target.hpMax,before));
-    const after=Math.min(maximum,before+Math.max(0,integer(Math.round(number(amount,0)),0)));target.hpCurrent=after;
-    if(after>0){const conditions=target.conditionsV138&&typeof target.conditionsV138==='object'?target.conditionsV138:(target.conditionsV138={});conditions.dying=false;conditions.stabilized=false;conditions.unconscious=false;}
+    const after=target.dead229?before:Math.min(maximum,before+Math.max(0,integer(Math.round(number(amount,0)),0)));target.hpCurrent=after;
+    const conditions=target.conditionsV138||={};
+    if(after>0&&!target.dead229&&!conditions.dying&&conditions.stabilized&&!target.critical229?.unconsciousAlready)conditions.unconscious=false;
     return {before,after,applied:after-before};
   }
 
-  root.GRPGCombatRulesV119=Object.freeze({version:'1.0.122',normalizeDamageExpression,requiresManualDamage,suggestedDamage,reduceDamage,resolveManualAttack,applyDamage,applyHeal});
+  function stabilizationDifficulty(target){
+    return 12+Math.max(0,integer(target?.critical229?.damage));
+  }
+  function stabilize(target){
+    if(!target?.conditionsV138?.dying||target.dead229)return false;
+    const conditions=target.conditionsV138;
+    conditions.dying=false;conditions.stabilized=true;
+    if(target.hpCurrent>0&&!target.critical229?.unconsciousAlready)conditions.unconscious=false;
+    return true;
+  }
+  function criticalTurn(target,phase){
+    if(!target?.conditionsV138?.dying||target.dead229)return '';
+    target.critical229||={damage:0,fallTurn:integer(target.ownTurnV199)-(phase==='start'?1:0),unconsciousAlready:false};
+    if(integer(target.ownTurnV199)-integer(target.critical229.fallTurn)+integer(target.critical229.manualIntervals)<5)return '';
+    if(phase==='start'&&target.hpCurrent>0){stabilize(target);return 'awake';}
+    if(phase==='end'){
+      if(target.hpCurrent>0){stabilize(target);return 'awake';}
+      target.dead229=true;target.conditionsV138.dying=false;return 'dead';
+    }
+    return '';
+  }
+  function grenadeScatter(die,total){
+    if(die!==1&&total>=10)return 0;
+    return 1+Math.max(0,Math.floor((10-total)/5))+(die===1?1:0);
+  }
+  function burstPenalty(shotIndex,targetSwitches,braced){
+    return -Math.max(0,integer(shotIndex,1)-1-(braced?1:0))-Math.max(0,integer(targetSwitches));
+  }
+  root.GRPGCombatRulesV119=Object.freeze({version:'1.0.122',normalizeDamageExpression,requiresManualDamage,suggestedDamage,reduceDamage,resolveManualAttack,applyDamage,applyHeal,stabilizationDifficulty,stabilize,criticalTurn,grenadeScatter,burstPenalty});
 })(typeof window!=='undefined'?window:globalThis);

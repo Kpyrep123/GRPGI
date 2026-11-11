@@ -27,7 +27,7 @@ const html=fs.readFileSync(path.join(root,'renderer/index.html'),'utf8');
 w.document.write(html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi,''));
 // Every renderer script is evaluated unmodified, in index.html order, sharing
 // browser-style lexical globals. Only OS/cloud/bootstrap boundaries are mocked.
-for(const m of html.matchAll(/<script src="\.\/([^"?]+)[^"]*"/g))vm.runInContext(fs.readFileSync(path.join(root,'renderer',m[1]),'utf8').replace('// New module is DM-only;', 'window.test225={local,applyStore,collectStoreFromRuntime,luaUnitRows119,applyLuaCommands119,runInteractiveLuaHookV138,requestAttackRolls119,playerVisionSources112,droneActions225,droneShareVision225,deviceCommandReason200,checkpointCombat120,conditionEvents225,positionEvents204,refreshRuntimeSources122,centerOf,updatePlayerHp105,mergeCombatProfile225,importCombatProfiles225,runAutomaticHooks119,commitMove104:()=>commitMove104(),makeRoutePreview104,hexStepDistance109};\n// New module is DM-only;'),context,{filename:m[1]});
+for(const m of html.matchAll(/<script src="\.\/([^"?]+)[^"]*"/g))vm.runInContext(fs.readFileSync(path.join(root,'renderer',m[1]),'utf8').replace('// New module is DM-only;', 'window.test225={local,applyStore,collectStoreFromRuntime,luaUnitRows119,applyLuaCommands119,runInteractiveLuaHookV138,requestAttackRolls119,playerVisionSources112,droneActions225,droneShareVision225,deviceCommandReason200,checkpointCombat120,conditionEvents225,positionEvents204,refreshRuntimeSources122,centerOf,updatePlayerHp105,mergeCombatProfile225,importCombatProfiles225,runAutomaticHooks119,commitMove104:()=>commitMove104(),makeRoutePreview104,hexStepDistance109,activeSkillsForToken118,useActiveSkill118:id=>useActiveSkill118(id),fitTokenToHex107};\n// New module is DM-only;'),context,{filename:m[1]});
 const {Worker}=await import('node:worker_threads');
 w.electronAPI.runCombatLuaHook=payload=>new Promise((resolve,reject)=>{
  const worker=new Worker(path.join(root,'lua-sandbox-worker.cjs'));
@@ -49,10 +49,10 @@ try{
  w.world225={
   players:{PLAYER_TEMPLATES:{
    gm:{id:'gm',role:'gm'},
-   p:{id:'p',role:'player',displayName:'Оператор',stats:{hpCurrent:8,hpMax:10},baseStats:{hpBase:10,implantSlots:1},implantSlotCount:1,traumaV195:{schema:195,degree:0},abilityBase:{intelligence:3},inventory:[{itemId:'implant',qty:1}],implantSlots:['implant'],installedImplantIds:['implant'],skills:['events']},
+   p:{id:'p',role:'player',displayName:'Оператор',stats:{hpCurrent:8,hpMax:10},baseStats:{hpBase:10,implantSlots:1},implantSlotCount:1,traumaV195:{schema:195,degree:0},abilityBase:{intelligence:3,will:2},equipmentSlots:{primaryWeapon:'test_rifle'},inventory:[{itemId:'implant',qty:1}],implantSlots:['implant'],installedImplantIds:['implant'],skills:['events']},
    q:{id:'q',role:'player',displayName:'Другой игрок',stats:{hpCurrent:10,hpMax:10},baseStats:{hpBase:10}}
   }},
-  equipment:{EQUIPMENT:{implant:{id:'implant',name:'Дополнительные команды',type:'implant',modifiers:[{target:'drone_actions',op:'add',value:2}]}}},
+  equipment:{EQUIPMENT:{test_rifle:{id:'test_rifle',name:'Тестовая винтовка',type:'weapon',weaponCategory:'light',damage:'1',range:10,rapidFireShots:3},implant:{id:'implant',name:'Дополнительные команды',type:'implant',modifiers:[{target:'drone_actions',op:'add',value:2}]}}},
   skills:{SKILLS:{events:{id:'events',name:'События',activationType:'passive',luaEnabled:true,luaScript:"function BeforeRoll(self,p) self:SetData('before_'..p.rollType,self:GetData('before_'..p.rollType,0)+1) end function AfterRoll(self,p) assert(p.rollingUnit ~= nil);self:SetData('after_'..p.rollType,p.roll) end function OnKnockedDown(self,p) assert(p.condition=='prone' and p.enabled);self:SetData('down',self:GetData('down',0)+1) end function OnStandUp(self,p) self:SetData('up',self:GetData('up',0)+1) end function OnForcedMove(self,p) self:SetData('shift',self:GetData('shift',0)+1) end"}}}
  };
  run("applyWorldData(window.world225);App.state=makeDefaultState();App.currentUserId='gm';Sync.config={enabled:false};App.renderLive=()=>{};App.refreshAfterLocalWrite=()=>{};App.writeLocalMirrors=async()=>({ok:true});Persistence.save=async()=>({ok:true});window.notices225=[];Toast.show=(message,type)=>notices225.push([message,type]);");
@@ -123,6 +123,59 @@ try{
  assert.deepEqual(api.centerOf(token('a')),preview.end,'movement reaches the preview endpoint');
  assert.equal(writes.filter(stage=>stage==='Подтверждено перемещение').length,1,JSON.stringify(writes));
  assert(!writes.includes('Подтверждён шаг перемещения'),'plain movement does not journal every hex');
+ const rules=w.GRPGCombatRulesV119;
+ assert.deepEqual(Array.from(api.activeSkillsForToken118(token('a')),row=>row.name).filter(name=>name!=='События'),['Прицеливание','Помощь','Стабилизация','Упор']);
+ assert.equal(rules.burstPenalty(3,2,true),-3,'bracing does not reduce target-switch penalties');
+ assert.equal(rules.grenadeScatter(1,6),2);
+ assert.equal(rules.grenadeScatter(5,5),2);
+ const fallen={hpCurrent:2,hpMax:10,ownTurnV199:3,traumaV195:{schema:195,degree:0}};
+ rules.applyDamage(fallen,5);rules.applyDamage(fallen,3);
+ assert.equal(rules.stabilizationDifficulty(fallen),20);
+ assert.equal(fallen.traumaV195.degree,2);
+ rules.applyHeal(fallen,2);
+ assert.equal(fallen.conditionsV138.dying,true,'healing alone preserves the countdown');
+ fallen.ownTurnV199=7;assert.equal(rules.criticalTurn(fallen,'end'),'');
+ fallen.ownTurnV199=8;assert.equal(rules.criticalTurn(fallen,'start'),'awake');
+ const fatal={hpCurrent:2,hpMax:10,ownTurnV199:0};rules.applyDamage(fatal,2);
+ fatal.ownTurnV199=5;assert.equal(rules.criticalTurn(fatal,'start'),'');
+ assert.equal(rules.criticalTurn(fatal,'end'),'dead');
+ const ally=token('b');
+ api.fitTokenToHex107(ally,run('Combat.getScene()'),{x:preview.end.x,y:preview.end.y+api.hexStepDistance109()});
+ ally.hpCurrent=2;rules.applyDamage(ally,3);rules.applyHeal(ally,2);
+ token('a').actionUsed=false;
+ const stabilize=api.useActiveSkill118('skill_stabilization');
+ await wait(()=>w.document.querySelector('[name=basicTarget229]'));
+ confirm();
+ await wait(()=>w.document.querySelector('[name=stabilize229]'));
+ w.document.querySelector('[name=stabilize229]').value='20';confirm();await stabilize;
+ assert.equal(ally.conditionsV138.dying,false);assert.equal(ally.conditionsV138.unconscious,false);
+ assert.equal(token('a').actionUsed,true);
+ for(let expected=1;expected<=3;expected++){
+  token('a').actionUsed=false;
+  token('a').ownTurnV199++;
+  const aim=api.useActiveSkill118('skill_766282');
+  await wait(()=>w.document.querySelector('[name=basicTarget229]'));
+  confirm();await aim;
+  assert.equal(token('a').aim229.bonus,expected,'consecutive Aim actions increase the bonus to +3');
+ }
+ token('a').actionUsed=false;
+ const help=api.useActiveSkill118('skill_378845');
+ await wait(()=>w.document.querySelector('[name=helpType229]'));
+ w.document.querySelector('[name=helpType229]').value='defense';
+ confirm();await help;
+ assert.equal(token('b').help229.bonus,3,'help adds one plus the helper’s Will');
+ const aimed=api.requestAttackRolls119({attacker:token('a'),target:token('b'),weapon:{id:'test_rifle',name:'Тестовая винтовка',damage:'1'},attackBonus:0,defenseBonus:0,damageBonus:0,aimBonus:3});
+ await wait(()=>w.document.querySelector('[name=attackRoll]'));
+ w.document.querySelector('[name=attackRoll]').value='12';
+ w.document.querySelector('[name=defenseRoll]').value='8';
+ w.document.querySelector('[name=damageRoll]').value='1';
+ confirm();
+ const aimedRoll=await aimed;
+ assert.equal(aimedRoll.aimApplied229,3);
+ assert.equal(aimedRoll.attackBonusDelta204,3);
+ assert.equal(aimedRoll.defenseBonusDelta204,3,'Help applies to an active defense without changing the natural die');
+ assert.equal(aimedRoll.defenseRoll,8);
+ assert.equal(token('b').help229,null,'help is consumed by the selected check');
  const patches=[],pulls=[];
  let releasePush;
  const remote=JSON.parse(run('JSON.stringify(App.state.users)'));
@@ -140,8 +193,14 @@ try{
  token('a').hpCurrent=6;api.updatePlayerHp105(token('a'));
  await api.checkpointCombat120('local action',true);
  assert.equal(patches.length,0,'profiles are deferred until exit');
+ let releaseArchive,archiveStarted=false;
+ const saveArchive=w.electronAPI.saveLocalCombatScenes;
+ w.electronAPI.saveLocalCombatScenes=payload=>{archiveStarted=true;return new Promise(resolve=>{releaseArchive=()=>resolve(saveArchive(payload));});};
  await run('UI.closeModule()');
- assert.notEqual(run("UI.activeModuleId"),'combat','window closes while cloud write is pending');
+ assert.notEqual(run("UI.activeModuleId"),'combat','window closes before the local archive write completes');
+ await wait(()=>archiveStarted);
+ assert.equal(patches.length,0,'remote writes follow durable local storage');
+ w.electronAPI.saveLocalCombatScenes=saveArchive;releaseArchive();
  await wait(()=>patches.some(row=>row.playerId==='p'));
  assert(pulls.every(pull=>pull.playerId&&pull.limit===1),'exit only fetches changed players');
  assert.equal(patches.find(row=>row.playerId==='p').patch.stats.hpCurrent,6);
