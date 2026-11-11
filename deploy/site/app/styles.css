@@ -2310,3 +2310,15 @@ html[data-era-theme="medieval"] .origin-citizenship-v1087{background:rgba(116,69
 #screen-archive .article-card:has(> .entity-hero-image:first-child)>.eyebrow:nth-child(2){grid-row:1}
 #screen-archive .article-card:has(> .entity-hero-image:first-child)>h3:nth-child(3){grid-row:2}
 #screen-archive .article-card:has(> .entity-hero-image:first-child)>.small-note:nth-child(4){grid-row:3}
+
+#screen-archive .archive-item-detail-v1060:has(> .entity-hero-image:first-child){
+  grid-template-rows:auto auto auto 1fr;
+}
+#screen-archive .archive-item-detail-v1060:has(> .entity-hero-image:first-child)>.entity-hero-image{
+  grid-row:1 / 5;
+}
+#screen-archive .archive-item-detail-v1060:has(> .entity-hero-image:first-child)>.archive-equipment-facts-v131{
+  grid-column:2;
+  grid-row:4;
+  overflow-wrap:anywhere;
+}
