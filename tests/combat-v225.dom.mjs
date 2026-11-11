@@ -27,7 +27,7 @@ const html=fs.readFileSync(path.join(root,'renderer/index.html'),'utf8');
 w.document.write(html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi,''));
 // Every renderer script is evaluated unmodified, in index.html order, sharing
 // browser-style lexical globals. Only OS/cloud/bootstrap boundaries are mocked.
-for(const m of html.matchAll(/<script src="\.\/([^"?]+)[^"]*"/g))vm.runInContext(fs.readFileSync(path.join(root,'renderer',m[1]),'utf8').replace('// New module is DM-only;', 'window.test225={local,applyStore,collectStoreFromRuntime,luaUnitRows119,applyLuaCommands119,runInteractiveLuaHookV138,requestAttackRolls119,playerVisionSources112,droneActions225,droneShareVision225,deviceCommandReason200,checkpointCombat120,conditionEvents225,positionEvents204,refreshRuntimeSources122,centerOf,updatePlayerHp105,mergeCombatProfile225,importCombatProfiles225};\n// New module is DM-only;'),context,{filename:m[1]});
+for(const m of html.matchAll(/<script src="\.\/([^"?]+)[^"]*"/g))vm.runInContext(fs.readFileSync(path.join(root,'renderer',m[1]),'utf8').replace('// New module is DM-only;', 'window.test225={local,applyStore,collectStoreFromRuntime,luaUnitRows119,applyLuaCommands119,runInteractiveLuaHookV138,requestAttackRolls119,playerVisionSources112,droneActions225,droneShareVision225,deviceCommandReason200,checkpointCombat120,conditionEvents225,positionEvents204,refreshRuntimeSources122,centerOf,updatePlayerHp105,mergeCombatProfile225,importCombatProfiles225,runAutomaticHooks119,commitMove104:()=>commitMove104(),makeRoutePreview104,hexStepDistance109};\n// New module is DM-only;'),context,{filename:m[1]});
 const {Worker}=await import('node:worker_threads');
 w.electronAPI.runCombatLuaHook=payload=>new Promise((resolve,reject)=>{
  const worker=new Worker(path.join(root,'lua-sandbox-worker.cjs'));
@@ -106,20 +106,55 @@ try{
  confirm();await reactive;
  assert.equal(token('a').luaState204['skill:react225'].used,true);
  assert.equal(token('a').reactionUsedV119,true);
- const patches=[];let fail=true;
- run("test225.local.combatProfileHashesV120.clear();PlayerSync.pushPlayerPatch=async(playerId,patch)=>window.push225(playerId,patch)");
- w.push225=async(playerId,patch)=>{patches.push({playerId,patch:JSON.parse(JSON.stringify(patch))});return fail?{ok:false,message:'offline'}:{ok:true};};
+ // A hook absent from the manifest must not start a worker for any equipped skill.
+ const runHook=w.electronAPI.runCombatLuaHook,calls=[];
+ w.electronAPI.runCombatLuaHook=payload=>{calls.push(payload);return runHook(payload);};
+ await api.runAutomaticHooks119(token('a'),'OnMoveStep',{attacker:token('a')});
+ assert(!calls.some(call=>call.hook==='OnMoveStep'),'absent movement hook never enters the worker');
+ run("Combat.selectedObject={kind:'token',id:'a'}");
+ token('a').disengagedV122=true;
+ const start=api.centerOf(token('a'));
+ const preview=api.makeRoutePreview104({x:start.x,y:start.y+3*api.hexStepDistance109()});
+ assert(!preview.blocked&&preview.points.length>=3,'fixture has a multi-hex route');
+ const writes=[];
+ w.electronAPI.saveLocalCombatScenes=async payload=>{writes.push(payload.operations194.active?.stage);return{ok:true};};
+ api.local.preview=preview;
+ await api.commitMove104();
+ assert.deepEqual(api.centerOf(token('a')),preview.end,'movement reaches the preview endpoint');
+ assert.equal(writes.filter(stage=>stage==='Подтверждено перемещение').length,1,JSON.stringify(writes));
+ assert(!writes.includes('Подтверждён шаг перемещения'),'plain movement does not journal every hex');
+ const patches=[],pulls=[];
+ let releasePush;
+ const remote=JSON.parse(run('JSON.stringify(App.state.users)'));
+ const gate=new Promise(resolve=>{releasePush=resolve;});
+ run("Sync.config={enabled:true};PlayerSync.shouldIsolateUsersFromSnapshot=()=>true;PlayerSync.pushPlayerPatch=async(playerId,patch)=>window.push225(playerId,patch);");
+ w.electronAPI.pullPlayers=async options=>{
+  pulls.push(options);
+  return{ok:true,rows:Object.entries(remote).filter(([id])=>!options.playerId||id===options.playerId).map(([id,player])=>({playerId:id,player,version:20}))};
+ };
+ w.push225=async(playerId,patch)=>{
+  patches.push({playerId,patch:JSON.parse(JSON.stringify(patch))});
+  await gate;
+  return{ok:false,message:'offline'};
+ };
  token('a').hpCurrent=6;api.updatePlayerHp105(token('a'));
  await api.checkpointCombat120('local action',true);
  assert.equal(patches.length,0,'profiles are deferred until exit');
  await run('UI.closeModule()');
- assert.equal(run("UI.activeModuleId"),'combat','failed upload keeps scene open');
- assert(w.notices225.some(row=>row[0].includes('offline')));
- fail=false;await run('UI.closeModule()');
- assert.notEqual(run('UI.activeModuleId'),'combat');
- assert.equal(patches.filter(row=>row.playerId==='p').at(-1).patch.stats.hpCurrent,6);
- run("Sync.config={enabled:true};PlayerSync.shouldIsolateUsersFromSnapshot=()=>true;");
- w.electronAPI.pullPlayers=async()=>({ok:true,rows:[{playerId:'p',player:JSON.parse(run('JSON.stringify({...App.state.users.p,stats:{...App.state.users.p.stats,hpCurrent:9}})')),version:20}]});
+ assert.notEqual(run("UI.activeModuleId"),'combat','window closes while cloud write is pending');
+ await wait(()=>patches.some(row=>row.playerId==='p'));
+ assert(pulls.every(pull=>pull.playerId&&pull.limit===1),'exit only fetches changed players');
+ assert.equal(patches.find(row=>row.playerId==='p').patch.stats.hpCurrent,6);
+ releasePush();
+ await wait(()=>w.notices225.some(row=>row[0].includes('offline')));
+ assert.equal(api.local.store.profileDrafts225.profiles.p.stats.hpCurrent,6,'failed upload leaves a durable draft');
+ w.push225=async(playerId,patch)=>{Object.assign(remote[playerId],patch);return{ok:true};};
+ await run("UI.openModule('combat')");
+ assert.equal(token('a').hpCurrent,6,'reopening restores the unsent combat draft');
+ await run('UI.closeModule()');
+ await wait(()=>!api.local.store.profileDrafts225);
+ remote.p.stats.hpCurrent=9;
+ w.electronAPI.pullPlayers=async()=>({ok:true,rows:[{playerId:'p',player:remote.p,version:21}]});
  await run("UI.openModule('combat')");
  assert.equal(token('a').hpCurrent,9,'online entry reads the server profile');
  assert.equal(token('a').actionUsed,true,'online refresh preserves spent action');

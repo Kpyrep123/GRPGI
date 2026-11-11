@@ -259,10 +259,11 @@
   }
   async function writeOperation194(record){
     journal194().active=record;
-    if(operation194){operation194.allowWrite=true;operation194.pendingPayload=clone(collectStoreFromRuntime());}
+    const payload=clone(collectStoreFromRuntime());
+    if(operation194){operation194.allowWrite=true;operation194.pendingPayload=payload;}
     try{
-      const result=await saveStoreNow();if(result?.ok===false)throw Error(result.message||'Не удалось записать результат операции');
-      if(operation194){operation194.lastDurable=clone(collectStoreFromRuntime());operation194.pendingPayload=null;}
+      const result=await saveStoreNow(payload);if(result?.ok===false)throw Error(result.message||'Не удалось записать результат операции');
+      if(operation194){operation194.lastDurable=payload;operation194.pendingPayload=null;}
       return result;
     }finally{if(operation194)operation194.allowWrite=false;}
   }
@@ -508,7 +509,14 @@
     local.store.selectedSceneId = String(Combat.selectedSceneId || local.store.selectedSceneId || '');
     if(local.stability.active&&local.stability.profilesReady225){
       const ids=unique([...Object.values(local.store.session193?.participants||{}),...list(Combat.getRuntime()?.tokens)].map(token=>token.playerId));
-      local.store.profileDrafts225={base:clone(local.stability.profileBase225||{}),profiles:Object.fromEntries(ids.filter(id=>App.state.users[id]).map(id=>[id,combatProfilePatch120(App.state.users[id])]))};
+      const base={},profiles={},equal=window.GRPGPlayerSyncCoreV135.equal;
+      for(const id of ids){
+        if(!App.state.users[id])continue;
+        const before=local.stability.profileBase225?.[id]||{};
+        const after=combatProfilePatch120(App.state.users[id]);
+        if(!equal(before,after)){base[id]=clone(before);profiles[id]=after;}
+      }
+      local.store.profileDrafts225={base,profiles};
     }
     local.store.updatedAt = new Date().toISOString();
     return local.store;
@@ -569,12 +577,12 @@
     })().finally(() => { local.loading = null; });
     return local.loading;
   }
-  async function saveStoreNow() {
+  async function saveStoreNow(revision) {
     if(operation194&&!operation194.allowWrite)return {ok:true,status:'deferred-operation'};
     if (!local.loaded && !local.store) return { ok: false };
     // Capture an immutable revision before entering the asynchronous writer. Otherwise a
     // later shot can mutate the same object while an earlier JSON write is still pending.
-    const payload = clone(collectStoreFromRuntime());
+    const payload = revision ?? clone(collectStoreFromRuntime());
     const write = async () => {
       try {
         if (window.electronAPI?.saveLocalCombatScenes) return await window.electronAPI.saveLocalCombatScenes(payload);
@@ -1882,7 +1890,7 @@
     const state=abilityWindow192;if(!state)return;
     const token=selectedToken104();
     if(UI.activeModuleId!=='combat'||Combat.getScene()?.id!==state.sceneId||token?.id!==state.tokenId){closeAbilityWindow192(false);return;}
-    const source204=scriptSourcesForToken119(token).find(row=>row.id===state.selectedId),baseReason204=abilityReason192(token),reason=baseReason204||(actionSpent191(token)&&!scripted204(source204)?'Действие этого участника уже потрачено':''),button=state.overlay.querySelector('[data-ability-use192]');
+    const source204=state.sources?.find(row=>row.id===state.selectedId),baseReason204=abilityReason192(token),reason=baseReason204||(actionSpent191(token)&&!scripted204(source204)?'Действие этого участника уже потрачено':''),button=state.overlay.querySelector('[data-ability-use192]');
     button.disabled=Boolean(reason)||!state.selectedId;
     state.overlay.querySelector('[data-ability-status192]').textContent=reason||(scripted204(source204)?'Стоимость применения задаёт Lua-скрипт.':'Применение расходует действие. Результат — по Lua или вручную по описанию.');
   }
@@ -1893,7 +1901,8 @@
     const overlay=document.createElement('div');overlay.className='scene-abilities-overlay-v192';
     overlay.innerHTML=`<section class="scene-abilities-window-v192" role="dialog" aria-modal="true" aria-labelledby="scene-abilities-title192"><header><div><small>${html(token.name)}</small><h2 id="scene-abilities-title192">${kind==='equipment'?'Активное снаряжение':'Активные навыки'}</h2></div><button class="ghost" type="button" data-abilities-close192 aria-label="Закрыть">✕</button></header><label class="scene-abilities-search-v192">Поиск по названию, тегам и описанию<input class="input" type="search" data-abilities-search192 placeholder="Начните вводить…" autocomplete="off"/></label><div class="scene-abilities-count-v192" role="status" data-abilities-count192></div><div class="scene-abilities-body-v192"><nav aria-label="Список способностей" data-abilities-list192></nav><article data-ability-details192></article></div><footer><span data-ability-status192 role="status"></span><button class="primary" type="button" data-ability-use192>ПРИМЕНИТЬ</button></footer></section>`;
     const state=abilityWindow192={overlay,kind,sceneId:scene.id,tokenId:token.id,selectedId:'',rows:abilityRows192(token,kind)};
-    void Promise.all(scriptSourcesForToken119(token).filter(row=>row.mode==='active').map(policy204)).then(()=>{if(abilityWindow192===state)refreshAbilityWindow192();}).catch(error=>Toast.show(String(error.message||error),'err'));
+    state.sources=scriptSourcesForToken119(token).filter(row=>row.mode==='active');
+    void prepareSources228(state.sources).then(()=>{if(abilityWindow192===state)refreshAbilityWindow192();}).catch(error=>Toast.show(String(error.message||error),'err'));
     const detail=overlay.querySelector('[data-ability-details192]'),listNode=overlay.querySelector('[data-abilities-list192]'),search=overlay.querySelector('[data-abilities-search192]');
     const select=id=>{
       state.selectedId=id;const row=state.rows.find(r=>String(r.id)===id);
@@ -2420,25 +2429,36 @@
     local.moveBusyV122=true;
     try{
       let opportunity={alive:true,reactionUsed:false};const effects={damage:0,effects:[]};await emit204('OnMoveStart',token,{attacker:token,target:token,movementKind204:'normal'},effects);
+      const sources=await prepareSources228(list(runtime.tokens).filter(actor=>!withdrawn194(actor)).flatMap(scriptSourcesForToken119));
+      const stepHooks=sources.some(source=>handlesHook228(source,'OnPositionChanged')||handlesHook228(source,'OnMoveStep'));
+      const opportunityPossible=inBattle191()&&!token.disengagedV122&&list(runtime.tokens).some(actor=>
+        actor.id!==token.id&&tokenTeam122(actor)!==tokenTeam122(token)&&reactionAvailable195(actor)
+        && preview.points.some(point=>window.GRPGUnitSizeV184.distance(actor,token,undefined,point)<=1));
+      const stepByStep=stepHooks||opportunityPossible||list(runtime.thinkersV125).length>0;
+      let moved=false;
       for(const next of preview.points.slice(1)){
         const before=centerOf(token);if(!canMechanicalMove108(token))break;
-        if(inBattle191()&&!token.disengagedV122){const resolved=await resolveOpportunityAttacks122(token,[before,next]);opportunity.reactionUsed ||=resolved.reactionUsed;if(!resolved.alive)break;}
+        if(stepByStep&&inBattle191()&&!token.disengagedV122){const resolved=await resolveOpportunityAttacks122(token,[before,next]);opportunity.reactionUsed ||=resolved.reactionUsed;if(!resolved.alive)break;}
         if(!canMechanicalMove108(token)||dist(centerOf(token),before)>.001||movementSegmentBlocked(scene,before,next,token.id,hexMetrics107().tokenSize*.18)||approachProblem199(token,[before,next],scene))break;
         const cost=terrainCostAt122(scene,next);if(inBattle191()&&cost>tokenMoveBudget198(token,scene)-num(token.movedThisTurn))break;
         fitTokenToHex107(token,scene,next);token.movedThisTurn=Math.max(0,num(token.movedThisTurn))+cost;
-        await sealOperation194('Подтверждён шаг перемещения');await positionEvents204(token,before,'normal',effects);await emit204('OnMoveStep',token,{attacker:token,target:token,movementKind204:'normal',oldPosition204:before,newPosition204:centerOf(token)},effects);
+        moved=true;
+        if(stepByStep){
+          await sealOperation194('Подтверждён шаг перемещения');
+          await positionEvents204(token,before,'normal',effects);
+          await emit204('OnMoveStep',token,{attacker:token,target:token,movementKind204:'normal',oldPosition204:before,newPosition204:centerOf(token)},effects);
+        }
         if(dist(centerOf(token),next)>.001)break;
       }
+      if(moved&&!stepByStep)await sealOperation194('Подтверждено перемещение');
       await emit204('OnMoveEnd',token,{attacker:token,target:token,movementKind204:'normal'},effects);flushLuaEffects119(effects);
       local.preview={...preview,effect:'move',movedTokenId:token.id};
-      Combat.render();
-      broadcastScene104();
       await checkpointCombat120(opportunity.reactionUsed?'Сцена: атака по возможности и перемещение':'Сцена: перемещение',opportunity.reactionUsed);
       setTimeout(()=>{if(local.preview?.effect==='move'&&local.preview?.movedTokenId===token.id){local.preview=null;refreshPreviewDom104();}},650);
     }catch(error){
       operationFailure194(error);console.error('SCENE_MOVE_V122_FAILED',error);
       Toast.show(`Перемещение не завершено: ${error?.message||error}`,'err');
-    }finally{local.moveBusyV122=false;updateOperation191();if(UI.activeModuleId==='combat')Combat.render();}
+    }finally{local.moveBusyV122=false;updateOperation191();if(!operation194&&UI.activeModuleId==='combat')Combat.render();}
   }
   async function togglePosture128(){
     const state=postureAvailability128(),token=state.token;if(!state.enabled||!token){Toast.show(state.reason||'Смена положения недоступна','info');return;}
@@ -2642,18 +2662,44 @@
     return list(runtime?.thinkersV125).map(raw=>{const thinker=normalizeThinker125(raw),point=thinkerPoint125(thinker,runtime),g=thinker.geometry204?{...thinker.geometry204,...point}:Lua204.geometry({...thinker,...point},hexStepDistance109()),points=Lua204.outline(g);return{id:`thinker:${thinker.id}`,runtimeId:thinker.id,thinkerId:thinker.thinkerId,shape:'polygon',points,name:thinker.name,label:thinker.name,x:point.x-g.radius,y:point.y-g.radius,w:g.radius*2,h:g.radius*2,rotation:0,color:g.color,visibleToPlayers:thinker.visibleToPlayers,blockSight:thinker.blockSight&&!thinker.allowVision,allowVision:thinker.allowVision,blockMovement:false,__thinkerV125:true};});
   }
   function thinkerMarkup125(thinker,scene){return `<svg class="scene-zone-vector-wrap-v104" viewBox="0 0 ${scene.width} ${scene.height}" preserveAspectRatio="none"><polygon class="scene-polygon-v104 scene-thinker-v125" points="${list(thinker.points).map(p=>`${p.x},${p.y}`).join(' ')}" style="pointer-events:none;--zone-color:${html(thinker.color)}"><title>${html(thinker.label)}</title></polygon></svg>`;}
-  function automaticSourcesForHook122(owner,hook,context={}){
-    const rows=scriptSourcesForToken119(owner).filter(row=>row.mode==='automatic');
-    if(!['OnAttackDeclared','BeforeAttackStart','OnHit'].includes(String(hook))||String(context.attacker?.id||'')!==String(owner?.id||'')||!context.weapon?.id)return rows;
-    const activeId=String(context.weapon.id);
-    return rows.filter(source=>!['weapon','grenade'].includes(String(source.raw?.type||'').toLowerCase())||String(source.id)===activeId);
-  }
   const Lua204=window.GRPGCombatLuaV204,policyCache204=new Map();
   function epochContext204(unit){const session=local.store?.session193||{},runtime=Combat.getRuntime();return{sceneId:session.narrativeId||Combat.getScene()?.id,battleId:session.battleId||'',round:runtime?.round||1,turn:unit?.ownTurnV199||0,unitId:unit?.id||''};}
   function resources204(unit){const rows=unit.luaResources204||={},ctx=epochContext204(unit),out={};for(const id of Object.keys(rows))out[id]=Lua204.resource(rows,id,ctx);return out;}
   function spendReaction204(unit){if(resources204(unit).reaction)Lua204.spend(unit.luaResources204,'reaction',1,epochContext204(unit));else unit.reactionUsedV119=true;}
-  function scripted204(source){return source?.costMode204==='scripted'||source?.raw?.luaCostMode==='scripted'||policyCache204.get(source?.script)?.costMode204==='scripted';}
-  async function policy204(source){if(!source)return{};const key=source.script;let policy=policyCache204.get(key);if(!policy){policy={costMode204:source.raw?.luaCostMode==='scripted'?'scripted':'legacy',eventScope204:'owner'};if(/\bGet(?:CostMode|EventScope)\b/.test(key)){const response=await window.electronAPI?.runCombatLuaHook?.({mode:'metadata',script:source.script,input:{source:{id:source.id,kind:source.kind,ownerId:source.ownerToken?.id},units:[],params:{}}});if(!response?.ok)throw Error(response?.message||'Lua metadata');const meta=response.metadata||response.result?.metadata||response.result||{};policy.costMode204=String(meta.GetCostMode||meta.costMode||'').toLowerCase()==='scripted'?'scripted':policy.costMode204;policy.eventScope204=String(meta.GetEventScope||meta.eventScope||'').toLowerCase()==='scene'?'scene':'owner';}policyCache204.set(key,policy);}Object.assign(source,policy);return policy;}
+  function scripted204(source){return source?.costMode204==='scripted'||source?.raw?.luaCostMode==='scripted';}
+  async function policy204(source){
+    if(!source)return {};
+    const key=source.script;
+    let pending=policyCache204.get(key);
+    if(!pending){
+      pending=(async()=>{
+        const response=await window.electronAPI?.runCombatLuaHook?.({
+          mode:/\bGet(?:CostMode|EventScope)\b/.test(key)?'metadata':'validate',
+          script:key,input:{source:{id:source.id,kind:source.kind,ownerId:source.ownerToken?.id},units:[],params:{}}
+        });
+        if(!response?.ok)throw Error(response?.message||'Lua metadata');
+        const metadata=response.metadata||response.result?.metadata||response.result||{};
+        const hooks=response.hooks??response.result?.hooks;
+        return {metadata,hooks:Array.isArray(hooks)?new Set(hooks):null};
+      })();
+      policyCache204.set(key,pending);
+      pending.catch(()=>{if(policyCache204.get(key)===pending)policyCache204.delete(key);});
+      if(policyCache204.size>256)policyCache204.delete(policyCache204.keys().next().value);
+    }
+    const {metadata,hooks}=await pending;
+    const policy={
+      costMode204:String(metadata.GetCostMode||metadata.costMode||'').toLowerCase()==='scripted'||source.raw?.luaCostMode==='scripted'?'scripted':'legacy',
+      eventScope204:String(metadata.GetEventScope||metadata.eventScope||'').toLowerCase()==='scene'?'scene':'owner',
+      hooks228:hooks
+    };
+    Object.assign(source,policy);
+    return policy;
+  }
+  function handlesHook228(source,hook){return !source.hooks228||source.hooks228.has(hook);}
+  async function prepareSources228(sources){
+    for(let i=0;i<sources.length;i+=4)await Promise.all(sources.slice(i,i+4).map(policy204));
+    return sources;
+  }
   function geometryQuery204(row){const scene=Combat.getScene();if(row.query==='area'){const geometry=Lua204.geometry(row.area,hexStepDistance109());return list(Combat.getRuntime()?.tokens).filter(unit=>Lua204.contains(geometry,centerOf(unit))).map(unit=>String(unit.id));}const a=row.a,b=row.b,actor=tokenById119(a.id),other=tokenById119(b.id),distance=hexDistancePoints109(scene,a,b),clear=!sightSegmentBlocked105(scene,a,b,[a.id,b.id].filter(Boolean));if(row.query==='distance')return distance;if(row.query==='sight')return clear;if(row.query==='reachable')return !!actor&&!!findHexPath108(scene,a,b,actor.id)?.length;if(row.query==='visible')return clear&&distance<=tokenVisionCells(actor,scene);const weapon=actor&&weaponForToken105(actor),range=weapon?num(weapon.range,actor.attackRange):num(actor?.attackRange);if(row.query==='fire')return clear&&distance<=range;if(row.query==='attack'){if(!actor||!other||num(actor.hpCurrent)<=0||withdrawn194(actor)||conditionStateV138(actor).stunned||conditionStateV138(actor).unconscious||conditionStateV138(actor).dying||!weapon||weaponMalfunction122(actor,weapon)||itemBrokenV138(actor,weapon))return false;const magazine=magazineState118(actor,weapon);return clear&&distance<=range&&(magazine.size===0||magazine.loaded>=ammoPerShot118(weapon));}return false;}
   async function request204(request,context){
     const kind=request.kind;if(kind==='request_point204'){const origin=tokenById119(request.origin)||tokenById119(request.originId)||context.caster;return chooseAbilityPoint125({castRange:num(request.radius??request.range,999999),areaRadius:0},origin,{name:request.title||'Выберите точку'});}
@@ -2683,7 +2729,9 @@
     return {session204:{...epochContext204(source.ownerToken),mode:inBattle191()?'combat':'normal'},objects204:list(scene?.assets).map(row=>({id:row.id,name:row.name,...centerOf(row)})),source:{costMode204:source.costMode204||'legacy',state204:clone(source.ownerToken?.luaState204?.[source.kind+':'+source.id]||{}),id:source.id,name:source.name,kind:source.kind,ownerId:String(source.ownerToken?.id||source.ownerId||''),behavior:normalizeAbilityBehavior125(raw.abilityBehavior||raw.behavior),castRange:num(raw.castRange),areaRadius:num(raw.areaRadius??raw.aoeRadius),thinkerDuration:num(raw.thinkerDuration??raw.durationRounds),thinkerInterval:num(raw.thinkerInterval??raw.intervalRounds,1),tags:list(raw.tags).map(String)},units:luaUnitRows119(runtime,scene),params:{rollType225:context.rollType225,roll225:context.roll225,rollingUnitId225:String(context.rollingUnit225?.id||''),condition225:context.condition225,enabled225:context.enabled225,answers204:context.answers204||{},geometry204:context.geometry204||{},eventId204:context.eventId204||'',parentEventId204:context.parentEventId204||'',unitId204:String(context.unit?.id||context.attacker?.id||''),action204:context.action204||'',movementKind204:context.movementKind204||'',oldPosition204:context.oldPosition204,newPosition204:context.newPosition204,hpLost204:context.hpLost204,rawDamage204:context.rawDamage204,absorbed204:context.absorbed204,reason204:context.reason204,event:String(context.event||''),attackerId:String(context.attacker?.id||''),targetId:String(context.target?.id||targets[0]?.id||''),targetIds:targets.map(row=>String(row.id)),casterId:String(context.caster?.id||source.ownerToken?.id||source.ownerId||''),damage:num(context.damage),damageType:window.GRPGDamageTypesV202.normalize(context.damageType)||damageType202(context.weapon||context.ability||raw),attackBonus:num(context.attackBonus),defenseBonus:num(context.defenseBonus),attackRoll:context.attackRoll,defenseRoll:context.defenseRoll,hit:context.hit===true,critical:context.critical===true,toggled:context.toggled===true,position,thinker,inputs:context.inputs&&typeof context.inputs==='object'?context.inputs:{},targetRequests:context.targetRequests&&typeof context.targetRequests==='object'?context.targetRequests:{},weapon:compactEntity(context.weapon),ability:compactEntity(context.ability)}};
   }
   async function runLuaSource119(source,hook,context={},mode='execute'){
-    await policy204(source);const supplied={...context,geometry204:{...(context.geometry204||{})}};
+    await policy204(source);
+    if(!handlesHook228(source,hook))return {ok:true,hasHook:false,eligible:false,commands:[]};
+    const supplied={...context,geometry204:{...(context.geometry204||{})}};
     for(let pass=0;pass<32;pass++){
       const result=await window.electronAPI?.runCombatLuaHook?.({mode,hook,script:source.script,input:luaInput119(source,{...supplied,event:hook})});
       if(!result?.ok)throw new Error(`${source.name}: ${result?.message||'ошибка Lua'}`);
@@ -2852,8 +2900,21 @@
     if(dispatchDepth204>=12)throw Error('Lua: превышена глубина событий');dispatchDepth204++;
     context.eventId204 ||=makeId('event');context={...context,unit:context.unit||owner};
     try{
-      const sources=[];for(const actor of list(Combat.getRuntime()?.tokens)){if(withdrawn194(actor))continue;for(const source of scriptSourcesForToken119(actor)){await policy204(source);const owns=String(actor.id)===String(owner?.id);if(context.lifecycle204&&!owns)continue;if(source.mode!=='reaction'&&(owns?(automaticSourcesForHook122(actor,hook,context).some(row=>row.id===source.id&&row.kind===source.kind)||scripted204(source)):source.eventScope204==='scene'))sources.push(source);}}
-      for(const source of sources){const execution=await runInteractiveLuaHookV138(source,hook,{...context,caster:source.ownerToken,sourceName:source.name,scriptSource:source,damage:state.damage},state);if(execution.cancelled)throw Error('Ввод отменён');}
+      const actors=list(Combat.getRuntime()?.tokens).filter(actor=>!withdrawn194(actor)&&(!context.lifecycle204||actor.id===owner?.id));
+      const sources=await prepareSources228(actors.flatMap(actor=>scriptSourcesForToken119(actor).filter(source=>source.mode!=='reaction')));
+      for(const source of sources){
+        if(!handlesHook228(source,hook))continue;
+        const owns=source.ownerToken.id===owner?.id;
+        if(owns){
+          const isOtherWeapon=['OnAttackDeclared','BeforeAttackStart','OnHit'].includes(hook)
+            && context.attacker?.id===owner?.id && context.weapon?.id
+            && ['weapon','grenade'].includes(String(source.raw?.type||'').toLowerCase())
+            && source.id!==String(context.weapon.id);
+          if(!scripted204(source)&&(source.mode!=='automatic'||isOtherWeapon))continue;
+        }else if(source.eventScope204!=='scene')continue;
+        const execution=await runInteractiveLuaHookV138(source,hook,{...context,caster:source.ownerToken,sourceName:source.name,scriptSource:source,damage:state.damage},state);
+        if(execution.cancelled)throw Error('Ввод отменён');
+      }
       const runtime=Combat.getRuntime();for(const id of list(runtime?.thinkersV125).map(row=>row.id)){const thinker=runtime.thinkersV125.find(row=>row.id===id);if(!thinker||context.skipThinkers204||!list(thinker.events204).includes(hook))continue;const source=sourceForThinker125(thinker);if(source){const execution=await runInteractiveLuaHookV138(source,hook,{...thinkerContext125(thinker),...context,caster:source.ownerToken,thinker:thinkerContext125(thinker).thinker,scriptSource:source},state);if(execution.cancelled)throw Error('Ввод отменён');}}
       await expire204(hook,owner,state);return state;
     }finally{dispatchDepth204--;}
@@ -2862,7 +2923,15 @@
     if(!inBattle191())return state;if(reactionDepth204>=12)throw Error('Lua: превышена глубина реакций');reactionDepth204++;try{const handled=new Set();
     for(let pass=0;pass<64;pass++){
       const candidates=[];
-      for(const actor of list(Combat.getRuntime()?.tokens).filter(token=>num(token.hpCurrent)>0&&!withdrawn194(token))){for(const source of scriptSourcesForToken119(actor).filter(row=>row.mode==='reaction')){const id=actor.id+':'+source.kind+':'+source.id;if(handled.has(id))continue;await policy204(source);if(!reactionAvailable195(actor)&&!scripted204(source))continue;const result=await runLuaSource119(source,hook,{...context,caster:actor,damage:state.damage},'check');if(result.hasHook&&result.eligible)candidates.push(source);}}
+      const sources=await prepareSources228(list(Combat.getRuntime()?.tokens)
+        .filter(actor=>num(actor.hpCurrent)>0&&!withdrawn194(actor))
+        .flatMap(actor=>scriptSourcesForToken119(actor).filter(source=>source.mode==='reaction')));
+      for(const source of sources){
+        const actor=source.ownerToken,id=actor.id+':'+source.kind+':'+source.id;
+        if(handled.has(id)||!handlesHook228(source,hook)||(!reactionAvailable195(actor)&&!scripted204(source)))continue;
+        const result=await runLuaSource119(source,hook,{...context,caster:actor,damage:state.damage},'check');
+        if(result.hasHook&&result.eligible)candidates.push(source);
+      }
       if(!candidates.length)return state;
       const body=`<div class="scene-lua-participants-v119"><b>${html(context.attacker?.name||'—')}</b><span>→</span><b>${html(context.target?.name||'—')}</b></div><div class="scene-lua-reactions-v119">${candidates.map((source,index)=>`<label><input type="radio" name="reaction" value="${index}" ${index===0?'checked':''}/><span><b>${html(source.reactionLabel||source.name)}</b><small>${html(source.ownerToken?.name||'Юнит')} · ${html(source.name)}</small></span></label>`).join('')}</div>`;
       const choice=await combatModal119({title:'Доступна реакция',subtitle:'После применения условия остальных реакций проверяются заново',body,confirm:'ИСПОЛЬЗОВАТЬ РЕАКЦИЮ',decline:'ОТКЛОНИТЬ ОСТАЛЬНЫЕ',read:form=>candidates[Math.max(0,Math.trunc(num(form.elements.reaction?.value,0)))]||null});if(!choice)return state;
@@ -3341,6 +3410,7 @@
     local.draw={kind:'pan',pointerId:event.pointerId,viewport};
   }
   function startBoardPointer104(event){
+    hover228=null;hoverResult228=null;
     if(recovery194||(operation194&&!operation194.executing))return;
     if(local.draw?.kind==='asset-transform')return;
     const stage=event.target.closest?.('#combat-stage'),viewport=event.target.closest?.('#combat-stage-viewport');if(!stage)return;const scene=Combat.getScene();if(!scene)return;
@@ -3372,12 +3442,38 @@
     if(['measure','circle','cone'].includes(local.ui.action)){const snapped=nearestHexCenter107(scene,point);local.draw={kind:local.ui.action,pointerId:event.pointerId,start:snapped};local.preview={kind:local.ui.action,start:snapped,end:snapped,hexes:0,radius:0,label:hexLabel109(0)};stage.setPointerCapture?.(event.pointerId);refreshPreviewDom104();return;}
     if(['wall','area'].includes(local.ui.action)){local.draw={kind:local.ui.action,pointerId:event.pointerId,points:[point],last:point};local.preview={kind:local.ui.action,points:[point]};stage.setPointerCapture?.(event.pointerId);refreshPreviewDom104();}
   }
+  let hover228=null,hoverFrame228=0,hoverResult228=null,hoverMirrorTimer228=0;
+  function queueBoardHover228(event,stage,scene){
+    if(!event.target.closest?.('#combat-stage-viewport')||operationReason191())return;
+    hover228={stage,scene,action:local.ui.action,clientX:event.clientX,clientY:event.clientY};
+    if(hoverFrame228)return;
+    hoverFrame228=requestAnimationFrame(()=>{
+      hoverFrame228=0;
+      const pending=hover228;
+      hover228=null;
+      if(!pending||!pending.stage.isConnected||pending.scene!==Combat.getScene()
+        ||pending.action!==local.ui.action||local.draw||local.lua119.pointPicker||operationReason191())return;
+      const point=scenePointFromEvent(pending,pending.stage,pending.scene);
+      const hex=nearestHexCenter107(pending.scene,point),token=selectedToken104();
+      const previous=hoverResult228;
+      if(pending.action!=='attack'&&previous?.stage===pending.stage&&previous.action===pending.action
+        &&previous.token===token&&previous.preview===local.preview&&previous.x===hex.x&&previous.y===hex.y)return;
+      local.preview=pending.action==='grenade'?makeGrenadePreview105(point):makeRoutePreview104(point,pending.action==='attack');
+      hoverResult228={stage:pending.stage,action:pending.action,token,preview:local.preview,x:hex.x,y:hex.y};
+      const layer=pending.stage.querySelector('.scene-preview-layer-v104');
+      if(layer)layer.innerHTML=previewMarkup(pending.scene);
+      if(!hoverMirrorTimer228)hoverMirrorTimer228=setTimeout(()=>{hoverMirrorTimer228=0;broadcastScene104();},100);
+    });
+  }
   function moveBoardPointer104(event){
     const stage=document.getElementById('combat-stage'),scene=Combat.getScene();if(!stage||!scene)return;const d=local.draw;
     if(d?.kind==='pan'){Combat.updateViewDrag?.(event,d.viewport);return;}
+    if(!d&&!local.lua119.pointPicker){
+      if(['move','attack','grenade'].includes(local.ui.action))queueBoardHover228(event,stage,scene);
+      return;
+    }
     const point=scenePointFromEvent(event,stage,scene);
     if(local.lua119.pointPicker){const picker=local.lua119.pointPicker,caster=tokenById119(picker.casterId),snapped=nearestHexCenter107(scene,point),start=centerOf(caster||{x:snapped.x,y:snapped.y,w:0,h:0}),distance=hexDistancePoints109(scene,start,snapped);local.preview={kind:'grenade',sourceTokenId:picker.casterId,start,end:snapped,radius:Math.max(.08,picker.areaRadius*hexStepDistance109()),limited:distance>picker.castRange,label:`${picker.label}: ${hexLabel109(distance)} / ${hexLabel109(picker.castRange)}`};refreshPreviewDom104();return;}
-    if(!d&&(local.ui.action==='move'||local.ui.action==='attack'||local.ui.action==='grenade')){local.preview=local.ui.action==='grenade'?makeGrenadePreview105(point):makeRoutePreview104(point,local.ui.action==='attack');refreshPreviewDom104();return;}
     if(!d)return;
     if(d.kind==='asset-transform'){
       if(event.pointerId!==d.pointerId||scene.id!==d.sceneId)return;
@@ -3625,55 +3721,76 @@
     refreshRuntimeSources122(Combat.getSceneIdForView?.());
     collectStoreFromRuntime();
   }
+  let combatProfileSync228=null;
+  function resumeCombatSync228(){
+    try{Sync?.initWorldSnapshotRealtimeBridgeV1015?.();if(Sync?.config?.enabled)Sync?.startPolling?.();}catch{}
+    try{if(Sync?.config?.enabled)PlayerSync?.startPolling?.();}catch{}
+    try{if(Sync?.config?.enabled)ChatSync?.startPolling?.();}catch{}
+  }
   async function exitCombatStability108(){
-    if(!local.stability.active)return;
-    const generation=local.stability.generation;
+    if(!local.stability.active)return null;
     clearTimeout(local.saveTimer);local.saveTimer=0;
     captureSession193();
     const actors=new Map(Object.values(local.store?.session193?.participants||{}).filter(t=>t.playerId).map(t=>[t.playerId,t]));
     for(const token of list(Combat.getRuntime(local.store?.session193?.activeMapId)?.tokens))if(token.playerId)actors.set(token.playerId,token);
     for(const token of actors.values())updatePlayerHp105(token);
-    if(Sync?.config?.enabled&&playerPullBefore108){
-      const localProfiles=Object.fromEntries([...actors.keys()].filter(id=>App.state.users[id]).map(id=>[id,clone(App.state.users[id])]));
-      const pulled=await playerPullBefore108('combat-scene-exit',{forceFull:true,silent:true,rerender:false,limit:1000});
-      if(pulled?.ok===false){for(const [id,profile] of Object.entries(localProfiles))App.state.users[id]=profile;throw Error(pulled.message||'Не удалось проверить профили перед выходом');}
-      try{
-        const merged=Object.fromEntries(Object.entries(localProfiles).map(([id,profile])=>[id,{...App.state.users[id],...mergeCombatProfile225(local.stability.profileBase225?.[id]||{},combatProfilePatch120(profile),combatProfilePatch120(App.state.users[id]),id)}]));
-        Object.assign(App.state.users,merged);
-        for(const token of [...Object.values(local.store.session193?.participants||{}),...list(Combat.getRuntime()?.tokens)]){
-          const profile=merged[token.playerId];if(!profile)continue;
-          token.hpCurrent=num(profile.stats?.hpCurrent,token.hpCurrent);
-          token.hpMax=Math.max(1,num(profile.stats?.hpMax,token.hpMax));
-          token.itemStateV138=clone(profile.itemStateV138||{});
-          if(profile.traumaV195?.schema===195)token.traumaV195=clone(profile.traumaV195);
-        }
-      }catch(error){
-        for(const [id,profile] of Object.entries(localProfiles))App.state.users[id]=profile;
-        throw error;
-      }
-    }
-    const saved=await persistCombatProfiles105('Выход из боевой сцены',{immediate:true,flush225:true});
-    if(saved?.ok===false)throw Error(saved.message||'Профили участников не сохранены');
-    const draftBefore225=local.store.profileDrafts225;
-    delete local.store.profileDrafts225;
+    const stored=await saveStoreNow();
+    if(stored?.ok===false)throw Error(stored.message||'Боевая сцена не сохранена');
+    const drafts=clone(local.store.profileDrafts225||{base:{},profiles:{}});
+    local.store.profileDrafts225=drafts;
     local.stability.profilesReady225=false;
-    let stored;
-    try{stored=await saveStoreNow();}catch(error){local.store.profileDrafts225=draftBefore225;local.stability.profilesReady225=true;throw error;}
-    if(stored?.ok===false){local.store.profileDrafts225=draftBefore225;local.stability.profilesReady225=true;throw Error(stored.message||'Боевая сцена не сохранена');}
-    if(local.stability.generation!==generation)return;
     local.stability.active=false;
     local.stability.dirtyProfiles=false;
     local.stability.remotePending=false;
     document.body.classList.remove('combat-stability-v108');
     clearTimeout(local.stability.localPersistTimer);local.stability.localPersistTimer=0;
-    try{Sync?.initWorldSnapshotRealtimeBridgeV1015?.();if(Sync?.config?.enabled)Sync?.startPolling?.();}catch{}
-    try{if(Sync?.config?.enabled)PlayerSync?.startPolling?.();}catch{}
-    try{if(Sync?.config?.enabled)ChatSync?.startPolling?.();}catch{}
+    return drafts;
+  }
+  async function flushCombatDrafts228(drafts){
+    const ids=Object.keys(drafts?.profiles||{});
+    if(!ids.length)return;
+    const online=Sync?.config?.enabled&&PlayerSync.shouldIsolateUsersFromSnapshot();
+    const campaign=String(Sync?.config?.campaignId||'');
+    const core=window.GRPGPlayerSyncCoreV135;
+    const results=await Promise.allSettled(ids.map(async id=>{
+      if(!online)return id;
+      const pulled=await window.electronAPI.pullPlayers({playerId:id,limit:1});
+      const row=list(pulled?.rows).find(entry=>String(entry.playerId||entry.player_id)===id);
+      if(!pulled?.ok||!row||row.deletedAt||row.deleted_at)throw Error(pulled?.message||'Профиль '+id+' недоступен');
+      if(!Sync?.config?.enabled||String(Sync.config.campaignId||'')!==campaign)throw Error('Подключение к кампании изменилось');
+      const remote=normalizePlayerProfileV2({...((row.player||row.player_json)??{}),id});
+      const remotePatch=combatProfilePatch120(remote);
+      const merged=mergeCombatProfile225(drafts.base[id],drafts.profiles[id],remotePatch,id);
+      const patch=core.diff(remotePatch,merged);
+      if(Object.keys(patch).length){
+        const result=await PlayerSync.pushPlayerPatch(id,patch,{basePlayer:remote,notice:null,rerender:false,writeLocalMirrors:false});
+        if(!result?.ok||result.status==='disabled')throw Error(result?.message||'Профиль '+id+' не отправлен');
+      }
+      return id;
+    }));
+    const saved=await App.writeLocalMirrors?.();
+    if(saved?.ok===false)throw Error(saved.message||'Профили не записаны локально');
+    for(const result of results){
+      if(result.status==='fulfilled'){
+        delete drafts.profiles[result.value];
+        delete drafts.base[result.value];
+      }
+    }
+    if(!Object.keys(drafts.profiles).length)delete local.store.profileDrafts225;
+    const stored=await saveStoreNow();
+    if(stored?.ok===false){local.store.profileDrafts225=drafts;throw Error(stored.message||'Не удалось обновить черновики профилей');}
+    const failed=results.find(result=>result.status==='rejected');
+    if(failed)throw failed.reason;
   }
   function leaveCombat225(navigate){
     if(combatExit225)return combatExit225;
-    combatExit225=Promise.resolve(combatEntry225).then(()=>exitCombatStability108()).then(navigate)
-      .catch(error=>{Toast.show('Выход отложен: '+(error.message||error),'err');})
+    combatExit225=Promise.resolve(combatEntry225).then(()=>exitCombatStability108()).then(drafts=>{
+      const result=navigate();
+      combatProfileSync228=flushCombatDrafts228(drafts)
+        .catch(error=>Toast.show('Изменения профилей сохранены в сцене. Повторная отправка после открытия сцены. '+(error.message||error),'err'))
+        .finally(()=>{combatProfileSync228=null;resumeCombatSync228();});
+      return result;
+    }).catch(error=>Toast.show('Выход отложен: '+(error.message||error),'err'))
       .finally(()=>{combatExit225=null;if(UI.activeModuleId==='combat')Combat.render?.();});
     updateOperation191();
     return combatExit225;
@@ -3719,6 +3836,7 @@
     if(id!=='combat')return openModuleBefore104(id,options);
     if(!Combat.isDm()){Toast.show('Сцены доступны только ДМу','info');return;}
     if(combatExit225)return combatExit225.then(()=>UI.openModule(id,options));
+    if(combatProfileSync228)return combatProfileSync228.then(()=>UI.openModule(id,options));
     if(combatEntry225)return combatEntry225;
     const open=()=>{
       const profiles=clone(App.state.users||{});
