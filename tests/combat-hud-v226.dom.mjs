@@ -166,6 +166,10 @@ try{
   assert.equal(dq('.player-scene-v104').style.getPropertyValue('--player-angle-v231'),'270deg');
   assert(dq('.player-facing-side-v231'));
   assert.match(dq('[data-player-token-v104="a"] .player-scene-token-visual-v104').style.rotate,/player-angle/);
+  const annotations=dq('[data-player-token-v104="a"] .player-token-annotations-v234');
+  assert(annotations.querySelector('.player-scene-token-hp-v104'));
+  assert(annotations.querySelector('.player-scene-token-name-v104'));
+  assert.equal(annotations.parentElement.style.transform,'','annotations rotate around the token center independently of portrait facing');
   snapshot.runtime.playerDisplayAngle231=0;
   snapshot.runtime.turnIndex=1;paint();
   assert(dq('.player-battle-turn-v227').textContent.includes('Охранник'));
