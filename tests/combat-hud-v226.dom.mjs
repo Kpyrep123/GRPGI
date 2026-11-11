@@ -59,6 +59,13 @@ try{
  assert.equal(dimensions.boardWidth/dimensions.boardHeight,24/20,'map remains proportional in a wide viewport');
  assert.equal(dimensions.boardWidth/24,dimensions.boardHeight/20,'world-space token dimensions use the same pixel scale');
  assert(q('#mod-combat').classList.contains('tactical-layout-v227'));
+ assert(q('#combat-stage .scene-grid-lines-v232'),'the DM grid renders one path');
+ const grid=w.GRPGUnitSizeV184;
+ const screenStroke=(size,zoom)=>grid.gridStroke(size,size,800,800,zoom)*800/size*zoom;
+ assert(screenStroke(80,1)<screenStroke(24,1),'denser hexes use thinner screen strokes');
+ assert(screenStroke(24,2)<screenStroke(24,1),'zooming in reduces the effective screen stroke');
+ const segments=[...grid.gridSvg(4,4).matchAll(/M([^L]+)L([^M"]+)/g)].map(([,a,b])=>[a,b].sort().join(' '));
+ assert.equal(new Set(segments).size,segments.length,'shared hex edges are drawn once');
 
  assert(!q('.scene-command-deck-v118'),'editor action rows hidden in combat');
  assert(!q('.battle-tools-v226'),'DM drawer closed by default');
@@ -111,11 +118,19 @@ try{
   const styles=[...html.matchAll(/<link[^>]+href="\.\/([^"?]+)[^"]*"/g)].map(m=>fs.readFileSync(path.join(root,'renderer',m[1]),'utf8')).join('\n');
   fs.writeFileSync(process.env.COMBAT_HUD_HTML,'<!doctype html><meta charset="utf-8"><style>'+styles+'\nhtml,body{margin:0;height:100%;background:#080e15}#combat-content{height:100vh}</style><div id="combat-content">'+q('#combat-content').innerHTML+'</div>');
  }
+ token('b').playerId='second-player';
+ run('Combat.selectedObject=null;Combat.render()');
  click('[data-player-sides231]');
  await wait(()=>q('[name="side231_0"]'));
- q('[name="side231_0"]').value='270';confirm();
+ assert.equal(w.document.querySelectorAll('.scene-player-sides-v232 tbody tr').length,2);
+ q('[name="side231_0"]').value='270';
+ q('[name="side231_1"]').value='90';
+ confirm();
  await wait(()=>run("Combat.getScene().playerSides231?.p===270"));
  assert.equal(api.collectStoreFromRuntime().scenes.s.playerSides231.p,270);
+ assert.equal(api.collectStoreFromRuntime().scenes.s.playerSides231['second-player'],90);
+ token('b').playerId='';
+ run("Combat.selectedObject={kind:'token',id:'a'};Combat.render()");
  const snapshot=JSON.parse(JSON.stringify(api.buildCombatSnapshot104('s')));
  assert.equal(snapshot.runtime.playerDisplayAngle231,270);
  run('Combat.getRuntime().turnIndex=1');
@@ -134,6 +149,8 @@ try{
   const paint=()=>vm.runInContext('renderCombatSnapshot(window.snapshot227)',displayContext);
   paint();const dq=selector=>display.document.querySelector(selector);
   assert.equal(dq('.player-battle-party-v227').querySelectorAll('article').length,1);
+  assert(dq('.player-scene-grid-v104 .scene-grid-lines-v232'));
+  assert(Number(dq('.player-scene-board-v104').style.getPropertyValue('--scene-grid-stroke-v232'))>0);
   assert(dq('.player-battle-party-v227').textContent.includes('Пистолет'));
   assert.equal(dq('.player-battle-weapon-art-v230').getAttribute('src'),'./pistol.webp');
   click('[data-battle-weapon226="gun"]');

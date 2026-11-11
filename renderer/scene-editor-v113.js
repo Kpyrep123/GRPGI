@@ -1750,20 +1750,6 @@
     return !current||current.id===token.id;
   }
 
-  function hexGridSvg(scene) {
-    const w=Math.max(1,num(scene.width,20)),h=Math.max(1,num(scene.height,12));
-    const {side,hexH,stepX}=hexMetrics107();
-    const paths=[];
-    for(let col=0,cx=side;cx<=w+side;col++,cx=side+col*stepX){
-      const offset=(col%2)*hexH/2;
-      for(let row=0,cy=hexH/2+offset;cy<=h+hexH/2;row++,cy=hexH/2+offset+row*hexH){
-        const pts=[];
-        for(let i=0;i<6;i++){const a=Math.PI/3*i;pts.push(`${(cx+side*Math.cos(a)).toFixed(3)},${(cy+side*Math.sin(a)).toFixed(3)}`);}
-        paths.push(`<polygon points="${pts.join(' ')}"/>`);
-      }
-    }
-    return `<svg class="scene-hex-grid-v104" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true"><g>${paths.join('')}</g></svg>`;
-  }
   function objectStyle(obj,scene,z=20){return `left:${(num(obj.x)/scene.width*100).toFixed(4)}%;top:${(num(obj.y)/scene.height*100).toFixed(4)}%;width:${(num(obj.w,1)/scene.width*100).toFixed(4)}%;height:${(num(obj.h,1)/scene.height*100).toFixed(4)}%;transform:rotate(${obj.footprintV184?0:num(obj.rotation)}deg);z-index:${num(obj.z,z)};`;}
   function tokenMarkup(token, scene, currentId='') {
     const selected=Combat.selectedObject?.kind==='token'&&Combat.selectedObject?.id===token.id;
@@ -1836,6 +1822,8 @@
     const sceneId=this.getSceneIdForView?.(),view=cameraState108(sceneId),metrics=this.getBoardMetrics?.(viewport)||{};
     view.viewportWidth=num(metrics.viewportWidth,viewport.clientWidth||0);view.viewportHeight=num(metrics.viewportHeight,viewport.clientHeight||0);view.boardWidth=num(metrics.boardWidth,0);view.boardHeight=num(metrics.boardHeight,0);
     stage.style.transform=this.getViewTransform(sceneId);
+    const scene=this.getScene();
+    if(scene)stage.style.setProperty('--scene-grid-stroke-v232',window.GRPGUnitSizeV184.gridStroke(scene.width,scene.height,view.boardWidth,view.boardHeight,clamp104(view.zoom,.45,3.5)));
     viewport.classList.toggle('is-panning',Boolean(this.viewDragState));
     if(sceneId)this.queuePlayerDisplayMirrorUpdate?.(sceneId);
   };
@@ -1857,7 +1845,7 @@
     const camera=Combat.getViewTransform?.(scene.id, document.getElementById('combat-stage-viewport')) || 'translate(0px,0px) scale(1)';
     return `<div class="scene-board-shell-v104">
       <div class="combat-stage-viewport scene-stage-viewport-v104" id="combat-stage-viewport"><div id="combat-stage-board-frame" class="scene-board-frame-v104"><div class="combat-stage scene-stage-v104" id="combat-stage" data-scene-id="${html(scene.id)}" style="--combat-cols:${scene.width};--combat-rows:${scene.height};background:${html(scene.backgroundColor)};transform:${camera};">
-        <div class="combat-stage-bg" style="${scene.backgroundImage?`background-image:url('${html(scene.backgroundImage)}');`:''}"></div>${hexGridSvg(scene)}
+        <div class="combat-stage-bg" style="${scene.backgroundImage?`background-image:url('${html(scene.backgroundImage)}');`:''}"></div>${window.GRPGUnitSizeV184.gridSvg(scene.width,scene.height)}
         <div class="combat-stage-layer combat-assets-layer">${list(scene.assets).map(a=>assetMarkup(a,scene)).join('')}</div>
         <div class="combat-stage-layer combat-templates-layer">${list(scene.templates).map(z=>zoneMarkup(z,scene)).join('')}${thinkerZoneModels125(runtime,scene).map(z=>thinkerMarkup125(z,scene)).join('')}</div>
         <div class="combat-stage-layer combat-tokens-layer">${list(runtime.tokens).map(t=>tokenMarkup(t,scene,current?.id||'')).join('')}</div>
@@ -2305,7 +2293,8 @@
     const players=[...new Map(list(runtime?.tokens).filter(token=>token.playerId).map(token=>[token.playerId,token.name])).entries()];
     if(!players.length){Toast.show('Добавьте персонажей игроков на карту','info');return;}
     const sides=[[0,'Нижняя'],[90,'Левая'],[180,'Верхняя'],[270,'Правая']];
-    const body=players.map(([id,name],index)=>`<label class="field">${html(name)}<select class="select" name="side231_${index}">${sides.map(([angle,label])=>`<option value="${angle}" ${num(scene.playerSides231?.[id])===angle?'selected':''}>${label}</option>`).join('')}</select></label>`).join('');
+    const rows=players.map(([id,name],index)=>`<tr><th scope="row"><label for="side231_${index}">${html(name)}</label></th><td><select class="select" id="side231_${index}" name="side231_${index}" aria-label="Сторона экрана: ${html(name)}">${sides.map(([angle,label])=>`<option value="${angle}" ${num(scene.playerSides231?.[id])===angle?'selected':''}>${label}</option>`).join('')}</select></td></tr>`).join('');
+    const body=`<table class="scene-player-sides-v232" aria-label="Персонажи игроков на карте"><thead><tr><th scope="col">Персонаж</th><th scope="col">Сторона экрана</th></tr></thead><tbody>${rows}</tbody></table>`;
     const values=await combatModal119({title:'Стороны второго экрана',subtitle:'Стороны указаны относительно карты на втором экране. Во время хода персонажа интерфейс и токены поворачиваются к его стороне.',body,confirm:'СОХРАНИТЬ',decline:'ОТМЕНИТЬ',read:form=>Object.fromEntries(players.map(([id],index)=>[id,Number(form.elements['side231_'+index].value)]))});
     if(!values||Combat.getScene()?.id!==scene.id)return;
     scene.playerSides231={...scene.playerSides231,...values};
