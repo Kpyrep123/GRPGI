@@ -207,6 +207,47 @@ await new Promise(resolve=>setTimeout(resolve,30));
 assert.match(stash().textContent,/Тайник пуст/);
 assert.equal(run('App.state.users.pool_player.inventory[0].instancesV215[0].id'),'worn-armor');
 assert.equal(run('App.state.users.pool_player.inventory[0].instancesV215[0].durability'),6);
+const openArmorMenu=()=>{
+ const tile=w.document.querySelector('[data-wc-inventory-stage-v1068] [data-item-id="stash_armor"][draggable]');
+ tile.dispatchEvent(new w.MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:10,clientY:10}));
+ return w.document.querySelector('.wc-item-menu');
+};
+let menu=openArmorMenu();
+assert.ok(menu);
+const pick=async label=>{
+ const button=[...menu.querySelectorAll('button')].find(node=>node.textContent===label);
+ assert.ok(button,label);
+ button.click();
+ await new Promise(resolve=>setTimeout(resolve,30));
+};
+await pick('Починить полностью');
+assert.equal(run('App.state.users.pool_player.inventory[0].instancesV215[0].durability'),15);
+menu=openArmorMenu();
+await pick('Надеть · Броня');
+assert.equal(run('App.state.users.pool_player.equipmentSlots.armor'),'stash_armor');
+menu=openArmorMenu();
+await pick('Снять');
+assert.equal(run('App.state.users.pool_player.equipmentSlots.armor'),'');
+menu=openArmorMenu();
+await pick('Переложить в тайник');
+assert.equal(run('App.state.users.pool_player.inventory.length'),0);
+stash().querySelector('[data-wc-stash-return]').click();
+await new Promise(resolve=>setTimeout(resolve,30));
+menu=openArmorMenu();
+w.confirm=()=>true;
+await pick('Удалить один экземпляр');
+assert.equal(run('App.state.users.pool_player.inventory.length'),0);
+assert.equal(run(`
+ (()=>{const check=GRPGMarketCategoriesV144.compatible;
+ const player={inventory:[{itemId:'owned-gun',qty:1}]};
+ const lookup=()=>({type:'weapon',ammoFamily:' 6.5 ',ammoTypeId:'exact'});
+ return check({id:'matching',type:'ammo',caliber:'6.5'},player,lookup)
+   && check({id:'exact',type:'ammo',caliber:'other'},player,lookup)
+   && !check({id:'different',type:'ammo',caliber:'7.62'},player,lookup)
+   && !check({id:'matching',type:'gear',caliber:'6.5'},player,lookup);
+ })()
+`),true);
+
 assert.equal(w.notices.some(n=>n.type==='err'),false,JSON.stringify(w.notices));
 assert.deepEqual(errors,[]);
 await w.happyDOM.abort();fs.rmSync(scratch,{recursive:true,force:true});
