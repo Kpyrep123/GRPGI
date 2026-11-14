@@ -3,7 +3,7 @@
   'use strict';
 
   const slots = ['primaryWeapon', 'secondaryWeapon', 'armor', 'backpack'];
-  const trackedTypes = ['weapon', 'armor', 'backpack', 'drone', 'turret', 'shield'];
+  const trackedTypes = ['modification','weapon', 'armor', 'backpack', 'drone', 'turret', 'shield'];
   const list = value => Array.isArray(value) ? value : [];
   const count = value => Math.max(0, Math.trunc(Number(value) || 0));
   const clone = value => JSON.parse(JSON.stringify(value));
@@ -184,7 +184,47 @@
     return '<span class="inventory-charge-count" title="Заряды" aria-label="Заряды ' + value + '">' + value + '</span>';
   }
 
-  const api = {chargeBadge, tracked, normalize, reconcile, instance, choose, bind, remove, add, repair, updateResources, slotKey, clone};
+  function mounts(item) {
+    if (!['weapon','shield','armor','backpack'].includes(item?.type)) return [];
+    return list(item.mounts).map(value => String(value).trim()).filter(Boolean);
+  }
+
+  function installed(copy, index) {
+    return list(copy?.attachments).find(row => row.mount === index);
+  }
+
+  function changeAttachment(profile, host, index, item, attachmentId, hostItem) {
+    if (!host || host.broken) throw Error('Экземпляр недоступен');
+    const existing = installed(host,index);
+    if (!item) {
+      if (!existing) throw Error('Крепление уже свободно');
+      let row = profile.inventory.find(entry => entry.itemId === existing.itemId);
+      if (!row) { row={itemId:existing.itemId,qty:0,positions:[],instancesV215:[]};profile.inventory.push(row); }
+      row.qty++;
+      (row.positions ||= []).push(null);
+      (row.instancesV215 ||= []).push(clone(existing.copy));
+      host.attachments=host.attachments.filter(entry=>entry!==existing);
+      return;
+    }
+    const mount=mounts(hostItem)[index];
+    if(item.type!=='modification'||!mount||mount.toLowerCase()!==String(item.attachmentMount||'').trim().toLowerCase()){
+      throw Error('Модификация не подходит к креплению');
+    }
+    if (existing) throw Error('Крепление уже занято');
+    const row=profile.inventory.find(entry=>entry.itemId===item.id);
+    const unit=row?.instancesV215?.findIndex(copy=>copy.id===attachmentId)??-1;
+    if (unit<0) throw Error('Модификация отсутствует в инвентаре');
+    const copy=clone(row.instancesV215[unit]);
+    remove(row,unit);
+    if (!row.qty) profile.inventory=profile.inventory.filter(entry=>entry!==row);
+    (host.attachments ||= []).push({mount:index,itemId:item.id,copy,hitBonus:Number(item.attachmentHitBonus)||0,modifiers:clone(list(item.modifiers))});
+  }
+
+  function attachmentHitBonus(copy) {
+    return list(copy?.attachments).reduce((sum,row)=>sum+(Number(row.hitBonus)||0),0);
+  }
+
+  const api = {mounts, installed, changeAttachment, attachmentHitBonus,chargeBadge, tracked, normalize, reconcile, instance, choose, bind, remove, add, repair, updateResources, slotKey, clone};
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.GRPGItemInstancesV215 = api;
 })(typeof window === 'undefined' ? globalThis : window);

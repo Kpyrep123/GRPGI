@@ -32,6 +32,40 @@
     if(excess(after)>excess(before)+1e-9)throw Error('После снятия превышен переносимый вес');
     return next;
   }
+  function attachmentControls(user,source,api,button,run){
+    const copies=root.GRPGItemInstancesV215;
+    const selected=copies.choose(user,source);
+    const rows=()=>user.inventory.flatMap(row=>(row.instancesV215||[]).map(copy=>({item:api.item(row.itemId),copy})));
+    const all=rows();
+    const host=all.find(row=>row.copy.id===selected);
+    if(!host)return;
+    const sameMount=(a,b)=>String(a||'').trim().toLowerCase()===String(b||'').trim().toLowerCase();
+    const mountNames=copies.mounts(host.item);
+    const change=(hostId,index,mod)=>{
+      return run(raw=>{
+        const next=api.normalize(clone(raw)),before=api.layout(next);
+        const row=next.inventory.find(entry=>entry.instancesV215?.some(copy=>copy.id===hostId));
+        const copy=row?.instancesV215.find(entry=>entry.id===hostId);
+        copies.changeAttachment(next,copy,index,mod?.item,mod?.copy.id,api.item(row?.itemId));
+        const normalized=api.normalize(next),after=api.layout(normalized);
+        if(after.overflow.length>before.overflow.length)throw Error('Не хватает места в инвентаре');
+        if(after.weight>Math.max(before.weight,normalized.carryWeightMax)+1e-9)throw Error('Превышен переносимый вес');
+        Object.assign(raw,normalized);
+      });
+    };
+    for(const entry of host.copy.attachments||[]){
+      const name=api.item(entry.itemId)?.name||entry.itemId;
+      button('Снять: '+name+' · '+(mountNames[entry.mount]||'крепление '+(entry.mount+1)),change(host.copy.id,entry.mount));
+    }
+    if(host.item?.type!=='modification'||!host.item.attachmentMount)return;
+    for(const target of all){
+      if(target.copy.broken)continue;
+      copies.mounts(target.item).forEach((name,index)=>{
+        if(!sameMount(name,host.item.attachmentMount)||copies.installed(target.copy,index))return;
+        button('Установить: '+target.item.name+' · '+name+' '+(index+1)+' · '+target.copy.id.slice(-6),change(target.copy.id,index,host));
+      });
+    }
+  }
   function bind(api){
     function open(node){
       document.querySelector('.sheet-item-dialog')?.remove();
@@ -58,6 +92,16 @@
       let busy=false;
       const run=target=>async()=>{if(busy)return;busy=true;dialog.querySelectorAll('button').forEach(b=>b.disabled=true);try{await api.commit(u=>Object.assign(u,change(u,source,target,api)),target?'Экипировка обновлена':'Предмет снят');dialog.close();}catch(e){message.textContent=e.message;}finally{busy=false;dialog.querySelectorAll('button').forEach(b=>b.disabled=false);}};
       if(source.source==='slot')button('Снять',run(null));else for(const target of choices(user,item,api.accepts))button(target.label,run(target));
+      attachmentControls(user,source,api,button,mutator=>async()=>{
+        if(busy)return;
+        busy=true;dialog.querySelectorAll('button').forEach(b=>b.disabled=true);
+        try{
+          const result=await api.commit(mutator,'Модификации обновлены');
+          if(result?.ok===false)throw Error(result.message||'Изменение не сохранено');
+          dialog.close();
+        }catch(error){message.textContent=error.message;}
+        finally{busy=false;dialog.querySelectorAll('button').forEach(b=>b.disabled=false);}
+      });
       if(api.details)button('Описание',()=>{dialog.close();api.details(source.itemId);});
       button('Закрыть',()=>dialog.close());dialog.append(title,facts,message,actions);
       dialog.addEventListener('cancel',e=>{if(busy)e.preventDefault();});

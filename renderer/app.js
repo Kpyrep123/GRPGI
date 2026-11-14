@@ -20692,6 +20692,7 @@ function legacyRegionMapsV181() {
   ];
   const ITEM_TYPES_V1052 = [
     { value: 'gear', label: 'Снаряжение' },
+    { value: 'modification', label: 'Модификации' },
     { value: 'weapon', label: 'Оружие' },
     { value: 'shield', label: 'Щиты' },
     { value: 'grenade', label: 'Гранаты' },
@@ -20818,7 +20819,7 @@ function legacyRegionMapsV181() {
   }
   function mapLegacyItemTypeV1052(value) {
     const raw = String(value || '').trim().toLowerCase();
-    if (raw === 'weapon') return 'weapon';
+    if (raw === 'weapon' || raw === 'modification') return raw;
     if (['shield', 'shields', 'щит', 'щиты'].includes(raw)) return 'shield';
     if (raw === 'armor') return 'armor';
     if (raw === 'implant') return 'implant';
@@ -21059,6 +21060,15 @@ function legacyRegionMapsV181() {
       <div class="cols3"><div class="field"><label>ID</label><input class="input" name="id" value="${esc(item.id)}" /></div><div class="field"><label>Категория</label><select class="select" name="type">${ITEM_TYPES_V1052.map(opt => `<option value="${opt.value}" ${opt.value === item.type ? 'selected' : ''}>${esc(opt.label)}</option>`).join('')}</select></div><div class="field"><label>Редкость</label><select class="select" name="rarity">${ITEM_RARITY_OPTIONS_V2.map(r => `<option value="${esc(r)}" ${r === item.rarity ? 'selected' : ''}>${esc(r)}</option>`).join('')}</select></div></div>
       <div class="field"><label>Название</label><input class="input" name="name" value="${esc(item.name || '')}" /></div>
       ${shotSoundField}
+      <div class="field" data-attachment-mount-editor ${['weapon','shield','armor','backpack'].includes(item.type)?'':'hidden'}>
+        <label>Крепления</label>
+        ${window.GRPGItemInstancesV215.mounts(item).map(name=>`<div class="row"><input class="input" name="mount247" value="${esc(name)}" aria-label="Тип крепления"><button type="button" class="secondary" data-remove-mount aria-label="Удалить крепление">−</button></div>`).join('')}
+        <button type="button" class="secondary" data-add-mount aria-label="Добавить крепление">+</button>
+      </div>
+      <div class="item-specific-v1052 ${item.type==='modification'?'':'hidden'}" data-for-item="modification">
+        <label class="field">Тип крепления<input class="input" name="attachmentMount" value="${esc(item.attachmentMount||'')}"></label>
+        <label class="field">Бонус к попаданию<input class="input" type="number" step="1" name="attachmentHitBonus" value="${Number(item.attachmentHitBonus)||0}"></label>
+      </div>
       ${this.renderVisibilityField(item)}
       <div class="field"><label>Описание</label><textarea class="area" name="desc">${esc(item.desc || '')}</textarea></div>
       <div class="item-specific-v1052 ${isWeapon ? '' : 'hidden'}" data-for-item="weapon">
@@ -21214,6 +21224,9 @@ function legacyRegionMapsV181() {
       const entity = normalizeEquipmentItemV2({
         id: slugifyId(formData.get('id') || formData.get('name') || '', 'item'),
         shotSoundId247: String(formData.get('shotSoundId247') || '').trim(),
+        mounts: ['weapon','shield','armor','backpack'].includes(itemType) ? formData.getAll('mount247').map(value=>String(value).trim()).filter(Boolean) : [],
+        attachmentMount: itemType==='modification' ? String(formData.get('attachmentMount')||'').trim() : '',
+        attachmentHitBonus: itemType==='modification' ? Number(formData.get('attachmentHitBonus'))||0 : 0,
         type: itemType, name: String(formData.get('name') || '').trim(), desc: String(formData.get('desc') || '').trim(), rarity: String(formData.get('rarity') || 'обычный').trim(), image,
         creationCost: clamp(Math.max(0, Number(formData.get('creationCost') || 0)), 0, 10), availableAsStarting: formData.get('availableAsStarting') === 'on',
         tags: parseListEditor(formData.get('tags') || ''), relatedArticleIds: getCheckedValues(formEl, 'relatedArticleIds'),
@@ -24193,3 +24206,18 @@ async function playerAuthCallV212(action, data = null, query = {}) {
     return save(window.GRPGPlayerCredentialsV212.clean(state), ...args);
   };
 })();
+
+
+document.addEventListener('click',event=>{
+  const add=event.target.closest?.('[data-add-mount]');
+  if(add){
+    add.insertAdjacentHTML('beforebegin','<div class="row"><input class="input" name="mount247" aria-label="Тип крепления"><button type="button" class="secondary" data-remove-mount aria-label="Удалить крепление">−</button></div>');
+    return;
+  }
+  event.target.closest?.('[data-remove-mount]')?.parentElement.remove();
+});
+document.addEventListener('change',event=>{
+  if(event.target.name!=='type')return;
+  const editor=event.target.closest('#config-editor-form')?.querySelector('[data-attachment-mount-editor]');
+  if(editor)editor.hidden=!['weapon','shield','armor','backpack'].includes(event.target.value);
+});

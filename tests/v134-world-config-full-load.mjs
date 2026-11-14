@@ -305,6 +305,29 @@ w.document.querySelector('[data-wc-charges-save]').click();
 await new Promise(resolve=>setTimeout(resolve,50));
 assert.equal(run("App.state.users.pool_player.inventory[0].instancesV215[0].charges"),0);
 assert.equal(w.document.querySelector('#config-editor-form .inventory-charge-count')?.textContent,'0/3');
+run(`
+ Configurator.insertEntity('equipment',{id:'attachment_test_gun',name:'Тестовое оружие',type:'weapon',mounts:['Планка']});
+ Configurator.insertEntity('equipment',{id:'attachment_test_sight',name:'Коллиматор',type:'modification',attachmentMount:'Планка',attachmentHitBonus:2});
+`);
+run("Configurator.selectedType='equipment';Configurator.equipmentCategoryV1052='modification';Configurator.selectedId='attachment_test_sight';Configurator.render()");
+assert.equal(w.document.querySelector('[name="attachmentMount"]').value,'Планка');
+assert.equal(run(`
+ (()=>{
+   const api=GRPGItemInstancesV215,lookup=id=>normalizeEquipmentItemV2(EQUIPMENT[id]);
+   const gun=lookup('attachment_test_gun'),sight=lookup('attachment_test_sight');
+   const user={id:'install',equipmentSlots:{primaryWeapon:gun.id},inventory:[{itemId:gun.id,qty:1},{itemId:sight.id,qty:1}]};
+   api.normalize(user,lookup);
+   const before=GRPGStatsV113.weaponAttack(user,gun).bonus;
+   const weapon=user.inventory[0].instancesV215[0],mod=user.inventory[1].instancesV215[0];
+   api.changeAttachment(user,weapon,0,sight,mod.id,gun);
+   const transferred=JSON.parse(JSON.stringify(user.inventory[0]));
+   const recipient={id:'recipient',equipmentSlots:{primaryWeapon:gun.id},inventory:[transferred]};
+   api.normalize(recipient,lookup);
+   if(GRPGStatsV113.weaponAttack(user,gun).bonus!==before+2||api.attachmentHitBonus(transferred.instancesV215[0])!==2)return false;
+   api.changeAttachment(recipient,transferred.instancesV215[0],0);
+   return recipient.inventory[1].instancesV215[0].id===mod.id && !weapon.attachments.some(row=>row.copy.id!==mod.id);
+ })()
+`),true);
 assert.equal(w.notices.some(n=>n.type==='err'),false,JSON.stringify(w.notices));
 assert.deepEqual(errors,[]);
 await w.happyDOM.abort();fs.rmSync(scratch,{recursive:true,force:true});
