@@ -685,13 +685,24 @@ body.combat-stability-v108 #gm-dock-btn {
 .combat-shot-layer { position: absolute; inset: 0; overflow: hidden; z-index: 65; pointer-events: none; }
 .combat-projectile {
   position: absolute;
-  width: 6px;
-  height: 3px;
+  width: 12px;
+  height: 5px;
+  left: var(--shot-from-x);
+  top: var(--shot-from-y);
+  animation: combat-projectile-flight var(--shot-duration) linear var(--shot-delay) both;
   transform: translate(-50%, -50%);
   border-radius: 50%;
   background: #fff5b4;
   box-shadow: 0 0 5px 2px #ffb64f;
 }
+@keyframes combat-projectile-flight {
+  from { left: var(--shot-from-x); top: var(--shot-from-y); }
+  to { left: var(--shot-to-x); top: var(--shot-to-y); }
+}
 @media (prefers-reduced-motion: reduce) {
-  .combat-projectile { display: none; }
+  .combat-projectile {
+    animation: none;
+    left: var(--shot-to-x);
+    top: var(--shot-to-y);
+  }
 }

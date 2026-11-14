@@ -37,20 +37,23 @@
   }
   const previous=Number(layer.dataset.lastShot)||0;
   for(const shot of shots||[]){
-   const age=Date.now()-shot.at;
-   if(shot.id<=previous||age>=shot.duration)continue;
+   const age=Math.max(0,Date.now()-shot.at);
+   if(shot.id<=previous||age>shot.duration+1500)continue;
    layer.dataset.lastShot=String(shot.id);
    const node=document.createElement('div');
    node.className='combat-projectile';
    const from=[shot.start.x/scene.width*100,shot.start.y/scene.height*100];
    const to=[shot.end.x/scene.width*100,shot.end.y/scene.height*100];
+   const delay=Math.min(age,shot.duration/3);
+   node.style.setProperty('--shot-from-x',from[0]+'%');
+   node.style.setProperty('--shot-from-y',from[1]+'%');
+   node.style.setProperty('--shot-to-x',to[0]+'%');
+   node.style.setProperty('--shot-to-y',to[1]+'%');
+   node.style.setProperty('--shot-duration',shot.duration+'ms');
+   node.style.setProperty('--shot-delay',-delay+'ms');
+   node.addEventListener('animationend',()=>node.remove(),{once:true});
    layer.append(node);
-   const animation=node.animate?.([
-    {left:from[0]+'%',top:from[1]+'%'},{left:to[0]+'%',top:to[1]+'%'}
-   ],{duration:shot.duration,easing:'linear'});
-   if(!animation){node.remove();continue;}
-   animation.currentTime=Math.max(0,age);
-   animation.onfinish=()=>node.remove();
+   setTimeout(()=>node.remove(),shot.duration+100);
   }
  }
  const api={order,camera,projectile,paintShots};root.GRPGCombatPresentationV227=api;
