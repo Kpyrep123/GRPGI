@@ -409,29 +409,87 @@
   }
   function memberOut194(token){return list(local.store?.session193?.withdrawn194).includes(String(token?.participantId193||''));}
   function withdrawn194(token){return inBattle191()&&memberOut194(token);}
-  async function membership194(){
-    const session=ensureSession193(),runtime=Combat.getRuntime();if(!session||!activeMap193())return;
-    const choices=Object.entries(session.participants);if(!choices.length)return;
-    const result=await combatModal119({title:'Состав боя',subtitle:'Вывод и возврат сохраняют HP, патроны, движение, действие и реакцию. Возврат не запускает заново уже начатый ход.',body:`<label class="field">Участник<select class="select" name="member194">${choices.map(([pid,t])=>`<option value="${html(pid)}">${html(t.name||t.id)} · ${list(session.withdrawn194).includes(pid)?'выведен из боя':'в составе'} · ${html(pid.slice(-5))}</option>`).join('')}</select></label><label class="field">Изменение<select class="select" name="membership194"><option value="withdraw">Вывести из боя</option><option value="return">Вернуть в бой</option></select></label>`,confirm:'ПРИМЕНИТЬ',decline:'ОТМЕНИТЬ',read:form=>({pid:form.elements.member194.value,action:form.elements.membership194.value})});
-    if(!result)return;
-    const actor=session.participants[result.pid];if(!actor)return;
-    const values=new Set(list(session.withdrawn194)),wasWithdrawn=values.has(result.pid);
-    if(result.action==='withdraw')values.add(result.pid);else values.delete(result.pid);
-    if(wasWithdrawn===values.has(result.pid))return;
-    const currentId=runtime.initiativeOrder?.[runtime.turnIndex],wasCurrent=currentId===actor.id;
-    session.withdrawn194=[...values];
-    if(result.action==='withdraw'){
-      if(wasCurrent&&inBattle191()){
-        // Keep the old order long enough to finish this actor and select its successor.
-        await Combat.nextTurn({allowMissing194:true,ignoreCommand194:true});
+  async function membership194(absentOnly=false){
+    const session=ensureSession193(),runtime=Combat.getRuntime(),scene=Combat.getScene();
+    if(!session||!runtime||!scene)return;
+    let scrollTop=0, query='';
+    while(UI.activeModuleId==='combat'&&!navigation194){
+      const present=new Set(runtime.tokens.map(token=>Session193.identity(token,scene.id)));
+      const choices=Object.entries(session.participants).filter(([pid])=>!absentOnly||!present.has(pid));
+      const rows=choices.map(([pid,actor])=>{
+        const out=list(session.withdrawn194).includes(pid),onMap=present.has(pid);
+        const button=(action,label)=>`<button class="secondary" type="button" data-roster-action="${action}" data-roster-id="${html(pid)}">${label}</button>`;
+        return `<li data-roster-row><div><b>${html(actor.name||actor.id)}</b><small>${onMap?'На карте':'Вне карты'} · ${out?'выведен':'в составе'} · ${html(pid.slice(-8))}</small></div><div class="battle-roster-actions">${!onMap?button('place','Добавить на карту'):''}${!absentOnly?(out?button('return','Добавить в бой'):button('withdraw','Вывести'))+button('delete','Удалить'):''}</div></li>`;
+      }).join('');
+      const result=await combatModal119({
+        title:absentOnly?'Участники вне карты':'Состав боя',decline:'ЗАКРЫТЬ',confirm:'',
+        body:`<input class="input" type="search" data-roster-search placeholder="Поиск по имени" aria-label="Поиск по имени"><ul class="battle-roster-list">${rows||'<li>Список пуст.</li>'}</ul>`,
+        setup:form=>{
+          const input=form.querySelector('[data-roster-search]'), roster=form.querySelector('.battle-roster-list');
+          input.value=query;
+          const filter=()=>{for(const row of roster.querySelectorAll('[data-roster-row]'))row.hidden=!row.querySelector('b').textContent.toLowerCase().includes(input.value.trim().toLowerCase());};
+          filter();roster.scrollTop=scrollTop;
+          input.addEventListener('input',filter);
+          form.addEventListener('click',event=>{
+            const button=event.target.closest('[data-roster-action]');
+            if(!button)return;
+            query=input.value;scrollTop=roster.scrollTop;
+            closeCombatModal119({pid:button.dataset.rosterId,action:button.dataset.rosterAction});
+          });
+        }
+      });
+      if(!result)return;
+      const actor=session.participants[result.pid];
+      if(!actor)continue;
+      if(result.action==='place'){
+        local.ui.pendingPlacement={kind:'participant193',entityId:result.pid};
+        Toast.show('Укажите место участника на карте','info');return;
       }
-      if(runtime.pendingTurnStart193===actor.id)runtime.pendingTurnStart193='';
+      if(!activeMap193())return;
+      const deleting=result.action==='delete';
+      if(deleting){
+        const confirmed=await combatModal119({title:'Удалить участника?',subtitle:actor.name||actor.id,
+          body:'<p>Участник будет удалён из состава и со всех связанных карт этой игровой сцены.</p>',confirm:'УДАЛИТЬ',decline:'ОТМЕНА'});
+        if(!confirmed)continue;
+      }
+      const values=new Set(list(session.withdrawn194)),wasWithdrawn=values.has(result.pid);
+      if(result.action==='return')values.delete(result.pid);else values.add(result.pid);
+      if(!deleting&&wasWithdrawn===values.has(result.pid))continue;
+      const linkedMaps=Object.entries(ensureCombatState().scenes).filter(([id])=>id===scene.id||list(session.mapIds).includes(id));
+      const matches=(token,mapId)=>Session193.identity(token,mapId)===result.pid;
+      if(deleting&&(pendingLootV137(actor)||linkedMaps.some(([id,map])=>list(map.tokens).some(token=>matches(token,id)&&pendingLootV137(token))))){
+        Toast.show('Сначала завершите передачу добычи','info');continue;
+      }
+      const wasCurrent=runtime.initiativeOrder?.[runtime.turnIndex]===actor.id;
+      session.withdrawn194=[...values];
+      if(result.action!=='return'){
+        if(wasCurrent&&inBattle191())await Combat.nextTurn({allowMissing194:true,ignoreCommand194:true});
+        if(operation194?.error||recovery194)return;
+        if(runtime.pendingTurnStart193===actor.id)runtime.pendingTurnStart193='';
+      }
+      if(deleting){
+        delete session.participants[result.pid];
+        session.withdrawn194=session.withdrawn194.filter(id=>id!==result.pid);
+        for(const [mapId,map] of linkedMaps){
+          const removed=new Set(list(map.tokens).filter(token=>matches(token,mapId)).map(token=>token.id));
+          removed.add(actor.id);
+          map.tokens=list(map.tokens).filter(token=>!matches(token,mapId));
+          map.thinkersV125=list(map.thinkersV125).filter(thinker=>!removed.has(thinker.followUnitId));
+          if(map!==runtime){
+            const current=map.initiativeOrder?.[map.turnIndex];
+            map.initiativeOrder=list(map.initiativeOrder).filter(id=>!removed.has(id));
+            map.turnIndex=Math.max(0,map.initiativeOrder.indexOf(current));
+            if(removed.has(map.pendingTurnStart193))map.pendingTurnStart193='';
+          }
+        }
+        if(Combat.selectedObject?.kind==='token'&&Combat.selectedObject.id===actor.id)Combat.selectedObject=null;
+      }
+      Combat.syncInitiative(scene.id,false);
+      if(result.action!=='return'&&wasCurrent&&session.started&&!inBattle191())runtime.pendingTurnStart193=runtime.initiativeOrder[runtime.turnIndex]||'';
+      if(!runtime.initiativeOrder.length){runtime.turnIndex=0;runtime.pendingTurnStart193='';}
+      appendCombatLog105(runtime,`${actor.name}: ${deleting?'удалён из состава':result.action==='withdraw'?'выведен из боя':'возвращён в бой'}.`);
+      await checkpointCombat120('Изменение состава боя',false);Combat.render();
     }
-    Combat.syncInitiative(Combat.getScene().id,false);
-    if(result.action==='withdraw'&&wasCurrent&&session.started&&!inBattle191())runtime.pendingTurnStart193=runtime.initiativeOrder[runtime.turnIndex]||'';
-    if(!runtime.initiativeOrder.length){runtime.turnIndex=0;runtime.pendingTurnStart193='';}
-    appendCombatLog105(runtime,`${actor.name}: ${result.action==='withdraw'?'выведен из боя':'возвращён в бой'} без восстановления ресурсов.`);
-    await checkpointCombat120('Изменение состава боя',false);Combat.render();
   }
 
   function renderLifecycle193(scene,runtime){
@@ -449,12 +507,7 @@
     if(['transfer','battle','scene'].includes(command)&&Object.values(ensureCombatState().scenes).some(r=>list(r.tokens).some(pendingLootV137))){Toast.show('Сначала завершите передачу добычи','info');return;}
     captureSession193();
     if(command==='membership'){await membership194();return;}
-    if(command==='roster'){
-      const present=new Set(runtime.tokens.map(t=>Session193.identity(t,scene.id))),options=participantOptions193((t,pid)=>!present.has(pid));
-      if(!options){Toast.show('Все участники уже размещены на карте','info');return;}
-      const pid=await combatModal119({title:'Участники вне карты',subtitle:'Выберите сохранённого участника, затем укажите свободное место на карте. Все расходы сохраняются.',body:`<label class="field">Участник<select class="select" name="participant193">${options}</select></label>`,confirm:'ВЫБРАТЬ МЕСТО',decline:'ОТМЕНИТЬ',read:form=>form.elements.participant193.value});
-      if(pid){local.ui.pendingPlacement={kind:'participant193',entityId:pid};Toast.show('Укажите место участника на карте','info');}return;
-    }
+    if(command==='roster'){await membership194(true);return;}
     if(command==='bind'){
       const token=selectedToken104();if(!token||activeMap193())return;
       const options=participantOptions193(t=>token.playerId?t.playerId===token.playerId:!t.playerId&&t.npcId===token.npcId&&t.faunaId===token.faunaId&&t.equipmentItemId===token.equipmentItemId);
@@ -2765,18 +2818,19 @@
     }
     return value;
   }
-  function combatModalBase225({title='',subtitle='',body='',confirm='ПОДТВЕРДИТЬ',decline='ОТКЛОНИТЬ',read=null,validate=null}={}){
+  function combatModalBase225({title='',subtitle='',body='',confirm='ПОДТВЕРДИТЬ',decline='ОТКЛОНИТЬ',read=null,validate=null,setup=null}={}){
     if(navigation194&&UI.activeModuleId!=='combat')return Promise.resolve(null);
     closeCombatModal119(null);
     return new Promise(resolve=>{
       const overlay=document.createElement('div');overlay.className='scene-lua-overlay-v119';
-      overlay.innerHTML=`<form class="scene-lua-modal-v119"><header><span class="tiny-label">БОЕВАЯ СЦЕНА · РЕШЕНИЕ ДМА</span><h3>${html(title)}</h3>${subtitle?`<p>${html(subtitle)}</p>`:''}</header><div class="scene-lua-modal-body-v119">${body}</div><footer><button class="ghost" type="button" data-lua-decline-v119>${html(decline)}</button><button class="primary" type="submit">${html(confirm)}</button></footer></form>`;
+      overlay.innerHTML=`<form class="scene-lua-modal-v119"><header><span class="tiny-label">БОЕВАЯ СЦЕНА · РЕШЕНИЕ ДМА</span><h3>${html(title)}</h3>${subtitle?`<p>${html(subtitle)}</p>`:''}</header><div class="scene-lua-modal-body-v119">${body}</div><footer><button class="ghost" type="button" data-lua-decline-v119>${html(decline)}</button>${confirm?`<button class="primary" type="submit">${html(confirm)}</button>`:''}</footer></form>`;
       let completed=false;overlay.__finishV119=value=>{if(completed)return;completed=true;resolve(value);};
       overlay.querySelector('[data-lua-decline-v119]')?.addEventListener('click',()=>closeCombatModal119(null));
-      overlay.querySelector('form')?.addEventListener('submit',event=>{event.preventDefault();const form=event.currentTarget;const value=typeof read==='function'?read(form):true;const problem=typeof validate==='function'?validate(value,form):'';if(problem){const note=form.querySelector('[data-lua-modal-error-v119]');if(note)note.textContent=String(problem);else Toast.show(String(problem),'info');return;}closeCombatModal119(value);});
+      overlay.querySelector('form')?.addEventListener('submit',event=>{event.preventDefault();if(!confirm)return;const form=event.currentTarget;const value=typeof read==='function'?read(form):true;const problem=typeof validate==='function'?validate(value,form):'';if(problem){const note=form.querySelector('[data-lua-modal-error-v119]');if(note)note.textContent=String(problem);else Toast.show(String(problem),'info');return;}closeCombatModal119(value);});
       // The scene renderer replaces #mod-combat. Keeping the decision window under body
       // prevents a harmless board refresh from orphaning this Promise and locking combat.
       document.body.appendChild(overlay);window.GRPGCheckboxPickerV172?.enhance?.(overlay);if(operation194)operation194.record.stage='Ожидается ввод: '+title;updateOperation191();
+      setup?.(overlay.querySelector('form'));
       overlay.querySelector('input,select,button.primary')?.focus({preventScroll:true});
     });
   }

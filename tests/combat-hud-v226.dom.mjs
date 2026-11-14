@@ -84,6 +84,33 @@ try{
  assert.equal(new Set(segments).size,segments.length,'shared hex edges are drawn once');
 
  assert(!q('.scene-command-deck-v118'),'editor action rows hidden in combat');
+ w.scene250Before=JSON.parse(JSON.stringify(api.collectStoreFromRuntime()));
+ click('[data-battle-tools226]');
+ click('[data-lifecycle193="membership"]');
+ const waitRoster=async selector=>{
+   for(let i=0;i<200;i++){
+     if(q(selector))return q(selector);
+     await new Promise(resolve=>setTimeout(resolve,5));
+   }
+   assert.fail('Missing '+selector);
+ };
+ const search=await waitRoster('[data-roster-search]');
+ search.value='несуществующий';
+ search.dispatchEvent(new w.Event('input',{bubbles:true}));
+ assert([...w.document.querySelectorAll('[data-roster-row]')].every(row=>row.hidden));
+ search.value='';search.dispatchEvent(new w.Event('input',{bubbles:true}));
+ const deleteButton=q('[data-roster-action="delete"][data-roster-id$=":b"]');
+ assert.ok(deleteButton);
+ deleteButton.click();
+ (await waitRoster('.scene-lua-modal-v119 button[type="submit"]')).click();
+ await waitRoster('[data-roster-search]');
+ assert.equal(run("Combat.getRuntime().tokens.some(t=>t.id==='b')"),false);
+ assert.equal(run("Combat.getRuntime().initiativeOrder.includes('b')"),false);
+ click('[data-lua-decline-v119]');
+ await new Promise(resolve=>setTimeout(resolve,20));
+ api.applyStore(w.scene250Before);
+ run("Combat.selectedObject={kind:'token',id:'a'};Combat.render()");
+ click('.battle-tools-v226 [data-battle-tools226]');
  assert(!q('.battle-tools-v226'),'DM drawer closed by default');
  assert.equal(q('.battle-order-unit-v226.is-current').dataset.battleUnit226,'a');
  assert(q('.battle-unit-v226').textContent.includes('8 / 10'));
