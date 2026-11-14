@@ -2397,7 +2397,8 @@ window.GRPGInstallGlobalStockExchangeV1074 = function(){
     const item=Data.getItem(offer.itemId);if(!item)return'';const stock=stockItemV1074(item),active=selected?.source==='market'&&selected.itemId===item.id;
     if(stock)return `<button class="stock-quote-tile-v1074 ${active?'selected':''} ${changeClassV1074(offer.change)}" type="button" draggable="true" data-market-v1074 data-source="market" data-item-id="${esc(item.id)}"><span>${esc(tickerV1074(item))}</span><b>${esc(item.name||item.id)}</b><strong>${formatCredits(offer.price)}</strong><small>${offer.change>=0?'▲':'▼'} ${Math.abs(offer.changePercent).toFixed(2)}% · ${signedCreditsV1074(offer.change)}</small></button>`;
     const size={w:Math.max(1,Number(item.inventoryWidth||1)),h:Math.max(1,Number(item.inventoryHeight||1))};
-    return `<button class="market-shop-tile-v1071 ${active?'selected':''}" type="button" draggable="true" data-market-v1074 data-source="market" data-item-id="${esc(item.id)}" style="grid-column:span ${size.w};grid-row:span ${size.h}">${renderThumb(item,{size:'sm',type:'item',glyph:initials(item.name,'▣')})}<span class="market-tile-name-v1071">${esc(item.name||item.id)}</span><span class="market-tile-meta-v1071">${size.w}×${size.h}${offer.unique?' · Уникальный':''}</span><b class="market-tile-price-v1071">${formatCredits(offer.price)}</b></button>`;
+    const compatible=window.GRPGMarketCategoriesV144.compatible(item,App.currentUser,id=>Data.getItem(id));
+    return `<button class="market-shop-tile-v1071 ${active?'selected':''}" ${compatible?'data-compatible-equipment':''} type="button" draggable="true" data-market-v1074 data-source="market" data-item-id="${esc(item.id)}" style="grid-column:span ${size.w};grid-row:span ${size.h}">${renderThumb(item,{size:'sm',type:'item',glyph:initials(item.name,'▣')})}<span class="market-tile-name-v1071">${esc(item.name||item.id)}</span><span class="market-tile-meta-v1071">${size.w}×${size.h}${offer.unique?' · Уникальный':''}</span><b class="market-tile-price-v1071">${formatCredits(offer.price)}</b></button>`;
   }
 
   function quantityControlsV139({user,item,offer,buy,stock,owned=0,disabled=false,capacity={ok:true}}) {
@@ -2438,7 +2439,8 @@ window.GRPGInstallGlobalStockExchangeV1074 = function(){
     const filteredOffers=tab==='goods'&&goodsCategoryV144!=='all'?offers.filter(row=>categoryApi.category(Data.getItem(row.itemId))===goodsCategoryV144):offers;
     const categoryPicker=tab==='goods'?`<div class="market-categories-v144" role="group" aria-label="Категории товаров"><button class="secondary ${goodsCategoryV144==='all'?'active':''}" type="button" aria-pressed="${goodsCategoryV144==='all'}" data-market-category-v144="all">Все <span>${offers.length}</span></button>${categories.map(row=>`<button class="secondary ${goodsCategoryV144===row.label?'active':''}" type="button" aria-pressed="${goodsCategoryV144===row.label}" data-market-category-v144="${esc(row.label)}">${esc(row.label)} <span>${row.count}</span></button>`).join('')}</div>`:'';
     const root=$('#market-items');const stockMode=tab==='stocks',tradeAllowed=access.canBuy&&(!stockMode||rotation.stockMarketEnabled);
-    root.innerHTML=`<div class="market-terminal-v1071 ${tradeAllowed?'':'locked'}"><div class="market-tabs-v1073"><button class="secondary ${!stockMode?'active':''}" type="button" data-market-tab-v1074="goods">ТОВАРЫ</button><button class="secondary ${stockMode?'active':''}" type="button" data-market-tab-v1074="stocks">АКЦИИ</button></div><div class="market-access-banner-v1071 ${tradeAllowed?'ok':'err'}">${!access.canBuy?`<b>Торговля заблокирована.</b> ${esc(access.reason)}`:stockMode&&!rotation.stockMarketEnabled?'<b>На этой планете нет фондового рынка.</b> Портфель доступен для просмотра, торговые операции отключены.':stockMode?`Глобальная биржа открыта. Все акции доступны по единым ценам. Игровой день: <b>${esc(formatLoreDateV1075(rotation.rotationKey, { includeTime:false }))}</b>.`:`Торговля товарами доступна на планете <b>${esc(planet.name)}</b>. Продажа — 70% текущей цены.`}</div><div class="market-dual-grid-v1071 ${stockMode?'stock-layout-v1074':''}"><section class="market-pane-v1071 market-stock-pane-v1071" data-market-stock-drop-v1074><div class="market-pane-head-v1071"><div><span class="mono accent">${stockMode?'БИРЖА':'ТОВАРЫ'}</span><b>${stockMode?'Биржевые котировки':'Товары'}</b></div><span>${filteredOffers.length} поз.</span></div>${categoryPicker}<div class="${stockMode?'stock-quotes-grid-v1074':'market-shop-grid-v1071'}">${filteredOffers.map(offerTileV1074).join('')||`<div class="small-note">${stockMode?'Фондовый рынок недоступен.':'В текущей ротации нет товаров.'}</div>`}</div></section><section class="market-pane-v1071">${stockMode?portfolioMarkupV1074(user,rotation):`<div class="market-pane-head-v1071"><div><span class="mono accent">ИНВЕНТАРЬ</span><b>Инвентарь</b></div><span>${formatCredits(user.credits)}</span></div>${goodsInventoryMarkupV1074(user,rotation.allOffers)}`}</section></div>${selectionMarkupV1074(user,planet,rotation)}</div>`;
+    root.classList.toggle('highlight-compatible-equipment',window.GRPGMarketCategoriesV144.highlight);
+    root.innerHTML=`<div class="market-terminal-v1071 ${tradeAllowed?'':'locked'}"><div class="market-tabs-v1073"><button class="secondary ${!stockMode?'active':''}" type="button" data-market-tab-v1074="goods">ТОВАРЫ</button><button class="secondary ${stockMode?'active':''}" type="button" data-market-tab-v1074="stocks">АКЦИИ</button></div><div class="market-access-banner-v1071 ${tradeAllowed?'ok':'err'}">${!access.canBuy?`<b>Торговля заблокирована.</b> ${esc(access.reason)}`:stockMode&&!rotation.stockMarketEnabled?'<b>На этой планете нет фондового рынка.</b> Портфель доступен для просмотра, торговые операции отключены.':stockMode?`Глобальная биржа открыта. Все акции доступны по единым ценам. Игровой день: <b>${esc(formatLoreDateV1075(rotation.rotationKey, { includeTime:false }))}</b>.`:`Торговля товарами доступна на планете <b>${esc(planet.name)}</b>. Продажа — 70% текущей цены.`}</div><div class="market-dual-grid-v1071 ${stockMode?'stock-layout-v1074':''}"><section class="market-pane-v1071 market-stock-pane-v1071" data-market-stock-drop-v1074><div class="market-pane-head-v1071"><div><span class="mono accent">${stockMode?'БИРЖА':'ТОВАРЫ'}</span><b>${stockMode?'Биржевые котировки':'Товары'}</b></div><span>${filteredOffers.length} поз.</span></div>${categoryPicker}${stockMode?'':window.GRPGMarketCategoriesV144.compatibilityToggle()}<div class="${stockMode?'stock-quotes-grid-v1074':'market-shop-grid-v1071'}">${filteredOffers.map(offerTileV1074).join('')||`<div class="small-note">${stockMode?'Фондовый рынок недоступен.':'В текущей ротации нет товаров.'}</div>`}</div></section><section class="market-pane-v1071">${stockMode?portfolioMarkupV1074(user,rotation):`<div class="market-pane-head-v1071"><div><span class="mono accent">ИНВЕНТАРЬ</span><b>Инвентарь</b></div><span>${formatCredits(user.credits)}</span></div>${goodsInventoryMarkupV1074(user,rotation.allOffers)}`}</section></div>${selectionMarkupV1074(user,planet,rotation)}</div>`;
   }
   UI.renderMarket=renderV1074;
 
@@ -22300,7 +22302,7 @@ function legacyRegionMapsV181() {
           pos = firstFitInventoryV1067(size, cols, occupied, footprint.w, footprint.h);
         }
         const stackQty = item.stackable === true ? Math.min(stackLimit, remaining - stackIndex * stackLimit) : 1;
-        const instance = { key, itemId: entry.itemId, unitIndex, qty:stackQty, item, ...footprint, pos };
+        const instance = { key, itemId: entry.itemId, unitIndex, qty:stackQty, stackLimit, item, ...footprint, pos };
         if (pos) { markOccupiedV1067(occupied, pos.x, pos.y, footprint.w, footprint.h); instances.push(instance); }
         else overflow.push(instance);
       }
@@ -22449,13 +22451,13 @@ function legacyRegionMapsV181() {
     const item = itemId ? itemForInventoryV1067(itemId) : null;
     return `<div class="inventory-equip-slot-v1067 ${item ? 'filled' : ''}" data-inventory-slot-v1067 data-slot-type="${slotType}" data-slot-index="${slotIndex}">
       <div class="inventory-slot-label-v1067">${esc(slotLabelV1067(slotType, slotIndex))}</div>
-      ${item ? `<div class="inventory-slot-item-v1067" draggable="true" data-inventory-drag-v1067 data-source="slot" data-slot-type="${slotType}" data-slot-index="${slotIndex}" data-item-id="${esc(item.id)}" data-entity="item" data-id="${esc(item.id)}">${renderThumb(item,{size:'sm',type:'item',glyph:initials(item.name,'▣')})}<span>${esc(item.name||item.id)}</span></div>` : '<div class="inventory-slot-empty-v1067">Перетащите предмет</div>'}
+      ${item ? `<div class="inventory-slot-item-v1067" draggable="true" data-inventory-drag-v1067 data-source="slot" data-slot-type="${slotType}" data-slot-index="${slotIndex}" data-item-id="${esc(item.id)}" data-entity="item" data-id="${esc(item.id)}" title="${esc(item.name||item.id)}">${renderThumb(item,{size:'sm',type:'item',glyph:initials(item.name,'▣')})}<span>${esc(item.name||item.id)}</span></div>` : '<div class="inventory-slot-empty-v1067">Перетащите предмет</div>'}
     </div>`;
   }
   function inventoryGridMarkupV1067(user) {
     const layout = buildInventoryLayoutV1067(user);
     const cells = Array.from({ length: layout.size }, (_, index) => `<div class="inventory-grid-cell-v1067" style="grid-column:${(index % layout.cols) + 1};grid-row:${Math.floor(index / layout.cols) + 1}" data-cell-index="${index}"></div>`).join('');
-    const tiles = layout.instances.map(instance => `<div class="inventory-tile-v1067" draggable="true" data-inventory-drag-v1067 data-source="grid" data-item-id="${esc(instance.itemId)}" data-unit-index="${instance.unitIndex}" data-entity="item" data-id="${esc(instance.itemId)}" style="grid-column:${instance.pos.x + 1}/span ${instance.w};grid-row:${instance.pos.y + 1}/span ${instance.h}" title="${esc(instance.item.name || instance.itemId)} · ${instance.w}×${instance.h} · ${itemMassV1067(instance.item)} веса">${renderThumb(instance.item,{size:'sm',type:'item',glyph:initials(instance.item.name,'▣')})}<span>${esc(instance.item.name||instance.itemId)}</span><small>${instance.w}×${instance.h}${Number(instance.qty||1)>1?` · ×${instance.qty}`:''}</small></div>`).join('');
+    const tiles = layout.instances.map(instance => `<div class="inventory-tile-v1067 profile-inventory-tile" draggable="true" data-inventory-drag-v1067 data-source="grid" data-item-id="${esc(instance.itemId)}" data-unit-index="${instance.unitIndex}" data-entity="item" data-id="${esc(instance.itemId)}" style="grid-column:${instance.pos.x + 1}/span ${instance.w};grid-row:${instance.pos.y + 1}/span ${instance.h}" title="${esc(instance.item.name || instance.itemId)} · ${instance.w}×${instance.h} · ${itemMassV1067(instance.item)} веса">${renderThumb(instance.item,{size:'sm',type:'item',glyph:initials(instance.item.name,'▣')})}<span>${esc(instance.item.name||instance.itemId)}</span><small class="inventory-stack-count" ${instance.item.stackable ? '' : 'hidden'}>${instance.item.stackable ? `${instance.qty}/${instance.stackLimit}` : ''}</small></div>`).join('');
     const overflow = layout.overflow.length ? `<div class="inventory-overflow-v1067"><b>Не помещается: ${layout.overflow.length}</b>${layout.overflow.map(instance=>`<span>${esc(instance.item.name||instance.itemId)} (${instance.w}×${instance.h})</span>`).join('')}</div>` : '';
     return `<div class="inventory-grid-v1067" data-inventory-grid-v1067 style="--inv-cols:${layout.cols};--inv-rows:${layout.rows}">${cells}${tiles}</div>${overflow}`;
   }
@@ -22464,7 +22466,7 @@ function legacyRegionMapsV181() {
     const overweight = layout.weight > user.carryWeightMax + 1e-9;
     return `<div class="section-title">Экипировка</div>
       <div class="inventory-capacity-bar-v1067"><span>Инвентарь <b>${[...layout.instances,...layout.overflow].reduce((sum,i)=>sum+i.w*i.h,0)} / ${user.inventorySize}</b> клеток</span><span class="${overweight ? 'inventory-limit-exceeded-v1067' : ''}">Вес <b>${layout.weight.toFixed(1)} / ${Number(user.carryWeightMax).toFixed(1)}</b></span></div>
-      <div class="inventory-equipment-slots-v1067">${inventorySlotMarkupV1067(user,'primaryWeapon')}${inventorySlotMarkupV1067(user,'secondaryWeapon')}${inventorySlotMarkupV1067(user,'armor')}${Array.from({length:user.implantSlotCount},(_,i)=>inventorySlotMarkupV1067(user,'implant',i)).join('')}</div>
+      <div class="inventory-equipment-slots-v1067">${inventorySlotMarkupV1067(user,'primaryWeapon')}${inventorySlotMarkupV1067(user,'secondaryWeapon')}${inventorySlotMarkupV1067(user,'armor')}${inventorySlotMarkupV1067(user,'backpack')}${Array.from({length:user.implantSlotCount},(_,i)=>inventorySlotMarkupV1067(user,'implant',i)).join('')}</div>
       <div class="section-title" style="margin-top:18px">Инвентарь</div><div class="small-note" style="margin-bottom:8px">Предметы занимают реальный размер в клетках. Перетаскивайте их по сетке или в подходящие слоты экипировки.</div>
       ${inventoryGridMarkupV1067(user)}
       ${originsHtml}`;
@@ -22657,7 +22659,7 @@ function legacyRegionMapsV181() {
   function wcInventoryGridMarkupV1068(user) {
     const layout = buildInventoryLayoutV1067(user);
     const cells = Array.from({length:layout.size},(_,index)=>`<div class="inventory-grid-cell-v1067" style="grid-column:${(index%layout.cols)+1};grid-row:${Math.floor(index/layout.cols)+1}" data-cell-index="${index}"></div>`).join('');
-    const tiles = layout.instances.map(instance=>`<div class="inventory-tile-v1067 wc-inventory-tile-v1068" draggable="true" data-wc-inventory-drag-v1068 data-source="grid" data-item-id="${esc(instance.itemId)}" data-unit-index="${instance.unitIndex}" style="grid-column:${instance.pos.x+1}/span ${instance.w};grid-row:${instance.pos.y+1}/span ${instance.h}" title="${esc(instance.item.name||instance.itemId)} · ${instance.w}×${instance.h} · ${itemMassV1067(instance.item)} веса">${renderThumb(instance.item,{size:'sm',type:'item',glyph:initials(instance.item.name,'▣')})}<span>${esc(instance.item.name||instance.itemId)}</span><small>${instance.w}×${instance.h}${Number(instance.qty||1)>1?` · ×${instance.qty}`:''}</small></div>`).join('');
+    const tiles = layout.instances.map(instance=>`<div class="inventory-tile-v1067 wc-inventory-tile-v1068" draggable="true" data-wc-inventory-drag-v1068 data-source="grid" data-item-id="${esc(instance.itemId)}" data-unit-index="${instance.unitIndex}" style="grid-column:${instance.pos.x+1}/span ${instance.w};grid-row:${instance.pos.y+1}/span ${instance.h}" title="${esc(instance.item.name||instance.itemId)} · ${instance.w}×${instance.h} · ${itemMassV1067(instance.item)} веса">${renderThumb(instance.item,{size:'sm',type:'item',glyph:initials(instance.item.name,'▣')})}<span>${esc(instance.item.name||instance.itemId)}</span><small class="inventory-stack-count" ${instance.item.stackable ? '' : 'hidden'}>${instance.item.stackable ? `${instance.qty}/${instance.stackLimit}` : ''}</small></div>`).join('');
     const overflow = layout.overflow.length ? `<div class="inventory-overflow-v1067"><b>Не помещается: ${layout.overflow.length}</b>${layout.overflow.map(instance=>`<span>${esc(instance.item.name||instance.itemId)} (${instance.w}×${instance.h})</span>`).join('')}</div>` : '';
     return `<div class="inventory-grid-v1067 wc-inventory-grid-v1068" data-wc-inventory-grid-v1068 style="--inv-cols:${layout.cols};--inv-rows:${layout.rows}">${cells}${tiles}</div>${overflow}`;
   }
@@ -22675,6 +22677,79 @@ function legacyRegionMapsV181() {
     return rows.length ? `<div class="section-title">Прочность экземпляров</div><p class="small-note">0 — предмет сломан. После ремонта укажите новую прочность.</p>${rows.join('')}` : '';
   }
   const wcStashBusy = new Set();
+  let wcItemMenu;
+  document.addEventListener('contextmenu', event => {
+    const tile = event.target.closest?.('[data-wc-inventory-drag-v1068]');
+    const editor = tile?.closest('[data-wc-inventory-editor-v1068]');
+    const playerId = wcInventoryTargetPlayerIdV1069(editor);
+    if (!playerId || tile.dataset.source === 'pool' || App.currentUser?.role !== 'gm') return;
+    event.preventDefault();
+    wcItemMenu?.remove();
+    const drag = {
+      source:tile.dataset.source, itemId:tile.dataset.itemId, unitIndex:Number(tile.dataset.unitIndex ?? -1),
+      slotType:tile.dataset.slotType,slotIndex:Number(tile.dataset.slotIndex ?? -1)
+    };
+    const item = itemForInventoryV1067(drag.itemId), copies = window.GRPGItemInstancesV215;
+    const read = () => wcInventoryStateFromEditorV1069(editor);
+    const instance = state => copies.choose(state,drag);
+    const state = read();
+    const row = state.inventory.find(entry=>entry.itemId===drag.itemId);
+    if (!row || (drag.source==='grid' && (drag.unitIndex<0 || drag.unitIndex>=row.qty))) return;
+    const selectedId = instance(state);
+    const selectedCopy = state.inventory.find(row=>row.itemId===drag.itemId)?.instancesV215?.find(copy=>copy.id===selectedId);
+    const equipped = drag.source === 'slot';
+    const menu = wcItemMenu = document.createElement('dialog');
+    menu.className = 'wc-item-menu';
+    menu.setAttribute('aria-label',item.name || drag.itemId);
+    const close = () => { menu.close(); menu.remove(); };
+    menu.addEventListener('close',()=>menu.remove());
+    menu.addEventListener('click',event=>{if(event.target===menu)close();});
+    const add = (label, change) => {
+      const button = document.createElement('button');
+      button.type='button';
+      button.className='secondary';
+      button.textContent=label;
+      menu.append(button);
+      button.onclick=async () => {
+        close();
+        try {
+          if (!editor.isConnected || App.currentUser?.role !== 'gm') return;
+          if (wcStashBusy.has(wcStashKey(playerId)) || PlayerSync._pendingV135.has(playerId)) throw Error('Дождитесь сохранения инвентаря.');
+          const next = read();
+          if (!next.inventory.some(row=>row.itemId===drag.itemId && row.qty>Math.max(0,drag.unitIndex)) || (equipped && getSlotItemV1067(next,drag.slotType,drag.slotIndex)!==drag.itemId) || (selectedId && instance(next)!==selectedId)) throw Error('Экземпляр изменился. Откройте меню снова.');
+          if (await change(next) === false) return;
+          const validated=wcInventoryCloneAndValidateV1068(next);
+          wcInventoryRenderStageV1068(editor,validated);
+          await wcInventoryPersistRealtimeV1069(editor,validated);
+        } catch (error) { Toast.show(error.message,'err'); }
+      };
+    };
+    if (selectedCopy?.durabilityMax && selectedCopy.durability < selectedCopy.durabilityMax) {
+      add('Починить полностью',next=>{
+        const copy=next.inventory.find(row=>row.itemId===drag.itemId).instancesV215.find(row=>row.id===selectedId);
+        copies.repair(copy,item,copy.durabilityMax);
+      });
+    }
+    add('Переложить в тайник',async()=>{await wcStashTransfer(editor,{drag});return false;});
+    if (equipped) add('Снять',next=>setSlotItemV1067(next,drag.slotType,drag.slotIndex,''));
+    else {
+      const slots = ['primaryWeapon','secondaryWeapon','armor','backpack'].map(type=>[type,-1]);
+      slots.push(...state.implantSlots.map((_,index)=>['implant',index]));
+      for (const [type,index] of slots) {
+        if (!slotAcceptsItemV1067(type,item) || getSlotItemV1067(state,type,index)) continue;
+        add('Надеть · '+slotLabelV1067(type,index),next=>setSlotItemV1067(next,type,index,drag.itemId,selectedId));
+      }
+    }
+    add('Удалить один экземпляр',next=>{
+      if (!window.confirm('Удалить один экземпляр «'+(item.name || drag.itemId)+'»?')) return false;
+      if (equipped) setSlotItemV1067(next,drag.slotType,drag.slotIndex,'');
+      if (!wcInventoryRemoveUnitV1068(next,drag.itemId,drag.unitIndex,equipped,selectedId)) throw Error('Предмет уже отсутствует.');
+    });
+    document.body.append(menu);
+    menu.showModal();
+    menu.style.left=Math.max(0,Math.min(event.clientX,innerWidth-menu.offsetWidth))+'px';
+    menu.style.top=Math.max(0,Math.min(event.clientY,innerHeight-menu.offsetHeight))+'px';
+  });
   function wcStashKey(playerId) {
     return 'grpg-wc-stash:' + JSON.stringify([Sync.config?.campaignId || '',playerId]);
   }
