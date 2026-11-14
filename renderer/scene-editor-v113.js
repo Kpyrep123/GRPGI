@@ -2918,21 +2918,32 @@
       stats.movement=movement.speed;if(movement.carries)stats.carryCapacity=movement.capacity;
       return {droneActions225:droneActions225(token),droneActionsMax225:Math.max(0,num(token.droneActions)),droneShareVision225:droneShareVision225(token),resources204:resources204(token),modifierData204:clone(list(token.timedModifiersV122)),operatorId204:String(token.operatorTokenIdV129||''),reactionDebt204:num(token.reactionDebt204),withdrawn204:withdrawn194(token),injuryDegree:injurySeverity129(token),checkPenalty:checkPenalty199(token),checkDisadvantage:injuryDisadvantage129(token),heavyWeaponRestricted:heavyBlocked195(token),id:String(token.id),name:String(token.name||token.id),kind:token.playerId?'player':token.npcId?'npc':'unit',teamId:String(token.teamId||token.factionId||(token.playerId?'players':token.npcId?'npcs':token.type||'units')),hpCurrent:num(token.hpCurrent),hpMax:num(token.hpMax),x:centerOf(token).x,y:centerOf(token).y,stats,abilities:unique(entity.skills),trained,items:itemIds,inventory,equipped,modifiers:list(token.timedModifiersV122).map(row=>String(row.id)),reactionEligible204:num(token.hpCurrent)>0&&!reactionBlocked195(token)&&!withdrawn194(token)&&!conditionStateV138(token).stunned&&!conditionStateV138(token).unconscious&&!conditionStateV138(token).dying&&!isControlledDevice200(token),actionAvailable:!actionSpent191(token)&&canCombatAct129(token),reactionAvailable:reactionAvailable195(token),movementSpent,movementRemaining:Math.max(0,movementTotal-movementSpent),conditions:{...clone(conditionStateV138(token)),shaken:moraleEffects199(token).some(row=>row.kind==='shaken'),panic:moraleEffects199(token).some(row=>row.kind==='panic')},movementMode:String(token.movementModeV138||'ground'),distances:{}};
     });
-    const tokenMap204=new Map(list(runtime?.tokens).map(row=>[String(row.id),row]));rows.forEach(a=>rows.forEach(b=>{a.distances[b.id]=window.GRPGUnitSizeV184.distance?.(tokenMap204.get(a.id),tokenMap204.get(b.id))??hexDistancePoints109(scene,{x:a.x,y:a.y},{x:b.x,y:b.y});}));
+    const tokens=list(runtime?.tokens);
+    for(let i=0;i<rows.length;i++){
+      const a=rows[i];
+      a.distances[a.id]=0;
+      for(let j=i+1;j<rows.length;j++){
+        const b=rows[j];
+        const distance=window.GRPGUnitSizeV184.distance?.(tokens[i],tokens[j])??hexDistancePoints109(scene,a,b);
+        a.distances[b.id]=distance;
+        b.distances[a.id]=distance;
+      }
+    }
     return rows;
   }
-  function luaInput119(source,context={}){
+  function luaInput119(source,context={},readUnits){
     const runtime=Combat.getRuntime(),scene=Combat.getScene(),targets=list(context.targets).filter(Boolean);
     const compactEntity=value=>value?{id:String(value.id||''),name:String(value.name||''),type:String(value.type||''),weaponCategory:String(value.weaponCategory||''),damageType:damageType202(value),damage:String(value.damage||''),damageBonus:num(value.damageBonus),hitBonus:num(value.hitBonus),range:num(value.range),behavior:normalizeAbilityBehavior125(value.abilityBehavior||value.behavior),castRange:num(value.castRange),areaRadius:num(value.areaRadius??value.aoeRadius),thinkerDuration:num(value.thinkerDuration??value.durationRounds),thinkerInterval:num(value.thinkerInterval??value.intervalRounds,1),tags:list(value.tags).map(String)}:{};
     const raw=source.raw||{},position=context.position&&typeof context.position==='object'?{x:num(context.position.x),y:num(context.position.y)}:null,thinker=context.thinker&&typeof context.thinker==='object'?clone(context.thinker):null;
-    return {session204:{...epochContext204(source.ownerToken),mode:inBattle191()?'combat':'normal'},objects204:list(scene?.assets).map(row=>({id:row.id,name:row.name,...centerOf(row)})),source:{costMode204:source.costMode204||'legacy',state204:clone(source.ownerToken?.luaState204?.[source.kind+':'+source.id]||{}),id:source.id,name:source.name,kind:source.kind,ownerId:String(source.ownerToken?.id||source.ownerId||''),behavior:normalizeAbilityBehavior125(raw.abilityBehavior||raw.behavior),castRange:num(raw.castRange),areaRadius:num(raw.areaRadius??raw.aoeRadius),thinkerDuration:num(raw.thinkerDuration??raw.durationRounds),thinkerInterval:num(raw.thinkerInterval??raw.intervalRounds,1),tags:list(raw.tags).map(String)},units:luaUnitRows119(runtime,scene),params:{rollType225:context.rollType225,roll225:context.roll225,rollingUnitId225:String(context.rollingUnit225?.id||''),condition225:context.condition225,enabled225:context.enabled225,answers204:context.answers204||{},geometry204:context.geometry204||{},eventId204:context.eventId204||'',parentEventId204:context.parentEventId204||'',unitId204:String(context.unit?.id||context.attacker?.id||''),action204:context.action204||'',movementKind204:context.movementKind204||'',oldPosition204:context.oldPosition204,newPosition204:context.newPosition204,hpLost204:context.hpLost204,rawDamage204:context.rawDamage204,absorbed204:context.absorbed204,reason204:context.reason204,event:String(context.event||''),attackerId:String(context.attacker?.id||''),targetId:String(context.target?.id||targets[0]?.id||''),targetIds:targets.map(row=>String(row.id)),casterId:String(context.caster?.id||source.ownerToken?.id||source.ownerId||''),damage:num(context.damage),damageType:window.GRPGDamageTypesV202.normalize(context.damageType)||damageType202(context.weapon||context.ability||raw),attackBonus:num(context.attackBonus),defenseBonus:num(context.defenseBonus),attackRoll:context.attackRoll,defenseRoll:context.defenseRoll,hit:context.hit===true,critical:context.critical===true,toggled:context.toggled===true,position,thinker,inputs:context.inputs&&typeof context.inputs==='object'?context.inputs:{},targetRequests:context.targetRequests&&typeof context.targetRequests==='object'?context.targetRequests:{},weapon:compactEntity(context.weapon),ammo:compactEntity(context.ammo),ammoSpent:context.ammoSpent,weaponSlot:context.weaponSlot,ability:compactEntity(context.ability)}};
+    return {session204:{...epochContext204(source.ownerToken),mode:inBattle191()?'combat':'normal'},objects204:list(scene?.assets).map(row=>({id:row.id,name:row.name,...centerOf(row)})),source:{costMode204:source.costMode204||'legacy',state204:clone(source.ownerToken?.luaState204?.[source.kind+':'+source.id]||{}),id:source.id,name:source.name,kind:source.kind,ownerId:String(source.ownerToken?.id||source.ownerId||''),behavior:normalizeAbilityBehavior125(raw.abilityBehavior||raw.behavior),castRange:num(raw.castRange),areaRadius:num(raw.areaRadius??raw.aoeRadius),thinkerDuration:num(raw.thinkerDuration??raw.durationRounds),thinkerInterval:num(raw.thinkerInterval??raw.intervalRounds,1),tags:list(raw.tags).map(String)},units:readUnits?readUnits():luaUnitRows119(runtime,scene),params:{rollType225:context.rollType225,roll225:context.roll225,rollingUnitId225:String(context.rollingUnit225?.id||''),condition225:context.condition225,enabled225:context.enabled225,answers204:context.answers204||{},geometry204:context.geometry204||{},eventId204:context.eventId204||'',parentEventId204:context.parentEventId204||'',unitId204:String(context.unit?.id||context.attacker?.id||''),action204:context.action204||'',movementKind204:context.movementKind204||'',oldPosition204:context.oldPosition204,newPosition204:context.newPosition204,hpLost204:context.hpLost204,rawDamage204:context.rawDamage204,absorbed204:context.absorbed204,reason204:context.reason204,event:String(context.event||''),attackerId:String(context.attacker?.id||''),targetId:String(context.target?.id||targets[0]?.id||''),targetIds:targets.map(row=>String(row.id)),casterId:String(context.caster?.id||source.ownerToken?.id||source.ownerId||''),damage:num(context.damage),damageType:window.GRPGDamageTypesV202.normalize(context.damageType)||damageType202(context.weapon||context.ability||raw),attackBonus:num(context.attackBonus),defenseBonus:num(context.defenseBonus),attackRoll:context.attackRoll,defenseRoll:context.defenseRoll,hit:context.hit===true,critical:context.critical===true,toggled:context.toggled===true,position,thinker,inputs:context.inputs&&typeof context.inputs==='object'?context.inputs:{},targetRequests:context.targetRequests&&typeof context.targetRequests==='object'?context.targetRequests:{},weapon:compactEntity(context.weapon),ammo:compactEntity(context.ammo),ammoSpent:context.ammoSpent,weaponSlot:context.weaponSlot,ability:compactEntity(context.ability)}};
   }
   async function runLuaSource119(source,hook,context={},mode='execute'){
     await policy204(source);
     if(!handlesHook228(source,hook))return {ok:true,hasHook:false,eligible:false,commands:[]};
     const supplied={...context,geometry204:{...(context.geometry204||{})}};
+    const input=luaInput119(source,{...supplied,event:hook},context.readUnits);
     for(let pass=0;pass<32;pass++){
-      const result=await window.electronAPI?.runCombatLuaHook?.({mode,hook,script:source.script,input:luaInput119(source,{...supplied,event:hook})});
+      const result=await window.electronAPI?.runCombatLuaHook?.({mode,hook,script:source.script,input});
       if(!result?.ok)throw new Error(`${source.name}: ${result?.message||'ошибка Lua'}`);
       const queries=list(result.commands).filter(row=>row.kind==='query_geometry204'&&!Object.hasOwn(supplied.geometry204,row.key));if(!queries.length)return result;
       for(const row of queries)supplied.geometry204[row.key]=geometryQuery204(row);
@@ -3127,13 +3138,17 @@
     if(!inBattle191())return state;if(reactionDepth204>=12)throw Error('Lua: превышена глубина реакций');reactionDepth204++;try{const handled=new Set();
     for(let pass=0;pass<64;pass++){
       const candidates=[];
+      // Checks run in read-only mode. Rebuild the snapshot on the next pass
+      // after a selected reaction can change the state.
+      let units;
+      const readUnits=()=>units??=luaUnitRows119(Combat.getRuntime(),Combat.getScene());
       const sources=await prepareSources228(list(Combat.getRuntime()?.tokens)
         .filter(actor=>num(actor.hpCurrent)>0&&!withdrawn194(actor))
         .flatMap(actor=>scriptSourcesForToken119(actor).filter(source=>source.mode==='reaction')));
       for(const source of sources){
         const actor=source.ownerToken,id=actor.id;
         if(handled.has(id)||!handlesHook228(source,hook)||(!reactionAvailable195(actor)&&!scripted204(source)))continue;
-        const result=await runLuaSource119(source,hook,{...context,caster:actor,damage:state.damage},'check');
+        const result=await runLuaSource119(source,hook,{...context,caster:actor,damage:state.damage,readUnits},'check');
         if(result.hasHook&&result.eligible)candidates.push(source);
       }
       if(!candidates.length)return state;
@@ -4343,15 +4358,17 @@
     const status = window.GRPGDmProcessStatus;
     return status ? status.sync('Бой · поиск пути', () => pathsBeforeStatus(...args)) : pathsBeforeStatus(...args);
   };
-  const luaInputBeforeStatus = luaInput119;
-  luaInput119 = function (...args) {
+  const luaUnitsBeforeStatus = luaUnitRows119;
+  luaUnitRows119 = function (...args) {
     const status = window.GRPGDmProcessStatus;
-    return status ? status.sync('Бой · подготовка данных Lua', () => luaInputBeforeStatus(...args)) : luaInputBeforeStatus(...args);
+    return status ? status.sync('Бой · подготовка данных Lua', () => luaUnitsBeforeStatus(...args)) : luaUnitsBeforeStatus(...args);
   };
   const luaBeforeStatus = runLuaSource119;
-  runLuaSource119 = async function (source, hook, ...args) {
-    const endStatus = window.GRPGDmProcessStatus?.begin('Lua · ' + hook + ' · ' + source.name);
-    try { return await luaBeforeStatus(source, hook, ...args); } finally { endStatus?.(); }
+  runLuaSource119 = async function (source, hook, context, mode) {
+    const kind=mode==='check'?' · проверка':'';
+    const owner=source.ownerToken?.name ? ' · '+source.ownerToken.name : '';
+    const endStatus=window.GRPGDmProcessStatus?.begin('Lua · '+hook+' · '+source.name+kind+owner);
+    try { return await luaBeforeStatus(source,hook,context,mode); } finally { endStatus?.(); }
   };
 
 })();
