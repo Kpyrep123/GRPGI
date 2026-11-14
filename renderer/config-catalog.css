@@ -10,3 +10,14 @@
 .config-catalog-tile small{color:#a8b7c6}
 .config-catalog-tile .entity-thumb{align-self:center}
 .config-catalog-back{margin-bottom:12px}
+
+.wc-stash {
+  margin-top: 1rem;
+  padding: .75rem;
+  border: 1px dashed currentColor;
+  border-radius: .5rem;
+}
+.wc-stash .row {
+  justify-content: space-between;
+  padding-block: .25rem;
+}

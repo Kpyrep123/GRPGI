@@ -22674,6 +22674,94 @@ function legacyRegionMapsV181() {
     });
     return rows.length ? `<div class="section-title">Прочность экземпляров</div><p class="small-note">0 — предмет сломан. После ремонта укажите новую прочность.</p>${rows.join('')}` : '';
   }
+  const wcStashBusy = new Set();
+  function wcStashKey(playerId) {
+    return 'grpg-wc-stash:' + JSON.stringify([Sync.config?.campaignId || '',playerId]);
+  }
+  function wcStashRead(key, inventory) {
+    const data = JSON.parse(localStorage.getItem(key) || '{"items":[]}');
+    if (!data.pending || wcStashBusy.has(key)) return data;
+    const { before, after, items } = data.pending;
+    const equal = window.GRPGPlayerSyncCoreV135.equal;
+    if (!equal(inventory,after) && (data.pending.online || !equal(inventory,before))) return data;
+    const recovered = { items: equal(inventory,after) ? items : data.items };
+    localStorage.setItem(key,JSON.stringify(recovered));
+    return recovered;
+  }
+  function wcStashMarkup(user) {
+    if (App.currentUser?.role !== 'gm' || !user.id || !App.state.users[user.id]) return '';
+    const key = wcStashKey(user.id);
+    let data;
+    try { data = wcStashRead(key,user.inventory); }
+    catch { return '<div class="small-note">Тайник недоступен. Проверьте локальное хранилище.</div>'; }
+    const disabled = wcStashBusy.has(key) || data.pending ? 'disabled' : '';
+    const items = data.items.map(({id,itemId,copy}) => {
+      const item = itemForInventoryV1067(itemId);
+      return `<div class="row"><span>${esc(item.name || itemId)}${copy?.durabilityMax ? ` · ${copy.durability}/${copy.durabilityMax}` : ''}</span><button type="button" class="secondary" data-wc-stash-return="${esc(id)}" ${disabled}>Вернуть</button></div>`;
+    }).join('');
+    return `<section class="wc-stash" data-wc-stash-drop><div class="section-title">Тайник ДМа</div><p class="small-note">Перетащите сюда предмет из инвентаря или слота. Тайник хранится на этом устройстве. Лимита ячеек и веса нет.</p>${data.pending && !wcStashBusy.has(key) ? '<p class="small-note">Перенос ожидает сверки с инвентарём.</p>' : ''}${items || '<span class="small-note">Тайник пуст.</span>'}</section>`;
+  }
+  async function wcStashTransfer(editor, { drag, returnId }) {
+    const playerId = wcInventoryTargetPlayerIdV1069(editor);
+    if (App.currentUser?.role !== 'gm' || !playerId) return;
+    const key = wcStashKey(playerId);
+    if (wcStashBusy.has(key) || PlayerSync._pendingV135.has(playerId)) throw Error('Дождитесь сохранения инвентаря.');
+    const before = wcInventoryReadStateV1068(editor);
+    if (editor.__wcInventoryRealtimeTimerV1069) throw Error('Дождитесь сохранения инвентаря.');
+    const data = wcStashRead(key,before.inventory);
+    if (data.pending) throw Error('Предыдущий перенос ещё не сверён с инвентарём.');
+    const next = deep(before);
+    let items = data.items.slice();
+    if (drag) {
+      const copies = window.GRPGItemInstancesV215;
+      const instanceId = copies.choose(next,drag);
+      const entry = next.inventory.find(row => row.itemId === drag.itemId);
+      const copy = entry?.instancesV215?.find(row => row.id === instanceId);
+      if (entry?.instancesV215?.length && !copy) throw Error('Экземпляр больше не находится в инвентаре.');
+      if (drag.source === 'slot') setSlotItemV1067(next,drag.slotType,drag.slotIndex,'');
+      if (!wcInventoryRemoveUnitV1068(next,drag.itemId,drag.unitIndex,drag.source === 'slot',instanceId)) throw Error('Предмет уже отсутствует.');
+      if (copy) delete copy.slot;
+      items.push({id:crypto.randomUUID(),itemId:drag.itemId,copy});
+    } else {
+      const stored = items.find(item => item.id === returnId);
+      if (!stored) return;
+      const entry = wcInventoryAddQtyV1068(next,stored.itemId,1);
+      if (stored.copy) {
+        entry.instancesV215 ||= [];
+        entry.instancesV215[entry.qty-1] = deep(stored.copy);
+      }
+      items = items.filter(item => item.id !== returnId);
+    }
+    const validated = wcInventoryCloneAndValidateV1068(next);
+    const online = Boolean(PlayerSync.shouldIsolateUsersFromSnapshot() && window.electronAPI?.patchPlayer);
+    const pending = { before:before.inventory, after:validated.inventory, items, online };
+    localStorage.setItem(key,JSON.stringify({items:data.items,pending}));
+    wcStashBusy.add(key);
+    try {
+      let result;
+      if (online) {
+        result = await wcInventoryPersistRealtimeV1069(editor,validated);
+      } else {
+        wcInventoryApplyLocalV1069(playerId,validated);
+        result = await App.writeLocalMirrors();
+      }
+      if (!result?.ok) {
+        if (result?.remote && window.GRPGPlayerSyncCoreV135.equal(App.state.users[playerId]?.inventory,before.inventory)) {
+          localStorage.setItem(key,JSON.stringify({items:data.items}));
+        }
+        throw Error(result?.message || 'Перенос не подтверждён.');
+      }
+      localStorage.setItem(key,JSON.stringify({items}));
+    } finally {
+      wcStashBusy.delete(key);
+      const live = document.querySelector('[data-wc-inventory-editor-v1068]');
+      if (wcInventoryTargetPlayerIdV1069(live) === playerId) {
+        wcInventoryRefreshEditorFromPlayerV1069(playerId);
+        const stash = live.querySelector('[data-wc-stash-drop]');
+        if (stash) stash.outerHTML = wcStashMarkup(wcInventoryReadStateV1068(live));
+      }
+    }
+  }
   function wcInventoryStageMarkupV1068(rawState = {}) {
     const user = normalizePlayerProfileV2(rawState);
     const layout = buildInventoryLayoutV1067(user);
@@ -22684,7 +22772,7 @@ function legacyRegionMapsV181() {
       <div class="inventory-equipment-slots-v1067 wc-inventory-equipment-slots-v1068">${wcInventorySlotMarkupV1068(user,'primaryWeapon')}${wcInventorySlotMarkupV1068(user,'secondaryWeapon')}${wcInventorySlotMarkupV1068(user,'armor')}${wcInventorySlotMarkupV1068(user,'backpack')}${Array.from({length:user.implantSlotCount},(_,i)=>wcInventorySlotMarkupV1068(user,'implant',i)).join('')}</div>
       <div class="section-title" style="margin-top:14px">Инвентарь персонажа</div>${wcInventoryGridMarkupV1068(user)}${wcItemDurabilityV215(user)}
       <div class="section-title" style="margin-top:14px">Количество предметов</div><div class="wc-inventory-quantities-v129">${quantityRows||'<span class="small-note">Инвентарь пуст.</span>'}</div>
-      <div class="section-title" style="margin-top:14px">Документы и предметы без веса/размера</div><div class="tags">${(layout.text||[]).map(row=>`<span class="tag wc-inventory-text-item-v113" draggable="true" data-wc-inventory-drag-v1068 data-source="grid" data-item-id="${esc(row.itemId)}" data-unit-index="0" title="Перетащите в общий пул, чтобы удалить один экземпляр">${esc(row.item.name||row.itemId)}${Number(row.qty||1)>1?` ×${row.qty}`:''}</span>`).join('')||'<span class="small-note">Нет таких предметов.</span>'}</div>`;
+      <div class="section-title" style="margin-top:14px">Документы и предметы без веса/размера</div><div class="tags">${(layout.text||[]).map(row=>`<span class="tag wc-inventory-text-item-v113" draggable="true" data-wc-inventory-drag-v1068 data-source="grid" data-item-id="${esc(row.itemId)}" data-unit-index="0" title="Перетащите в общий пул, чтобы удалить один экземпляр">${esc(row.item.name||row.itemId)}${Number(row.qty||1)>1?` ×${row.qty}`:''}</span>`).join('')||'<span class="small-note">Нет таких предметов.</span>'}</div>${wcStashMarkup(user)}`;
   }
   function wcInventoryEditorMarkupV1068(rawUser = {}) {
     const state = wcInventoryStateV1068(rawUser);
@@ -22906,9 +22994,15 @@ function legacyRegionMapsV181() {
     wcInventoryDragV1068=null;
     if (drag) wcInventoryRefreshEditorFromPlayerV1069(Configurator.selectedId);
   });
+  document.addEventListener('click', async event => {
+    const button = event.target?.closest?.('[data-wc-stash-return]');
+    if (!button) return;
+    try { await wcStashTransfer(button.closest('[data-wc-inventory-editor-v1068]'),{returnId:button.dataset.wcStashReturn}); }
+    catch (error) { Toast.show(error.message,'err'); }
+  });
   document.addEventListener('dragover', event => {
     if (!wcInventoryDragV1068) return;
-    if (event.target?.closest?.('[data-wc-inventory-grid-v1068],[data-wc-inventory-slot-v1068],[data-wc-inventory-pool-drop-v1068]')) { event.preventDefault(); event.dataTransfer.dropEffect='move'; }
+    if (event.target?.closest?.('[data-wc-inventory-grid-v1068],[data-wc-inventory-slot-v1068],[data-wc-inventory-pool-drop-v1068],[data-wc-stash-drop]')) { event.preventDefault(); event.dataTransfer.dropEffect='move'; }
   });
   document.addEventListener('drop', async event => {
     if (!wcInventoryDragV1068) return;
@@ -22917,10 +23011,16 @@ function legacyRegionMapsV181() {
     const grid=event.target?.closest?.('[data-wc-inventory-grid-v1068]');
     const slot=event.target?.closest?.('[data-wc-inventory-slot-v1068]');
     const pool=event.target?.closest?.('[data-wc-inventory-pool-drop-v1068]');
-    if (!grid&&!slot&&!pool) return;
+    const stash=event.target?.closest?.('[data-wc-stash-drop]');
+    if (!grid&&!slot&&!pool&&!stash) return;
     event.preventDefault(); event.stopPropagation();
     const drag={...wcInventoryDragV1068}; wcInventoryDragV1068=null;
     try {
+      if (stash) {
+        if (drag.source !== 'pool') await wcStashTransfer(editor,{drag});
+        return;
+      }
+      if (wcStashBusy.has(wcStashKey(drag.playerId))) throw Error('Дождитесь переноса в тайник.');
       const state=wcInventoryReadStateV1068(editor);
       state.inventorySize=intNonNegativeV1067(editor.closest('form')?.querySelector('[name="inventorySize"]')?.value,state.inventorySize);
       state.carryWeightMax=numNonNegativeV1067(editor.closest('form')?.querySelector('[name="carryWeightMax"]')?.value,state.carryWeightMax);
@@ -22999,7 +23099,7 @@ function legacyRegionMapsV181() {
   document.addEventListener('click', async event => {
     const button = event.target?.closest?.('[data-wc-durability-save-v215]');
     const editor = button?.closest('[data-wc-inventory-editor-v1068]');
-    if (!editor || !['gm','dm','master'].includes(String(App.currentUser?.role || '').toLowerCase())) return;
+    if (!editor || wcStashBusy.has(wcStashKey(wcInventoryTargetPlayerIdV1069(editor))) || !['gm','dm','master'].includes(String(App.currentUser?.role || '').toLowerCase())) return;
     const playerId = wcInventoryTargetPlayerIdV1069(editor);
     const player = App.state.users?.[playerId];
     const state = player ? wcInventoryStateV1068(player) : wcInventoryReadStateV1068(editor);
@@ -23038,6 +23138,7 @@ function legacyRegionMapsV181() {
     const input=event.target?.closest?.('[data-wc-inventory-qty-v129]');
     if(!input)return;
     const editor=input.closest('[data-wc-inventory-editor-v1068]');if(!editor)return;
+    if(wcStashBusy.has(wcStashKey(wcInventoryTargetPlayerIdV1069(editor)))){const state=wcInventoryReadStateV1068(editor);input.value=String(itemOwnedQtyV1067(state,input.dataset.itemId));return;}
     const before=wcInventoryReadStateV1068(editor),state=wcInventoryStateV1068(deep(before)),itemId=String(input.dataset.itemId||''),qty=intNonNegativeV1067(input.value,0);
     try{
       const equipped=equippedCountForItemV1067(state,itemId);if(qty<equipped)throw new Error(`Нельзя уменьшить количество ниже числа экипированных экземпляров (${equipped})`);
