@@ -27,7 +27,7 @@ const html=fs.readFileSync(path.join(root,'renderer/index.html'),'utf8');
 w.document.write(html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi,''));
 // Every renderer script is evaluated unmodified, in index.html order, sharing
 // browser-style lexical globals. Only OS/cloud/bootstrap boundaries are mocked.
-for(const m of html.matchAll(/<script src="\.\/([^"?]+)[^"]*"/g))vm.runInContext(fs.readFileSync(path.join(root,'renderer',m[1]),'utf8').replace('// New module is DM-only;', 'window.test225={local,applyStore,collectStoreFromRuntime,luaUnitRows119,applyLuaCommands119,runInteractiveLuaHookV138,requestAttackRolls119,commitAttack105:id=>commitAttack105(id),performLuaStandardAttackV138,itemRuntimeStateV138,playerVisionSources112,droneActions225,droneShareVision225,deviceCommandReason200,checkpointCombat120,conditionEvents225,positionEvents204,refreshRuntimeSources122,centerOf,updatePlayerHp105,mergeCombatProfile225,importCombatProfiles225,runAutomaticHooks119,commitMove104:()=>commitMove104(),makeRoutePreview104,hexStepDistance109,activeSkillsForToken118,useActiveSkill118:id=>useActiveSkill118(id),fitTokenToHex107};\n// New module is DM-only;'),context,{filename:m[1]});
+for(const m of html.matchAll(/<script src="\.\/([^"?]+)[^"]*"/g))vm.runInContext(fs.readFileSync(path.join(root,'renderer',m[1]),'utf8').replace('// New module is DM-only;', 'window.test225={local,applyStore,collectStoreFromRuntime,luaUnitRows119,applyLuaCommands119,runInteractiveLuaHookV138,requestAttackRolls119,commitAttack105:id=>commitAttack105(id),performLuaStandardAttackV138,itemRuntimeStateV138,playerVisionSources112,droneActions225,droneShareVision225,deviceCommandReason200,checkpointCombat120,conditionEvents225,positionEvents204,refreshRuntimeSources122,centerOf,updatePlayerHp105,mergeCombatProfile225,importCombatProfiles225,runAutomaticHooks119,chooseReaction119,commitMove104:()=>commitMove104(),makeRoutePreview104,hexStepDistance109,activeSkillsForToken118,useActiveSkill118:id=>useActiveSkill118(id),fitTokenToHex107};\n// New module is DM-only;'),context,{filename:m[1]});
 const {Worker}=await import('node:worker_threads');
 w.electronAPI.runCombatLuaHook=payload=>new Promise((resolve,reject)=>{
  const worker=new Worker(path.join(root,'lua-sandbox-worker.cjs'));
@@ -111,6 +111,18 @@ try{
  w.electronAPI.runCombatLuaHook=payload=>{calls.push(payload);return runHook(payload);};
  await api.runAutomaticHooks119(token('a'),'OnMoveStep',{attacker:token('a')});
  assert(!calls.some(call=>call.hook==='OnMoveStep'),'absent movement hook never enters the worker');
+ const turnReaction={activationType:'reaction',luaEnabled:true,luaScript:"function GetCostMode() return 'scripted' end function CanOnTurnStart() return false end function OnTurnStart() end"};
+ w.turnA248={...turnReaction,id:'turn_a248',name:'Проверка A'};
+ w.turnB248={...turnReaction,id:'turn_b248',name:'Проверка B'};
+ run("Object.assign(worldData.skills.SKILLS,{turn_a248:window.turnA248,turn_b248:window.turnB248});App.state.users.p.skills.push('turn_a248','turn_b248');");
+ calls.length=0;
+ await api.chooseReaction119('OnTurnStart',{unit:token('a')});
+ const turnChecks=calls.filter(call=>call.mode==='check'&&call.hook==='OnTurnStart');
+ assert.equal(turnChecks.length,2,'both eligible sources are checked');
+ assert.equal(turnChecks[0].input.units,turnChecks[1].input.units,'unit snapshot is shared only within the read-only pass');
+ assert.equal(turnChecks[0].input.units[0].distances.a,0);
+ run("App.state.users.p.skills=App.state.users.p.skills.filter(id=>!id.endsWith('248'))");
+
  run("Combat.selectedObject={kind:'token',id:'a'}");
  token('a').disengagedV122=true;
  const start=api.centerOf(token('a'));
