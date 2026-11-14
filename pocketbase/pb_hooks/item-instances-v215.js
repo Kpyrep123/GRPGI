@@ -177,7 +177,14 @@
     return copy;
   }
 
-  const api = {tracked, normalize, reconcile, instance, choose, bind, remove, add, repair, updateResources, slotKey, clone};
+  function chargeBadge(profile, itemId, index = -1, slot = '') {
+    const copy = instance(profile, itemId, index, slot);
+    if (!copy?.chargesMax) return '';
+    const value = count(copy.charges) + '/' + count(copy.chargesMax);
+    return '<span class="inventory-charge-count" title="Заряды" aria-label="Заряды ' + value + '">' + value + '</span>';
+  }
+
+  const api = {chargeBadge, tracked, normalize, reconcile, instance, choose, bind, remove, add, repair, updateResources, slotKey, clone};
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.GRPGItemInstancesV215 = api;
 })(typeof window === 'undefined' ? globalThis : window);
