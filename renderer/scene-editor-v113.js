@@ -247,7 +247,10 @@
     return Object.fromEntries(Object.entries(current).map(([id,profile])=>[id,Object.fromEntries(Object.entries(profile).filter(([key,value])=>JSON.stringify(before[id]?.[key])!==JSON.stringify(value)))]).filter(([,patch])=>Object.keys(patch).length));
   }
   function applyProfiles194(profiles){for(const [id,patch] of Object.entries(profiles||{})){if(!App.state.users[id])continue;Object.assign(App.state.users[id],clone(patch));}}
-  function snapshot194(){const store=clone(collectStoreFromRuntime());delete store.operations194;return{store,profiles:profiles194(),selection:clone(Combat.selectedObject)};}
+  function snapshot194(revision=collectStoreFromRuntime()){
+    const {operations194, ...store}=revision;
+    return {store:clone(store),profiles:profiles194(),selection:clone(Combat.selectedObject)};
+  }
   function restore194(snapshot){
     const journal=local.store.operations194,camera=clone(local.cameraRuntime);applyStore(clone(snapshot.store));ensureCombatState().scenes=clone(snapshot.store.runtimes);local.store.runtimes=clone(snapshot.store.runtimes);local.store.operations194=journal;local.cameraRuntime=camera;ensureCombatState().cameraByScene=clone(camera);local.store.cameraByScene=clone(camera);applyProfiles194(snapshot.profiles);Combat.selectedObject=clone(snapshot.selection)||null;local.preview=null;
   }
@@ -262,9 +265,11 @@
     }
     recovery194=record;
   }
-  async function writeOperation194(record){
+  async function writeOperation194(record, revision){
     journal194().active=record;
-    const payload=clone(collectStoreFromRuntime());
+    const payload=revision
+      ? {...revision,operations194:clone(journal194())}
+      : clone(collectStoreFromRuntime());
     if(operation194){operation194.allowWrite=true;operation194.pendingPayload=payload;}
     try{
       const result=await saveStoreNow(payload);if(result?.ok===false)throw Error(result.message||'Не удалось записать результат операции');
@@ -298,7 +303,7 @@
     const op=operation194={record,startProfiles:before.profiles,boundary:before,confirmed:false,applied:false,error:'',allowWrite:false,persistenceFailed:false,lastDurable:null,pendingPayload:null};
     clearTimeout(local.saveTimer);local.saveTimer=0;
     try{
-      await writeOperation194(record);
+      await writeOperation194(record,before.store);
       op.executing=true;const actor204=selectedToken104(),action204=['Атака','Активный навык','Активное снаряжение','Рывок','Перезарядка','Отход','Перемещение','Граната','Положение','Команда дрону','Размещение устройства','Завершение очереди','Устранение отказа'].includes(label);if(action204&&actor204)await emit204('OnActionDeclared',actor204,{attacker:actor204,action204:label});const result=op.cancelBeforeExecution?undefined:await fn();if(action204&&actor204&&op.applied&&!op.error&&!op.persistenceFailed&&!recovery194){const finished204={damage:0,effects:[]};await emit204('OnActionFinished',actor204,{attacker:actor204,action204:label},finished204);flushLuaEffects119(finished204);if(finished204.applied204)await checkpointCombat120('Последствия завершения: '+label,true);}
       if(op.persistenceFailed||recovery194){record.error=op.error||record.error;return result;}
       if(op.error&&op.applied){restore194(op.boundary);record.profiles=changedProfiles194();record.stage='После подтверждённого шага: '+op.error;}
@@ -1490,18 +1495,19 @@
     const spans=Array.isArray(m.rows?.[gy])?m.rows[gy]:[];
     return spans.some(span=>gx>=span[0]&&gx<=span[1]);
   }
-  function movementBlockedAt(scene, x, y, ignoreTokenId = '', clearance = 0, probe184 = false, passingAllies229 = false) {
-    const sizes=window.GRPGUnitSizeV184,tokens=list(Combat.getRuntime(scene.id)?.tokens),moving=(!probe184||passingAllies229)&&tokens.find(t=>t.id===ignoreTokenId);
+  function movementBlockedAt(scene, x, y, ignoreTokenId = '', clearance = 0, probe184 = false, passingAllies229 = false, pathContext = null) {
+    const sizes=window.GRPGUnitSizeV184,tokens=pathContext?.tokens||list(Combat.getRuntime(scene.id)?.tokens);
+    const moving=pathContext ? pathContext.moving : (!probe184||passingAllies229)&&tokens.find(t=>t.id===ignoreTokenId);
     if(moving&&!probe184&&sizes.info(moving.unitSize).count>1){
       if(!sizes.inBounds(moving.unitSize,scene,{x,y}))return true;
-      return sizes.probes(moving,{x,y}).some(p=>movementBlockedAt(scene,p.x,p.y,ignoreTokenId,0,true,passingAllies229));
+      return sizes.probes(moving,{x,y}).some(p=>movementBlockedAt(scene,p.x,p.y,ignoreTokenId,0,true,passingAllies229,pathContext));
     }
     const p={x,y}, pad=Math.max(0,num(clearance,0));
-    for (const asset of list(scene.assets)) {
+    for (const asset of pathContext?.assets||list(scene.assets)) {
       if (!asset.blockMovement) continue;
       if (pointInAssetAlpha110(asset,x,y,pad)) return true;
     }
-    for (const zone of list(scene.templates)) {
+    for (const zone of pathContext?.zones||list(scene.templates)) {
       if (!zone.blockMovement) continue;
       if (zone.shape === 'wall' && zone.points?.length > 1) {
         for (let i=1;i<zone.points.length;i++) if (pointSegmentDistance(p, zone.points[i-1], zone.points[i]) <= Math.max(.08, num(zone.thickness,.18))+pad) return true;
@@ -1516,20 +1522,29 @@
     }
     return false;
   }
-  function movementSegmentBlocked(scene,a,b,ignoreTokenId='',clearance=0,passingAllies229=false){
+  function movementSegmentBlocked(scene,a,b,ignoreTokenId='',clearance=0,passingAllies229=false,pathContext=null){
     const length=dist(a,b),steps=Math.max(1,Math.ceil(length/.12));
-    for(let i=1;i<=steps;i++){const t=i/steps,x=a.x+(b.x-a.x)*t,y=a.y+(b.y-a.y)*t;if(movementBlockedAt(scene,x,y,ignoreTokenId,clearance,false,passingAllies229))return true;}
+    for(let i=1;i<=steps;i++){const t=i/steps,x=a.x+(b.x-a.x)*t,y=a.y+(b.y-a.y)*t;if(movementBlockedAt(scene,x,y,ignoreTokenId,clearance,false,passingAllies229,pathContext))return true;}
     return false;
   }
-  function sightBlockedAt105(scene,x,y,ignoreIds=new Set()){
+  function sightBlockedAt105(scene,x,y,ignoreIds,runtime,thinkerZones){
     const p={x,y};
     for(const asset of list(scene.assets)){const type=normalizeCoverType120(asset.coverType),blocks=type==='total'?!asset.coverPenetrable:Boolean(asset.blockSight);if(!blocks)continue;if(pointInAssetAlpha110(asset,x,y,0))return true;}
     for(const zone of list(scene.templates)){const type=normalizeCoverType120(zone.coverType),blocks=type==='total'?!zone.coverPenetrable:Boolean(zone.blockSight)&&type==='none';if(!blocks)continue;if(zone.shape==='wall'&&zone.points?.length>1){for(let i=1;i<zone.points.length;i++)if(pointSegmentDistance(p,zone.points[i-1],zone.points[i])<=Math.max(.05,num(zone.thickness,.18)))return true;}else if(zone.shape==='polygon'&&zone.points?.length>2){if(pointInPolygon(p,zone.points))return true;}else if(x>=num(zone.x)&&x<=num(zone.x)+num(zone.w,1)&&y>=num(zone.y)&&y<=num(zone.y)+num(zone.h,1))return true;}
-    for(const zone of thinkerZoneModels125(Combat.getRuntime(scene.id),scene)){if(!zone.blockSight||zone.allowVision)continue;if(pointInPolygon(p,zone.points))return true;}
-    for(const token of list(Combat.getRuntime(scene.id)?.tokens)){if(ignoreIds.has(token.id)||!token.blockSight)continue;if(token.footprintV184?window.GRPGUnitSizeV184.contains(token,x,y):x>=num(token.x)&&x<=num(token.x)+num(token.w,1)&&y>=num(token.y)&&y<=num(token.y)+num(token.h,1))return true;}
+    for(const zone of thinkerZones){if(!zone.blockSight||zone.allowVision)continue;if(pointInPolygon(p,zone.points))return true;}
+    for(const token of list(runtime?.tokens)){if(ignoreIds.has(token.id)||!token.blockSight)continue;if(token.footprintV184?window.GRPGUnitSizeV184.contains(token,x,y):x>=num(token.x)&&x<=num(token.x)+num(token.w,1)&&y>=num(token.y)&&y<=num(token.y)+num(token.h,1))return true;}
     return false;
   }
-  function sightSegmentBlocked105(scene,a,b,ignoreIds=[]){if(window.GRPGCombatVisionV225.elevationBlocksSight(scene,a,b))return true;const ids=new Set(ignoreIds);const length=dist(a,b),steps=Math.max(2,Math.ceil(length/.08));for(let i=1;i<steps;i++){const t=i/steps;if(sightBlockedAt105(scene,a.x+(b.x-a.x)*t,a.y+(b.y-a.y)*t,ids))return true;}return false;}
+  function sightSegmentBlocked105(scene,a,b,ignoreIds=[]){
+    if(window.GRPGCombatVisionV225.elevationBlocksSight(scene,a,b))return true;
+    const ids=new Set(ignoreIds),runtime=Combat.getRuntime(scene.id),thinkerZones=thinkerZoneModels125(runtime,scene);
+    const steps=Math.max(2,Math.ceil(dist(a,b)/.08));
+    for(let i=1;i<steps;i++){
+      const t=i/steps;
+      if(sightBlockedAt105(scene,a.x+(b.x-a.x)*t,a.y+(b.y-a.y)*t,ids,runtime,thinkerZones))return true;
+    }
+    return false;
+  }
   function coverBetween120(scene,a,b,directShot=false){
     const elevation=directShot?window.GRPGCombatVisionV225.elevationCover(scene,a,b):0;
     const found=elevation?[{name:'Высота',type:['','weak','partial','good'][elevation],armorBonus:elevation,hardness:0}]:[];
@@ -1732,14 +1747,24 @@
     const clearance=moving?hexMetrics107().tokenSize*.18:.04;
     if(!returnOwner&&movementBlockedAt(scene,g.x,g.y,tokenId,clearance))return null;
     const key=n=>`${n.col}:${n.row}`,sk=key(s),gk=key(g),open=new Map([[sk,{...s,f:0}]]),came=new Map(),score=new Map([[sk,0]]);
+    const terrainCosts=new Map(),step=hexMetrics107().hexH;
+    const pathContext={
+      moving,
+      tokens:list(runtime?.tokens).filter(token=>token.blockMovement&&token.id!==tokenId),
+      assets:list(scene.assets).filter(asset=>asset.blockMovement),
+      zones:list(scene.templates).filter(zone=>zone.blockMovement)
+    };
     let loops=0;
     while(open.size&&loops++<12000){
       let ck='',cur=null;for(const [k,v] of open){if(!cur||v.f<cur.f){ck=k;cur=v;}}open.delete(ck);
       if(returnOwner?canReachDroneOwner231(moving,returnOwner,cur,scene)&&!movementBlockedAt(scene,cur.x,cur.y,tokenId,clearance):ck===gk){const out=[cur];let k=ck;while(came.has(k)){k=came.get(k);const [c,r]=k.split(':').map(Number);const n=hexNode108(scene,c,r);if(n)out.push(n);}out.reverse();return out.map(n=>({x:n.x,y:n.y}));}
       for(const n of hexNeighbours108(scene,cur)){
-        if(movementSegmentBlocked(scene,{x:cur.x,y:cur.y},{x:n.x,y:n.y},tokenId,clearance,true))continue;
-        const nk=key(n),tent=(score.get(ck)??Infinity)+terrainCostAt122(scene,n);if(tent>=(score.get(nk)??Infinity))continue;
-        came.set(nk,ck);score.set(nk,tent);const heuristic=returnOwner?Math.max(0,window.GRPGUnitSizeV184.distance(moving,returnOwner,n)-1):dist(n,g)/Math.max(.001,hexMetrics107().hexH);open.set(nk,{...n,f:tent+heuristic});
+        const nk=key(n),base=score.get(ck)??Infinity;
+        if(base+1>=(score.get(nk)??Infinity))continue;
+        if(movementSegmentBlocked(scene,cur,n,tokenId,clearance,true,pathContext))continue;
+        if(!terrainCosts.has(nk))terrainCosts.set(nk,terrainCostAt122(scene,n));
+        const tent=base+terrainCosts.get(nk);if(tent>=(score.get(nk)??Infinity))continue;
+        came.set(nk,ck);score.set(nk,tent);const heuristic=returnOwner?Math.max(0,window.GRPGUnitSizeV184.distance(moving,returnOwner,n)-1):dist(n,g)/Math.max(.001,step);open.set(nk,{...n,f:tent+heuristic});
       }
     }
     return null;
@@ -2640,8 +2665,12 @@
       try{
         window.__grpgCombatCheckpointV120=true;
         try{
-          if(App.writeLocalMirrors){const saved=await App.writeLocalMirrors();if(saved?.ok===false)throw Error(saved.message||'Профиль не записан локально');}
-          else {const saved=await Persistence?.save?.(App.state);if(saved?.ok===false)throw Error(saved.message||'Профиль не записан локально');}
+          // The scene checkpoint already stores pending profile changes. Saving the
+          // live state here keeps offline profiles durable without rewriting the world.
+          const saved=local.stability.active||!App.writeLocalMirrors
+            ? await Persistence.save(App.state)
+            : await App.writeLocalMirrors();
+          if(saved?.ok===false)throw Error(saved.message||'Профиль не записан локально');
         }finally{window.__grpgCombatCheckpointV120=false;}
         if(options.immediate&&(!local.stability.active||options.flush225)){
           const runtime=Combat.getRuntime(),playerIds=unique([...list(runtime?.tokens),...Object.values(local.store?.session193?.participants||{})].map(token=>token?.playerId)),jobs=[];
@@ -3843,7 +3872,12 @@
     const point=centerOf(source);return playerVisionSources112(scene,runtime).some(vision=>hexDistancePoints109(scene,vision.origin,point)<=vision.radius&&!sightSegmentBlocked105(scene,vision.origin,point,[vision.token.id,source.id]));
   }
   function buildCombatSnapshot104(sceneId=local.store?.publishedSceneId191){
-    const scene=COMBAT_SCENES[sceneId];if(!scene)return null;const liveRuntime=Combat.getRuntime(scene.id)||{},runtime=clone(liveRuntime);runtime.tokens=list(runtime.tokens).map(t=>({...t,showNameToPlayers:tokenNameVisibleToPlayers128(t),droneShareVision225:droneShareVision225(t),resolvedVisionCells:tokenVisionCells(t,scene),resolvedVisionRadius:tokenVisionCells(t,scene)*hexStepDistance109(),resolvedMoveCells:tokenMoveCells(t,scene),resolvedAttackCells:tokenAttackCells(t,scene)}));
+    const scene=COMBAT_SCENES[sceneId];if(!scene)return null;const liveRuntime=Combat.getRuntime(scene.id)||{},runtime=clone(liveRuntime);
+    const step=hexStepDistance109();
+    runtime.tokens=list(runtime.tokens).map(t=>{
+      const vision=tokenVisionCells(t,scene);
+      return {...t,showNameToPlayers:tokenNameVisibleToPlayers128(t),droneShareVision225:droneShareVision225(t),resolvedVisionCells:vision,resolvedVisionRadius:vision*step,resolvedMoveCells:tokenMoveCells(t,scene),resolvedAttackCells:tokenAttackCells(t,scene)};
+    });
     runtime.playerCards227=list(liveRuntime.tokens).filter(token=>token.playerId&&!token.hidden&&token.visibleToPlayers!==false).map(token=>{
       const weapon=weaponForToken105(token),magazine=magazineState118(token,weapon),defense=incomingDefense119(token,'light'),movement=movementState198(token,scene);
       return{id:token.id,playerId:token.playerId,name:token.name,image:token.image||'',hpCurrent:num(token.hpCurrent),hpMax:Math.max(1,num(token.hpMax)),armorClass:defense.defenseBonus,defense:defense.damageReduction,movement:movement.remaining,action:!actionSpent191(token),reaction:reactionAvailable195(token),weapon:weapon?{name:weapon.name,image:weapon.image||weapon.imageLocal||(/^https?:\/\//i.test(weapon.imageStoragePath||'')?weapon.imageStoragePath:''),loaded:magazine.loaded,size:magazine.size}:null};
@@ -3858,9 +3892,9 @@
   Combat.broadcastPlayerDisplayMirror = function(){
     if(!this.isDm()||!window.electronAPI?.updatePlayerDisplayView)return;
     const id=local.store?.publishedSceneId191||'',scene=COMBAT_SCENES[id];
-    if(UI.activeModuleId!=='combat'&&local.lastPublished191){window.electronAPI.updatePlayerDisplayView(clone(local.lastPublished191)).catch(()=>{});return;}
+    if(UI.activeModuleId!=='combat'&&local.lastPublished191){return;}
     const payload={mode:'combat',eraTheme:document.documentElement?.dataset?.eraTheme||'technological',graphicsMode:document.documentElement?.dataset?.graphicsMode==='lite'?'lite':'full',activeSceneId:scene?.id||'',cameraByScene:clone(local.cameraRuntime||{}),combatSnapshot:scene?buildCombatSnapshot104(id):null,activeRegionMapId:'',updatedAt:new Date().toISOString()};
-    local.lastPublished191=clone(payload);window.electronAPI.updatePlayerDisplayView(payload).catch(()=>{});
+    local.lastPublished191=payload;window.electronAPI.updatePlayerDisplayView(payload).catch(()=>{});
   };
   Combat.publishToPlayers191=async function(){
     const scene=this.getScene();if(!scene||!this.isDm())return;

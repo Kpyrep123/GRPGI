@@ -85,9 +85,10 @@
   };
   const render=Configurator.render;
   Configurator.render=function(...args){
+    const previousPanel=document.querySelector('#config-content .config-main');
     const result=render.apply(this,args);
     const panel=document.querySelector('#config-content .config-main');
-    if(!panel)return result;
+    if(!panel||panel===previousPanel)return result;
     if(catalogType===this.selectedType)showCatalog(panel,catalogType);
     else panel.insertAdjacentHTML('afterbegin','<button type="button" class="secondary config-catalog-back" data-catalog-back>К каталогу</button>');
     return result;
