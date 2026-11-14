@@ -5782,7 +5782,8 @@ function stockFeesV213(fees){if(!fees)return 'Тарифы загрузятся 
   function signedWeb118(value){const n=Number(value||0);return`${n>=0?'+':''}${Number.isInteger(n)?n:n.toFixed(1)}`;}
   function normalizeItemWeb118(raw={}){
     const item=deep(raw||{}),type=String(item.type||'gear').trim().toLowerCase();
-    if(['ammunition','патроны','боеприпасы'].includes(type))item.type='ammo';
+    if(type==='modification')item.type=type;
+    else if(['ammunition','патроны','боеприпасы'].includes(type))item.type='ammo';
     else if(['backpack','рюкзак','рюкзаки'].includes(type))item.type='backpack';
     if(['weapon','drone','turret'].includes(item.type)){if(String(item.weaponCategory||'').trim().toLowerCase()==='energy'&&!window.GRPGDamageTypesV202.normalize(item.damageType))item.damageType='energy';item.weaponCategory=window.GRPGWeaponHandlingV203.category(item);}
     item.ammoTypeId=String(item.ammoTypeId||item.ammunitionId||'');

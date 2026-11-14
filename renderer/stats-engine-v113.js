@@ -297,12 +297,19 @@
   function weaponAttack(entity={}, weaponOrId, options={}) {
     const weapon = typeof weaponOrId === 'string' ? equipment(weaponOrId) : normalizeEquipmentItemV2(weaponOrId || {});
     if (!weapon?.id && !weapon?.name) return null;
-    const stats=compute(entity,options), mods=stats.modifiers, context={weaponId:weapon.id,weaponCategory:window.GRPGWeaponHandlingV203.category(weapon),damageType:options.damageType||window.GRPGDamageTypesV202.effective(weapon)};
+    const stats=compute(entity,options), context={weaponId:weapon.id,weaponCategory:window.GRPGWeaponHandlingV203.category(weapon),damageType:options.damageType||window.GRPGDamageTypesV202.effective(weapon)};
+    const copies=window.GRPGItemInstancesV215, slot=options.weaponSlot || ['primaryWeapon','secondaryWeapon'].find(key=>entity.equipmentSlots?.[key]===weapon.id);
+    const copy=slot?copies.instance(entity,weapon.id,-1,slot):null;
+    const mounted=copies.attachmentHitBonus(copy);
+    const mods=[...stats.modifiers,...arr(copy?.attachments).flatMap(row=>arr(row.modifiers)
+      .map(mod=>normalizeModifier(mod,{id:row.itemId,name:equipment(row.itemId)?.name||row.itemId,kind:'equipment'}))
+      .filter(mod=>mod.enabled!==false))];
     let stat = window.GRPGWeaponHandlingV203.stat(weapon);
     const replaces=mods.filter(m=>m.target==='weapon_hit_stat'&&m.op==='replace_stat'&&m.statRef&&scopeMatches(m,{...context,entity,...options})).sort((a,b)=>(modifierSpecificity(a)-modifierSpecificity(b))||(a.priority-b.priority));
     if(replaces.length) stat=replaces[replaces.length-1].statRef;
     const detail=[{source:PRIMARY_LABELS[stat]||stat,value:n(stats.abilities[stat]),op:'base'}];
-    let bonus=n(stats.abilities[stat],0)+n(weapon.hitBonus,0);
+    let bonus=n(stats.abilities[stat],0)+n(weapon.hitBonus,0)+mounted;
+    if(mounted)detail.push({source:'Установленные модификации',value:mounted,op:'add'});
     if(n(weapon.hitBonus,0))detail.push({source:`${weapon.name}: базовый бонус`,value:n(weapon.hitBonus),op:'add'});
     if(weapon.weaponSkillId&&arr(entity.skills).map(String).includes(String(weapon.weaponSkillId))){bonus+=n(weapon.weaponSkillBonus,0);detail.push({source:`${skillById(weapon.weaponSkillId)?.name||weapon.weaponSkillId}: оружейный навык`,value:n(weapon.weaponSkillBonus,0),op:'add'});}
     mods.filter(m=>m.target==='weapon_hit_extra_stat'&&['add_stat','add'].includes(m.op)&&m.statRef&&scopeMatches(m,{...context,entity,...options})).forEach(m=>{bonus+=n(stats.abilities[m.statRef],0);detail.push({source:`${m.sourceName}: ${PRIMARY_LABELS[m.statRef]}`,value:n(stats.abilities[m.statRef],0),op:'add'});});
@@ -583,7 +590,14 @@
   window.GRPGInventoryMenuV142?.bind({
     selector:'#profile-content [data-inv113-drag-grid],#profile-content [data-inv113-drag-slot]',
     current:()=>App.currentUser,item:inventoryItem,normalize:normalizePlayerProfileV2,layout,accepts:slotAccepts,
-    commit:async(mutator,notice)=>{const user=copy(App.currentUser);mutator(user);return persistInventory(user,notice);},
+    commit:async(mutator,notice)=>{
+      const current=App.currentUser,user=copy(current);
+      mutator(user);
+      if(PlayerSync.shouldIsolateUsersFromSnapshot()&&window.electronAPI?.patchPlayer){
+        return PlayerSync.pushPlayerPatch(user.id,inventoryPatchFields113(user),{notice,rerender:true});
+      }
+      return persistInventory(user,notice);
+    },
     details:itemId=>Wiki.showEntity('item',itemId,true)
   });
   let drag113=null;document.addEventListener('dragstart',e=>{const g=e.target.closest?.('[data-inv113-drag-grid]'),s=e.target.closest?.('[data-inv113-drag-slot]');if(!g&&!s)return;drag113=g?{source:'grid',itemId:g.dataset.itemId,unitIndex:i(g.dataset.unitIndex,-1)}:{source:'slot',itemId:s.dataset.itemId,slot:s.dataset.slotV113,index:i(s.dataset.slotIndexV113,-1)};e.dataTransfer.effectAllowed='move';});document.addEventListener('dragend',()=>drag113=null);
