@@ -247,9 +247,13 @@
     return Object.fromEntries(Object.entries(current).map(([id,profile])=>[id,Object.fromEntries(Object.entries(profile).filter(([key,value])=>JSON.stringify(before[id]?.[key])!==JSON.stringify(value)))]).filter(([,patch])=>Object.keys(patch).length));
   }
   function applyProfiles194(profiles){for(const [id,patch] of Object.entries(profiles||{})){if(!App.state.users[id])continue;Object.assign(App.state.users[id],clone(patch));}}
-  function snapshot194(revision=collectStoreFromRuntime()){
-    const {operations194, ...store}=revision;
-    return {store:clone(store),profiles:profiles194(),selection:clone(Combat.selectedObject)};
+  function snapshot194(revision){
+    const capture = () => {
+      const {operations194, ...store}=revision ?? collectStoreFromRuntime();
+      return {store:clone(store),profiles:profiles194(),selection:clone(Combat.selectedObject)};
+    };
+    const status=window.GRPGDmProcessStatus;
+    return status ? status.sync('Бой · снимок сцены и профилей',capture) : capture();
   }
   function restore194(snapshot){
     const journal=local.store.operations194,camera=clone(local.cameraRuntime);applyStore(clone(snapshot.store));ensureCombatState().scenes=clone(snapshot.store.runtimes);local.store.runtimes=clone(snapshot.store.runtimes);local.store.operations194=journal;local.cameraRuntime=camera;ensureCombatState().cameraByScene=clone(camera);local.store.cameraByScene=clone(camera);applyProfiles194(snapshot.profiles);Combat.selectedObject=clone(snapshot.selection)||null;local.preview=null;
@@ -301,6 +305,7 @@
     if(label!=='Инстинкт самосохранения'&&pendingInstinct199().length){Toast.show('Сначала завершите ожидающую проверку Инстинкта кнопкой в панели сцены','info');return;}
     const before=snapshot194(),record={id:makeId('operation'),label,status:'prepared',stage:'Проверка и ввод',startedAt:new Date().toISOString(),profiles:{},profileSaved:false};
     const op=operation194={record,startProfiles:before.profiles,boundary:before,confirmed:false,applied:false,error:'',allowWrite:false,persistenceFailed:false,lastDurable:null,pendingPayload:null};
+    const endStatus=window.GRPGDmProcessStatus?.begin('Бой · '+label);
     clearTimeout(local.saveTimer);local.saveTimer=0;
     try{
       await writeOperation194(record,before.store);
@@ -318,6 +323,7 @@
       if(!op.persistenceFailed&&!recovery194){restore194(op.boundary);record.status=op.confirmed?'intermediate':'cancelled';record.profiles=changedProfiles194();record.error=op.error;try{await finishRecord194(record,op.confirmed?'partial':'cancelled');}catch{}}
       Toast.show(op.error,'err');
     }finally{
+      endStatus?.();
       operation194=null;updateOperation191();if(UI.activeModuleId==='combat')Combat.render();
       if(navigation194&&!recovery194){const next=navigation194;navigation194=null;queueMicrotask(next);}
     }
@@ -592,8 +598,11 @@
     if (!local.loaded && !local.store) return { ok: false };
     // Capture an immutable revision before entering the asynchronous writer. Otherwise a
     // later shot can mutate the same object while an earlier JSON write is still pending.
-    const payload = revision ?? clone(collectStoreFromRuntime());
+    const capture = () => clone(collectStoreFromRuntime());
+    const status = window.GRPGDmProcessStatus;
+    const payload = revision ?? (status ? status.sync('Бой · снимок сцены', capture) : capture());
     const write = async () => {
+      const endStatus=window.GRPGDmProcessStatus?.begin('Бой · запись сцены');
       try {
         if (window.electronAPI?.saveLocalCombatScenes) return await window.electronAPI.saveLocalCombatScenes(payload);
         localStorage.setItem(LOCAL_KEY, JSON.stringify(payload));
@@ -601,7 +610,7 @@
       } catch (error) {
         console.error('SCENE_LOCAL_SAVE_FAILED', error);
         return { ok: false, message: error?.message || String(error) };
-      }
+      } finally { endStatus?.(); }
     };
     local.saveChainV120 = Promise.resolve(local.saveChainV120).catch(() => ({ok:false})).then(write);
     return local.saveChainV120;
@@ -4300,6 +4309,23 @@
   document.addEventListener('pointerdown',event=>{if(local.context&&!event.target.closest('.scene-context-v104'))closeContext104();},true);
   window.addEventListener('keydown',event=>{if(UI.activeModuleId==='combat'&&['Delete','Backspace'].includes(event.key)&&!event.target.closest?.('input,textarea,select,[contenteditable]')&&selectedObject104()?.kind==='asset'){event.preventDefault();deleteSelected104();return;}if(event.code==='Escape'&&document.querySelector('.scene-lua-overlay-v119')){event.preventDefault();closeCombatModal119(null);return;}if(event.code==='Escape'&&local.lua119.pointPicker){event.preventDefault();cancelAbilityPoint125();return;}if(event.code==='Space'&&UI.activeModuleId==='combat'&&!event.repeat){local.spaceDown=true;document.getElementById('combat-stage-viewport')?.classList.add('space-pan-v105');event.preventDefault();}});
   window.addEventListener('keyup',event=>{if(event.code==='Space'){local.spaceDown=false;document.getElementById('combat-stage-viewport')?.classList.remove('space-pan-v105');}});
+  // Wrap the hot paths after their definitions so internal callers are covered.
+  const pathsBeforeStatus = findHexPath108;
+  findHexPath108 = function (...args) {
+    const status = window.GRPGDmProcessStatus;
+    return status ? status.sync('Бой · поиск пути', () => pathsBeforeStatus(...args)) : pathsBeforeStatus(...args);
+  };
+  const luaInputBeforeStatus = luaInput119;
+  luaInput119 = function (...args) {
+    const status = window.GRPGDmProcessStatus;
+    return status ? status.sync('Бой · подготовка данных Lua', () => luaInputBeforeStatus(...args)) : luaInputBeforeStatus(...args);
+  };
+  const luaBeforeStatus = runLuaSource119;
+  runLuaSource119 = async function (source, hook, ...args) {
+    const endStatus = window.GRPGDmProcessStatus?.begin('Lua · ' + hook + ' · ' + source.name);
+    try { return await luaBeforeStatus(source, hook, ...args); } finally { endStatus?.(); }
+  };
+
 })();
 
 /* v1.0.110 packaged-media hardening */
