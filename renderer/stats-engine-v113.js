@@ -583,7 +583,8 @@
   window.GRPGInventoryMenuV142?.bind({
     selector:'#profile-content [data-inv113-drag-grid],#profile-content [data-inv113-drag-slot]',
     current:()=>App.currentUser,item:inventoryItem,normalize:normalizePlayerProfileV2,layout,accepts:slotAccepts,
-    commit:async(mutator,notice)=>{const user=copy(App.currentUser);mutator(user);return persistInventory(user,notice);}
+    commit:async(mutator,notice)=>{const user=copy(App.currentUser);mutator(user);return persistInventory(user,notice);},
+    details:itemId=>Wiki.showEntity('item',itemId,true)
   });
   let drag113=null;document.addEventListener('dragstart',e=>{const g=e.target.closest?.('[data-inv113-drag-grid]'),s=e.target.closest?.('[data-inv113-drag-slot]');if(!g&&!s)return;drag113=g?{source:'grid',itemId:g.dataset.itemId,unitIndex:i(g.dataset.unitIndex,-1)}:{source:'slot',itemId:s.dataset.itemId,slot:s.dataset.slotV113,index:i(s.dataset.slotIndexV113,-1)};e.dataTransfer.effectAllowed='move';});document.addEventListener('dragend',()=>drag113=null);
   document.addEventListener('dragover',e=>{if(drag113&&e.target.closest?.('[data-inv113-grid],[data-slot-v113]'))e.preventDefault();});
