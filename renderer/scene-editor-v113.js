@@ -1320,7 +1320,7 @@
     if(!scene||!target)return;
     const presentation=window.GRPGCombatPresentationV227;
     const start=centerOf(attacker),end=presentation.projectile(scene,start,centerOf(target),hit);
-    const shot={id:++shotSequence247,at:Date.now(),sceneId:scene.id,sourceTokenId:attacker.id,targetTokenId:target.id,start,end,duration:Math.max(160,Math.min(850,dist(start,end)*24))};
+    const shot={id:++shotSequence247,at:Date.now(),sceneId:scene.id,sourceTokenId:attacker.id,targetTokenId:target.id,start,end,duration:Math.max(420,Math.min(1050,dist(start,end)*28))};
     recentShots247.push(shot);
     if(recentShots247.length>24)recentShots247.shift();
     presentation.paintShots(document.getElementById('combat-stage'),scene,[shot]);
@@ -2405,9 +2405,13 @@
     syncUnitSizes184(scene,runtime);
     if(inBattle191(scene)&&!this.selectedObject&&local.ui.hudScene226!==scene.id){const current=this.getCurrentTurnToken?.();if(current)this.selectedObject={kind:'token',id:current.id};}
     local.ui.hudScene226=inBattle191(scene)?scene.id:'';
+    const previousStage=root.querySelector('#combat-stage');
+    const shotLayer=previousStage?.dataset.sceneId===scene.id?previousStage.querySelector('.combat-shot-layer'):null;
     root.innerHTML=inBattle191(scene)?renderTactical226(scene,runtime):`<div class="scene-editor-v104">${renderTop104(scene,runtime)}${renderLeft104()}<main class="scene-center-v104"><div class="scene-session-stack-v193">${renderSession191(scene,runtime)}${renderInstinct199()}${renderCriticalAdvance229()}${renderLifecycle193(scene,runtime)}${renderOperation194()}</div>${renderBoard104(scene,runtime)}</main>${renderInspector104(scene,runtime)}</div>`;
     root.querySelectorAll('.battle-tools-v226>details').forEach((node,index)=>{if(local.ui.hudDetails226?.[index]!=null)node.open=local.ui.hudDetails226[index];});
-    window.GRPGCombatPresentationV227.paintShots(document.getElementById('combat-stage'),scene,recentShots247.filter(shot=>shot.sceneId===scene.id));
+    const stage=document.getElementById('combat-stage');
+    if(shotLayer)stage?.append(shotLayer);
+    window.GRPGCombatPresentationV227.paintShots(stage,scene,recentShots247.filter(shot=>shot.sceneId===scene.id));
     renderedSceneV137=scene.id;
     for(const selector of scrollSelectorsV137){const node=root.querySelector(selector),pos=panelScrollV137.get(scene.id+selector);if(node&&pos){node.scrollTop=pos.top;node.scrollLeft=pos.left;}}
     const turn226=scene.id+':'+(this.getCurrentTurnToken?.()?.id||'');
@@ -3932,7 +3936,7 @@
     runtime.playerDisplayAngle231=[90,180,270].includes(angle)?angle:0;
     const displayScene=clone(scene);delete displayScene.playerSides231;displayScene.showInitiativeToPlayers=inBattle191(scene);displayScene.templates=[...list(displayScene.templates),...thinkerZoneModels125(liveRuntime,scene).filter(row=>row.visibleToPlayers!==false)];
     const preview=Combat.getScene()?.id===scene.id&&previewVisibleToPlayers128(scene,liveRuntime,local.preview)?clone(local.preview):null;
-    const shots=recentShots247.filter(shot=>shot.sceneId===scene.id&&Date.now()-shot.at<shot.duration&&previewVisibleToPlayers128(scene,liveRuntime,shot)
+    const shots=recentShots247.filter(shot=>shot.sceneId===scene.id&&Date.now()-shot.at<shot.duration+1500&&previewVisibleToPlayers128(scene,liveRuntime,shot)
       &&(!shot.targetTokenId||previewVisibleToPlayers128(scene,liveRuntime,{sourceTokenId:shot.targetTokenId})));
     return {version:4,scene:displayScene,runtime,preview,shots,sentAt:new Date().toISOString()};
   }

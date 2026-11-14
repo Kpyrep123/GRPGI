@@ -198,6 +198,12 @@ try{
  w.document.querySelector('[name=damageRoll]').value='1';confirm();
  await wait(()=>w.document.querySelector('[name=luaNumber]'));
  w.document.querySelector('[name=luaNumber]').value='20';confirm();await fired;
+ const tracer=w.document.querySelector('#combat-stage .combat-projectile');
+ assert.ok(tracer,'ranged attack produces a visible projectile without Element.animate');
+ assert.match(tracer.style.getPropertyValue('--shot-to-x'),/%$/);
+ assert.ok(parseFloat(tracer.style.getPropertyValue('--shot-duration'))>=420);
+ run('Combat.render()');
+ assert.equal(w.document.querySelector('#combat-stage .combat-projectile'),tracer,'the tactical redraw retains the active projectile');
  assert.equal(token('a').weaponMagazinesV118.test_rifle.loaded,1);
  assert.equal(api.itemRuntimeStateV138(token('a'),'test_rifle','primaryWeapon').durability,4);
  token('a').burstStateV122=null;
