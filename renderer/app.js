@@ -572,13 +572,9 @@ function mirrorPlayersIntoWorld(state = App?.state) {
 }
 
 async function persistPlayerWorldMirror(state = App?.state) {
-  if (!window.electronAPI?.saveWorldData) return { ok: false, message: 'Electron API unavailable' };
   mirrorPlayersIntoWorld(state);
-  const result = await window.electronAPI.saveWorldData(buildWorldSnapshot());
-  if (result?.ok && result.world) {
-    applyWorldData(result.world);
-  }
-  return result;
+  if (!window.electronAPI?.saveWorldSection) return { ok: false, message: 'Electron API unavailable' };
+  return window.electronAPI.saveWorldSection('players', worldData.players);
 }
 
 const worldSavePreparation = [];
@@ -3022,8 +3018,8 @@ const App = {
     return this._mirrorFlushV214;
   },
   async _writeLocalMirrorsV135() {
-    mirrorPlayersIntoWorld(this.state);
-    await Persistence.save(this.state);
+    const stateResult = await Persistence.save(this.state);
+    if (stateResult?.ok === false) return stateResult;
     const worldMirrorRes = await persistPlayerWorldMirror(this.state);
     if (!worldMirrorRes?.ok) {
       Debug.error('PLAYER_WORLD_MIRROR_FAILED', { message: worldMirrorRes?.message || 'unknown error' });

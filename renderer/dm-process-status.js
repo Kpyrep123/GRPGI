@@ -111,7 +111,8 @@
   track(PlayerSync, 'pushPlayerPatch', 'Профили · сохранение');
   track(ChatSync, 'pull', 'Сообщения · получение');
   track(ChatSync, 'pushBatch', 'Сообщения · отправка');
-  track(App, '_writeLocalMirrorsV135', 'Локальная запись мира и профилей');
+  track(App, '_writeLocalMirrorsV135', 'Локальная запись профилей');
+  track(Persistence, 'save', 'Локальная запись состояния');
   track(Configurator, 'render', 'World Config · отрисовка', true);
   track(Combat, 'render', 'Бой · отрисовка', true);
   track(Combat, 'broadcastPlayerDisplayMirror', 'Бой · подготовка второго экрана', true);

@@ -20,7 +20,7 @@ const vm = require('node:vm');
   const PlayerSync = { pullUpdates() { return new Promise(resolve => { release = resolve; }); } };
   const context = {
     document, App, Combat, PlayerSync, PerformanceObserver,
-    Sync: {}, ChatSync: {}, Configurator: {},
+    Sync: {}, ChatSync: {}, Configurator: {}, Persistence: {},
     performance: { now: () => time },
     setInterval(callback) { tick = callback; }
   };

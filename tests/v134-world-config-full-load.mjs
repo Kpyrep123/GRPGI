@@ -165,6 +165,25 @@ assert.equal(w.document.querySelector(poolList).scrollTop,79);
 assert.equal(w.document.querySelector(`${poolList} [data-item-id="pool_item"]`).hidden,false);
 assert.equal(w.document.querySelector('#config-editor-form input[name="displayName"]').value,'Черновик имени');
 assert.equal(JSON.parse(w.document.querySelector('[name="wcInventoryStateV1068"]').value).inventory.find(row=>row.itemId==='pool_item').qty,2);
+// A profile update must write only players.json and leave the loaded catalog intact.
+const saveWorldData = w.electronAPI.saveWorldData;
+const saveWorldSection = w.electronAPI.saveWorldSection;
+const sectionsWritten = [];
+w.electronAPI.saveWorldData = async () => { throw Error('Unexpected full-world write'); };
+w.electronAPI.saveWorldSection = async (section, payload) => {
+ sectionsWritten.push(section);
+ return saveWorldSection(section, payload);
+};
+const diskBeforeMirror = JSON.parse(fs.readFileSync(path.join(scratch,'world.json'),'utf8'));
+run("window.catalogBeforeMirror=EQUIPMENT; App.state.users.pool_player.credits=429");
+assert.equal((await run('App.writeLocalMirrors()')).ok,true);
+const diskAfterMirror = JSON.parse(fs.readFileSync(path.join(scratch,'world.json'),'utf8'));
+assert.deepEqual(sectionsWritten,['players']);
+assert.deepEqual(diskAfterMirror.equipment,diskBeforeMirror.equipment);
+assert.equal(diskAfterMirror.players.PLAYER_TEMPLATES.pool_player.credits,429);
+assert.equal(run('window.catalogBeforeMirror===EQUIPMENT'),true);
+w.electronAPI.saveWorldData = saveWorldData;
+w.electronAPI.saveWorldSection = saveWorldSection;
 assert.equal(w.notices.some(n=>n.type==='err'),false,JSON.stringify(w.notices));
 assert.deepEqual(errors,[]);
 await w.happyDOM.abort();fs.rmSync(scratch,{recursive:true,force:true});
