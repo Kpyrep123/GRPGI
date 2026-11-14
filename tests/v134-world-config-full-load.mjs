@@ -133,6 +133,38 @@ run("Configurator.insertEntity('npcs',{id:'catalog_npc',name:'Механик',lo
 selectCatalog('npcs');
 choose('[data-catalog-group]','Локация');
 assert(w.document.querySelector('.config-catalog h3').textContent.includes('Купрум'));
+// A pending drag survives a refresh. Later refreshes use the latest inventory
+// and restore the pool filter and position even when it has lost focus.
+run(`
+  Configurator.insertEntity('players',{id:'pool_player',role:'player',displayName:'Игрок'});
+  Configurator.insertEntity('equipment',{id:'pool_item',type:'gear',name:'Ёмкость',mass:1});
+`);
+render('players','pool_player');
+const poolSearch='[data-wc-inventory-pool-search-v1068]';
+const poolList='.wc-inventory-pool-list-v1068';
+let search=w.document.querySelector(poolSearch);
+assert.ok(search);
+search.value='емкость';
+search.dispatchEvent(new w.Event('input',{bubbles:true}));
+w.document.querySelector(poolList).scrollTop=79;
+const poolItem=w.document.querySelector(`${poolList} [data-item-id="pool_item"]`);
+const dragStart=new w.Event('dragstart',{bubbles:true});
+Object.defineProperty(dragStart,'dataTransfer',{value:{setData(){}}});
+poolItem.dispatchEvent(dragStart);
+run('Configurator.render()');
+assert.equal(w.document.querySelector(poolSearch),search);
+poolItem.dispatchEvent(new w.Event('dragend',{bubbles:true}));
+const name=w.document.querySelector('#config-editor-form input[name="displayName"]');
+assert.ok(name);
+name.value='Черновик имени';
+name.dispatchEvent(new w.Event('input',{bubbles:true}));
+run("App.state.users.pool_player.inventory=[{itemId:'pool_item',qty:2}]; Configurator.render()");
+search=w.document.querySelector(poolSearch);
+assert.equal(search.value,'емкость');
+assert.equal(w.document.querySelector(poolList).scrollTop,79);
+assert.equal(w.document.querySelector(`${poolList} [data-item-id="pool_item"]`).hidden,false);
+assert.equal(w.document.querySelector('#config-editor-form input[name="displayName"]').value,'Черновик имени');
+assert.equal(JSON.parse(w.document.querySelector('[name="wcInventoryStateV1068"]').value).inventory.find(row=>row.itemId==='pool_item').qty,2);
 assert.equal(w.notices.some(n=>n.type==='err'),false,JSON.stringify(w.notices));
 assert.deepEqual(errors,[]);
 await w.happyDOM.abort();fs.rmSync(scratch,{recursive:true,force:true});

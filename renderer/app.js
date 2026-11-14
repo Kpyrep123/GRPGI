@@ -7674,6 +7674,7 @@ const FormDrafts = {
     const values = {};
     for (const field of Array.from(form.elements || [])) {
       if (!field?.name || field.disabled || field.type === 'file') continue;
+      if (field.name === 'wcInventoryStateV1068' && !key.endsWith(':new')) continue;
       if (field.type === 'checkbox') {
         if (!Array.isArray(values[field.name])) values[field.name] = [];
         if (field.checked) values[field.name].push(field.value);
@@ -7692,6 +7693,7 @@ const FormDrafts = {
     if (!values || !form) return;
     for (const field of Array.from(form.elements || [])) {
       if (!field?.name || !(field.name in values) || field.type === 'file') continue;
+      if (field.name === 'wcInventoryStateV1068' && !key.endsWith(':new')) continue;
       const value = values[field.name];
       if (field.type === 'checkbox') {
         field.checked = Array.isArray(value) ? value.includes(field.value) : Boolean(value);
@@ -22641,7 +22643,12 @@ function legacyRegionMapsV181() {
   }
   function wcInventoryWriteStateV1068(container, state) {
     const hidden = container?.querySelector?.('[name="wcInventoryStateV1068"]');
-    if (hidden) hidden.value = JSON.stringify(wcInventoryStateV1068(state));
+    if (!hidden) return false;
+    const value = JSON.stringify(wcInventoryStateV1068(state));
+    if (hidden.value === value) return false;
+    hidden.value = value;
+    if (hidden.form?.dataset.draftBoundKey?.endsWith(':new')) FormDrafts.remember(hidden.form.dataset.draftBoundKey, hidden.form);
+    return true;
   }
   function wcInventorySlotMarkupV1068(user, slotType, slotIndex = -1) {
     const itemId = getSlotItemV1067(user, slotType, slotIndex);
@@ -22690,7 +22697,7 @@ function legacyRegionMapsV181() {
   }
   function wcInventoryRenderStageV1068(container, state) {
     const normalized = wcInventoryStateV1068(state);
-    wcInventoryWriteStateV1068(container, normalized);
+    if (!wcInventoryWriteStateV1068(container, normalized)) return;
     const stage = container.querySelector('[data-wc-inventory-stage-v1068]');
     if (stage) stage.innerHTML = wcInventoryStageMarkupV1068(normalized);
   }
@@ -22729,12 +22736,51 @@ function legacyRegionMapsV181() {
     return html;
   };
 
+  let wcInventoryDragV1068 = null;
+  const wcInventoryPoolViews = new Map();
+  const wcInventoryPoolSearch = '[data-wc-inventory-pool-search-v1068]';
+  const wcInventoryPoolList = '.wc-inventory-pool-list-v1068';
+  function filterWcInventoryPool(search) {
+    const terms = search.value.trim().toLowerCase().replace(/ё/g,'е').split(/\s+/).filter(Boolean);
+    search.closest('[data-wc-inventory-editor-v1068]').querySelectorAll('.wc-inventory-pool-item-v1068').forEach(node => {
+      const text = String(node.dataset.search || '').replace(/ё/g,'е');
+      node.hidden = !terms.every(term => text.includes(term));
+    });
+  }
   const __configRenderV1068 = Configurator.render.bind(Configurator);
   Configurator.render = function() {
+    const oldForm = document.getElementById('config-editor-form');
+    const editorBefore = oldForm?.querySelector('[data-wc-inventory-editor-v1068]');
+    if (editorBefore && this.selectedType === 'players' &&
+        wcInventoryTargetPlayerIdV1069(editorBefore) === this.selectedId &&
+        (wcInventoryDragV1068?.playerId === this.selectedId || editorBefore.__wcInventoryRealtimeTimerV1069)) return;
+    const oldSearch = oldForm?.querySelector(wcInventoryPoolSearch);
+    const previousKey = oldForm?.dataset.draftBoundKey;
+    const focused = Boolean(oldSearch && document.activeElement === oldSearch);
+    const selection = focused ? [oldSearch.selectionStart, oldSearch.selectionEnd, oldSearch.selectionDirection] : null;
+    if (oldSearch && previousKey) {
+      wcInventoryPoolViews.set(previousKey, {query:oldSearch.value, top:oldForm.querySelector(wcInventoryPoolList).scrollTop});
+    }
     const result = __configRenderV1068();
     if (this.selectedType === 'players') {
       const form = document.getElementById('config-editor-form');
       if (form) {
+        const editor = form.querySelector('[data-wc-inventory-editor-v1068]');
+        const search = form.querySelector(wcInventoryPoolSearch);
+        const key = form.dataset.draftBoundKey;
+        const view = wcInventoryPoolViews.get(key);
+        if (search && view) {
+          search.value = view.query;
+          filterWcInventoryPool(search);
+          if (focused && key === previousKey) {
+            search.focus({preventScroll:true});
+            if (selection[0] !== null) search.setSelectionRange(...selection);
+          }
+          form.querySelector(wcInventoryPoolList).scrollTop = view.top;
+        }
+        if (editor && key?.endsWith(':new') && FormDrafts.store[key]?.wcInventoryStateV1068) {
+          editor.querySelector('[data-wc-inventory-stage-v1068]').innerHTML = wcInventoryStageMarkupV1068(wcInventoryReadStateV1068(editor));
+        }
         ['primaryWeapon','secondaryWeapon','armor'].forEach(name=>form.querySelector(`[name="${name}"]`)?.closest('.field')?.classList.add('wc-inventory-legacy-hidden-v1068'));
         form.querySelector('.implant-slot-editor-v1067')?.classList.add('wc-inventory-legacy-hidden-v1068');
         Array.from(form.querySelectorAll('.field > label')).forEach(label=>{
@@ -22769,13 +22815,9 @@ function legacyRegionMapsV181() {
   };
 
   /* v1.0.69: WC inventory writes use the isolated player patch channel immediately. */
-  const wcInventoryRealtimeQueuesV1069 = new Map();
-  const wcInventoryRealtimeLatestV1069 = new Map();
-  let wcInventoryRealtimeSeqV1069 = 0;
   function wcInventoryTargetPlayerIdV1069(editor) {
-    if (Configurator.selectedType !== 'players') return '';
-    const selected = Configurator.getSelectedEntity?.();
-    return String(selected?.id || Configurator.selectedId || '').trim();
+    const key = editor?.closest('form')?.dataset.draftBoundKey || '';
+    return key.startsWith('config:players:') && !key.endsWith(':new') ? key.slice('config:players:'.length) : '';
   }
   function wcInventoryStateFromEditorV1069(editor, state = null) {
     const next = wcInventoryStateV1068(state || wcInventoryReadStateV1068(editor));
@@ -22814,7 +22856,7 @@ function legacyRegionMapsV181() {
     if (PlayerSync._pendingV135.has(String(playerId || ''))) return;
     const editor = document.querySelector('#config-editor-form [data-wc-inventory-editor-v1068]');
     const player = App.state?.users?.[playerId] || PLAYER_TEMPLATES?.[playerId];
-    if (!editor || !player) return;
+    if (!editor || !player || wcInventoryDragV1068 || editor.__wcInventoryRealtimeTimerV1069) return;
     const normalized = wcInventoryStateV1068(player);
     const form = editor.closest('#config-editor-form');
     if (form) {
@@ -22830,11 +22872,14 @@ function legacyRegionMapsV181() {
     }
     wcInventoryRenderStageV1068(editor, normalized);
   }
-  async function wcInventoryPersistRealtimeV1069(editor, state, options = {}) {
+  async function wcInventoryPersistRealtimeV1069(editor, state) {
     const playerId=wcInventoryTargetPlayerIdV1069(editor);
     if(!playerId || !(App.state?.users?.[playerId]||PLAYER_TEMPLATES?.[playerId]))return{ok:true,status:'new-player'};
     const normalized=wcInventoryStateFromEditorV1069(editor,state);
-    wcInventoryApplyLocalV1069(playerId,normalized);
+    clearTimeout(editor.__wcInventoryRealtimeTimerV1069);
+    editor.__wcInventoryRealtimeTimerV1069 = 0;
+    const online = PlayerSync.shouldIsolateUsersFromSnapshot() && window.electronAPI?.patchPlayer;
+    if (!online) wcInventoryApplyLocalV1069(playerId,normalized);
     const result=await PlayerSync.pushPlayerPatch(playerId,wcInventoryPatchV1069(normalized),{notice:null,rerender:false});
     wcInventoryRefreshEditorFromPlayerV1069(playerId);return result;
   }
@@ -22851,18 +22896,19 @@ function legacyRegionMapsV181() {
     return result;
   };
 
-  let wcInventoryDragV1068 = null;
   document.addEventListener('dragstart', event => {
     const node = event.target?.closest?.('[data-wc-inventory-drag-v1068]');
     if (!node) return;
-    wcInventoryDragV1068 = { source:String(node.dataset.source||''), itemId:String(node.dataset.itemId||''), unitIndex:intNonNegativeV1067(node.dataset.unitIndex,-1), slotType:String(node.dataset.slotType||''), slotIndex:Number(node.dataset.slotIndex??-1) };
+    wcInventoryDragV1068 = { playerId:Configurator.selectedId, source:String(node.dataset.source||''), itemId:String(node.dataset.itemId||''), unitIndex:intNonNegativeV1067(node.dataset.unitIndex,-1), slotType:String(node.dataset.slotType||''), slotIndex:Number(node.dataset.slotIndex??-1) };
     event.dataTransfer.effectAllowed='move';
     try { event.dataTransfer.setData('text/plain',wcInventoryDragV1068.itemId); } catch {}
     node.classList.add('inventory-dragging-v1067');
   });
   document.addEventListener('dragend', event => {
     event.target?.closest?.('[data-wc-inventory-drag-v1068]')?.classList.remove('inventory-dragging-v1067');
+    const drag = wcInventoryDragV1068;
     wcInventoryDragV1068=null;
+    if (drag) wcInventoryRefreshEditorFromPlayerV1069(Configurator.selectedId);
   });
   document.addEventListener('dragover', event => {
     if (!wcInventoryDragV1068) return;
@@ -22871,7 +22917,7 @@ function legacyRegionMapsV181() {
   document.addEventListener('drop', async event => {
     if (!wcInventoryDragV1068) return;
     const editor=event.target?.closest?.('[data-wc-inventory-editor-v1068]');
-    if (!editor) return;
+    if (!editor || wcInventoryDragV1068.playerId !== Configurator.selectedId) return;
     const grid=event.target?.closest?.('[data-wc-inventory-grid-v1068]');
     const slot=event.target?.closest?.('[data-wc-inventory-slot-v1068]');
     const pool=event.target?.closest?.('[data-wc-inventory-pool-drop-v1068]');
@@ -22931,15 +22977,10 @@ function legacyRegionMapsV181() {
     } catch (error) { Toast.show(error.message||String(error),'err'); }
   });
   document.addEventListener('input', event => {
-    const search=event.target?.closest?.('[data-wc-inventory-pool-search-v1068]');
+    const search=event.target?.closest?.(wcInventoryPoolSearch);
     if (search) {
-      const q=String(search.value||'').trim().toLowerCase();
-      const editor=search.closest('[data-wc-inventory-editor-v1068]');
-      const terms=q.replace(/ё/g,'е').split(/\s+/).filter(Boolean);
-      editor?.querySelectorAll?.('.wc-inventory-pool-item-v1068').forEach(node=>{
-        const text=String(node.dataset.search||'').replace(/ё/g,'е');
-        node.hidden=!terms.every(term=>text.includes(term));
-      });
+      filterWcInventoryPool(search);
+      search.closest('[data-wc-inventory-editor-v1068]').querySelector(wcInventoryPoolList).scrollTop = 0;
       return;
     }
     if (!['inventorySize','carryWeightMax','implantSlotCount'].includes(event.target?.name)) return;
@@ -22954,6 +22995,7 @@ function legacyRegionMapsV181() {
     wcInventoryRenderStageV1068(editor,state);
     clearTimeout(editor.__wcInventoryRealtimeTimerV1069);
     editor.__wcInventoryRealtimeTimerV1069 = setTimeout(() => {
+      editor.__wcInventoryRealtimeTimerV1069 = 0;
       wcInventoryPersistRealtimeV1069(editor, wcInventoryReadStateV1068(editor)).catch(error => Toast.show(error?.message || String(error), 'err'));
     }, 260);
   });
@@ -23007,7 +23049,7 @@ function legacyRegionMapsV181() {
       if(!entry&&qty>0){entry={itemId,qty:0,positions:[]};state.inventory.push(entry);}
       if(entry){entry.positions=Array.isArray(entry.positions)?entry.positions:[];if(qty>entry.qty)window.GRPGItemInstancesV215.add(entry,qty-entry.qty,itemForInventoryV1067(itemId),()=>crypto.randomUUID());else entry.qty=qty;if(qty<=0)state.inventory=state.inventory.filter(row=>row!==entry);else{entry.positions=entry.positions.slice(0,qty);while(entry.positions.length<qty)entry.positions.push(null);}}
       const validated=wcInventoryCloneAndValidateV1068(state);wcInventoryRenderStageV1068(editor,validated);await wcInventoryPersistRealtimeV1069(editor,validated);
-    }catch(error){wcInventoryRenderStageV1068(editor,before);Toast.show(error.message||String(error),'err');}
+    }catch(error){input.value=String(itemOwnedQtyV1067(before,itemId));wcInventoryRenderStageV1068(editor,before);Toast.show(error.message||String(error),'err');}
   });
 
   // Keep market purchases within the configured weight and grid capacity.
