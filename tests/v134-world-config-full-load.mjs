@@ -286,6 +286,21 @@ assert.ok(descriptionButton);
 descriptionButton.click();
 assert.deepEqual(Array.from(w.itemDescriptionArgs),['item','stack_ammo',true]);
 run("App.currentUserId='gm'");
+run(`
+ Configurator.insertEntity('equipment',{id:'charged_kit',type:'gear',name:'Набор',chargesMax:3,mass:0.5});
+ App.state.users.pool_player.inventory=[{itemId:'charged_kit',qty:1,instancesV215:[{id:'kit-a',chargesMax:3,charges:2}]}];
+ Configurator.render();
+ window.checkProfileStacks();
+`);
+for (const rootSelector of ['#profile-content','#config-editor-form']) {
+ assert.equal(w.document.querySelector(rootSelector+' .inventory-charge-count')?.textContent,'2/3');
+}
+const chargeInput = w.document.querySelector('[data-wc-charges-value]');
+chargeInput.value='0';
+w.document.querySelector('[data-wc-charges-save]').click();
+await new Promise(resolve=>setTimeout(resolve,50));
+assert.equal(run("App.state.users.pool_player.inventory[0].instancesV215[0].charges"),0);
+assert.equal(w.document.querySelector('#config-editor-form .inventory-charge-count')?.textContent,'0/3');
 assert.equal(w.notices.some(n=>n.type==='err'),false,JSON.stringify(w.notices));
 assert.deepEqual(errors,[]);
 await w.happyDOM.abort();fs.rmSync(scratch,{recursive:true,force:true});

@@ -21065,9 +21065,10 @@ function legacyRegionMapsV181() {
       <div class="item-specific-v1052 ${isShield ? '' : 'hidden'}" data-for-item="shield">
         <div class="small-note">Щит занимает слот основного оружия. Его бонус не складывается с укрытием.</div>
         <div class="cols2"><div class="field"><label>Бонус физического щита</label><input class="input" type="number" min="0" step="1" name="shieldCoverBonusV122" value="${Number(item.shieldCoverBonus || 0)}" /></div><div class="field"><label>Предел Ловкости</label><input class="input" type="number" min="0" step="1" name="shieldDexterityCapV122" value="${item.shieldDexterityCap ?? ''}" placeholder="без ограничения" /></div></div>
+        <div class="field"><label>Бонус изученного навыка</label><input class="input" type="number" step="1" name="weaponSkillBonusV122" value="${Number(item.weaponSkillBonus || 0)}" /></div>
         ${requirementInputsV1052(item)}
       </div>
-      <div class="item-specific-v1052 ${isGrenade ? '' : 'hidden'}" data-for-item="grenade"><div class="cols3"><div class="field"><label>Урон</label><input class="input" name="damage" value="${esc(item.damage || '')}" placeholder="например 3d6" /></div><div class="field"><label>Дальность броска (гексы)</label><input class="input" type="number" min="0" step="1" name="grenadeRange" value="${Number(item.grenadeRange || 0)}" /></div><div class="field"><label>Радиус поражения (гексы)</label><input class="input" type="number" min="0" step="1" name="grenadeRadius" value="${Number(item.grenadeRadius || 0)}" /></div></div><div class="small-note">Дальность броска и радиус поражения задаются в гексах. Один бросок расходует один экземпляр гранаты из инвентаря.</div></div>
+      <div class="item-specific-v1052 ${isGrenade ? '' : 'hidden'}" data-for-item="grenade"><div class="cols3"><div class="field"><label>Дальность броска (гексы)</label><input class="input" type="number" min="0" step="1" name="grenadeRange" value="${Number(item.grenadeRange || 0)}" /></div><div class="field"><label>Радиус поражения (гексы)</label><input class="input" type="number" min="0" step="1" name="grenadeRadius" value="${Number(item.grenadeRadius || 0)}" /></div></div><div class="small-note">Дальность броска и радиус поражения задаются в гексах. Один бросок расходует один экземпляр гранаты из инвентаря.</div></div>
       <div class="item-specific-v1052 ${isTurret ? '' : 'hidden'}" data-for-item="turret">${unitCombatItemFieldsV105(item, 'Турель')}</div>
       <div class="item-specific-v1052 ${isDrone ? '' : 'hidden'}" data-for-item="drone">${unitCombatItemFieldsV105(item, 'Дрон')}</div>
       <div class="item-specific-v1052 ${isArmor ? '' : 'hidden'}" data-for-item="armor"><div class="field"><label>Класс брони</label><input class="input" type="number" min="0" name="armorClass" value="${Number(item.armorClass || 0)}" /></div>${requirementInputsV1052(item)}</div>
@@ -21204,6 +21205,7 @@ function legacyRegionMapsV181() {
       return draftOrigin;
     }
     if (type === 'equipment') {
+      const previous = this.getSelectedEntity();
       const itemType = mapLegacyItemTypeV1052(formData.get('type'));
       const entity = normalizeEquipmentItemV2({
         id: slugifyId(formData.get('id') || formData.get('name') || '', 'item'),
@@ -21211,7 +21213,7 @@ function legacyRegionMapsV181() {
         creationCost: clamp(Math.max(0, Number(formData.get('creationCost') || 0)), 0, 10), availableAsStarting: formData.get('availableAsStarting') === 'on',
         tags: parseListEditor(formData.get('tags') || ''), relatedArticleIds: getCheckedValues(formEl, 'relatedArticleIds'),
         visibility: { playerIds: getCheckedValues(formEl, 'visibilityPlayerIds'), campaignIds: getCheckedValues(formEl, 'visibilityCampaignIds'), eraIds: getCheckedValues(formEl, 'visibilityEraIds') },
-        damage: ['weapon','grenade','turret','drone'].includes(itemType) ? String(formData.get('damage') || '').trim() : '',
+        damage: itemType === 'grenade' ? (previous?.type === 'grenade' ? previous.damage || '' : '') : ['weapon','turret','drone'].includes(itemType) ? String(formData.get('damage') || '').trim() : '',
         hitBonus: ['weapon','turret','drone'].includes(itemType) ? Number(formData.get('hitBonus') || 0) : 0,
         range: ['weapon','turret','drone'].includes(itemType) ? Math.max(0, Number(formData.get('range') || 0)) : 0,
         weaponSlot: itemType === 'weapon' ? String(formData.get('weaponSlot') || 'primary') : '',
@@ -22457,7 +22459,7 @@ function legacyRegionMapsV181() {
   function inventoryGridMarkupV1067(user) {
     const layout = buildInventoryLayoutV1067(user);
     const cells = Array.from({ length: layout.size }, (_, index) => `<div class="inventory-grid-cell-v1067" style="grid-column:${(index % layout.cols) + 1};grid-row:${Math.floor(index / layout.cols) + 1}" data-cell-index="${index}"></div>`).join('');
-    const tiles = layout.instances.map(instance => `<div class="inventory-tile-v1067 profile-inventory-tile" draggable="true" data-inventory-drag-v1067 data-source="grid" data-item-id="${esc(instance.itemId)}" data-unit-index="${instance.unitIndex}" data-entity="item" data-id="${esc(instance.itemId)}" style="grid-column:${instance.pos.x + 1}/span ${instance.w};grid-row:${instance.pos.y + 1}/span ${instance.h}" title="${esc(instance.item.name || instance.itemId)} · ${instance.w}×${instance.h} · ${itemMassV1067(instance.item)} веса">${renderThumb(instance.item,{size:'sm',type:'item',glyph:initials(instance.item.name,'▣')})}<span>${esc(instance.item.name||instance.itemId)}</span><small class="inventory-stack-count" ${instance.item.stackable ? '' : 'hidden'}>${instance.item.stackable ? `${instance.qty}/${instance.stackLimit}` : ''}</small></div>`).join('');
+    const tiles = layout.instances.map(instance => `<div class="inventory-tile-v1067 profile-inventory-tile" draggable="true" data-inventory-drag-v1067 data-source="grid" data-item-id="${esc(instance.itemId)}" data-unit-index="${instance.unitIndex}" data-entity="item" data-id="${esc(instance.itemId)}" style="grid-column:${instance.pos.x + 1}/span ${instance.w};grid-row:${instance.pos.y + 1}/span ${instance.h}" title="${esc(instance.item.name || instance.itemId)} · ${instance.w}×${instance.h} · ${itemMassV1067(instance.item)} веса">${renderThumb(instance.item,{size:'sm',type:'item',glyph:initials(instance.item.name,'▣')})}<span>${esc(instance.item.name||instance.itemId)}</span><small class="inventory-stack-count" ${instance.item.stackable ? '' : 'hidden'}>${instance.item.stackable ? `${instance.qty}/${instance.stackLimit}` : ''}</small>${window.GRPGItemInstancesV215.chargeBadge(user,instance.itemId,instance.unitIndex)}</div>`).join('');
     const overflow = layout.overflow.length ? `<div class="inventory-overflow-v1067"><b>Не помещается: ${layout.overflow.length}</b>${layout.overflow.map(instance=>`<span>${esc(instance.item.name||instance.itemId)} (${instance.w}×${instance.h})</span>`).join('')}</div>` : '';
     return `<div class="inventory-grid-v1067" data-inventory-grid-v1067 style="--inv-cols:${layout.cols};--inv-rows:${layout.rows}">${cells}${tiles}</div>${overflow}`;
   }
@@ -22659,7 +22661,7 @@ function legacyRegionMapsV181() {
   function wcInventoryGridMarkupV1068(user) {
     const layout = buildInventoryLayoutV1067(user);
     const cells = Array.from({length:layout.size},(_,index)=>`<div class="inventory-grid-cell-v1067" style="grid-column:${(index%layout.cols)+1};grid-row:${Math.floor(index/layout.cols)+1}" data-cell-index="${index}"></div>`).join('');
-    const tiles = layout.instances.map(instance=>`<div class="inventory-tile-v1067 wc-inventory-tile-v1068" draggable="true" data-wc-inventory-drag-v1068 data-source="grid" data-item-id="${esc(instance.itemId)}" data-unit-index="${instance.unitIndex}" style="grid-column:${instance.pos.x+1}/span ${instance.w};grid-row:${instance.pos.y+1}/span ${instance.h}" title="${esc(instance.item.name||instance.itemId)} · ${instance.w}×${instance.h} · ${itemMassV1067(instance.item)} веса">${renderThumb(instance.item,{size:'sm',type:'item',glyph:initials(instance.item.name,'▣')})}<span>${esc(instance.item.name||instance.itemId)}</span><small class="inventory-stack-count" ${instance.item.stackable ? '' : 'hidden'}>${instance.item.stackable ? `${instance.qty}/${instance.stackLimit}` : ''}</small></div>`).join('');
+    const tiles = layout.instances.map(instance=>`<div class="inventory-tile-v1067 wc-inventory-tile-v1068" draggable="true" data-wc-inventory-drag-v1068 data-source="grid" data-item-id="${esc(instance.itemId)}" data-unit-index="${instance.unitIndex}" style="grid-column:${instance.pos.x+1}/span ${instance.w};grid-row:${instance.pos.y+1}/span ${instance.h}" title="${esc(instance.item.name||instance.itemId)} · ${instance.w}×${instance.h} · ${itemMassV1067(instance.item)} веса">${renderThumb(instance.item,{size:'sm',type:'item',glyph:initials(instance.item.name,'▣')})}<span>${esc(instance.item.name||instance.itemId)}</span><small class="inventory-stack-count" ${instance.item.stackable ? '' : 'hidden'}>${instance.item.stackable ? `${instance.qty}/${instance.stackLimit}` : ''}</small>${window.GRPGItemInstancesV215.chargeBadge(user,instance.itemId,instance.unitIndex)}</div>`).join('');
     const overflow = layout.overflow.length ? `<div class="inventory-overflow-v1067"><b>Не помещается: ${layout.overflow.length}</b>${layout.overflow.map(instance=>`<span>${esc(instance.item.name||instance.itemId)} (${instance.w}×${instance.h})</span>`).join('')}</div>` : '';
     return `<div class="inventory-grid-v1067 wc-inventory-grid-v1068" data-wc-inventory-grid-v1068 style="--inv-cols:${layout.cols};--inv-rows:${layout.rows}">${cells}${tiles}</div>${overflow}`;
   }
@@ -22671,10 +22673,13 @@ function legacyRegionMapsV181() {
         const control = copy.durabilityMax > 0
           ? `<input class="input" type="number" min="0" max="${copy.durabilityMax}" step="1" value="${copy.durability}" data-wc-durability-value-v215 aria-label="Прочность ${label}"><span>/ ${copy.durabilityMax}</span><button type="button" class="secondary" data-wc-durability-save-v215="${esc(copy.id)}">Записать</button>`
           : '<span>Предел прочности не задан</span>';
-        return `<div class="row" data-wc-durability-row-v215><b title="${esc(copy.id)}">${label}</b>${copy.slot?'<span>Экипирован</span>':''}${copy.broken?'<span>Сломан</span>':''}${control}</div>`;
+        const charges = copy.chargesMax > 0
+          ? `<label>Заряды <input class="input" type="number" min="0" max="${copy.chargesMax}" step="1" value="${copy.charges}" data-wc-charges-value aria-label="Заряды ${label}"></label><span>/ ${copy.chargesMax}</span><button type="button" class="secondary" data-wc-charges-save="${esc(copy.id)}">Записать заряды</button>`
+          : '';
+        return `<div class="row" data-wc-durability-row-v215><b title="${esc(copy.id)}">${label}</b>${copy.slot?'<span>Экипирован</span>':''}${copy.broken?'<span>Сломан</span>':''}${control}${charges}</div>`;
       });
     });
-    return rows.length ? `<div class="section-title">Прочность экземпляров</div><p class="small-note">0 — предмет сломан. После ремонта укажите новую прочность.</p>${rows.join('')}` : '';
+    return rows.length ? `<div class="section-title">Прочность и заряды экземпляров</div><p class="small-note">0 — предмет сломан. После ремонта укажите новую прочность.</p>${rows.join('')}` : '';
   }
   const wcStashBusy = new Set();
   let wcItemMenu;
@@ -23172,25 +23177,34 @@ function legacyRegionMapsV181() {
   });
 
   document.addEventListener('click', async event => {
-    const button = event.target?.closest?.('[data-wc-durability-save-v215]');
+    const button = event.target?.closest?.('[data-wc-durability-save-v215],[data-wc-charges-save]');
     const editor = button?.closest('[data-wc-inventory-editor-v1068]');
     if (!editor || wcStashBusy.has(wcStashKey(wcInventoryTargetPlayerIdV1069(editor))) || !['gm','dm','master'].includes(String(App.currentUser?.role || '').toLowerCase())) return;
     const playerId = wcInventoryTargetPlayerIdV1069(editor);
     const player = App.state.users?.[playerId];
     const state = player ? wcInventoryStateV1068(player) : wcInventoryReadStateV1068(editor);
-    const id = button.dataset.wcDurabilitySaveV215;
+    const editingCharges = button.hasAttribute('data-wc-charges-save');
+    const id = editingCharges ? button.dataset.wcChargesSave : button.dataset.wcDurabilitySaveV215;
     const entry = state.inventory.find(row => row.instancesV215?.some(copy => copy.id === id));
     const copy = entry?.instancesV215.find(row => row.id === id);
-    const value = button.closest('[data-wc-durability-row-v215]')?.querySelector('[data-wc-durability-value-v215]')?.value;
+    const value = button.closest('[data-wc-durability-row-v215]')?.querySelector(editingCharges ? '[data-wc-charges-value]' : '[data-wc-durability-value-v215]')?.value;
     button.disabled = true;
     try {
       if (!copy) throw Error('Экземпляр больше не находится в инвентаре');
-      if (value == null || value === '') throw Error('Укажите текущую прочность');
-      window.GRPGItemInstancesV215.repair(copy, itemForInventoryV1067(entry.itemId), value);
+      if (editingCharges) {
+        const charges = Number(value);
+        if (!value || !copy.chargesMax || !Number.isInteger(charges) || charges < 0 || charges > copy.chargesMax) {
+          throw Error('Укажите целое число зарядов от 0 до ' + copy.chargesMax);
+        }
+        copy.charges = charges;
+      } else {
+        if (value == null || value === '') throw Error('Укажите текущую прочность');
+        window.GRPGItemInstancesV215.repair(copy, itemForInventoryV1067(entry.itemId), value);
+      }
       if (player) {
         if (PlayerSync.shouldIsolateUsersFromSnapshot() && window.electronAPI?.patchPlayer) {
           const result = await PlayerSync.pushPlayerPatch(playerId, {inventory:state.inventory}, {rerender:false});
-          if (!result?.ok) throw Error(result?.message || 'Прочность не сохранена');
+          if (!result?.ok) throw Error(result?.message || 'Изменение экземпляра не сохранено');
         } else {
           App.state.users[playerId] = normalizePlayerProfileV2({...player, inventory:state.inventory});
           PLAYER_TEMPLATES[playerId] = deep(App.state.users[playerId]);
@@ -23201,7 +23215,7 @@ function legacyRegionMapsV181() {
       } else {
         wcInventoryRenderStageV1068(editor, state);
       }
-      Toast.show('Прочность сохранена', 'ok');
+      Toast.show(editingCharges ? 'Заряды сохранены' : 'Прочность сохранена', 'ok');
     } catch (error) {
       Toast.show(error.message || String(error), 'err');
     } finally {

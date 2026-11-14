@@ -120,3 +120,7 @@ html[data-era-theme="technological"] .character-sheet-v142 .entity-thumb.fallbac
   font: bold 10px/1.2 system-ui, sans-serif;
   pointer-events: none;
 }
+
+.character-sheet-v142 :is(.web-inventory-tile-v1067,.inventory-tile-v1067,.web-inventory-slot-item-v1067,.inventory-slot-item-v1067) {
+  position: relative;
+}
