@@ -391,7 +391,7 @@
         if(pos)pos={x:i(pos.x),y:i(pos.y)};
         if(!pos||!fits(total,occupied,pos.x,pos.y,w,h))pos=firstFit(total,occupied,w,h);
         const stackQty=item.stackable?Math.min(stackLimit,remaining-k*stackLimit):1;
-        const instance={key:`${entry.itemId}:${unitIndex}`,itemId:entry.itemId,item,entry,unitIndex,qty:stackQty,w,h,pos};
+        const instance={key:`${entry.itemId}:${unitIndex}`,itemId:entry.itemId,item,entry,unitIndex,qty:stackQty,stackLimit,w,h,pos};
         if(pos){mark(occupied,pos.x,pos.y,w,h);instances.push(instance);}else overflow.push(instance);
       }
     });
@@ -493,20 +493,15 @@
   function signed(v){v=n(v,0);return `${v>=0?'+':''}${Number.isInteger(v)?v:v.toFixed(1)}`;}
   function slotCard(user,slot,label,index=-1){
     const id=slot==='implant'?user.implantSlots?.[index]:user.equipmentSlots?.[slot],item=inventoryItem(id),filled=!!id;
-    let subtitle='';
-    if(filled&&item.type==='weapon'){
-      const hit=weaponAttack(user,item);
-      subtitle=`Попадание ${signed(hit?.bonus||0)} · урон ${item.damage||'—'}${hit?.damageBonus?` ${signed(hit.damageBonus)}`:''} · ${item.range||0} гекс.`;
-    }else if(filled) subtitle=arr(item.modifiers).length?`${item.modifiers.length} модиф.`:(item.type||'предмет');
     return `<div class="inventory-equip-slot-v1067 inventory-equip-slot-v115 ${filled?'filled':''}" data-slot-v113="${slot}" data-slot-index-v113="${index}">
       <div class="inventory-slot-label-v1067">${safe(label)}</div>
-      ${filled?`<div class="inventory-slot-item-v1067" draggable="true" data-inv113-drag-slot data-slot-v113="${slot}" data-slot-index-v113="${index}" data-item-id="${safe(id)}" data-entity="item" data-id="${safe(id)}">${typeof renderThumb==='function'?renderThumb(item,{size:'sm',type:'item',glyph:initials(item.name,'▣')}):''}<span>${safe(item.name||id)}</span>${subtitle?`<small>${safe(subtitle)}</small>`:''}</div>`:'<div class="inventory-slot-empty-v1067">Перетащите предмет</div>'}
+      ${filled?`<div class="inventory-slot-item-v1067" draggable="true" data-inv113-drag-slot data-slot-v113="${slot}" data-slot-index-v113="${index}" data-item-id="${safe(id)}" data-entity="item" data-id="${safe(id)}" title="${safe(item.name||id)}">${typeof renderThumb==='function'?renderThumb(item,{size:'sm',type:'item',glyph:initials(item.name,'▣')}):''}<span>${safe(item.name||id)}</span></div>`:'<div class="inventory-slot-empty-v1067">Перетащите предмет</div>'}
     </div>`;
   }
   function gridMarkup(user){
     const l=layout(user);
     const cells=Array.from({length:l.total},(_,idx)=>`<div class="inventory-grid-cell-v1067" style="grid-column:${idx%5+1};grid-row:${Math.floor(idx/5)+1}"></div>`).join('');
-    const tiles=l.instances.map(x=>`<div class="inventory-tile-v1067 inventory-tile-v115" draggable="true" data-inv113-drag-grid data-item-id="${safe(x.itemId)}" data-unit-index="${x.unitIndex}" data-entity="item" data-id="${safe(x.itemId)}" style="grid-column:${x.pos.x+1}/span ${x.w};grid-row:${x.pos.y+1}/span ${x.h}" title="${safe(x.item.name)}">${typeof renderThumb==='function'?renderThumb(x.item,{size:'sm',type:'item',glyph:initials(x.item.name,'▣')}):''}<span>${safe(x.item.name)}</span><small>${x.w}×${x.h}${x.qty>1?` · ×${x.qty}`:''}</small></div>`).join('');
+    const tiles=l.instances.map(x=>`<div class="inventory-tile-v1067 inventory-tile-v115 profile-inventory-tile" draggable="true" data-inv113-drag-grid data-item-id="${safe(x.itemId)}" data-unit-index="${x.unitIndex}" data-entity="item" data-id="${safe(x.itemId)}" style="grid-column:${x.pos.x+1}/span ${x.w};grid-row:${x.pos.y+1}/span ${x.h}" title="${safe(x.item.name)}">${typeof renderThumb==='function'?renderThumb(x.item,{size:'sm',type:'item',glyph:initials(x.item.name,'▣')}):''}<span>${safe(x.item.name)}</span>${x.stackLimit>1?`<small class="inventory-stack-count" aria-label="${x.qty} из ${x.stackLimit}">${x.qty}/${x.stackLimit}</small>`:''}</div>`).join('');
     const overflow=l.overflow.length?`<div class="inventory-overflow-v1067"><b>Не помещается: ${l.overflow.length}</b></div>`:'';
     return `<div class="inventory-grid-v1067 inventory-grid-v115" data-inv113-grid style="--inv-cols:5;--inv-rows:${l.rows}">${cells}${tiles}</div>${overflow}`;
   }

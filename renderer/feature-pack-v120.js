@@ -228,6 +228,7 @@
     const selector='[data-item-id].inventory-slot-item-v1067,[data-item-id].inventory-tile-v1067,.wc-inventory-slot-item-v1068[data-item-id],.wc-inventory-tile-v1068[data-item-id]';
     const nodes=[...(root?.matches?.(selector)?[root]:[]),...Array.from(root?.querySelectorAll?.(selector)||[])],user=App.currentUser?normalizePlayerProfileV2(App.currentUser):null,api=window.GRPGFeaturePackV118;
     nodes.forEach(node=>{
+      if(node.matches('.profile-inventory-tile, .inventory-slot-item-v1067'))return;
       const item=itemById120(node.dataset.itemId||node.dataset.id);if(!item||!api?.itemInfoMarkup)return;
       const compact=node.classList.contains('inventory-tile-v1067')||node.classList.contains('wc-inventory-tile-v1068');
       const infoMarkup=api.itemInfoMarkup(item,user,compact);
@@ -239,7 +240,7 @@
       const hasInfo=Boolean(node.querySelector(':scope > .item-card-info-v118'));
       const hasDescription=Boolean(node.querySelector(':scope > .item-card-description-v120'));
       if(node.dataset.itemCardSignatureV123===signature&&hasInfo&&hasDescription===expectedDescription){node.title=title;return;}
-      node.querySelectorAll(':scope > small,:scope > .item-card-info-v118,:scope > .item-card-description-v120').forEach(child=>child.remove());
+      node.querySelectorAll(':scope > small:not(.inventory-stack-count),:scope > .item-card-info-v118,:scope > .item-card-description-v120').forEach(child=>child.remove());
       node.dataset.enhancedV118='1';node.classList.add('item-card-v118','item-card-v120');
       node.insertAdjacentHTML('beforeend',infoMarkup);
       if(!compact)node.insertAdjacentHTML('beforeend',`<div class="item-card-description-v120"${description?'':' aria-hidden="true"'}>${richDescription}</div>`);
