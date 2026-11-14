@@ -266,6 +266,26 @@ for (const rootSelector of ['#profile-content','#config-editor-form']) {
  const tiles=w.document.querySelectorAll(rootSelector+' [data-item-id="stack_ammo"] .inventory-stack-count');
  assert.deepEqual(Array.from(tiles,node=>node.textContent),['30/30','1/30'],rootSelector);
 }
+// The compact sheet CSS must suppress ordinary metadata while leaving counts visible.
+const profileCss = fs.readFileSync(path.join(root,'renderer/profile-sheet-v142.css'),'utf8');
+assert.equal(profileCss,fs.readFileSync(path.join(root,'deploy/site/app/profile-sheet-v142.css'),'utf8'));
+const tile = w.document.querySelector('#profile-content [data-inv113-drag-grid][data-item-id="stack_ammo"]');
+tile.closest('#profile-content').classList.add('character-sheet-v142');
+const count = tile.querySelector('.inventory-stack-count');
+const metadata = w.document.createElement('small');
+tile.appendChild(metadata);
+const hideMetadata = profileCss.split('\n').find(line=>line.includes('.item-modifiers-v118,small')).split('{')[0];
+assert.equal(metadata.matches(hideMetadata),true);
+assert.equal(count.matches(hideMetadata),false);
+metadata.remove();
+
+run("App.currentUserId='pool_player'; Wiki.showEntity=(...args)=>{window.itemDescriptionArgs=args;}");
+tile.click();
+const descriptionButton = [...w.document.querySelectorAll('.sheet-item-actions button')].find(button=>button.textContent==='Описание');
+assert.ok(descriptionButton);
+descriptionButton.click();
+assert.deepEqual(Array.from(w.itemDescriptionArgs),['item','stack_ammo',true]);
+run("App.currentUserId='gm'");
 assert.equal(w.notices.some(n=>n.type==='err'),false,JSON.stringify(w.notices));
 assert.deepEqual(errors,[]);
 await w.happyDOM.abort();fs.rmSync(scratch,{recursive:true,force:true});
