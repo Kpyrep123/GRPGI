@@ -706,3 +706,9 @@ body.combat-stability-v108 #gm-dock-btn {
     top: var(--shot-to-y);
   }
 }
+
+.battle-roster-list { display: grid; gap: .35rem; max-height: min(52vh, 30rem); overflow: auto; margin: .5rem 0 0; padding: 0; list-style: none; }
+.battle-roster-list li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem; padding: .5rem; border-bottom: 1px solid currentColor; }
+.battle-roster-list li[hidden] { display: none; }
+.battle-roster-list small { display: block; margin-top: .15rem; }
+.battle-roster-actions { display: flex; flex-wrap: wrap; gap: .25rem; }

@@ -12,7 +12,14 @@ try{const page=await browser.newPage({viewport:{width:1700,height:1050},reducedM
 
 
  const wait=async()=>page.waitForFunction(()=>!test191.local.commandBusy191&&!test191.local.lua119.busy&&!test191.local.store.operations194?.active);
- const membership=async(pid,action)=>{await page.locator('[data-lifecycle193="membership"]').click();await page.locator('[name="member194"]').selectOption(pid);await page.locator('[name="membership194"]').selectOption(action);await page.locator('.scene-lua-modal-v119 button[type="submit"]').click();await wait();};
+ const membership=async(pid,action)=>{
+   await page.locator('[data-lifecycle193="membership"]').click();
+   await page.locator(`[data-roster-id="${pid}"][data-roster-action="${action}"]`).click();
+   if(action==='delete')await page.getByRole('button',{name:'УДАЛИТЬ',exact:true}).click();
+   await page.locator('[data-roster-search]').waitFor();
+   await page.locator('[data-lua-decline-v119]').click();
+   await wait();
+ };
  await page.evaluate(()=>{const a=Combat.getRuntime().tokens[0];a.actionUsed=true;a.movedThisTurn=3;a.reactionUsedV119=true;a.weaponMagazinesV118.w.loaded=2;test191.collectStoreFromRuntime();});
  const ids=await page.evaluate(()=>Object.fromEntries(Object.entries(test191.local.store.session193.participants).map(([pid,t])=>[t.id,pid]))),aBefore=await page.evaluate(()=>{const a=Combat.getRuntime().tokens[0];return[a.hpCurrent,a.actionUsed,a.movedThisTurn,a.reactionUsedV119,a.weaponMagazinesV118.w.loaded];});
  // Non-current withdrawal and return never refresh any resource; the same initiative keeps its current owner.
@@ -33,5 +40,11 @@ try{const page=await browser.newPage({viewport:{width:1700,height:1050},reducedM
  await page.locator('[data-battle-mode191]').click();await wait();const cPid=await page.evaluate(()=>Object.entries(test191.local.store.session193.participants).find(([,t])=>t.id==='c')[0]);await membership(cPid,'withdraw');assert.equal(await page.evaluate(()=>Combat.getRuntime().pendingTurnStart193),'a');await page.locator('[data-battle-mode191]').click();await wait();assert.equal(await page.evaluate(()=>Combat.getCurrentTurnToken().id),'a');assert.equal(await page.evaluate(()=>Combat.getCurrentTurnToken().actionUsed),false);assert.equal(await page.evaluate(()=>Combat.getCurrentTurnToken().weaponMagazinesV118.w.loaded),2);assert.equal(await page.evaluate(()=>Combat.getRuntime().tokens.find(t=>t.id==='c').hpCurrent),8);
  // Withdrawing the last living participant leaves an empty initiative; return does not run a free extra start.
  await membership(ids.a,'withdraw');assert.equal(await page.evaluate(()=>Combat.getRuntime().initiativeOrder.length),0);await membership(cPid,'return');assert.equal(await page.evaluate(()=>Combat.getCurrentTurnToken().id),'c');assert.equal(await page.evaluate(()=>Combat.getCurrentTurnToken().hpCurrent),8);
+ await membership(cPid,'delete');
+ assert.equal(await page.evaluate(pid=>Boolean(test191.local.store.session193.participants[pid]),cPid),false);
+ assert.equal(await page.evaluate(()=>Combat.getRuntime().tokens.some(t=>t.id==='c')),false);
+ assert.equal(await page.evaluate(()=>Combat.getRuntime().initiativeOrder.includes('c')),false);
+ await page.evaluate(()=>{const saved=structuredClone(test191.collectStoreFromRuntime());test191.applyStore(saved);Combat.render();});
+ assert.equal(await page.evaluate(pid=>Boolean(test191.local.store.session193.participants[pid]),cPid),false);
  await page.screenshot({path:'/tmp/combat-membership194.png'});assert.deepEqual(errors,[]);console.log('PASS withdrawal/reentry of present and missing actors, unchanged resources, saved membership, deferred lethal damage, successor start once and Lua failure rollback/retry');
 }finally{await browser.close();}
