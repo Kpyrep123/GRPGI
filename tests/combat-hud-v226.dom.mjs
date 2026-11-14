@@ -60,6 +60,22 @@ try{
  assert.equal(dimensions.boardWidth/24,dimensions.boardHeight/20,'world-space token dimensions use the same pixel scale');
  assert(q('#mod-combat').classList.contains('tactical-layout-v227'));
  assert(q('#combat-stage .scene-grid-lines-v232'),'the DM grid renders one path');
+ const presentation=w.GRPGCombatPresentationV227;
+ const map={width:40,height:20},start={x:4,y:8},target={x:12,y:8};
+ assert.equal(presentation.projectile(map,start,target,true).x,12);
+ const miss=presentation.projectile(map,start,target,false);
+ assert.equal(miss.x,40);
+ assert(miss.y>target.y);
+ const mirror=presentation.camera(40,20,{viewportWidth:900,viewportHeight:300,boardWidth:600,zoom:2,panX:70,panY:-40},1200,800);
+ assert.equal(mirror.boardWidth,800);
+ assert.equal(mirror.zoom,2);
+ assert(Math.abs(mirror.panX-70*4/3)<1e-8);
+ const full=presentation.camera(40,20,{zoom:3,panX:17},1200,800,true);
+ assert.deepEqual([full.boardWidth,full.boardHeight,full.zoom,full.panX],[1200,600,1,0]);
+ click('[data-player-camera247]');
+ assert.equal(api.buildCombatSnapshot104('s').scene.playerCameraMode247,'full');
+ click('[data-player-camera247]');
+
  const grid=w.GRPGUnitSizeV184;
  const screenStroke=(size,zoom)=>grid.gridStroke(size,size,800,800,zoom)*800/size*zoom;
  assert(screenStroke(80,1)<screenStroke(24,1),'denser hexes use thinner screen strokes');
