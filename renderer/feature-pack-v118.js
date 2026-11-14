@@ -139,12 +139,13 @@
     const selector='[data-item-id].inventory-slot-item-v1067,[data-item-id].inventory-tile-v1067,.wc-inventory-slot-item-v1068[data-item-id],.wc-inventory-tile-v1068[data-item-id]';
     const targets=[...(root.matches?.(selector)?[root]:[]),...Array.from(root.querySelectorAll?.(selector)||[])];
     targets.forEach(node=>{
+      if(node.matches('.profile-inventory-tile, .inventory-slot-item-v1067'))return;
       if(node.dataset.enhancedV118==='1')return;
       const item=itemById(node.dataset.itemId||node.dataset.id);
       if(!item)return;
       node.dataset.enhancedV118='1';
       node.classList.add('item-card-v118');
-      node.querySelectorAll(':scope > small').forEach(summary=>summary.remove());
+      node.querySelectorAll(':scope > small:not(.inventory-stack-count)').forEach(summary=>summary.remove());
       node.insertAdjacentHTML('beforeend',itemInfoMarkup(item,user,node.classList.contains('inventory-tile-v1067')));
       const full=[item.name,...list(item.modifiers).map(modifierText)].filter(Boolean).join('\n');
       if(full)node.title=full;

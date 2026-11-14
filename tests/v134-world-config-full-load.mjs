@@ -248,6 +248,24 @@ assert.equal(run(`
  })()
 `),true);
 
+// The desktop profile uses the Stats Engine's own renderer, separate from World Config.
+run(`
+ Configurator.insertEntity('equipment',{id:'stack_ammo',type:'ammo',name:'Патроны',stackLimit:30,mass:0.01});
+ const stackPlayer=App.state.users.pool_player;
+ stackPlayer.inventory=[{itemId:'stack_ammo',qty:31}];
+ window.checkProfileStacks=()=>{
+   const account=App.currentUserId;
+   App.currentUserId='pool_player';
+   try { UI.renderProfile(); }
+   finally { App.currentUserId=account; }
+ };
+ Configurator.render();
+ window.checkProfileStacks();
+`);
+for (const rootSelector of ['#profile-content','#config-editor-form']) {
+ const tiles=w.document.querySelectorAll(rootSelector+' [data-item-id="stack_ammo"] .inventory-stack-count');
+ assert.deepEqual(Array.from(tiles,node=>node.textContent),['30/30','1/30'],rootSelector);
+}
 assert.equal(w.notices.some(n=>n.type==='err'),false,JSON.stringify(w.notices));
 assert.deepEqual(errors,[]);
 await w.happyDOM.abort();fs.rmSync(scratch,{recursive:true,force:true});
