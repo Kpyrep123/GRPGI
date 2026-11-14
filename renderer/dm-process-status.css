@@ -1,0 +1,21 @@
+#dm-process-status {
+  position: fixed;
+  inset: 4px auto auto 6px;
+  z-index: 2147483647;
+  margin: 0;
+  padding: 2px 5px;
+  border: 0;
+  border-radius: 3px;
+  background: rgba(10, 14, 20, .86);
+  color: #edf3fb;
+  font: 11px/1.3 system-ui, sans-serif;
+  max-width: calc(100vw - 12px);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+
+#dm-process-status::backdrop {
+  pointer-events: none;
+}
