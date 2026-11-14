@@ -21050,11 +21050,15 @@ function legacyRegionMapsV181() {
     const isArmor = item.type === 'armor';
     const isImplant = item.type === 'implant';
     const isStock = item.type === 'stock';
+    const shotSounds = (window.CombatAudioV37?.sections || []).flatMap(section => section.sounds || []);
+    const shotSoundId = String(item.shotSoundId247 || '');
+    const shotSoundField = `<div class="field"><label>Звук выстрела / атаки<select class="select" name="shotSoundId247"><option value="">Без звука</option>${shotSoundId&&!shotSounds.some(sound=>sound.id===shotSoundId)?`<option value="${esc(shotSoundId)}" selected>Звук недоступен на этом устройстве</option>`:''}${shotSounds.map(sound=>`<option value="${esc(sound.id)}" ${sound.id===shotSoundId?'selected':''}>${esc(sound.name||sound.id)}</option>`).join('')}</select></label></div>`;
     return `<form id="config-editor-form" class="form equipment-editor-v1052" data-entity-type="equipment" data-item-type="${esc(item.type)}">
       ${this.renderHeader(item, 'Предметы разделены на снаряжение, оружие, щиты, гранаты, турели, дроны, броню, импланты и акции.')}
       ${imageFieldMarkup(item, 'Изображение предмета')}
       <div class="cols3"><div class="field"><label>ID</label><input class="input" name="id" value="${esc(item.id)}" /></div><div class="field"><label>Категория</label><select class="select" name="type">${ITEM_TYPES_V1052.map(opt => `<option value="${opt.value}" ${opt.value === item.type ? 'selected' : ''}>${esc(opt.label)}</option>`).join('')}</select></div><div class="field"><label>Редкость</label><select class="select" name="rarity">${ITEM_RARITY_OPTIONS_V2.map(r => `<option value="${esc(r)}" ${r === item.rarity ? 'selected' : ''}>${esc(r)}</option>`).join('')}</select></div></div>
       <div class="field"><label>Название</label><input class="input" name="name" value="${esc(item.name || '')}" /></div>
+      ${shotSoundField}
       ${this.renderVisibilityField(item)}
       <div class="field"><label>Описание</label><textarea class="area" name="desc">${esc(item.desc || '')}</textarea></div>
       <div class="item-specific-v1052 ${isWeapon ? '' : 'hidden'}" data-for-item="weapon">
@@ -21209,6 +21213,7 @@ function legacyRegionMapsV181() {
       const itemType = mapLegacyItemTypeV1052(formData.get('type'));
       const entity = normalizeEquipmentItemV2({
         id: slugifyId(formData.get('id') || formData.get('name') || '', 'item'),
+        shotSoundId247: String(formData.get('shotSoundId247') || '').trim(),
         type: itemType, name: String(formData.get('name') || '').trim(), desc: String(formData.get('desc') || '').trim(), rarity: String(formData.get('rarity') || 'обычный').trim(), image,
         creationCost: clamp(Math.max(0, Number(formData.get('creationCost') || 0)), 0, 10), availableAsStarting: formData.get('availableAsStarting') === 'on',
         tags: parseListEditor(formData.get('tags') || ''), relatedArticleIds: getCheckedValues(formEl, 'relatedArticleIds'),

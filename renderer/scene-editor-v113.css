@@ -681,3 +681,17 @@ body.combat-stability-v108 #gm-dock-btn {
 .scene-instinct-note-v199{padding:9px 12px;margin:4px 0;border:1px solid #a88446;border-radius:5px;background:#332a17;color:#ecd9ad;font-size:13px;line-height:1.4}.scene-instinct-note-v199 p{margin:5px 0}.scene-instinct-note-v199.is-panic{border-color:#bd6252;background:#39221d;color:#ffcdc1}.scene-instinct-note-v199 button{margin-left:12px}
 
 .scene-instinct-panel-v199{max-height:150px;overflow:auto;flex-shrink:0;min-height:0}
+
+.combat-shot-layer { position: absolute; inset: 0; overflow: hidden; z-index: 65; pointer-events: none; }
+.combat-projectile {
+  position: absolute;
+  width: 6px;
+  height: 3px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: #fff5b4;
+  box-shadow: 0 0 5px 2px #ffb64f;
+}
+@media (prefers-reduced-motion: reduce) {
+  .combat-projectile { display: none; }
+}

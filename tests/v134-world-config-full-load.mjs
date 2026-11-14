@@ -48,6 +48,9 @@ function checkToolbar(){assert.equal(w.document.querySelectorAll('[data-world-js
 const expected={damage:'6',range:13,hitBonus:-3,unitHp:31,unitArmorClass:0,unitInitiative:-2,unitVisionRange:0,unitMoveRange:9,rapidFireShots:4};
 for(const type of ['drone','turret']){
  run(`Configurator.insertEntity('equipment',{id:${JSON.stringify(type)},type:${JSON.stringify(type)},name:'Test unit',unitHp:10,unitArmorClass:10});`);render('equipment',type);checkToolbar();
+ const soundSelect=w.document.querySelector('[name=shotSoundId247]');
+ assert.ok(soundSelect);
+ const sound=w.document.createElement('option');sound.value='fixture-shot';soundSelect.append(sound);soundSelect.value='fixture-shot';
  const form=w.document.getElementById('config-editor-form');form.querySelector('[name=type]').value=type;const block=form.querySelector(`[data-for-item="${type}"]`);assert.ok(block);
  for(const [name,value] of Object.entries(expected)){const field=name==='rapidFireShots'?'rapidFireShotsV129':name;const input=block.querySelector(`[name="${field}"]`);assert.ok(input,field);input.value=String(value);}
  // Prove the hidden earlier panel disagrees with the visible one.
@@ -55,6 +58,7 @@ for(const type of ['drone','turret']){
  w.currentForm=form;
  await run('Configurator.submit({preventDefault(){},currentTarget:window.currentForm})');
  const saved=JSON.parse(fs.readFileSync(path.join(scratch,'world.json'),'utf8')).equipment.EQUIPMENT[type];
+ assert.equal(saved.shotSoundId247,'fixture-shot');
  for(const [name,value] of Object.entries(expected))assert.equal(saved[name],value,`${type}.${name} on disk`);
  await run('window.electronAPI.loadWorldData().then(result=>applyWorldData(result.world))');render('equipment',type);checkToolbar();
  const reopened=w.document.querySelector(`[data-for-item="${type}"]`);

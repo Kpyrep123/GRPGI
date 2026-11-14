@@ -105,6 +105,7 @@
   const normalizeSceneBefore104 = normalizeCombatScene;
   normalizeCombatScene = function(scene = {}) {
     const next = normalizeSceneBefore104(scene);
+    next.playerCameraMode247=scene.playerCameraMode247==='full'?'full':'mirror';
     next.playerSides231=Object.fromEntries(Object.entries(scene.playerSides231||{}).filter(([,side])=>[90,180,270].includes(side)));
     next.category = String(scene.category || next.category || 'Общее').trim() || 'Общее';
     next.parentId = String(scene.parentId || next.parentId || '').trim();
@@ -1312,10 +1313,28 @@
   function assertShotAmmo238(attacker,weapon,ammo){
     if(loadedAmmo238(attacker,weapon)?.id!==ammo?.id)throw Error('Тип патронов изменился во время атаки. Объявите выстрел заново.');
   }
+  let shotSequence247=0;
+  const recentShots247=[];
+  function showShot247(attacker,{target,hit}){
+    const scene=Combat.getScene();
+    if(!scene||!target)return;
+    const presentation=window.GRPGCombatPresentationV227;
+    const start=centerOf(attacker),end=presentation.projectile(scene,start,centerOf(target),hit);
+    const shot={id:++shotSequence247,at:Date.now(),sceneId:scene.id,sourceTokenId:attacker.id,targetTokenId:target.id,start,end,duration:Math.max(160,Math.min(850,dist(start,end)*24))};
+    recentShots247.push(shot);
+    if(recentShots247.length>24)recentShots247.shift();
+    presentation.paintShots(document.getElementById('combat-stage'),scene,[shot]);
+    broadcastScene104();
+  }
   async function emitShot238(attacker,context,ammoSpent,state){
-    if(context.weapon?.weaponCategory==='melee')return;
+    if(context.weapon?.weaponCategory==='melee'){
+      if(context.weapon.shotSoundId247)audioApi()?.play?.(context.weapon.shotSoundId247);
+      return;
+    }
     const weaponSlot=context.weaponSlot||equippedEntriesV138(attacker).find(row=>row.item.id===context.weapon.id)?.slot||context.weapon.id;
     await emit204('OnShotFired',attacker,{...context,weaponSlot,ammoSpent},state);
+    if(context.weapon?.shotSoundId247)audioApi()?.play?.(context.weapon.shotSoundId247);
+    showShot247(attacker,context);
   }
   function compatibleAmmo120(token,weapon,{availableOnly=true,loadedTypeId=''}={}){
     const owner=tokenInventoryOwner120(isControlledDevice200(token)?operatorForDrone129(token):token),family=ammoFamily120(weapon),exact=String(weapon?.ammoTypeId||weapon?.ammunitionId||'');
@@ -2362,7 +2381,7 @@
   }
   function renderTactical226(scene,runtime){
     const current=Combat.getCurrentTurnToken?.(),selected=selectedToken104(),tokens=new Map(list(runtime.tokens).map(token=>[token.id,token]));
-    return `<div class="scene-tactical-v226"><header class="battle-top-v226"><div class="battle-title-v226"><small>БОЕВОЙ РЕЖИМ · РАУНД ${Math.max(1,num(runtime.round,1))}</small><b>${html(scene.name)}</b></div><div class="battle-top-actions-v226"><button type="button" data-battle-current226>ТЕКУЩИЙ ЮНИТ</button><button type="button" data-publish191>ПОКАЗАТЬ ИГРОКАМ</button><button type="button" data-battle-mode191>ПАУЗА БОЯ</button><button type="button" data-battle-tools226 aria-expanded="${Boolean(local.ui.battleTools226)}" aria-controls="battle-tools226">ИНСТРУМЕНТЫ ДМа</button></div></header><main class="battle-map-v226">${renderBoard104(scene,runtime,true)}<nav class="battle-order-v226 battle-order-overlay-v227" aria-label="Очередь ходов">${window.GRPGCombatPresentationV227.order(list(runtime.initiativeOrder).map(id=>tokens.get(id)).filter(Boolean),{currentId:current?.id,selectedId:selected?.id,interactive:true,showNpcHealth:true})}</nav><div class="battle-map-tools-v226">${actionButton('select','ВЫБОР')}${actionButton('pan','РУКА')}${actionButton('measure','ЛИНЕЙКА')}<button type="button" data-player-sides231>СТОРОНЫ ЭКРАНА</button><span>${html({height:'Обведите контур этажа',move:'Выберите гекс назначения',attack:'Выберите цель атаки',grenade:'Укажите точку броска гранаты'}[local.ui.action]||'Выберите участника')}</span></div><div class="battle-feedback-v226">${renderInstinct199()}${renderOperation194()}<span role="status" data-operation191>${html(operationReason191()||'')}</span></div></main>${renderBattleHud226(scene,runtime)}${local.ui.battleTools226?`<aside class="battle-tools-v226" id="battle-tools226" aria-label="Инструменты ДМа"><header><b>ИНСТРУМЕНТЫ ДМа</b><button type="button" data-battle-tools226 aria-label="Закрыть инструменты ДМа">ЗАКРЫТЬ</button></header><details open><summary>Сцена и участники</summary>${renderLifecycle193(scene,runtime)}</details><details><summary>Карты и объекты</summary>${renderLeft104()}</details><details open><summary>Инспектор</summary>${renderInspector104(scene,runtime)}</details><details><summary>Экран, звук и архив</summary>${renderTop104(scene,runtime)}</details><details><summary>Шаблоны и измерения</summary>${actionButton('circle','КРУГ')}${actionButton('cone','КОНУС')}${actionButton('wall','СТЕНА')}${actionButton('area','ОБЛАСТЬ')}${actionButton('height','ВЫСОТА')}${actionButton('clear','ОЧИСТИТЬ')}</details></aside>`:''}</div>`;
+    return `<div class="scene-tactical-v226"><header class="battle-top-v226"><div class="battle-title-v226"><small>БОЕВОЙ РЕЖИМ · РАУНД ${Math.max(1,num(runtime.round,1))}</small><b>${html(scene.name)}</b></div><div class="battle-top-actions-v226"><button type="button" data-battle-current226>ТЕКУЩИЙ ЮНИТ</button><button type="button" data-publish191>ПОКАЗАТЬ ИГРОКАМ</button><button type="button" data-battle-mode191>ПАУЗА БОЯ</button><button type="button" data-battle-tools226 aria-expanded="${Boolean(local.ui.battleTools226)}" aria-controls="battle-tools226">ИНСТРУМЕНТЫ ДМа</button></div></header><main class="battle-map-v226">${renderBoard104(scene,runtime,true)}<nav class="battle-order-v226 battle-order-overlay-v227" aria-label="Очередь ходов">${window.GRPGCombatPresentationV227.order(list(runtime.initiativeOrder).map(id=>tokens.get(id)).filter(Boolean),{currentId:current?.id,selectedId:selected?.id,interactive:true,showNpcHealth:true})}</nav><div class="battle-map-tools-v226">${actionButton('select','ВЫБОР')}${actionButton('pan','РУКА')}${actionButton('measure','ЛИНЕЙКА')}<button type="button" data-player-sides231>СТОРОНЫ ЭКРАНА</button><button type="button" data-player-camera247>Камера игроков · ${scene.playerCameraMode247==='full'?'Вся карта':'Вид ДМа'}</button><span>${html({height:'Обведите контур этажа',move:'Выберите гекс назначения',attack:'Выберите цель атаки',grenade:'Укажите точку броска гранаты'}[local.ui.action]||'Выберите участника')}</span></div><div class="battle-feedback-v226">${renderInstinct199()}${renderOperation194()}<span role="status" data-operation191>${html(operationReason191()||'')}</span></div></main>${renderBattleHud226(scene,runtime)}${local.ui.battleTools226?`<aside class="battle-tools-v226" id="battle-tools226" aria-label="Инструменты ДМа"><header><b>ИНСТРУМЕНТЫ ДМа</b><button type="button" data-battle-tools226 aria-label="Закрыть инструменты ДМа">ЗАКРЫТЬ</button></header><details open><summary>Сцена и участники</summary>${renderLifecycle193(scene,runtime)}</details><details><summary>Карты и объекты</summary>${renderLeft104()}</details><details open><summary>Инспектор</summary>${renderInspector104(scene,runtime)}</details><details><summary>Экран, звук и архив</summary>${renderTop104(scene,runtime)}</details><details><summary>Шаблоны и измерения</summary>${actionButton('circle','КРУГ')}${actionButton('cone','КОНУС')}${actionButton('wall','СТЕНА')}${actionButton('area','ОБЛАСТЬ')}${actionButton('height','ВЫСОТА')}${actionButton('clear','ОЧИСТИТЬ')}</details></aside>`:''}</div>`;
   }
 
   const panelScrollV137=new Map();
@@ -2388,6 +2407,7 @@
     local.ui.hudScene226=inBattle191(scene)?scene.id:'';
     root.innerHTML=inBattle191(scene)?renderTactical226(scene,runtime):`<div class="scene-editor-v104">${renderTop104(scene,runtime)}${renderLeft104()}<main class="scene-center-v104"><div class="scene-session-stack-v193">${renderSession191(scene,runtime)}${renderInstinct199()}${renderCriticalAdvance229()}${renderLifecycle193(scene,runtime)}${renderOperation194()}</div>${renderBoard104(scene,runtime)}</main>${renderInspector104(scene,runtime)}</div>`;
     root.querySelectorAll('.battle-tools-v226>details').forEach((node,index)=>{if(local.ui.hudDetails226?.[index]!=null)node.open=local.ui.hudDetails226[index];});
+    window.GRPGCombatPresentationV227.paintShots(document.getElementById('combat-stage'),scene,recentShots247.filter(shot=>shot.sceneId===scene.id));
     renderedSceneV137=scene.id;
     for(const selector of scrollSelectorsV137){const node=root.querySelector(selector),pos=panelScrollV137.get(scene.id+selector);if(node&&pos){node.scrollTop=pos.top;node.scrollLeft=pos.left;}}
     const turn226=scene.id+':'+(this.getCurrentTurnToken?.()?.id||'');
@@ -2536,6 +2556,7 @@
       const result=rules.resolveManualAttack({attackRoll:entered.attackRoll,defenseRoll:entered.defenseRoll,attackBonus:pre.attackBonus+num(entered.attackBonusDelta204),defenseBonus:pre.defenseBonus+num(entered.defenseBonusDelta204),damageRoll:entered.damageRoll,damageBonus,damageReduction:0});await emit204('OnAttackResolved',attacker,{...context,hit:result.hit,critical:result.critical},pre);if(!result.hit)await emit204('OnMiss',attacker,{...context,hit:false});
       refs=combatTransactionRefs120(transaction);attacker=refs.attacker;victim=refs.target;let finalDamage=result.damageApplied,hp={before:num(victim?.hpCurrent),after:num(victim?.hpCurrent),applied:0},state={damage:result.hit?result.damageApplied:0,damagePartsV138:result.hit?[{amount:result.damageApplied,absorptionSource:'all'}]:[],effects:pre.effects};
       if(result.hit&&victim){await runAutomaticHooks119(attacker,'OnHit',{...context,attacker,target:victim,damage:state.damage},state);await chooseReaction119('OnHit',{...context,attacker,target:victim,damage:state.damage},state);refs=combatTransactionRefs120(transaction);victim=refs.target;attacker=refs.attacker;if(victim){await runAutomaticHooks119(victim,'BeforeDamage',{...context,attacker,target:victim,damage:state.damage},state);await chooseReaction119('BeforeDamage',{...context,attacker,target:victim,damage:state.damage},state);finalDamage=applyAbsorptionV138(state,incomingDefense119(victim,'melee',null,damageType202(weapon))).applied;if(result.defenseCritical)finalDamage=Math.floor(finalDamage/2);hp=await applyHit199(victim,finalDamage,weapon.name,attacker,{damageType:damageType202(weapon)});updatePlayerHp105(victim);const afterContext={...context,attacker,target:victim,damage:finalDamage};await runAutomaticHooks119(victim,'OnTakeDamage',afterContext,state);await chooseReaction119('OnTakeDamage',afterContext,state);refs=combatTransactionRefs120(transaction);victim=refs.target;hp.after=num(victim?.hpCurrent,hp.after);hp.applied=Math.max(0,hp.before-hp.after);if(victim)updatePlayerHp105(victim);}}
+      if(weapon.shotSoundId247)audioApi()?.play?.(weapon.shotSoundId247);
       appendCombatLog105(refs.runtime,`${attacker.name} ${result.hit?'попадает':'промахивается'} атакой по возможности по ${victim?.name||target.name}${result.hit?`: ${hp.before} → ${hp.after} HP`:''}${result.fumble?' · натуральная 1':''}.`);
       Combat.syncInitiative(scene.id,false);flushLuaEffects119(state);await sealOperation194('Подтверждена атака по возможности');if(!options.deferCheckpoint)await checkpointCombat120('Сцена: атака по возможности',true);return num(victim?.hpCurrent,0)>0;
     }catch(error){
@@ -3233,7 +3254,7 @@
     const operator=operatorForDrone129(token);if(operator)Combat.selectedObject={kind:'token',id:operator.id};
     await checkpointCombat120('Завершение команды устройства',false);Combat.render();
   }
-  async function useActiveEquipment129(itemId){const runtime=Combat.getRuntime(),token=selectedToken104(),source=activeEquipmentForToken129(token).find(row=>String(row.id)===String(itemId));if(!runtime||!token||!source)return;if(source.raw?.type==='weapon'&&heavyBlocked195(token)&&isHeavyWeapon129(source.raw)){Toast.show('Травма 3-й степени запрещает использование тяжёлого оружия','info');return;}await policy204(source);if(!canCombatAct129(token)||(actionSpent191(token)&&!scripted204(source))){Toast.show('Активное использование сейчас недоступно','info');return;}if(token.burstStateV122){Toast.show('Сначала завершите скорострельную очередь','info');return;}if(local.lua119.busy)return;local.lua119.busy=true;try{const item=source.raw||equipmentItem105(source.id)||{},state={damage:0,effects:[]},context={caster:token,attacker:token,target:null,targets:[],ability:item,sourceName:source.name,scriptSource:source,inputs:{},targetRequests:{}};const phase=await runInteractiveLuaHookV138(source,'OnAbilityPhaseStart',context,state);if(phase.cancelled)return;Object.assign(context,{inputs:phase.context.inputs,targetRequests:phase.context.targetRequests,answers204:phase.context.answers204});refreshPreviewDom104();const requestedIds=unique(Object.values(context.targetRequests||{}).flat()),targets=requestedIds.map(tokenById119).filter(Boolean);context.targets=targets;context.target=targets[0]||null;if(context.target)context.position=centerOf(context.target);const executed=await runInteractiveLuaHookV138(source,'OnAbilityExecuted',context,state);if(executed.cancelled)return;if(isControlledDevice200(token)&&!droneLinkState129(token).ok)throw Error('Управление устройством потеряно');if(!phase.result.hasHook&&!executed.result.hasHook)throw new Error('В скрипте нет OnAbilityPhaseStart или OnAbilityExecuted');if(isControlledDevice200(token))completeDroneModule129(token);else if(!scripted204(source))token.actionUsed=true;appendCombatLog105(runtime,`${token.name} использует «${item.activeUseLabel||source.name}»${targets.length?` по целям: ${targets.map(row=>row.name).join(', ')}`:''}.`);Combat.render();flushLuaEffects119(state);await checkpointCombat120('Сцена: активное снаряжение',true);}catch(error){operationFailure194(error);console.error('SCENE_ACTIVE_EQUIPMENT_V129',error);Toast.show(String(error?.message||error),'err');}finally{local.lua119.busy=false;updateOperation191();if(UI.activeModuleId==='combat')Combat.render();}}
+  async function useActiveEquipment129(itemId){const runtime=Combat.getRuntime(),token=selectedToken104(),source=activeEquipmentForToken129(token).find(row=>String(row.id)===String(itemId));if(!runtime||!token||!source)return;if(source.raw?.type==='weapon'&&heavyBlocked195(token)&&isHeavyWeapon129(source.raw)){Toast.show('Травма 3-й степени запрещает использование тяжёлого оружия','info');return;}await policy204(source);if(!canCombatAct129(token)||(actionSpent191(token)&&!scripted204(source))){Toast.show('Активное использование сейчас недоступно','info');return;}if(token.burstStateV122){Toast.show('Сначала завершите скорострельную очередь','info');return;}if(local.lua119.busy)return;local.lua119.busy=true;try{const item=source.raw||equipmentItem105(source.id)||{},state={damage:0,effects:[]},context={caster:token,attacker:token,target:null,targets:[],ability:item,sourceName:source.name,scriptSource:source,inputs:{},targetRequests:{}};const phase=await runInteractiveLuaHookV138(source,'OnAbilityPhaseStart',context,state);if(phase.cancelled)return;Object.assign(context,{inputs:phase.context.inputs,targetRequests:phase.context.targetRequests,answers204:phase.context.answers204});refreshPreviewDom104();const requestedIds=unique(Object.values(context.targetRequests||{}).flat()),targets=requestedIds.map(tokenById119).filter(Boolean);context.targets=targets;context.target=targets[0]||null;if(context.target)context.position=centerOf(context.target);const shotBefore=shotSequence247;const executed=await runInteractiveLuaHookV138(source,'OnAbilityExecuted',context,state);if(executed.cancelled)return;if(isControlledDevice200(token)&&!droneLinkState129(token).ok)throw Error('Управление устройством потеряно');if(!phase.result.hasHook&&!executed.result.hasHook)throw new Error('В скрипте нет OnAbilityPhaseStart или OnAbilityExecuted');if(item.shotSoundId247&&shotBefore===shotSequence247)audioApi()?.play?.(item.shotSoundId247);if(isControlledDevice200(token))completeDroneModule129(token);else if(!scripted204(source))token.actionUsed=true;appendCombatLog105(runtime,`${token.name} использует «${item.activeUseLabel||source.name}»${targets.length?` по целям: ${targets.map(row=>row.name).join(', ')}`:''}.`);Combat.render();flushLuaEffects119(state);await checkpointCombat120('Сцена: активное снаряжение',true);}catch(error){operationFailure194(error);console.error('SCENE_ACTIVE_EQUIPMENT_V129',error);Toast.show(String(error?.message||error),'err');}finally{local.lua119.busy=false;updateOperation191();if(UI.activeModuleId==='combat')Combat.render();}}
   async function reloadWeapon118(){
     const initial=reloadAvailability120(),scene=Combat.getScene();
     if(!initial.enabled){Toast.show(initial.reason||'Перезарядка недоступна','info');return;}
@@ -3896,7 +3917,9 @@
     runtime.playerDisplayAngle231=[90,180,270].includes(angle)?angle:0;
     const displayScene=clone(scene);delete displayScene.playerSides231;displayScene.showInitiativeToPlayers=inBattle191(scene);displayScene.templates=[...list(displayScene.templates),...thinkerZoneModels125(liveRuntime,scene).filter(row=>row.visibleToPlayers!==false)];
     const preview=Combat.getScene()?.id===scene.id&&previewVisibleToPlayers128(scene,liveRuntime,local.preview)?clone(local.preview):null;
-    return {version:4,scene:displayScene,runtime,preview,sentAt:new Date().toISOString()};
+    const shots=recentShots247.filter(shot=>shot.sceneId===scene.id&&Date.now()-shot.at<shot.duration&&previewVisibleToPlayers128(scene,liveRuntime,shot)
+      &&(!shot.targetTokenId||previewVisibleToPlayers128(scene,liveRuntime,{sourceTokenId:shot.targetTokenId})));
+    return {version:4,scene:displayScene,runtime,preview,shots,sentAt:new Date().toISOString()};
   }
   Combat.broadcastPlayerDisplayMirror = function(){
     if(!this.isDm()||!window.electronAPI?.updatePlayerDisplayView)return;
@@ -4260,6 +4283,11 @@
     if(t.id==='scene-initiative-toggle-v112'){local.ui.initiativeOpen=!local.ui.initiativeOpen;Combat.render();return;}
     if(t.hasAttribute?.('data-critical-advance229')){void runOperation194('Интервал критического состояния',advanceCritical229);return;}
     if(t.id==='scene-next-turn-v104'){void Combat.nextTurn?.();return;}
+    if(t.hasAttribute('data-player-camera247')){
+      const scene=Combat.getScene();
+      if(scene){scene.playerCameraMode247=scene.playerCameraMode247==='full'?'mirror':'full';queueStoreSave();Combat.render();}
+      return;
+    }
     if(t.hasAttribute('data-player-sides231')){void runCommand191(editPlayerSides231);return;}
     if(t.id==='scene-center-v108'){Combat.resetViewState?.(Combat.getSceneIdForView?.(),{persist:true,render:false});return;}
     if(t.id==='scene-sounds-toggle-v104'){local.ui.soundsOpen=!local.ui.soundsOpen;Combat.render();return;}
