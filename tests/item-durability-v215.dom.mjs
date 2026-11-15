@@ -27,7 +27,7 @@ const html=fs.readFileSync(path.join(root,'renderer/index.html'),'utf8');
 w.document.write(html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi,''));
 // Every renderer script is evaluated unmodified, in index.html order, sharing
 // browser-style lexical globals. Only OS/cloud/bootstrap boundaries are mocked.
-for(const m of html.matchAll(/<script src="\.\/([^"?]+)[^"]*"/g)){let source=fs.readFileSync(path.join(root,'renderer',m[1]),'utf8');if(m[1]==='scene-editor-v113.js')source=source.replace('// New module is DM-only;','window.test215={wear:wearArmorOnTwentyV215,defense:incomingDefense119,state:itemRuntimeStateV138,mutate:mutateItemStateV138,meleeOutcome:meleeOutcome256,attackFailure:attackFailure256,requestAttackRolls:requestAttackRolls119,applyDelayedHits:applyDelayedHits256,damageType:damageType202,showLoot:showLootOverlay118,searchNpc:searchNpc118,jamOnHit:jamOnHit258,jamState:jamState258,reload:reloadUnitV138,bonusDie:bonusDie258,secondaryHit:secondaryHit258,fitToken:fitTokenToHex107,center:centerOf,normalizeToken:normalizeCombatToken};\n// New module is DM-only;');vm.runInContext(source,context,{filename:m[1]});}
+for(const m of html.matchAll(/<script src="\.\/([^"?]+)[^"]*"/g)){let source=fs.readFileSync(path.join(root,'renderer',m[1]),'utf8');if(m[1]==='scene-editor-v113.js')source=source.replace('// New module is DM-only;','window.test215={wear:wearArmorOnTwentyV215,defense:incomingDefense119,state:itemRuntimeStateV138,mutate:mutateItemStateV138,meleeOutcome:meleeOutcome256,attackFailure:attackFailure256,requestAttackRolls:requestAttackRolls119,applyDelayedHits:applyDelayedHits256,damageType:damageType202,showLoot:showLootOverlay118,renderSearch:renderSearchAction118,jamOnHit:jamOnHit258,jamState:jamState258,reload:reloadUnitV138,bonusDie:bonusDie258,secondaryHit:secondaryHit258,fitToken:fitTokenToHex107,center:centerOf,normalizeToken:normalizeCombatToken};\n// New module is DM-only;');vm.runInContext(source,context,{filename:m[1]});}
 
 
 
@@ -227,11 +227,42 @@ run(`
   const originalGetNpc258=Data.getNpc.bind(Data);
   Data.getNpc=id=>id==='loot-npc'?{dangerLevel:9,lootTable:[{itemId:'gun',chance:100,minQty:1,maxQty:1}]}:originalGetNpc258(id);
   Combat.render=()=>{};
+  Combat.selectedObject={kind:'token',id:enemy215.id};
+  const combatHost259=document.createElement('div');
+  combatHost259.id='mod-combat';
+  combatHost259.className='fs-module over-login open';
+  document.body.append(combatHost259);
+  window.renderSearch258=()=>{
+    const host=combatHost259;
+    host.innerHTML=test215.renderSearch();
+    return host.querySelector('button');
+  };
   const originalRandom258=Math.random;
-  try{Math.random=()=>.999;test215.searchNpc(enemy215.id);}finally{Math.random=originalRandom258;}
+  try{Math.random=()=>.999;renderSearch258().click();}finally{Math.random=originalRandom258;}
 `);
 assert.equal(run("enemy215.lootStateV118.items[0].aberrations[0].rarity"),'legendary');
 assert.match(w.document.querySelector('.scene-loot-overlay-v118').textContent,/Легендарное/);
+w.document.querySelector('[data-scene-loot-close-v118]').click();
+assert.equal(w.document.querySelector('.scene-loot-overlay-v118'),null);
+const reopen=run('renderSearch258()');
+assert.equal(reopen.textContent,'ПОКАЗАТЬ ЛУТ');
+reopen.click();
+assert.match(w.document.querySelector('.scene-loot-overlay-v118').textContent,/Легендарное/);
+w.document.querySelector('[data-loot-item-v137]').click();
+const layers=new Window({settings:{disableCSSFileLoading:true}});
+try{
+  for(const match of html.matchAll(/<link rel="stylesheet" href="\.\/([^"?]+)[^"]*"/g)){
+    const style=layers.document.createElement('style');
+    style.textContent=fs.readFileSync(path.join(root,'renderer',match[1]),'utf8');
+    layers.document.head.append(style);
+  }
+  layers.document.body.innerHTML=w.document.querySelector('#mod-combat').outerHTML
+    +w.document.querySelector('.scene-loot-overlay-v118').outerHTML
+    +w.document.querySelector('.scene-loot-menu-v137').outerHTML;
+  const z=selector=>Number(layers.getComputedStyle(layers.document.querySelector(selector)).zIndex);
+  assert(z('.scene-loot-overlay-v118')>z('#mod-combat'),'loot overlay must appear above the combat module');
+  assert(z('.scene-loot-menu-v137')>z('.scene-loot-overlay-v118'),'transfer menu must appear above the loot overlay');
+}finally{await layers.happyDOM.abort();}
 console.log('PASS loot overlay, extra damage die, per-copy jam and reload, forced movement and ricochet');
 console.log('PASS melee aberrations: failure bonus and expiry; delayed damage survives normalization and applies once');
 console.log('PASS real renderer: legacy migration, independent weapon copies, Lua break/damage by slot and ID, DM repair, natural 20 and loss of kinetic/energy armor, slot binding and save/reload metadata');
