@@ -102,8 +102,11 @@
         }catch(error){message.textContent=error.message;}
         finally{busy=false;dialog.querySelectorAll('button').forEach(b=>b.disabled=false);}
       });
-      if(api.details)button('Описание',()=>{dialog.close();api.details(source.itemId);});
-      button('Закрыть',()=>dialog.close());dialog.append(title,facts,message,actions);
+      const aberrations=root.GRPGAberrationPresentation?.copyMarkup(copy,api.aberrationOverrides?.());
+      if(api.details)button('Описание',()=>{dialog.close();api.details(source.itemId,{copy});});
+      button('Закрыть',()=>dialog.close());dialog.append(title,facts);
+      if(aberrations)dialog.insertAdjacentHTML('beforeend',aberrations);
+      dialog.append(message,actions);
       dialog.addEventListener('cancel',e=>{if(busy)e.preventDefault();});
       dialog.addEventListener('close',()=>{dialog.remove();if(node.isConnected)node.focus({preventScroll:true});else document.querySelector(api.selector)?.focus({preventScroll:true});});
       document.body.append(dialog);dialog.showModal();

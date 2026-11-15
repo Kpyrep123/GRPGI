@@ -3957,9 +3957,10 @@
     for(const roll of list(rolls)){
       const rarity=roll?.rarity||'common';
       const effects=list(roll?.effects).map(id=>window.GRPGAberrationWeapons?.describe(id)).filter(Boolean);
-      const key=JSON.stringify([rarity,effects]),prior=groups.get(key);
+      const presentation=window.GRPGAberrationPresentation.model({aberration252:roll}).effects;
+      const key=JSON.stringify([rarity,presentation]),prior=groups.get(key);
       if(prior)prior.qty++;
-      else groups.set(key,{rarity,effects,qty:1});
+      else groups.set(key,{rarity,effects,presentation,qty:1});
     }
     return [...groups.values()];
   }
@@ -3977,7 +3978,9 @@
       const item=equipmentItem105(itemId);
       const details=lootDetails258(row.rolls).map(detail=>{
         const description=[names[detail.rarity],...detail.effects].join(' · ');
-        return `<small data-rarity="${html(detail.rarity)}">${html(description)}${detail.qty>1?` ×${detail.qty}`:''}</small>`;
+        return detail.presentation.length
+          ?window.GRPGAberrationPresentation.markup({rarity:detail.rarity,effects:detail.presentation,qty:detail.qty})
+          :`<small data-rarity="${html(detail.rarity)}">${html(description)}${detail.qty>1?` ×${detail.qty}`:''}</small>`;
       }).join('');
       return `<div class="scene-loot-result-row-v118" tabindex="0" role="button" title="Нажмите, чтобы передать игроку" data-loot-scene-v137="${html(Combat.getSceneIdForView())}" data-loot-token-v137="${html(token.id)}" data-loot-item-v137="${html(itemId)}">${item?.image?`<img src="${html(item.image)}" alt=""/>`:'<span>▣</span>'}<div><b>${html(item?.name||itemId)}</b>${details}</div><strong>×${row.qty}</strong></div>`;
     }).join('');
@@ -4402,7 +4405,7 @@
     const preview=Combat.getScene()?.id===scene.id&&previewVisibleToPlayers128(scene,liveRuntime,local.preview)?clone(local.preview):null;
     const shots=recentShots247.filter(shot=>shot.sceneId===scene.id&&Date.now()-shot.at<shot.duration+1500&&previewVisibleToPlayers128(scene,liveRuntime,shot)
       &&(!shot.targetTokenId||previewVisibleToPlayers128(scene,liveRuntime,{sourceTokenId:shot.targetTokenId})));
-    return {version:4,scene:displayScene,runtime,preview,shots,lootReveal:lootReveal252?.sceneId===scene.id&&Date.now()-lootReveal252.at<12000?lootReveal252:null,sentAt:new Date().toISOString()};
+    return {version:4,scene:displayScene,runtime,preview,shots,lootReveal:lootReveal252?.sceneId===scene.id&&Date.now()-lootReveal252.at<16000?lootReveal252:null,sentAt:new Date().toISOString()};
   }
   Combat.broadcastPlayerDisplayMirror = function(){
     if(!this.isDm()||!window.electronAPI?.updatePlayerDisplayView)return;

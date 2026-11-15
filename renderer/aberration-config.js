@@ -62,6 +62,11 @@
     return Number.isInteger(row.value)&&Math.abs(row.value)<=(/^(weapon-7|armor-21|armor-22|shield-31|backpack-40)$/.test(row.group)?30:20);
   }
   window.GRPGAberrationWeapons = {
+    presentationEffect(id) {
+      const effect=resolve(id,settings().variants);
+      if(!validEffect(effect))return null;
+      return {...effect,text:this.describe(id)};
+    },
     describe(id) {
       const effect=resolve(id,settings().variants);
       if(!validEffect(effect))return '';
