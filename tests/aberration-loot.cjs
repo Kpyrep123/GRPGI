@@ -77,6 +77,10 @@ assert.deepEqual(data.playerJson.inventory.find(row=>row.itemId==='armor').insta
 body.operationId='test_invalid_armor_damage_type';
 body.lootTransferV137.aberrations[0].effects=['armor-27-1:invalid'];
 assert.throws(()=>transfer(request),/Некорректные аберрации/);
+body.operationId='test_armor_attack_immunity';
+body.lootTransferV137.aberrations[0].effects=['armor-28-1:ranged'];
+assert.equal(transfer(request).status,'committed');
+assert.deepEqual(data.playerJson.inventory.find(row=>row.itemId==='armor').instancesV215.at(-1).aberration252.effects,['armor-28-1:ranged']);
 console.log('PASS loot persists aberrations and rejects a changed replay');
 
 require('../renderer/combat-rules-v119.js');
