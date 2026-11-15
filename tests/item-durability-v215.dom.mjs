@@ -27,7 +27,7 @@ const html=fs.readFileSync(path.join(root,'renderer/index.html'),'utf8');
 w.document.write(html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi,''));
 // Every renderer script is evaluated unmodified, in index.html order, sharing
 // browser-style lexical globals. Only OS/cloud/bootstrap boundaries are mocked.
-for(const m of html.matchAll(/<script src="\.\/([^"?]+)[^"]*"/g)){let source=fs.readFileSync(path.join(root,'renderer',m[1]),'utf8');if(m[1]==='scene-editor-v113.js')source=source.replace('// New module is DM-only;','window.test215={wear:wearArmorOnTwentyV215,defense:incomingDefense119,state:itemRuntimeStateV138,mutate:mutateItemStateV138};\n// New module is DM-only;');vm.runInContext(source,context,{filename:m[1]});}
+for(const m of html.matchAll(/<script src="\.\/([^"?]+)[^"]*"/g)){let source=fs.readFileSync(path.join(root,'renderer',m[1]),'utf8');if(m[1]==='scene-editor-v113.js')source=source.replace('// New module is DM-only;','window.test215={wear:wearArmorOnTwentyV215,defense:incomingDefense119,state:itemRuntimeStateV138,mutate:mutateItemStateV138,meleeOutcome:meleeOutcome256,attackFailure:attackFailure256,requestAttackRolls:requestAttackRolls119,applyDelayedHits:applyDelayedHits256,normalizeToken:normalizeCombatToken};\n// New module is DM-only;');vm.runInContext(source,context,{filename:m[1]});}
 
 
 
@@ -100,5 +100,56 @@ assert.equal(normalized.inventory.find(row=>row.itemId==='gun').instancesV215[1]
 assert.equal(normalized.inventory.find(row=>row.itemId==='gun').instancesV215.find(c=>c.id===secondary.id).durability,4);
 assert.equal(fs.readFileSync('renderer/item-instances-v215.js','utf8'),fs.readFileSync('deploy/site/app/item-instances-v215.js','utf8'));
 assert.equal(fs.readFileSync('renderer/item-instances-v215.js','utf8'),fs.readFileSync('pocketbase/pb_hooks/item-instances-v215.js','utf8'));
+run(`
+  Combat.getScene=()=>({id:'aberration-test',mode:'combat'});
+  runtime215.round=1;
+  Object.assign(enemy215,{name:'Enemy',hpCurrent:10,hpMax:10,ownTurnV199:1});
+  const equippedCopy215=GRPGItemInstancesV215.instance(App.state.users.p,'gun',-1,'primaryWeapon');
+  equippedCopy215.aberration252={rarity:'epic',budget:6,effects:['weapon-14-1','weapon-17-1']};
+  window.melee215={id:'gun',weaponCategory:'melee'};
+  test215.meleeOutcome(target215,melee215,enemy215,{hit:false},3);
+`);
+assert.equal(run('test215.attackFailure(target215,enemy215)?.amount'),1);
+assert.equal(run('test215.attackFailure(target215,target215)'),null);
+const requestAttack=()=>run('test215.requestAttackRolls({attacker:enemy215,target:target215,weapon:melee215,ammo:null,attackBonus:0,defenseBonus:0,damageBonus:0})');
+const waitAttackForm=async()=>{
+  for(let attempt=0;attempt<10;attempt++){
+    const form=w.document.querySelector('.scene-lua-modal-v119');
+    if(form)return form;
+    await pause();
+  }
+  assert.fail('missing attack roll form');
+};
+const canceled=requestAttack();
+(await waitAttackForm()).querySelector('[data-lua-decline-v119]').click();
+assert.equal(await canceled,null);
+assert.equal(run('test215.attackFailure(target215,enemy215)?.amount'),1);
+const confirmed=requestAttack();
+const attackForm=await waitAttackForm();
+for(const [field,value] of [['attackRoll','13'],['defenseRoll','10'],['damageRoll','3']])attackForm.elements[field].value=value;
+attackForm.dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));
+assert.equal((await confirmed).attackBonusDelta204,1);
+assert.equal(run('test215.attackFailure(target215,enemy215)'),null);
+run('test215.meleeOutcome(target215,melee215,enemy215,{hit:false},3);');
+assert.equal(run('test215.attackFailure(target215,enemy215)'),null,'a second miss on the same round cannot reapply the bonus');
+run('runtime215.round++;test215.meleeOutcome(target215,melee215,enemy215,{hit:false},3);');
+assert.equal(run('test215.attackFailure(target215,enemy215)?.amount'),1);
+run('target215.ownTurnV199=1;');
+assert.equal(run('test215.attackFailure(target215,enemy215)'),null,'expires at the start of the next turn');
+run(`
+  test215.meleeOutcome(target215,melee215,enemy215,{hit:true,critical:true},3);
+  test215.meleeOutcome(target215,melee215,enemy215,{hit:true},6);
+  runtime215.tokens[1]=window.enemy215=test215.normalizeToken(enemy215);
+  enemy215.equipmentType='drone';
+`);
+assert.equal(run('enemy215.aberrationDelayedHits256.length'),1);
+await run('test215.applyDelayedHits(enemy215)');
+assert.equal(run('enemy215.hpCurrent'),10,'no damage before the next turn');
+run('enemy215.ownTurnV199++;');
+await run('test215.applyDelayedHits(enemy215)');
+assert.equal(run('enemy215.hpCurrent'),7,'only the base damage repeats');
+await run('test215.applyDelayedHits(enemy215)');
+assert.equal(run('enemy215.hpCurrent'),7,'the pending hit is consumed once');
+console.log('PASS melee aberrations: failure bonus and expiry; delayed damage survives normalization and applies once');
 console.log('PASS real renderer: legacy migration, independent weapon copies, Lua break/damage by slot and ID, DM repair, natural 20 and loss of kinetic/energy armor, slot binding and save/reload metadata');
 }finally{await w.happyDOM.abort();fs.rmSync(scratch,{recursive:true,force:true});}

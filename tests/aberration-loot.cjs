@@ -36,7 +36,7 @@ body.lootTransferV137.aberrations[0]={rarity:'uncommon',budget:1,effects:['weapo
 assert.throws(()=>transfer(request),/другими данными/);
 assert.equal(data.playerJson.inventory[0].qty,2);
 body.operationId='test_conditional_effects';
-body.lootTransferV137.aberrations[0]={rarity:'rare',budget:4,effects:['weapon-13-1','weapon-16-1']};
+body.lootTransferV137.aberrations[0]={rarity:'rare',budget:4,effects:['weapon-13-1','weapon-14-1','weapon-17-1']};
 assert.equal(transfer(request).status,'committed');
 assert.deepEqual(data.playerJson.inventory[0].instancesV215[2].aberration252,body.lootTransferV137.aberrations[0]);
 console.log('PASS loot persists aberrations and rejects a changed replay');
