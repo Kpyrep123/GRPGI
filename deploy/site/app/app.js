@@ -5819,8 +5819,17 @@ function stockFeesV213(fees){if(!fees)return 'Тарифы загрузятся 
     const rows=[],push=(source,kind)=>{if(!source)return;(source.modifiers||[]).forEach(mod=>rows.push({...mod,sourceName:source.name||source.displayName||source.id||kind,sourceKind:kind}));if(['profession','origin'].includes(kind)&&source.abilityBonuses)Object.entries(source.abilityBonuses).forEach(([target,value])=>{if(Number(value||0))rows.push({target,op:'add',value:Number(value),scope:'global',condition:'always',enabled:true,sourceName:source.name||source.id||kind,sourceKind:kind});});if(kind==='equipment'&&normalizedItemTypeV1052(source)==='armor'){if(!(source.modifiers||[]).some(mod=>mod.target==='armor_class')&&Number(source.armorClass||0)){const legacy=Number(source.armorClass),bonus=legacy>=5?legacy-10:legacy;if(bonus)rows.push({target:'armor_class',op:'add',value:bonus,scope:'global',condition:'always',enabled:true,sourceName:source.name||source.id||kind,sourceKind:kind});}if(!(source.modifiers||[]).some(mod=>mod.target==='defense')&&Number(source.damageReduction??source.defense??0)>0)rows.push({target:'defense',op:'add',value:Number(source.damageReduction??source.defense),scope:'global',condition:'always',enabled:true,sourceName:source.name||source.id||kind,sourceKind:kind});}};
     push(player,'character');push(App.data.socialOrigins?.get?.(String(player.socialOriginId||'')),'profession');push(App.data.geographicOrigins?.get?.(String(player.geographicOriginId||'')),'origin');
     (player.skills||[]).forEach(id=>push(App.data.skills.get(String(id)),'skill'));
-    const slots=player.equipmentSlots||{};['primaryWeapon','secondaryWeapon','armor','backpack'].forEach(key=>{if(!window.GRPGItemInstancesV215?.instance(player,slots[key],-1,key)?.broken)push(itemWebV1067(slots[key]),'equipment');});
-    (player.implantSlots||player.installedImplantIds||[]).forEach(id=>push(itemWebV1067(id),'implant'));
+    const instances=window.GRPGItemInstancesV215;
+    const equipped=(id,slot,kind)=>{
+      if(!id)return;
+      const item=itemWebV1067(id),copy=instances?.instance(player,id,-1,slot);
+      if(copy?.broken)return;
+      push(item,kind);
+      rows.push(...(instances?.equippedAberrationModifiers(copy,item)||[]));
+    };
+    const slots=player.equipmentSlots||{};
+    ['primaryWeapon','secondaryWeapon','armor','backpack'].forEach(key=>equipped(slots[key],key,'equipment'));
+    (player.implantSlots||player.installedImplantIds||[]).forEach((id,index)=>equipped(id,'implant:'+index,'implant'));
     return rows.filter(mod=>modifierConditionWeb118(mod,player));
   }
   function applyModifierWeb118(base,target,mods,player,context={}){

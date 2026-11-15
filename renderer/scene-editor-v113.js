@@ -3760,7 +3760,7 @@
             window.GRPGItemInstancesV215.add(row,job.qty,equipmentItem105(itemId),()=>crypto.randomUUID());
             for(const [index,roll] of (job.aberrations||[]).entries()){
               const copy=row.instancesV215?.[offset+index];
-              if(copy&&roll){copy.aberration252=clone(roll);copy.rarity=roll.rarity==='common'?'обычный':roll.rarity;}
+              window.GRPGItemInstancesV215.storeAberration(copy,equipmentItem105(itemId),roll);
             }
             next.__lootReceiptsV137={...next.__lootReceiptsV137,[job.operationId]:true};
             App.state.users[playerId]=normalizePlayerProfileV2(next);PLAYER_TEMPLATES[playerId]=clone(App.state.users[playerId]);
@@ -3824,7 +3824,7 @@
 
   function closeLootOverlay118(){document.querySelector('.scene-loot-menu-v137')?.remove();document.querySelector('.scene-loot-overlay-v118')?.remove();}
   function rollLootCopy258(item,danger){
-    return item?.type==='weapon'?window.GRPGAberrationWeapons?.roll(danger,item)||null:null;
+    return window.GRPGItemInstancesV215.aberrationCategory(item)?window.GRPGAberrationWeapons?.roll(danger,item)||null:null;
   }
   function lootDetails258(rolls){
     const groups=new Map();
@@ -3870,7 +3870,7 @@
         if(Math.random()*100>=num(row.chance,0))continue;
         const min=Math.max(1,Math.trunc(num(row.minQty,1))),max=Math.max(min,Math.trunc(num(row.maxQty,min)));
         const qty=min+Math.floor(Math.random()*(max-min+1)),item=equipmentItem105(row.itemId);
-        const aberrations=item?.type==='weapon'
+        const aberrations=window.GRPGItemInstancesV215.aberrationCategory(item)
           ? Array.from({length:qty},()=>rollLootCopy258(item,npc.dangerLevel)) : null;
         items.push({itemId:row.itemId,qty,...(aberrations?{aberrations}:{})});
       }

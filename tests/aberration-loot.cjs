@@ -52,6 +52,20 @@ for(const [index,effect] of ['weapon-5-3','weapon-11-1','weapon-12-2','weapon-15
   assert.equal(transfer(request).status,'committed');
   assert.deepEqual(data.playerJson.inventory[0].instancesV215.at(-1).aberration252.effects,[effect]);
 }
+world.equipment.EQUIPMENT.armor={id:'armor',type:'armor',mass:1,durabilityMax:10};
+body.operationId='test_armor_aberration';
+body.lootTransferV137={itemId:'armor',qty:1,source:'scene/npc',aberrations:[{rarity:'rare',budget:4,effects:['armor-21-6','armor-23-4']}]};
+assert.equal(transfer(request).status,'committed');
+const armorRow=data.playerJson.inventory.find(row=>row.itemId==='armor');
+assert.equal(armorRow.instancesV215[0].durabilityMax,13);
+assert.equal(armorRow.instancesV215[0].durability,13);
+const baseCapacity=rules.layout(data.playerJson).user.carryWeightMax;
+armorRow.instancesV215[0].slot='armor';
+data.playerJson.equipmentSlots={armor:'armor'};
+assert.equal(rules.layout(data.playerJson).user.carryWeightMax,baseCapacity+1);
+body.operationId='test_cross_category_aberration';
+body.lootTransferV137.aberrations[0].effects=['shield-31-1'];
+assert.throws(()=>transfer(request),/не соответствуют типу/);
 console.log('PASS loot persists aberrations and rejects a changed replay');
 
 require('../renderer/combat-rules-v119.js');

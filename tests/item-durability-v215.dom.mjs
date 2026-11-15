@@ -263,6 +263,26 @@ try{
   assert(z('.scene-loot-overlay-v118')>z('#mod-combat'),'loot overlay must appear above the combat module');
   assert(z('.scene-loot-menu-v137')>z('.scene-loot-overlay-v118'),'transfer menu must appear above the loot overlay');
 }finally{await layers.happyDOM.abort();}
+run(`
+  window.passiveGear260={armor:['armor-18-4','armor-19-3','armor-23-4'],shield:['shield-32-3'],
+    backpack:['backpack-38-4','backpack-39-4','backpack-42-3'],implant:['implant-47-4','implant-50-3','implant-52-2']};
+  window.equipment260={armor:{id:'armor',type:'armor'},shield:{id:'shield',type:'shield'},
+    backpack:{id:'backpack',type:'backpack'},implant:{id:'implant',type:'implant'}};
+  window.profile260={equipmentSlots:{armor:'armor',primaryWeapon:'shield',backpack:'backpack'},implantSlots:['implant'],
+    baseStats:{inventorySlots:12,carryBase:10,movement:6,vision:6,hpBase:10},inventory:[]};
+  for(const [type,slot] of [['armor','armor'],['shield','primaryWeapon'],['backpack','backpack'],['implant','implant:0']]){
+    EQUIPMENT[type]=equipment260[type];
+    profile260.inventory.push({itemId:type,qty:1,instancesV215:[{id:type,slot,aberration252:{effects:passiveGear260[type]}}]});
+  }
+  window.passives260=GRPGStatsV113.compute(profile260,{kind:'player'}).values;
+`);
+for(const [stat,value] of Object.entries({armorClass:1,defense:1,carryCapacity:12,inventorySlots:13,movement:8,vision:8,maxHp:11,droneActions:1})){
+  assert.equal(run('passives260.'+stat),value,stat);
+}
+run("profile260.equipmentSlots.armor='';profile260.implantSlots=[];profile260.installedImplantIds=[];");
+assert.equal(run("GRPGStatsV113.compute(profile260).values.defense"),0);
+assert.equal(run("GRPGStatsV113.compute(profile260).values.droneActions"),0);
+console.log('PASS equipped armor, shield, backpack and implant aberrations contribute their own stats');
 console.log('PASS loot overlay, extra damage die, per-copy jam and reload, forced movement and ricochet');
 console.log('PASS melee aberrations: failure bonus and expiry; delayed damage survives normalization and applies once');
 console.log('PASS real renderer: legacy migration, independent weapon copies, Lua break/damage by slot and ID, DM repair, natural 20 and loss of kinetic/energy armor, slot binding and save/reload metadata');
