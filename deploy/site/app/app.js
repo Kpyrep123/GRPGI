@@ -5378,7 +5378,7 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
   }
   function inventoryColsWebV1067(size){return Math.max(1,Math.ceil(Math.sqrt(Math.max(1,intNonNegativeWebV1067(size,DEFAULT_INVENTORY_SIZE_V1067)))));}
   function equippedCountsWebV1067(user={}){const map=new Map();const add=id=>{const key=String(id||'');if(key)map.set(key,(map.get(key)||0)+1);};add(user.equipmentSlots?.primaryWeapon);add(user.equipmentSlots?.secondaryWeapon);add(user.equipmentSlots?.armor);(user.implantSlots||[]).forEach(add);return map;}
-  function inventoryWeightWebV1067(user={}){return(user.inventory||[]).reduce((sum,entry)=>sum+itemMassWebV1067(itemWebV1067(entry.itemId))*intNonNegativeWebV1067(entry.qty,0),0);}
+  function inventoryWeightWebV1067(user={}){return(user.inventory||[]).reduce((sum,entry)=>sum+window.GRPGItemInstancesV215.inventoryRowMass(entry,itemMassWebV1067(itemWebV1067(entry.itemId))),0);}
   function markOccWebV1067(occupied,x,y,w,h,value=true){for(let yy=y;yy<y+h;yy++)for(let xx=x;xx<x+w;xx++){const key=`${xx}:${yy}`;if(value)occupied.add(key);else occupied.delete(key);}}
   function fitsWebV1067(size,cols,occupied,x,y,w,h){if(x<0||y<0||x+w>cols)return false;for(let yy=y;yy<y+h;yy++)for(let xx=x;xx<x+w;xx++){const index=yy*cols+xx;if(index<0||index>=size||occupied.has(`${xx}:${yy}`))return false;}return true;}
   function firstFitWebV1067(size,cols,occupied,w,h){const rows=Math.ceil(Math.max(1,size)/cols);for(let y=0;y<rows;y++)for(let x=0;x<cols;x++)if(fitsWebV1067(size,cols,occupied,x,y,w,h))return{x,y};return null;}

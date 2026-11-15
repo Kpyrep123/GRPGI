@@ -30,7 +30,7 @@ function transfer(e){
     const item=rules.equipment(itemId);
     if(!item||item.type==='stock'){result={ok:false,status:'rejected',message:'Предмет отсутствует в снаряжении кампании.',remote:record};return;}
     if(rolls&&item.type!=='weapon')throw new BadRequestError('Аберрации добычи доступны только оружию.');
-    const check=rules.canAdd(player,itemId,qty);
+    const check=rules.canAdd(player,itemId,qty,rolls);
     if(!check.ok){result={ok:false,status:'capacity',message:check.reason,remote:record};return;}
     const migrated=rules.normalizePlayer(player);
     player.inventory=migrated.inventory;player.textInventoryItems=migrated.textInventoryItems;
@@ -70,7 +70,7 @@ function validRoll(roll){
   const [min,max]=limits[roll.rarity];
   return Number.isInteger(roll.budget)&&roll.budget>=min&&roll.budget<=max&&Array.isArray(roll.effects)
     &&(roll.rarity==='common'?roll.effects.length===0:roll.effects.length>=1&&roll.effects.length<=3)
-    &&roll.effects.every(id=>typeof id==='string'&&/^weapon-(?:[1289]-[1-6]|[3]-[1-3]|4-[1-5]|10-[1-3]|(?:13|14|16|17)-1)$/.test(id))
+    &&roll.effects.every(id=>typeof id==='string'&&/^weapon-(?:[12789]-[1-6]|[3]-[1-3]|[46]-[1-5]|10-[1-3]|(?:13|14|16|17)-1)$/.test(id))
     &&new Set(roll.effects.map(id=>id.slice(0,id.lastIndexOf('-')))).size===roll.effects.length;
 }
 module.exports={transfer};

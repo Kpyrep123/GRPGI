@@ -3,11 +3,15 @@
   'use strict';
   const num=(value,fallback=0)=>Number.isFinite(Number(value))?Number(value):fallback;
   function weight(inventory=[],equippedIds=[],getItem=()=>null){
-    const counts=new Map(),worn=new Map();
-    for(const row of inventory||[]){const id=String(row?.itemId||'');if(id)counts.set(id,(counts.get(id)||0)+Math.max(0,Math.trunc(num(row.qty))));}
+    const counts=new Map(),worn=new Map(),adjustments=new Map();
+    for(const row of inventory||[]){const id=String(row?.itemId||'');if(!id)continue;
+      const qty=Math.max(0,Math.trunc(num(row.qty)));
+      counts.set(id,(counts.get(id)||0)+qty);
+      const adjusted=root.GRPGItemInstancesV215?.inventoryRowMass(row,1,qty)??qty;
+      adjustments.set(id,(adjustments.get(id)||0)+adjusted-qty);}
     for(const value of equippedIds||[]){const id=String(value||'');if(id)worn.set(id,(worn.get(id)||0)+1);}
     for(const [id,qty] of worn)counts.set(id,Math.max(qty,counts.get(id)||0));
-    let total=0;for(const [id,qty] of counts){const item=getItem(id)||{};if(!item.textOnlyInventory)total+=Math.max(0,num(item.mass))*qty;}
+    let total=0;for(const [id,qty] of counts){const item=getItem(id)||{};if(!item.textOnlyInventory)total+=Math.max(0,num(item.mass))*(qty+(adjustments.get(id)||0));}
     return total;
   }
   function resolve({speed=0,strength=0,capacity,weight=0,dash=false,spent=0}={}){

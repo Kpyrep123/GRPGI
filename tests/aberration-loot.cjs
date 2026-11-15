@@ -36,9 +36,16 @@ body.lootTransferV137.aberrations[0]={rarity:'uncommon',budget:1,effects:['weapo
 assert.throws(()=>transfer(request),/другими данными/);
 assert.equal(data.playerJson.inventory[0].qty,2);
 body.operationId='test_conditional_effects';
-body.lootTransferV137.aberrations[0]={rarity:'rare',budget:4,effects:['weapon-13-1','weapon-14-1','weapon-17-1']};
+body.lootTransferV137.aberrations[0]={rarity:'rare',budget:4,effects:['weapon-6-2','weapon-7-1']};
 assert.equal(transfer(request).status,'committed');
 assert.deepEqual(data.playerJson.inventory[0].instancesV215[2].aberration252,body.lootTransferV137.aberrations[0]);
+assert.deepEqual(data.playerJson.inventory[0].instancesV215[1].aberration252.effects,['weapon-3-2','weapon-4-3','weapon-8-4']);
+const rules=require('../pocketbase/pb_hooks/grpgi_loot_core_v137.js').engine(world);
+assert.equal(rules.layout(data.playerJson).weight,3.3);
+const available=rules.layout(data.playerJson).user.carryWeightMax;
+world.equipment.EQUIPMENT.heavy={id:'heavy',type:'weapon',mass:available-3.3,inventoryWidth:1,inventoryHeight:1};
+assert.equal(rules.canAdd(data.playerJson,'heavy',1).ok,true);
+assert.equal(rules.canAdd(data.playerJson,'heavy',1,[{effects:['weapon-7-1']}]).ok,false);
 console.log('PASS loot persists aberrations and rejects a changed replay');
 
 require('../renderer/combat-rules-v119.js');

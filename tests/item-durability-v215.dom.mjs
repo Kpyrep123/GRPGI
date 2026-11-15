@@ -27,7 +27,7 @@ const html=fs.readFileSync(path.join(root,'renderer/index.html'),'utf8');
 w.document.write(html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi,''));
 // Every renderer script is evaluated unmodified, in index.html order, sharing
 // browser-style lexical globals. Only OS/cloud/bootstrap boundaries are mocked.
-for(const m of html.matchAll(/<script src="\.\/([^"?]+)[^"]*"/g)){let source=fs.readFileSync(path.join(root,'renderer',m[1]),'utf8');if(m[1]==='scene-editor-v113.js')source=source.replace('// New module is DM-only;','window.test215={wear:wearArmorOnTwentyV215,defense:incomingDefense119,state:itemRuntimeStateV138,mutate:mutateItemStateV138,meleeOutcome:meleeOutcome256,attackFailure:attackFailure256,requestAttackRolls:requestAttackRolls119,applyDelayedHits:applyDelayedHits256,normalizeToken:normalizeCombatToken};\n// New module is DM-only;');vm.runInContext(source,context,{filename:m[1]});}
+for(const m of html.matchAll(/<script src="\.\/([^"?]+)[^"]*"/g)){let source=fs.readFileSync(path.join(root,'renderer',m[1]),'utf8');if(m[1]==='scene-editor-v113.js')source=source.replace('// New module is DM-only;','window.test215={wear:wearArmorOnTwentyV215,defense:incomingDefense119,state:itemRuntimeStateV138,mutate:mutateItemStateV138,meleeOutcome:meleeOutcome256,attackFailure:attackFailure256,requestAttackRolls:requestAttackRolls119,applyDelayedHits:applyDelayedHits256,damageType:damageType202,normalizeToken:normalizeCombatToken};\n// New module is DM-only;');vm.runInContext(source,context,{filename:m[1]});}
 
 
 
@@ -39,6 +39,7 @@ run(`
       armor:{id:'armor',name:'Панцирь',type:'armor',durabilityMax:1,energyProtection:true,armorClass:3,damageReduction:2},
       gun:{id:'gun',name:'Карабин',type:'weapon',weaponSlot:'versatile',durabilityMax:5,rarity:'редкий'}
     }},
+    campaigns:{ABERRATION_SETTINGS:{main:{variants:{"weapon-6-1":{value:"energy",cost:3}}}}},
     players:{PLAYER_TEMPLATES:{
       gm:{id:'gm',role:'gm',displayName:'GM'},
       p:{id:'p',role:'player',displayName:'Player',abilityBase:{dexterity:1},baseStats:{hpBase:10,armorClass:0,defense:0,inventorySlots:20,carryBase:50},
@@ -107,8 +108,14 @@ run(`
   const equippedCopy215=GRPGItemInstancesV215.instance(App.state.users.p,'gun',-1,'primaryWeapon');
   equippedCopy215.aberration252={rarity:'epic',budget:6,effects:['weapon-14-1','weapon-17-1']};
   window.melee215={id:'gun',weaponCategory:'melee'};
+  equippedCopy215.aberration252.effects.push('weapon-6-2','weapon-7-1');
   test215.meleeOutcome(target215,melee215,enemy215,{hit:false},3);
 `);
+assert.equal(run("test215.damageType(melee215,null,target215,'primaryWeapon')"),'energy');
+assert.equal(run("test215.damageType(melee215,{damageType:'gas'},target215,'primaryWeapon')"),'gas');
+assert.equal(run("test215.damageType(melee215,null,target215,'secondaryWeapon')"),'kinetic');
+assert.equal(run("GRPGInventoryV113.weight(App.state.users.p)"),4.3);
+assert.equal(run("GRPGCombatMovementV198.weight(App.state.users.p.inventory,['gun'],id=>GRPGInventoryV113.item(id))"),4.3);
 assert.equal(run('test215.attackFailure(target215,enemy215)?.amount'),1);
 assert.equal(run('test215.attackFailure(target215,target215)'),null);
 const requestAttack=()=>run('test215.requestAttackRolls({attacker:enemy215,target:target215,weapon:melee215,ammo:null,attackBonus:0,defenseBonus:0,damageBonus:0})');

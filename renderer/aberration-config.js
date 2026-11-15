@@ -25,19 +25,37 @@
   }
 
   // Only effects with an implemented combat rule enter the loot pool.
-  const supported = catalog.filter(effect => ['weapon-1','weapon-2','weapon-3','weapon-4','weapon-8','weapon-9','weapon-10','weapon-13','weapon-14','weapon-16','weapon-17'].includes(effect.id));
+  const supported = catalog.filter(effect => ['weapon-1','weapon-2','weapon-3','weapon-4','weapon-6','weapon-7','weapon-8','weapon-9','weapon-10','weapon-13','weapon-14','weapon-16','weapon-17'].includes(effect.id));
   const variants = supported.flatMap(effect => effect.variants.map(variant=>({...variant,group:effect.id,name:effect.name})));
+  const damageTypeIds=['kinetic','energy','electric','explosive','gas'];
+  const damageTypeVariant=variants.find(row=>row.group==='weapon-6');
   function resolve(id, overrides) {
+    const damageMatch=/^weapon-6-([1-5])$/.exec(id);
+    if(damageMatch)return {...damageTypeVariant,id,value:damageTypeIds[Number(damageMatch[1])-1]};
     const variant=variants.find(row=>row.id===id);
     if (!variant) return null;
     const saved=overrides[id];
-    const value=Number(String(saved?.value ?? variant.value).replace('−','-').trim().split(/\s+/)[0]);
+    const value=variant.group==='weapon-7'?window.GRPGItemInstancesV215.massPercent([id])
+      :Number(String(saved?.value ?? variant.value).replace('−','-').trim().split(/\s+/)[0]);
     return {...variant,cost:saved?.cost ?? variant.cost,value};
+  }
+  function validEffect(row){
+    if(!row)return false;
+    if(row.group==='weapon-6')return Boolean(row.value);
+    return Number.isInteger(row.value)&&Math.abs(row.value)<=(row.group==='weapon-7'?30:20);
   }
   window.GRPGAberrationWeapons = {
     roll(danger,weapon) {
       const {chances,variants:overrides}=settings();
-      const pool=variants.map(row=>resolve(row.id,overrides)).filter(row=>Number.isInteger(row.value)&&Math.abs(row.value)<=20
+      const target=window.GRPGDamageTypesV202.normalize(overrides[damageTypeVariant.id]?.value);
+      const pool=variants.map(row=>{
+        if(row.group!=='weapon-6')return resolve(row.id,overrides);
+        if(!target)return null;
+        const id='weapon-6-'+(damageTypeIds.indexOf(target)+1);
+        return {...resolve(id,overrides),cost:overrides[damageTypeVariant.id]?.cost??row.cost};
+      }).filter(row=>validEffect(row)
+        &&(row.group!=='weapon-6'||row.value!==window.GRPGDamageTypesV202.effective(weapon))
+        &&(row.group!=='weapon-7'||Number(weapon?.mass)>0)
         &&(row.group!=='weapon-8'||(Number(weapon?.magazineSize??weapon?.clipSize)>0
           &&Number(weapon?.magazineSize??weapon?.clipSize)+row.value>=1))
         &&(!['weapon-9','weapon-16'].includes(row.group)||weapon?.weaponCategory!=='melee')
@@ -48,7 +66,7 @@
     },
     effects(ids) {
       const overrides=settings().variants;
-      return (ids||[]).map(id=>resolve(id,overrides)).filter(row=>row&&Number.isInteger(row.value)&&Math.abs(row.value)<=20);
+      return (ids||[]).map(id=>resolve(id,overrides)).filter(validEffect);
     }
   };
 
@@ -81,7 +99,9 @@
         <p>${esc([effect.scope,effect.rule].filter(Boolean).join(' · '))}</p>
         ${effect.variants.map(variant=>{
           const saved = draft.variants[variant.id] || variant;
-          return `<div class="row" data-variant="${variant.id}"><label>Значение <input class="input" data-field="value" value="${esc(saved.value)}"></label>
+          return `<div class="row" data-variant="${variant.id}"><label>Значение ${effect.id==='weapon-6'
+            ? `<select class="select" data-field="value"><option value="">Выберите тип</option>${Object.entries(window.GRPGDamageTypesV202.labels).map(([id,label])=>`<option value="${id}" ${saved.value===id?'selected':''}>${esc(label)}</option>`).join('')}</select>`
+            : `<input class="input" data-field="value" value="${esc(effect.id==='weapon-7'?variant.value:saved.value)}" ${effect.id==='weapon-7'?'readonly':''}>` }</label>
             <label>Бюджет <input class="input" type="number" step="1" data-field="cost" value="${saved.cost}"></label></div>`;
         }).join('')}</details>`).join('');
     }
@@ -97,7 +117,7 @@
       const row=event.target.closest('[data-variant]');
       if(!row)return;
       const [value,cost]=[row.querySelector('[data-field="value"]').value,row.querySelector('[data-field="cost"]').valueAsNumber];
-      if (value.trim() && Number.isSafeInteger(cost)) draft.variants[row.dataset.variant]={value:value.trim(),cost};
+      if ((value.trim() || row.dataset.variant==='weapon-6-1') && Number.isSafeInteger(cost)) draft.variants[row.dataset.variant]={value:value.trim(),cost};
     });
     category.addEventListener('change',drawEffects);
     dialog.querySelector('[data-aberration-close]').onclick=()=>dialog.close();

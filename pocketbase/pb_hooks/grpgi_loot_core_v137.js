@@ -3,13 +3,11 @@ function engine(world={}){
   const VERSION = '1.0.122';
   const PRIMARY = ['strength','dexterity','endurance','intelligence','will','glory'];
   const PRIMARY_LABELS = { strength:'Сила', dexterity:'Ловкость', endurance:'Выносливость', intelligence:'Интеллект', will:'Воля', glory:'Слава' };
-  const WEAPON_STATS = { light:'dexterity', heavy:'endurance', energy:'intelligence', melee:'dexterity' };
-  const WEAPON_LABELS = { light:'Лёгкое', heavy:'Тяжёлое', energy:'Энергетическое', melee:'Ближний бой' };
   const TARGETS = [
     ['strength','Сила'],['dexterity','Ловкость'],['endurance','Выносливость'],['intelligence','Интеллект'],['will','Воля'],['glory','Слава'],
     ['max_hp','Максимальное HP'],['armor_class','Класс брони'],['defense','Защита (снижение урона)'],['initiative_bonus','Бонус инициативы'],
     ['movement','Дальность движения'],['vision','Дальность видимости'],['inventory_slots','Ячейки инвентаря'],['carry_capacity','Переносимый вес'],['implant_slots','Слоты имплантов'],
-    ['social_bonus','Социальный бонус'],['attack_bonus','Бонус попадания'],['damage_bonus','Бонус урона'],['weapon_hit_stat','Характеристика попадания'],['weapon_hit_extra_stat','Доп. характеристика к попаданию']
+    ['drone_actions','Дополнительные действия дронам'],['social_bonus','Социальный бонус'],['attack_bonus','Бонус попадания'],['damage_bonus','Бонус урона'],['weapon_hit_stat','Характеристика попадания'],['weapon_hit_extra_stat','Доп. характеристика к попаданию']
   ];
   const OPS = [['add','Добавить'],['set','Установить'],['replace_stat','Заменить характеристику'],['add_stat','Добавить характеристику']];
   const SCOPES = [['global','Всегда'],['weapon_category','Категория оружия'],['weapon_id','Конкретная модель оружия']];
@@ -70,17 +68,18 @@ function engine(world={}){
     if(kind==='has_skill') return arr(entity.skills).map(String).includes(String(mod.conditionValue||''));
     if(kind==='item_equipped'){const id=String(mod.conditionValue||'');return Object.values(entity.equipmentSlots||{}).map(String).includes(id)||arr(entity.implantSlots).map(String).includes(id);}
     if(kind==='hp_below_percent'){const max=Math.max(1,n(stats.hpMax,1));return n(stats.hpCurrent,max)/max*100 < n(mod.conditionValue,50);}
-    if(kind==='incoming_weapon_category') return String(context.incomingWeaponCategory||'')===String(mod.conditionValue||'');
+    if(kind==='incoming_weapon_category') return mod.conditionValue==='energy'?(context.incomingDamageType||context.incomingWeaponCategory)==='energy':String(context.incomingWeaponCategory||'')===String(mod.conditionValue||'');
     return true;
   }
   function scopeMatches(mod, context={}) {
     if (!mod.enabled || !conditionMatches(mod,context)) return false;
     if (mod.scope === 'weapon_id') return String(context.weaponId || '') === String(mod.scopeValue || '');
-    if (mod.scope === 'weapon_category') return String(context.weaponCategory || '') === String(mod.scopeValue || '');
+    if (mod.scope === 'weapon_category') return mod.scopeValue==='energy'?(context.damageType||context.weaponCategory)==='energy':String(context.weaponCategory || '') === String(mod.scopeValue || '');
     return true;
   }
 
 
+  const itemInstances=require((typeof __hooks==='undefined'?'./':__hooks+'/')+'item-instances-v215.js');
   const EQUIPMENT=world.equipment?.EQUIPMENT||{}, Data={getItem:id=>EQUIPMENT[id],getSkill:id=>world.skills?.SKILLS?.[id],socialOrigins:world.socialOrigins?.SOCIAL_ORIGINS,geographicOrigins:world.geographicOrigins?.GEOGRAPHIC_ORIGINS};
   const worldData=world;
   function equipment(id){if(!id)return null;const raw=EQUIPMENT[id];if(!raw)return null;
@@ -101,7 +100,7 @@ function engine(world={}){
   function originById(section,id){return(section==='social'?Data.socialOrigins:Data.geographicOrigins)?.[id]||null;}
   function normalizePlayerProfileV2(raw={}){
     const next=copy(raw);
-    next.inventory=arr(raw.inventory).map(row=>({...copy(row),itemId:String(row.itemId||''),qty:Math.max(0,i(row.qty)),positions:arr(copy(row.positions))})).filter(row=>row.itemId&&row.qty);
+    next.inventory=arr(raw.inventory).map(row=>({itemId:String(row.itemId||''),qty:Math.max(0,i(row.qty)),positions:arr(row.positions),...(Array.isArray(row.instancesV215)?{instancesV215:copy(row.instancesV215)}:{})})).filter(row=>row.itemId&&row.qty);
     next.textInventoryItems=arr(raw.textInventoryItems??raw.weightlessItems??raw.inventoryTextItems??raw.looseItems).map(row=>typeof row==='string'?{name:row,qty:1}:copy(row));
     next.inventory=next.inventory.filter(row=>{const item=equipment(row.itemId);if(!item?.legacyTextOnlyInventoryV131)return true;next.textInventoryItems.push({name:item.name||row.itemId,qty:row.qty});return false;});
     const derived=compute(next,{kind:'player'});
@@ -138,7 +137,8 @@ function engine(world={}){
     const slots = entity.equipmentSlots || {};
     ['primaryWeapon','secondaryWeapon','armor','backpack'].forEach(slot => {
       const item = equipment(slots[slot]);
-      if (!item) return;
+      const copy = itemInstances?.instance(entity, slots[slot], -1, slot);
+      if (!item || copy?.broken) return;
       push(item, 'equipment', item.id, item.name);
       sources.push(...synthesizeLegacyItemModifiers(item));
     });
@@ -225,7 +225,7 @@ function engine(world={}){
     derived.armorClass=applyStatFormula(base.armorClass,'dexterity','armor_class',mods,abilities,formulaContext,breakdown.armorClass,1,'База КБ');
     const entries = [
       ['defense','defense',base.defense],
-      ['movement','movement',base.movement],['vision','vision',base.vision],['inventorySlots','inventory_slots',base.inventorySlots],
+      ['droneActions','drone_actions',0],['movement','movement',base.movement],['vision','vision',base.vision],['inventorySlots','inventory_slots',base.inventorySlots],
       ['implantSlots','implant_slots',base.implantSlots]
     ];
     entries.forEach(([key,target,seed])=>{breakdown[key]=[];derived[key]=applyValue(seed,target,mods,formulaContext,breakdown[key]);});
@@ -244,19 +244,21 @@ function engine(world={}){
     derived.vision=Math.max(0,n(derived.vision,0));
     derived.inventorySlots=Math.max(0,i(derived.inventorySlots,0));
     derived.carryCapacity=Math.max(0,n(derived.carryCapacity,0));
+    derived.droneActions=Math.max(0,i(derived.droneActions));
     derived.implantSlots=Math.max(0,i(derived.implantSlots,0));
     return { version:VERSION, abilities, values:derived, base, modifiers:mods, breakdown };
   }
 
   function inventoryItem(id){return equipment(id)||{id,name:id,type:'gear',mass:0,inventoryWidth:1,inventoryHeight:1,stackable:false,textOnlyInventory:false};}
   function equippedCounts(user={}){const map=new Map(),add=id=>{id=String(id||'');if(id)map.set(id,(map.get(id)||0)+1)};['primaryWeapon','secondaryWeapon','armor','backpack'].forEach(k=>add(user.equipmentSlots?.[k]));arr(user.implantSlots).forEach(add);return map;}
-  function weight(user={}){return arr(user.inventory).reduce((sum,row)=>sum+nonNeg(inventoryItem(row.itemId).mass,0)*Math.max(0,i(row.qty,0)),0);}
+  function weight(user={}){return arr(user.inventory).reduce((sum,row)=>sum+itemInstances.inventoryRowMass(row,nonNeg(inventoryItem(row.itemId).mass,0)),0);}
   function cellUse(instance){return Math.max(0,i(instance.w))*Math.max(0,i(instance.h));}
   function fits(total,occupied,x,y,w,h){if(x<0||y<0||x+w>5)return false;for(let yy=y;yy<y+h;yy++)for(let xx=x;xx<x+w;xx++){const idx=yy*5+xx;if(idx<0||idx>=total||occupied.has(`${xx}:${yy}`))return false;}return true;}
   function mark(occ,x,y,w,h){for(let yy=y;yy<y+h;yy++)for(let xx=x;xx<x+w;xx++)occ.add(`${xx}:${yy}`);}
   function firstFit(total,occ,w,h){const rows=Math.ceil(Math.max(1,total)/5);for(let y=0;y<rows;y++)for(let x=0;x<5;x++)if(fits(total,occ,x,y,w,h))return{x,y};return null;}
-  function layout(rawUser={}){
-    const user=normalizePlayerProfileV2(rawUser), total=Math.max(0,i(user.inventorySize,0)), equipped=equippedCounts(user), occupied=new Set(), instances=[], overflow=[], text=[];
+  function layout(rawUser={}, {storageCapacity}={}){
+    const user=storageCapacity == null ? normalizePlayerProfileV2(rawUser) : {...rawUser, inventorySize:storageCapacity};
+    const total=Math.max(0,i(user.inventorySize,0)), equipped=equippedCounts(user), occupied=new Set(), instances=[], overflow=[], text=[];
     arr(user.inventory).forEach(entry=>{
       const item=inventoryItem(entry.itemId), qty=Math.max(0,i(entry.qty,0)), skip=Math.min(qty,equipped.get(entry.itemId)||0), remaining=Math.max(0,qty-skip);
       if(!remaining)return;
@@ -269,14 +271,14 @@ function engine(world={}){
         if(pos)pos={x:i(pos.x),y:i(pos.y)};
         if(!pos||!fits(total,occupied,pos.x,pos.y,w,h))pos=firstFit(total,occupied,w,h);
         const stackQty=item.stackable?Math.min(stackLimit,remaining-k*stackLimit):1;
-        const instance={key:`${entry.itemId}:${unitIndex}`,itemId:entry.itemId,item,entry,unitIndex,qty:stackQty,w,h,pos};
+        const instance={key:`${entry.itemId}:${unitIndex}`,itemId:entry.itemId,item,entry,unitIndex,qty:stackQty,stackLimit,w,h,pos};
         if(pos){mark(occupied,pos.x,pos.y,w,h);instances.push(instance);}else overflow.push(instance);
       }
     });
     const wgt=weight(user), overloaded=wgt>user.carryWeightMax+1e-9||overflow.length>0;
     return{user,total,size:total,cols:5,rows:Math.ceil(Math.max(1,total)/5),instances,overflow,text,occupied,weight:wgt,usedCells:instances.reduce((s,x)=>s+cellUse(x),0)+overflow.reduce((s,x)=>s+cellUse(x),0),overloaded};
   }
-  function canAdd(rawUser,itemId,qty=1){const user=normalizePlayerProfileV2(rawUser), item=inventoryItem(itemId);if(layout(user).overloaded)return{ok:false,reason:'Персонаж перегружен. Сначала освободите вес или место.'};const clone=copy(user);let row=clone.inventory.find(r=>r.itemId===itemId);if(!row){row={itemId,qty:0,positions:[]};clone.inventory.push(row);}row.qty+=Math.max(1,i(qty,1));const l=layout(clone);if(l.weight>clone.carryWeightMax+1e-9)return{ok:false,reason:`Превышен переносимый вес: ${l.weight.toFixed(1)} / ${clone.carryWeightMax.toFixed(1)}`};if(l.overflow.length)return{ok:false,reason:'Недостаточно ячеек инвентаря.'};return{ok:true};}
+  function canAdd(rawUser,itemId,qty=1,rolls=[]){const user=normalizePlayerProfileV2(rawUser), item=inventoryItem(itemId);if(layout(user).overloaded)return{ok:false,reason:'Персонаж перегружен. Сначала освободите вес или место.'};const clone=copy(user);let row=clone.inventory.find(r=>r.itemId===itemId);if(!row){row={itemId,qty:0,positions:[]};clone.inventory.push(row);}row.qty+=Math.max(1,i(qty,1));const l=layout(clone),weight=l.weight+nonNeg(item.mass,0)*arr(rolls).reduce((sum,roll)=>sum+itemInstances.massPercent(roll?.effects),0)/100;if(weight>clone.carryWeightMax+1e-9)return{ok:false,reason:`Превышен переносимый вес: ${weight.toFixed(1)} / ${clone.carryWeightMax.toFixed(1)}`};if(l.overflow.length)return{ok:false,reason:'Недостаточно ячеек инвентаря.'};return{ok:true};}
 
   return {compute,layout,canAdd,equipment,normalizePlayer:normalizePlayerProfileV2};
 }
