@@ -194,21 +194,22 @@ function updatePlayerFacing231(scene,runtime){
 }
 let lastLootReveal252 = '';
 function renderLootReveal252(reveal) {
-  if(!reveal?.id||reveal.id===lastLootReveal252||Date.now()-reveal.at>=8000)return;
+  if(!reveal?.id||Date.now()-reveal.at>=12000)return;
+  if(reveal.id===lastLootReveal252&&root.querySelector('.battle-loot-reveal'))return;
   lastLootReveal252=reveal.id;
   root.querySelector('.battle-loot-reveal')?.remove();
   const panel=document.createElement('section');
   panel.className='battle-loot-reveal';
-  const names={uncommon:'Необычное',rare:'Редкое',epic:'Эпическое',legendary:'Легендарное'};
-  const title=document.createElement('h2');title.textContent=reveal.name+' · '+reveal.recipient;panel.append(title);
+  const names={common:'Обычное',uncommon:'Необычное',rare:'Редкое',epic:'Эпическое',legendary:'Легендарное'};
+  const title=document.createElement('h2');title.textContent=reveal.name+(reveal.qty>1?' ×'+reveal.qty:'')+' · '+reveal.recipient;panel.append(title);
   for(const item of list(reveal.items)){
     const row=document.createElement('div');
     row.dataset.rarity=item.rarity;
-    row.textContent=[names[item.rarity],...list(item.effects)].join(' · ');
+    row.textContent=[names[item.rarity]+(item.qty>1?' ×'+item.qty:''),...list(item.effects)].join(' · ');
     panel.append(row);
   }
   root.append(panel);
-  setTimeout(()=>panel.remove(),8000);
+  setTimeout(()=>panel.remove(),Math.max(0,12000-(Date.now()-reveal.at)));
 }
 function renderCombatSnapshot(snapshot){
   const scene=normalizeScene(snapshot.scene);

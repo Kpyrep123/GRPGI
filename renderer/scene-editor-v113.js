@@ -169,6 +169,7 @@
     next.aberrationFailure256=clone(token.aberrationFailure256||null);
     next.aberrationDelayedRound256=clone(token.aberrationDelayedRound256||null);
     next.aberrationDelayedHits256=clone(list(token.aberrationDelayedHits256));
+    next.aberrationJams258=clone(token.aberrationJams258||{});
     next.aberrationRecoil255=clone(token.aberrationRecoil255||null);
     next.ownTurnV199=Math.max(0,Math.trunc(num(token.ownTurnV199)));
     next.moraleV199=window.GRPGCombatInstinctV199.effects(token.moraleV199);
@@ -205,7 +206,7 @@
     next.attackRangeOverrideV122 = token.attackRangeOverrideV122 === true;
     next.weaponMalfunctionsV122 = token.weaponMalfunctionsV122&&typeof token.weaponMalfunctionsV122==='object'?{...token.weaponMalfunctionsV122}:{};
     next.timedModifiersV122 = list(token.timedModifiersV122).map(row=>({...row,effects:list(row?.effects).map(effect=>({...effect})),remainingTurns:Math.max(0,Math.trunc(num(row?.remainingTurns??row?.duration,0)))})).filter(row=>row.id&&row.remainingTurns>0);
-    next.burstStateV122=token.burstStateV122&&typeof token.burstStateV122==='object'?{weaponId:String(token.burstStateV122.weaponId||''),nextShot:Math.max(1,Math.trunc(num(token.burstStateV122.nextShot,1))),maxShots:Math.max(1,Math.trunc(num(token.burstStateV122.maxShots,1))),lastTargetId:String(token.burstStateV122.lastTargetId||''),targetSwitches:Math.max(0,Math.trunc(num(token.burstStateV122.targetSwitches))),aberrationCritical254:token.burstStateV122.aberrationCritical254===true,aberrationFinisher255:token.burstStateV122.aberrationFinisher255===true}:null;
+    next.burstStateV122=token.burstStateV122&&typeof token.burstStateV122==='object'?{weaponId:String(token.burstStateV122.weaponId||''),nextShot:Math.max(1,Math.trunc(num(token.burstStateV122.nextShot,1))),maxShots:Math.max(1,Math.trunc(num(token.burstStateV122.maxShots,1))),lastTargetId:String(token.burstStateV122.lastTargetId||''),targetSwitches:Math.max(0,Math.trunc(num(token.burstStateV122.targetSwitches))),aberrationCritical254:token.burstStateV122.aberrationCritical254===true,aberrationFinisher255:token.burstStateV122.aberrationFinisher255===true,aberrationHit258:token.burstStateV122.aberrationHit258===true}:null;
     next.weaponId = String(token.weaponId || next.weaponId || '');
     next.grenadeId = String(token.grenadeId || '');
     next.faunaId = String(token.faunaId || '');
@@ -1335,7 +1336,7 @@
     return weapon||normalizeEquipmentItemV2({id:'__unarmed_v122',name:'Безоружная атака',type:'weapon',weaponCategory:'melee',damage:'1',hitBonus:0,range:1,rapidFireShots:1,isUnarmedV122:true});
   }
   function rapidFireShots122(weapon={}){return Math.max(1,Math.trunc(num(weapon.rapidFireShots??weapon.burstShots,1)));}
-  function weaponMalfunction122(token,weapon){return Boolean(token?.weaponMalfunctionsV122?.[String(weapon?.id||'')]);}
+  function weaponMalfunction122(token,weapon,slot){return Boolean(token?.weaponMalfunctionsV122?.[String(weapon?.id||'')]||jamState258(token,weapon,slot)?.jammed);}
   async function applyWeaponFumble196(attacker,weapon){
     attacker.burstStateV122=null;
     if(weapon.isUnarmedV122){const before=clone(conditionStateV138(attacker));setConditionV138(attacker,'prone',true);attacker.reactionUsedV119=true;await conditionEvents225(attacker,before,{reason204:'fumble'});return;}
@@ -1523,13 +1524,97 @@
     appendCombatLog105(Combat.getRuntime(),`${token.name} выполняет Рывок действием: скорость ${movement.speed}, запас ${movement.budget}, уже потрачено ${movement.spent}, осталось ${movement.remaining}.`);
     local.preview=null;Combat.render();await checkpointCombat120('Рывок',false);
   }
-  function weaponAberrationEffects257(token,weapon,slot){
-    if(!weapon?.id)return [];
+  function weaponCopy258(token,weapon,slot){
+    if(!weapon?.id)return null;
     const entity=entityForToken(token);
     const key=slot||['primaryWeapon','secondaryWeapon'].find(name=>entity?.equipmentSlots?.[name]===weapon.id);
-    if(!key)return [];
-    const copy=window.GRPGItemInstancesV215.instance(entity,weapon.id,-1,key);
-    return window.GRPGAberrationWeapons?.effects(copy?.aberration252?.effects)||[];
+    return key?window.GRPGItemInstancesV215.instance(entity,weapon.id,-1,key):null;
+  }
+  function weaponAberrationEffects257(token,weapon,slot){
+    const ids=weaponCopy258(token,weapon,slot)?.aberration252?.effects;
+    return ids?.length?window.GRPGAberrationWeapons?.effects(ids)||[]:[];
+  }
+  function jamState258(token,weapon,slot){
+    if(!token?.aberrationJams258||!Object.keys(token.aberrationJams258).length)return null;
+    const id=weaponCopy258(token,weapon,slot)?.id;
+    return id?token?.aberrationJams258?.[id]||null:null;
+  }
+  function jamOnHit258(attacker,weapon,result,slot){
+    if(!inBattle191()||result.attackDie!==20||!result.defenseFumble)return false;
+    const copy=weaponCopy258(attacker,weapon,slot);
+    if(!copy?.aberration252?.effects?.includes('weapon-15-1')||magazineState118(attacker,weapon,slot).size<=0)return false;
+    const {battleId,round}=epochContext204(attacker);
+    const prior=jamState258(attacker,weapon,slot);
+    if(prior?.battleId===battleId&&prior.round===round)return false;
+    (attacker.aberrationJams258||={})[copy.id]={battleId,round,jammed:true};
+    appendCombatLog105(Combat.getRuntime(),`«${weapon.name}» заклинило после суперкрита. Требуется перезарядка.`);
+    return true;
+  }
+  async function bonusDie258(attacker,weapon,state,damageType,slot){
+    const sides=weaponAberration254(attacker,weapon,'weapon-5',slot);
+    if(!sides)return;
+    const choices=sides===8?Object.entries(window.GRPGDamageTypesV202.labels):[];
+    const roll=await combatModal119({
+      title:`Дополнительный урон · 1d${sides}`,subtitle:weapon.name,decline:'',
+      body:`<label class="field">Результат физического броска<input class="input" name="value" type="number" required min="1" max="${sides}"></label>${choices.length?`<label class="field">Тип дополнительного урона
+        <select class="select" name="damageType">${choices.map(([id,label])=>`<option value="${id}" ${id===damageType?'selected':''}>${html(label)}</option>`).join('')}</select></label>`:''}`,
+      read:form=>({value:Number(form.elements.value.value),type:form.elements.damageType?.value||damageType}),
+      validate:({value})=>!Number.isInteger(value)||value<1||value>sides?`Введите число от 1 до ${sides}`:''
+    });
+    if(!roll)throw new Error('Ввод дополнительного урона прерван');
+    state.damage+=roll.value;
+    if(roll.type===damageType)state.damagePartsV138[0].amount+=roll.value;
+    else state.damagePartsV138.push({amount:roll.value,absorptionSource:'all',damageType258:roll.type});
+    appendCombatLog105(Combat.getRuntime(),`${attacker.name}: дополнительный урон 1d${sides} = ${roll.value} (${damageLabel202(roll.type)}).`);
+  }
+  async function secondaryHit258(attacker,weapon,target,damageType,slot){
+    if(!attacker||!target)return;
+    const scene=Combat.getScene(),runtime=Combat.getRuntime();
+    const push=weaponAberration254(attacker,weapon,'weapon-12',slot);
+    if(push>0&&!target.dead229){
+      const from=centerOf(attacker),before=centerOf(target),origin=nearestHexNode108(scene,before);
+      const length=dist(from,before);
+      if(length>0){
+        const step=hexStepDistance109();
+        const ray={x:before.x+(before.x-from.x)/length*step*(push+1),y:before.y+(before.y-from.y)/length*step*(push+1)};
+        let destination=origin;
+        for(let distance=1;distance<=push;distance++){
+          const point=hexEndpointAtRange109(scene,origin,ray,distance);
+          if(dist(destination,point)<.001||!window.GRPGUnitSizeV184.inBounds(target.unitSize,scene,point)
+            ||movementSegmentBlocked(scene,destination,point,target.id))break;
+          destination=point;
+        }
+        if(destination!==origin){
+          fitTokenToHex107(target,scene,destination);
+          await positionEvents204(target,before,'forced');
+          appendCombatLog105(runtime,`Толчок: ${target.name} перемещён на ${hexLabel109(hexDistancePoints109(scene,origin,destination))}.`);
+        }
+      }
+    }
+    const damage=weaponAberration254(attacker,weapon,'weapon-11',slot);
+    if(damage<=0)return;
+    const origin=centerOf(target);
+    const eligible=unit=>unit.id!==attacker.id&&unit.id!==target.id&&!withdrawn194(unit)&&num(unit.hpCurrent)>0
+      &&window.GRPGUnitSizeV184.distance(unit,target)<=2
+      &&!sightSegmentBlocked105(scene,origin,centerOf(unit),[target.id,unit.id])
+      &&!coverBetween120(scene,origin,centerOf(unit),true).blocksAttack;
+    const targets=list(runtime.tokens).filter(eligible);
+    if(!targets.length)return;
+    const id=await combatModal119({
+      title:'Рикошет',subtitle:'Выберите вторую цель в пределах двух гексов.',
+      body:targets.map(unit=>`<label class="field"><input type="radio" name="ricochet" value="${html(unit.id)}"> ${html(unit.name)}</label>`).join(''),
+      confirm:'ПРИМЕНИТЬ',decline:'ПРОПУСТИТЬ',read:form=>String(form.querySelector('input:checked')?.value||''),
+      validate:id=>id?'':'Выберите цель.'
+    });
+    const victim=id&&tokenById119(id);
+    if(!victim||!eligible(victim))return;
+    const cover=coverBetween120(scene,origin,centerOf(victim),true);
+    const defense=incomingDefense119(victim,weapon.weaponCategory||'light',cover,damageType);
+    const reduced=applyAbsorptionV138({damage},defense);
+    await applyHit199(victim,reduced.applied,'Рикошет',tokenById119(attacker.id)||attacker,{
+      damageType,rawDamage:damage,absorbed:reduced.absorbed
+    });
+    appendCombatLog105(runtime,`Рикошет: ${victim.name}, урон ${reduced.applied}.`);
   }
   function weaponAberration254(token,weapon,group,slot){
     return weaponAberrationEffects257(token,weapon,slot)
@@ -2097,10 +2182,11 @@
     if(isControlledDevice200(token)&&!canCombatAct129(token))return{enabled:false,reason:'Нет сложной команды с доступной операцией',token,weapon};
     if(!weapon)return{enabled:false,reason:'У юнита нет выбранного оружия'};
     if(token.burstStateV122)return{enabled:false,reason:'Сначала завершите скорострельную очередь',token,weapon};
-    if(weaponMalfunction122(token,weapon))return{enabled:false,reason:'Сначала устраните отказ оружия',token,weapon};
+    if(token.weaponMalfunctionsV122?.[weapon.id])return{enabled:false,reason:'Сначала устраните отказ оружия',token,weapon};
     const magazine=magazineState118(token,weapon);
     if(!magazine.size)return{enabled:false,reason:'Выбранное оружие не использует магазин',token,weapon,magazine};
     if(actionSpent191(token))return{enabled:false,reason:'Обычное действие уже потрачено',token,weapon,magazine};
+    if(jamState258(token,weapon)?.jammed)return{enabled:true,reason:'Перезарядить заклинившее оружие',token,weapon,magazine};
     if(magazine.loaded>=magazine.size)return{enabled:false,reason:'Магазин уже полон',token,weapon,magazine};
     const reserve=reserveAmmo118(token,weapon,magazine);
     if(!reserve.compatible.length||reserve.compatible.every(row=>row.ownedQty<=0))return{enabled:false,reason:'В инвентаре нет совместимых патронов',token,weapon,magazine,reserve};
@@ -2123,7 +2209,7 @@
   }
   function renderPostureAction128(){const state=postureAvailability128(),token=selectedToken104();return `<button class="secondary scene-posture-action-v128" type="button" data-scene-posture-v128 ${state.enabled?'':'disabled'} title="${html(state.reason)}">${token?.proneV122?'ВСТАТЬ':'ЛЕЧЬ'}${state.cost?` · ${state.cost}`:''}</button>`;}
   function renderBurstFinish122(){const token=selectedToken104();return token?.burstStateV122?`<button class="secondary active" type="button" data-scene-burst-finish-v122>ЗАВЕРШИТЬ ОЧЕРЕДЬ (${Math.max(0,token.burstStateV122.maxShots-token.burstStateV122.nextShot+1)})</button>`:'';}
-  function renderMalfunctionAction122(){const token=selectedToken104(),weapon=weaponForToken105(token),jammed=weaponMalfunction122(token,weapon),enabled=jammed&&canCombatAct129(token)&&!actionSpent191(token);return jammed?`<button class="secondary" type="button" data-scene-clear-malfunction-v122 ${enabled?'':'disabled'}>УСТРАНИТЬ ОТКАЗ</button>`:'';}
+  function renderMalfunctionAction122(){const token=selectedToken104(),weapon=weaponForToken105(token),jammed=Boolean(token?.weaponMalfunctionsV122?.[weapon?.id]),enabled=jammed&&canCombatAct129(token)&&!actionSpent191(token);return jammed?`<button class="secondary" type="button" data-scene-clear-malfunction-v122 ${enabled?'':'disabled'}>УСТРАНИТЬ ОТКАЗ</button>`:'';}
   function skillForScene118(id){try{return Data.getSkill?.(id)||Data.skills?.[id]||worldData?.skills?.SKILLS?.[id]||null;}catch{return null;}}
   const basicSkills229=Object.fromEntries([
     ['skill_766282','Прицеливание','Действие. До +3 к попаданию и урону по выбранной цели для одного выстрела.'],
@@ -2482,11 +2568,12 @@
       const magazine=magazineState118(token,weapon),reserve=magazine.size?reserveAmmo118(token,weapon,magazine):null;
       // Inventory stores rounds, not detachable magazine objects. Full loads are an estimate.
       const rounds=reserve?reserve.compatible.reduce((sum,row)=>sum+num(row.ownedQty),0):0;
-      return{weapon,magazine,rounds,loads:magazine.size?Math.floor(rounds/magazine.size):0,selected:weapon.id===selected?.id,broken:itemBrokenV138(token,weapon),jammed:weaponMalfunction122(token,weapon)};
+      const effects=list(weaponCopy258(token,weapon)?.aberration252?.effects).map(id=>window.GRPGAberrationWeapons?.describe(id)).filter(Boolean);
+      return{weapon,magazine,rounds,effects,loads:magazine.size?Math.floor(rounds/magazine.size):0,selected:weapon.id===selected?.id,broken:itemBrokenV138(token,weapon),jammed:weaponMalfunction122(token,weapon)};
     });
   }
   function renderBattleWeapons226(token){
-    return `<section class="battle-weapons-v226" aria-label="Оружие и боезапас"><h3>ВООРУЖЕНИЕ</h3><div class="battle-weapon-list-v226">${battleWeaponRows226(token).map(({weapon,magazine,rounds,loads,selected,broken,jammed})=>`<button type="button" class="battle-weapon-v226 ${selected?'is-selected':''}" data-battle-weapon226="${html(weapon.id)}" aria-pressed="${selected}" ${token.burstStateV122||isControlledDevice200(token)?'disabled':''} title="${html(weapon.name)} · ${html(weapon.damage||'—')} урона · ${hexLabel109(num(weapon.range ?? token.attackRange ?? DEFAULT_ATTACK_WORLD))}">${portrait226(weapon)}<span><b>${html(weapon.name||'Безоружная атака')}</b><small>Урон ${html(weapon.damage||'—')} · ${hexLabel109(num(weapon.range ?? token.attackRange ?? DEFAULT_ATTACK_WORLD))}</small>${magazine.size?`<strong class="${magazine.loaded?'':'is-empty'}">${magazine.loaded}<em> / ${magazine.size}</em></strong><small>Запас: ${rounds} патр. ≈ ${loads} полн. магаз.</small><small>${html(ammoForWeapon118(weapon,magazine)?.name||'Патроны не выбраны')}</small>`:'<small>Без магазина</small>'}${broken?'<small class="battle-danger-v226">СЛОМАНО</small>':jammed?'<small class="battle-danger-v226">ОТКАЗ</small>':''}</span></button>`).join('')||'<p>Оружие отсутствует</p>'}</div></section>`;
+    return `<section class="battle-weapons-v226" aria-label="Оружие и боезапас"><h3>ВООРУЖЕНИЕ</h3><div class="battle-weapon-list-v226">${battleWeaponRows226(token).map(({weapon,magazine,rounds,loads,selected,broken,jammed,effects})=>`<button type="button" class="battle-weapon-v226 ${selected?'is-selected':''}" data-battle-weapon226="${html(weapon.id)}" aria-pressed="${selected}" ${token.burstStateV122||isControlledDevice200(token)?'disabled':''} title="${html(weapon.name)} · ${html(weapon.damage||'—')} урона · ${hexLabel109(num(weapon.range ?? token.attackRange ?? DEFAULT_ATTACK_WORLD))}">${portrait226(weapon)}<span><b>${html(weapon.name||'Безоружная атака')}</b><small>Урон ${html(weapon.damage||'—')} · ${hexLabel109(num(weapon.range ?? token.attackRange ?? DEFAULT_ATTACK_WORLD))}</small>${magazine.size?`<strong class="${magazine.loaded?'':'is-empty'}">${magazine.loaded}<em> / ${magazine.size}</em></strong><small>Запас: ${rounds} патр. ≈ ${loads} полн. магаз.</small><small>${html(ammoForWeapon118(weapon,magazine)?.name||'Патроны не выбраны')}</small>`:'<small>Без магазина</small>'}${effects.length?`<small title="${html(effects.join(' · '))}">${html(effects.join(' · '))}</small>`:''}${broken?'<small class="battle-danger-v226">СЛОМАНО</small>':jammed?'<small class="battle-danger-v226">ОТКАЗ</small>':''}</span></button>`).join('')||'<p>Оружие отсутствует</p>'}</div></section>`;
   }
   function renderBattleStatus226(token){
     const labels={dying:`Умирает · УКС ${num(token.critical229?.damage)} · сложность ${window.GRPGCombatRulesV119.stabilizationDifficulty(token)}`,stabilized:'Стабилизирован',prone:'Лежит',stunned:'Оглушён',grappled:'Захвачен',unconscious:'Без сознания',handsBusy:'Руки заняты'};
@@ -2706,7 +2793,8 @@
       await runAutomaticHooks119(attacker,'BeforeAttackStart',{...context,attackBonus:pre.attackBonus,defenseBonus:pre.defenseBonus},pre);await chooseReaction119('BeforeAttackStart',{...context,attackBonus:pre.attackBonus,defenseBonus:pre.defenseBonus},pre);
       const result=rules.resolveManualAttack({attackRoll:entered.attackRoll,defenseRoll:entered.defenseRoll,attackBonus:pre.attackBonus+num(entered.attackBonusDelta204),defenseBonus:pre.defenseBonus+num(entered.defenseBonusDelta204),damageRoll:entered.damageRoll,damageBonus,damageReduction:0});meleeOutcome256(attacker,weapon,victim,result,entered.damageRoll);await emit204('OnAttackResolved',attacker,{...context,hit:result.hit,critical:result.critical},pre);if(!result.hit)await emit204('OnMiss',attacker,{...context,hit:false});
       refs=combatTransactionRefs120(transaction);attacker=refs.attacker;victim=refs.target;let finalDamage=result.damageApplied,hp={before:num(victim?.hpCurrent),after:num(victim?.hpCurrent),applied:0},state={damage:result.hit?result.damageApplied:0,damagePartsV138:result.hit?[{amount:result.damageApplied,absorptionSource:'all'}]:[],effects:pre.effects};
-      if(result.hit&&victim){await runAutomaticHooks119(attacker,'OnHit',{...context,attacker,target:victim,damage:state.damage},state);await chooseReaction119('OnHit',{...context,attacker,target:victim,damage:state.damage},state);refs=combatTransactionRefs120(transaction);victim=refs.target;attacker=refs.attacker;if(victim){await runAutomaticHooks119(victim,'BeforeDamage',{...context,attacker,target:victim,damage:state.damage},state);await chooseReaction119('BeforeDamage',{...context,attacker,target:victim,damage:state.damage},state);refs=combatTransactionRefs120(transaction);victim=refs.target;attacker=refs.attacker;if(!victim||!attacker)return false;finisher255(attacker,weapon,victim,state);finalDamage=applyAbsorptionV138(state,incomingDefense119(victim,'melee',null,damageType202(weapon,null,attacker))).applied;if(result.defenseCritical)finalDamage=Math.floor(finalDamage/2);hp=await applyHit199(victim,finalDamage,weapon.name,attacker,{damageType:damageType202(weapon,null,attacker)});updatePlayerHp105(victim);const afterContext={...context,attacker,target:victim,damage:finalDamage};await runAutomaticHooks119(victim,'OnTakeDamage',afterContext,state);await chooseReaction119('OnTakeDamage',afterContext,state);refs=combatTransactionRefs120(transaction);victim=refs.target;hp.after=num(victim?.hpCurrent,hp.after);hp.applied=Math.max(0,hp.before-hp.after);if(victim)updatePlayerHp105(victim);}}
+      if(result.hit&&victim){await bonusDie258(attacker,weapon,state,damageType202(weapon,null,attacker));refs=combatTransactionRefs120(transaction);attacker=refs.attacker;victim=refs.target;if(!attacker||!victim)return false;await runAutomaticHooks119(attacker,'OnHit',{...context,attacker,target:victim,damage:state.damage},state);await chooseReaction119('OnHit',{...context,attacker,target:victim,damage:state.damage},state);refs=combatTransactionRefs120(transaction);victim=refs.target;attacker=refs.attacker;if(victim){await runAutomaticHooks119(victim,'BeforeDamage',{...context,attacker,target:victim,damage:state.damage},state);await chooseReaction119('BeforeDamage',{...context,attacker,target:victim,damage:state.damage},state);refs=combatTransactionRefs120(transaction);victim=refs.target;attacker=refs.attacker;if(!victim||!attacker)return false;finisher255(attacker,weapon,victim,state);finalDamage=applyAbsorptionV138(state,incomingDefense119(victim,'melee',null,damageType202(weapon,null,attacker)),type=>incomingDefense119(victim,'melee',null,type)).applied;if(result.defenseCritical)finalDamage=Math.floor(finalDamage/2);hp=await applyHit199(victim,finalDamage,weapon.name,attacker,{damageType:damageType202(weapon,null,attacker)});updatePlayerHp105(victim);const afterContext={...context,attacker,target:victim,damage:finalDamage};await runAutomaticHooks119(victim,'OnTakeDamage',afterContext,state);await chooseReaction119('OnTakeDamage',afterContext,state);refs=combatTransactionRefs120(transaction);victim=refs.target;hp.after=num(victim?.hpCurrent,hp.after);hp.applied=Math.max(0,hp.before-hp.after);if(victim)updatePlayerHp105(victim);}}
+      if(result.hit&&victim)await secondaryHit258(attacker,weapon,victim,damageType202(weapon,null,attacker));
       if(weapon.shotSoundId247)audioApi()?.play?.(weapon.shotSoundId247);
       appendCombatLog105(refs.runtime,`${attacker.name} ${result.hit?'попадает':'промахивается'} атакой по возможности по ${victim?.name||target.name}${result.hit?`: ${hp.before} → ${hp.after} HP`:''}${result.fumble?' · натуральная 1':''}.`);
       Combat.syncInitiative(scene.id,false);flushLuaEffects119(state);await sealOperation194('Подтверждена атака по возможности');if(!options.deferCheckpoint)await checkpointCombat120('Сцена: атака по возможности',true);return num(victim?.hpCurrent,0)>0;
@@ -2917,7 +3005,7 @@
     closeCombatModal119(null);
     return new Promise(resolve=>{
       const overlay=document.createElement('div');overlay.className='scene-lua-overlay-v119';
-      overlay.innerHTML=`<form class="scene-lua-modal-v119"><header><span class="tiny-label">БОЕВАЯ СЦЕНА · РЕШЕНИЕ ДМА</span><h3>${html(title)}</h3>${subtitle?`<p>${html(subtitle)}</p>`:''}</header><div class="scene-lua-modal-body-v119">${body}</div><footer><button class="ghost" type="button" data-lua-decline-v119>${html(decline)}</button>${confirm?`<button class="primary" type="submit">${html(confirm)}</button>`:''}</footer></form>`;
+      overlay.innerHTML=`<form class="scene-lua-modal-v119"><header><span class="tiny-label">БОЕВАЯ СЦЕНА · РЕШЕНИЕ ДМА</span><h3>${html(title)}</h3>${subtitle?`<p>${html(subtitle)}</p>`:''}</header><div class="scene-lua-modal-body-v119">${body}</div><footer>${decline?`<button class="ghost" type="button" data-lua-decline-v119>${html(decline)}</button>`:''}${confirm?`<button class="primary" type="submit">${html(confirm)}</button>`:''}</footer></form>`;
       let completed=false;overlay.__finishV119=value=>{if(completed)return;completed=true;resolve(value);};
       overlay.querySelector('[data-lua-decline-v119]')?.addEventListener('click',()=>closeCombatModal119(null));
       overlay.querySelector('form')?.addEventListener('submit',event=>{event.preventDefault();if(!confirm)return;const form=event.currentTarget;const value=typeof read==='function'?read(form):true;const problem=typeof validate==='function'?validate(value,form):'';if(problem){const note=form.querySelector('[data-lua-modal-error-v119]');if(note)note.textContent=String(problem);else Toast.show(String(problem),'info');return;}closeCombatModal119(value);});
@@ -3130,11 +3218,11 @@
   function absorptionAmountV138(defense={},source='all'){
     source=absorptionSourceV138(source);if(source==='none')return 0;if(source==='all')return Math.max(0,num(defense.damageReduction,0));return Math.max(0,num(defense[`${source}Absorption`],0));
   }
-  function applyAbsorptionV138(state={},defense={}){
+  function applyAbsorptionV138(state={},defense={},typedDefense=null){
     const total=Math.max(0,num(state.damage,0)),parts=list(state.damagePartsV138).length?list(state.damagePartsV138):[{amount:total,absorptionSource:'all'}];
     const partsTotal=parts.reduce((sum,row)=>sum+Math.max(0,num(row?.amount,0)),0);if(Math.abs(partsTotal-total)>.001){parts.length=0;parts.push({amount:total,absorptionSource:'all'});}
     let applied=0,absorbed=0;
-    for(const part of parts){const raw=Math.max(0,num(part.amount,0)),source=absorptionSourceV138(part.absorptionSource),globalRule=state.absorptionRulesV138?.[source]||state.absorptionRulesV138?.all||{},base=absorptionAmountV138(defense,source),penetration=Math.max(0,num(part.penetration)>0?num(part.penetration):num(globalRule.penetration)),flat=Math.max(0,num(part.ignoreAbsorption)>0?num(part.ignoreAbsorption):num(globalRule.flat)),percent=clamp104(num(part.ignorePercent)>0?num(part.ignorePercent):num(globalRule.percent),0,100),effective=Math.max(0,base-penetration-flat)*(1-percent/100),taken=Math.min(raw,Math.max(0,Math.round(effective)));absorbed+=taken;applied+=Math.max(0,raw-taken);}
+    for(const part of parts){const raw=Math.max(0,num(part.amount,0)),source=absorptionSourceV138(part.absorptionSource),globalRule=state.absorptionRulesV138?.[source]||state.absorptionRulesV138?.all||{},base=absorptionAmountV138(part.damageType258&&typedDefense?typedDefense(part.damageType258):defense,source),penetration=Math.max(0,num(part.penetration)>0?num(part.penetration):num(globalRule.penetration)),flat=Math.max(0,num(part.ignoreAbsorption)>0?num(part.ignoreAbsorption):num(globalRule.flat)),percent=clamp104(num(part.ignorePercent)>0?num(part.ignorePercent):num(globalRule.percent),0,100),effective=Math.max(0,base-penetration-flat)*(1-percent/100),taken=Math.min(raw,Math.max(0,Math.round(effective)));absorbed+=taken;applied+=Math.max(0,raw-taken);}
     return{raw:total,absorbed:Math.min(total,absorbed),applied:Math.max(0,Math.round(applied))};
   }
   function weaponForSlotV138(token,slotOrId=''){
@@ -3145,6 +3233,8 @@
   function reloadUnitV138(token,slotOrId=''){
     const selected=weaponForSlotV138(token,slotOrId);if(!token||!selected?.item)throw new Error('Reload: оружие не найдено');
     const weapon=selected.item,state=magazineState118(token,weapon);if(state.size<=0)throw new Error(`Reload: у «${weapon.name||weapon.id}» нет магазина`);
+    const jam=jamState258(token,weapon,selected.slot);
+    if(jam?.jammed){jam.jammed=false;return{loaded:0,state,weapon};}
     const need=Math.max(0,state.size-state.loaded);if(!need)return{loaded:0,state,weapon};
     if(token.npcId&&!list(tokenInventoryOwner120(token).rows).length){state.loaded=state.size;state.ammoTypeId=state.ammoTypeId||String(weapon.ammoTypeId||weapon.ammunitionId||'');writeMagazineState118(token,weapon,state);return{loaded:need,state,weapon};}
     const ammo=compatibleAmmo120(token,weapon,{availableOnly:true,loadedTypeId:state.loaded>0?state.ammoTypeId:''}).find(row=>String(row.id)===String(state.ammoTypeId||weapon.ammoTypeId||''))||compatibleAmmo120(token,weapon,{availableOnly:true,loadedTypeId:state.loaded>0?state.ammoTypeId:''})[0];
@@ -3358,7 +3448,7 @@
     // Rendering a physical-roll window may normalize tokens. Never apply a result to a detached copy.
     const refresh=()=>{attacker=tokenById119(command.attackerId);target=tokenById119(command.targetId);if(!scene||!rules||!attacker||!target)throw new Error('StandardAttack: атакующий или цель не найдены');};refresh();
     const selected=weaponForSlotV138(attacker,command.slot||command.weaponId),weapon=selected?.item;if(!weapon)throw new Error('StandardAttack: оружие не найдено');
-    const validateWeapon=()=>{if(isControlledDevice200(attacker)&&inBattle191()&&!droneLinkState129(attacker).ok)throw Error('StandardAttack: устройство не имеет связи с действующим оператором');if(weaponMalfunction122(attacker,weapon))throw new Error('StandardAttack: сначала устраните отказ оружия');if(heavyBlocked195(attacker)&&isHeavyWeapon129(weapon))throw Error('StandardAttack: травма 3-й степени запрещает тяжёлое оружие');if(itemBrokenV138(attacker,weapon,selected.slot))throw new Error(`StandardAttack: «${weapon.name||weapon.id}» сломано`);};validateWeapon();
+    const validateWeapon=()=>{if(isControlledDevice200(attacker)&&inBattle191()&&!droneLinkState129(attacker).ok)throw Error('StandardAttack: устройство не имеет связи с действующим оператором');if(weaponMalfunction122(attacker,weapon,selected.slot))throw new Error('StandardAttack: требуется перезарядка или устранение отказа оружия');if(heavyBlocked195(attacker)&&isHeavyWeapon129(weapon))throw Error('StandardAttack: травма 3-й степени запрещает тяжёлое оружие');if(itemBrokenV138(attacker,weapon,selected.slot))throw new Error(`StandardAttack: «${weapon.name||weapon.id}» сломано`);};validateWeapon();
     const distance=window.GRPGUnitSizeV184.distance(attacker,target),range=shotRange229(attacker,weapon,selected.slot),cover=coverBetween120(scene,centerOf(attacker),centerOf(target),weapon.weaponCategory!=='melee');if(distance>Math.floor(range+1e-6))throw new Error(`StandardAttack: цель вне дальности (${hexLabel109(distance)} / ${hexLabel109(range)})`);if(cover.blocksAttack||sightSegmentBlocked105(scene,centerOf(attacker),centerOf(target),[attacker.id,target.id]))throw new Error('StandardAttack: линия огня перекрыта');
     const shotCost=ammoPerShot118(weapon),validateMagazine=()=>{const value=magazineState118(attacker,weapon,selected.slot);if(value.size>0&&value.loaded<shotCost)throw new Error(`StandardAttack: магазин пуст (${value.loaded} / ${value.size})`);return value;};validateMagazine();
     const ammo=loadedAmmo238(attacker,weapon,selected.slot),shotDamageType=damageType202(weapon,ammo,attacker,selected.slot);
@@ -3375,15 +3465,17 @@
       before.defenseBonus+=worn.defenseBonus-checkPenalty199(target)-settledDefense.defenseBonus;
     }
     await runAutomaticHooks119(attacker,'BeforeAttackStart',context(rolls),before);refresh();await chooseReaction119('BeforeAttackStart',context(rolls),before);refresh();
-    const result=rules.resolveManualAttack({attackRoll:entered.attackRoll,defenseRoll:entered.defenseRoll,attackBonus:before.attackBonus+num(entered.attackBonusDelta204),defenseBonus:before.defenseBonus+num(entered.defenseBonusDelta204),damageRoll:entered.damageRoll,damageBonus,criticalRange:weaponAberration254(attacker,weapon,'weapon-3',selected.slot),criticalBonus:weaponAberration254(attacker,weapon,'weapon-4',selected.slot),damageReduction:0});meleeOutcome256(attacker,weapon,target,result,entered.damageRoll,selected.slot);await emit204('OnAttackResolved',attacker,context({hit:result.hit,critical:result.critical}),before);if(!result.hit){await emit204('OnMiss',attacker,context({hit:false}));refresh();recoil255(attacker,weapon,selected.slot);}let applied=0,absorbed=0,hp={before:num(target.hpCurrent),after:num(target.hpCurrent),applied:0};const effects={damage:result.hit?result.damageApplied:0,damagePartsV138:result.hit?[{amount:result.damageApplied,absorptionSource:'all'}]:[],effects:before.effects,standardAttackDepthV138:depth+1};
+    const result=rules.resolveManualAttack({attackRoll:entered.attackRoll,defenseRoll:entered.defenseRoll,attackBonus:before.attackBonus+num(entered.attackBonusDelta204),defenseBonus:before.defenseBonus+num(entered.defenseBonusDelta204),damageRoll:entered.damageRoll,damageBonus,criticalRange:weaponAberration254(attacker,weapon,'weapon-3',selected.slot),criticalBonus:weaponAberration254(attacker,weapon,'weapon-4',selected.slot),damageReduction:0});jamOnHit258(attacker,weapon,result,selected.slot);meleeOutcome256(attacker,weapon,target,result,entered.damageRoll,selected.slot);await emit204('OnAttackResolved',attacker,context({hit:result.hit,critical:result.critical}),before);if(!result.hit){await emit204('OnMiss',attacker,context({hit:false}));refresh();recoil255(attacker,weapon,selected.slot);}let applied=0,absorbed=0,hp={before:num(target.hpCurrent),after:num(target.hpCurrent),applied:0};const effects={damage:result.hit?result.damageApplied:0,damagePartsV138:result.hit?[{amount:result.damageApplied,absorptionSource:'all'}]:[],effects:before.effects,standardAttackDepthV138:depth+1};
     if(result.hit){
+      await bonusDie258(attacker,weapon,effects,shotDamageType,selected.slot);refresh();
       const hit={...rolls,hit:true,critical:result.critical};
       await runAutomaticHooks119(attacker,'OnHit',context({...hit,damage:effects.damage}),effects);refresh();await chooseReaction119('OnHit',context({...hit,damage:effects.damage}),effects);refresh();
       await runAutomaticHooks119(target,'BeforeDamage',context({...hit,damage:effects.damage}),effects);refresh();await chooseReaction119('BeforeDamage',context({...hit,damage:effects.damage}),effects);refresh();
       finisher255(attacker,weapon,target,effects,selected.slot);
-      const reduced=applyAbsorptionV138(effects,incomingDefense119(target,weapon.weaponCategory||'light',cover,shotDamageType));absorbed=reduced.absorbed;applied=result.defenseCritical?Math.floor(reduced.applied/2):reduced.applied;hp=await applyHit199(target,applied,weapon.name,attacker,{damageType:shotDamageType,rawDamage:effects.damage,absorbed});updatePlayerHp105(target);
+      const reduced=applyAbsorptionV138(effects,incomingDefense119(target,weapon.weaponCategory||'light',cover,shotDamageType),type=>incomingDefense119(target,weapon.weaponCategory||'light',cover,type));absorbed=reduced.absorbed;applied=result.defenseCritical?Math.floor(reduced.applied/2):reduced.applied;hp=await applyHit199(target,applied,weapon.name,attacker,{damageType:shotDamageType,rawDamage:effects.damage,absorbed});updatePlayerHp105(target);
       await runAutomaticHooks119(target,'OnTakeDamage',context({...hit,damage:applied}),effects);refresh();await chooseReaction119('OnTakeDamage',context({...hit,damage:applied}),effects);refresh();
     }
+    if(result.hit){await secondaryHit258(attacker,weapon,target,shotDamageType,selected.slot);refresh();}
     await emitShot238(attacker,context({...rolls,hit:result.hit,critical:result.critical}),magazine.size>0?shotCost:0,effects);
     refresh();
     if(command.consumeAction!==false)attacker.actionUsed=true;
@@ -3448,6 +3540,12 @@
     const transaction=beginCombatTransaction120('reload',scene?.id,initial.token.id);if(!transaction)return;
     try{
       let {runtime,attacker:token}=combatTransactionRefs120(transaction),weapon=weaponForToken105(token),magazine=magazineState118(token,weapon);
+      const jam=jamState258(token,weapon);
+      if(jam?.jammed){
+        jam.jammed=false;token.actionUsed=true;completeDroneModule129(token);
+        appendCombatLog105(runtime,`${token.name} перезаряжает «${weapon.name}». Заклинивание снято, в магазине ${magazine.loaded} / ${magazine.size}.`);
+        Combat.render();await checkpointCombat120('Сцена: перезарядка заклинившего оружия',true);return;
+      }
       let choices=compatibleAmmo120(token,weapon,{availableOnly:true,loadedTypeId:magazine.loaded>0?magazine.ammoTypeId:''});
       if(!choices.length)throw new Error('В инвентаре нет совместимых патронов');
       let ammo=choices.find(row=>String(row.id)===String(magazine.ammoTypeId||weapon.ammoTypeId||''))||choices[0];
@@ -3466,7 +3564,7 @@
   }
   async function disengage122(){const token=selectedToken104();if(!token||!Combat.canActWithToken?.(token)||actionSpent191(token)||token.burstStateV122)return;token.actionUsed=true;token.disengagedV122=true;appendCombatLog105(Combat.getRuntime(),`${token.name} выполняет Отход: перемещение этого хода не вызывает атаку по возможности.`);Combat.render();await checkpointCombat120('Сцена: Отход',false);}
   async function finishBurst122(){const token=selectedToken104();if(!token?.burstStateV122)return;token.burstStateV122=null;token.aim229=null;token.actionUsed=true;completeDroneModule129(token);appendCombatLog105(Combat.getRuntime(),`${token.name} завершает скорострельную очередь.`);Combat.render();await checkpointCombat120('Сцена: завершение очереди',false);}
-  async function clearMalfunction122(){const token=selectedToken104(),weapon=weaponForToken105(token);if(!token||!weapon||!weaponMalfunction122(token,weapon)||actionSpent191(token)||!canCombatAct129(token))return;token.weaponMalfunctionsV122={...(token.weaponMalfunctionsV122||{})};delete token.weaponMalfunctionsV122[weapon.id];token.actionUsed=true;completeDroneModule129(token);appendCombatLog105(Combat.getRuntime(),`${token.name} тратит действие и устраняет отказ «${weapon.name}».`);Combat.render();await checkpointCombat120('Сцена: устранение отказа',false);}
+  async function clearMalfunction122(){const token=selectedToken104(),weapon=weaponForToken105(token);if(!token||!weapon||!token.weaponMalfunctionsV122?.[weapon.id]||actionSpent191(token)||!canCombatAct129(token))return;token.weaponMalfunctionsV122={...(token.weaponMalfunctionsV122||{})};delete token.weaponMalfunctionsV122[weapon.id];token.actionUsed=true;completeDroneModule129(token);appendCombatLog105(Combat.getRuntime(),`${token.name} тратит действие и устраняет отказ «${weapon.name}».`);Combat.render();await checkpointCombat120('Сцена: устранение отказа',false);}
   function abilityScore229(token,key){
     const entity=entityForToken(token)||{};
     return num(window.GRPGStatsV113?.compute?.(entity,{kind:token.npcId?'npc':'player',inCombat:true,temporaryModifiers:timedStatModifiers122(token)})?.abilities?.[key]??entity.abilityBase?.[key]);
@@ -3622,7 +3720,11 @@
     if(prior&&(prior.remote!==remote||(prior.remote&&prior.campaignId!==String(Sync.config?.campaignId||'')))){Toast.show('Для завершения передачи восстановите прежний режим синхронизации.','err');return{ok:false,status:'pending'};}
     const job=prior||{operationId:window.GRPGPlayerSyncCoreV135.operationId(),playerId,itemId,qty,source:JSON.stringify([sceneId,tokenId]),remote,campaignId:String(Sync.config?.campaignId||'')};
     if(!prior){
-      const rolls=list(state.items).filter(row=>row.itemId===itemId).flatMap(row=>Array.from({length:row.qty},(_,index)=>row.aberrations?.[index]||null));
+      const lootItem=equipmentItem105(itemId),danger=entityForToken(token)?.dangerLevel;
+      const rolls=list(state.items).filter(row=>row.itemId===itemId).flatMap(row=>Array.from({length:row.qty},(_,index)=>{
+        const existing=row.aberrations?.[index];
+        return existing??rollLootCopy258(lootItem,danger);
+      }));
       if(rolls.some(Boolean))job.aberrations=rolls;
     }
     lootBusyV137.add(key);
@@ -3687,12 +3789,9 @@
       const completed=await saveStoreNow();
       if(!completed?.ok){token.lootStateV118=before;throw new Error('Передача подтверждена, но сцена не сохранена. Повторите передачу для завершения.');}
       appendCombatLog105(Combat.getRuntime(sceneId),`${App.state.users[playerId]?.displayName||playerId} получает ${equipmentItem105(itemId)?.name||itemId} ×${job.qty} при обыске ${token.name}.`);
-      const revealed=list(job.aberrations).filter(roll=>roll&&roll.rarity!=='common');
-      if(revealed.length){
-        lootReveal252={id:job.operationId,sceneId,at:Date.now(),name:equipmentItem105(itemId)?.name||itemId,
-          recipient:App.state.users[playerId]?.displayName||playerId,
-          items:revealed.map(roll=>({rarity:roll.rarity,effects:window.GRPGAberrationWeapons.effects(roll.effects).map(effect=>effect.name+' '+(effect.group==='weapon-6'?damageLabel202(effect.value):(effect.value>0?'+':'')+effect.value+(effect.group==='weapon-7'?'%':'')))}))};
-      }
+      lootReveal252={id:job.operationId,sceneId,at:Date.now(),name:equipmentItem105(itemId)?.name||itemId,
+        recipient:App.state.users[playerId]?.displayName||playerId,qty:job.qty,
+        items:lootDetails258(job.aberrations)};
       queueStoreSave();broadcastScene104();
       if(Combat.getSceneIdForView()===sceneId)showLootOverlay118(token);
       Toast.show('Добыча передана в инвентарь.','ok');return result;
@@ -3717,20 +3816,49 @@
       button.addEventListener('click',event=>{event.preventDefault();event.stopImmediatePropagation();menu.remove();void transferLootV137(sceneId,tokenId,itemId,player.id);});menu.appendChild(button);
     }
     if(!players.length){const empty=document.createElement('span');empty.textContent='На сцене нет игроков.';menu.appendChild(empty);}
-    (document.getElementById('mod-combat')||document.body).appendChild(menu);
+    document.body.appendChild(menu);
     menu.style.left=Math.max(8,Math.min(event.clientX,window.innerWidth-menu.offsetWidth-8))+'px';
     menu.style.top=Math.max(8,Math.min(event.clientY,window.innerHeight-menu.offsetHeight-8))+'px';
     setTimeout(()=>document.addEventListener('pointerdown',event=>{if(!menu.contains(event.target))menu.remove();},{once:true,capture:true}),0);
   }
 
   function closeLootOverlay118(){document.querySelector('.scene-loot-menu-v137')?.remove();document.querySelector('.scene-loot-overlay-v118')?.remove();}
+  function rollLootCopy258(item,danger){
+    return item?.type==='weapon'?window.GRPGAberrationWeapons?.roll(danger,item)||null:null;
+  }
+  function lootDetails258(rolls){
+    const groups=new Map();
+    for(const roll of list(rolls)){
+      const rarity=roll?.rarity||'common';
+      const effects=list(roll?.effects).map(id=>window.GRPGAberrationWeapons?.describe(id)).filter(Boolean);
+      const key=JSON.stringify([rarity,effects]),prior=groups.get(key);
+      if(prior)prior.qty++;
+      else groups.set(key,{rarity,effects,qty:1});
+    }
+    return [...groups.values()];
+  }
   function showLootOverlay118(token){
-    closeLootOverlay118();const host=document.getElementById('mod-combat')||document.body,state=token?.lootStateV118||{items:[]};
-    const grouped=new Map();for(const row of list(state.items))grouped.set(row.itemId,(grouped.get(row.itemId)||0)+row.qty);
-    const rows=Array.from(grouped,([itemId,qty])=>({itemId,qty})).map(row=>{const item=equipmentItem105(row.itemId);return `<div class="scene-loot-result-row-v118" tabindex="0" role="button" title="Правая кнопка — передать игроку" data-loot-scene-v137="${html(Combat.getSceneIdForView())}" data-loot-token-v137="${html(token.id)}" data-loot-item-v137="${html(row.itemId)}">${item?.image?`<img src="${html(item.image)}" alt=""/>`:'<span>▣</span>'}<b>${html(item?.name||row.itemId)}</b><strong>×${Math.max(1,Math.trunc(num(row.qty,1)))}</strong></div>`;}).join('');
+    closeLootOverlay118();const state=token?.lootStateV118||{items:[]};
+    const grouped=new Map();
+    for(const row of list(state.items)){
+      const group=grouped.get(row.itemId)||{qty:0,rolls:[]};
+      group.qty+=row.qty;
+      group.rolls.push(...list(row.aberrations));
+      grouped.set(row.itemId,group);
+    }
+    const names={common:'Обычное',uncommon:'Необычное',rare:'Редкое',epic:'Эпическое',legendary:'Легендарное'};
+    const rows=Array.from(grouped,([itemId,row])=>{
+      const item=equipmentItem105(itemId);
+      const details=lootDetails258(row.rolls).map(detail=>{
+        const description=[names[detail.rarity],...detail.effects].join(' · ');
+        return `<small data-rarity="${html(detail.rarity)}">${html(description)}${detail.qty>1?` ×${detail.qty}`:''}</small>`;
+      }).join('');
+      return `<div class="scene-loot-result-row-v118" tabindex="0" role="button" title="Нажмите, чтобы передать игроку" data-loot-scene-v137="${html(Combat.getSceneIdForView())}" data-loot-token-v137="${html(token.id)}" data-loot-item-v137="${html(itemId)}">${item?.image?`<img src="${html(item.image)}" alt=""/>`:'<span>▣</span>'}<div><b>${html(item?.name||itemId)}</b>${details}</div><strong>×${row.qty}</strong></div>`;
+    }).join('');
     const overlay=document.createElement('div');overlay.className='scene-loot-overlay-v118';
-    overlay.innerHTML=`<div class="scene-loot-window-v118"><div class="scene-loot-scan-v118"><i></i><span>ОБЫСК...</span></div><div class="scene-loot-results-v118"><div><span class="tiny-label">РЕЗУЛЬТАТ ОБЫСКА</span><h3>${html(token?.name||'NPC')}</h3></div><div class="small-note">Правая кнопка на предмете — передать игроку на сцене.</div>${rows||'<div class="scene-loot-empty-v118">Ничего не найдено.</div>'}<button class="primary" type="button" data-scene-loot-close-v118>ЗАКРЫТЬ</button></div></div>`;
-    host.appendChild(overlay);requestAnimationFrame(()=>overlay.classList.add('running'));setTimeout(()=>overlay.classList.add('complete'),780);
+    overlay.innerHTML=`<div class="scene-loot-window-v118"><div class="scene-loot-scan-v118"><i></i><span>ОБЫСК...</span></div><div class="scene-loot-results-v118"><div><span class="tiny-label">РЕЗУЛЬТАТ ОБЫСКА</span><h3>${html(token?.name||'NPC')}</h3></div><div class="small-note">Нажмите на предмет, чтобы передать его игроку на сцене.</div>${rows||'<div class="scene-loot-empty-v118">Ничего не найдено.</div>'}<button class="primary" type="button" data-scene-loot-close-v118>ЗАКРЫТЬ</button></div></div>`;
+    document.body.appendChild(overlay);
+    requestAnimationFrame(()=>overlay.classList.add('running'));setTimeout(()=>overlay.classList.add('complete'),780);
   }
   function searchNpc118(tokenId){
     if(!activeMap193()){Toast.show('Обыск доступен на действующей карте','info');return;}
@@ -3742,8 +3870,8 @@
         if(Math.random()*100>=num(row.chance,0))continue;
         const min=Math.max(1,Math.trunc(num(row.minQty,1))),max=Math.max(min,Math.trunc(num(row.maxQty,min)));
         const qty=min+Math.floor(Math.random()*(max-min+1)),item=equipmentItem105(row.itemId);
-        const aberrations=inBattle191()&&item?.type==='weapon'&&window.GRPGAberrationWeapons
-          ? Array.from({length:qty},()=>window.GRPGAberrationWeapons.roll(npc.dangerLevel,item)) : null;
+        const aberrations=item?.type==='weapon'
+          ? Array.from({length:qty},()=>rollLootCopy258(item,npc.dangerLevel)) : null;
         items.push({itemId:row.itemId,qty,...(aberrations?{aberrations}:{})});
       }
       token.lootStateV118={searched:true,searchedAt:new Date().toISOString(),items};
@@ -3764,9 +3892,10 @@
     if (!selectedWeapon) { Toast.show('У юнита не выбрано оружие', 'info'); return; }
     if(itemBrokenV138(selectedAttacker,selectedWeapon)){Toast.show('Выбранное оружие сломано','info');return;}
     if(heavyBlocked195(selectedAttacker)&&isHeavyWeapon129(selectedWeapon)){Toast.show('Травма 3-й степени не позволяет использовать тяжёлое оружие','info');return;}
-    if(weaponMalfunction122(selectedAttacker,selectedWeapon)){Toast.show('Оружие отказало. Сначала устраните отказ отдельным действием.','info');return;}
+    if(weaponMalfunction122(selectedAttacker,selectedWeapon)){Toast.show(jamState258(selectedAttacker,selectedWeapon)?.jammed?'Оружие заклинило. Перезарядите его.':'Оружие отказало. Сначала устраните отказ отдельным действием.','info');return;}
     const activeBurst=selectedAttacker.burstStateV122;
     let usedFinisher=activeBurst?.aberrationFinisher255===true;
+    const hadHit=activeBurst?.aberrationHit258===true;
     const alreadyCritical=activeBurst?.aberrationCritical254===true,shotIndex=activeBurst&&String(activeBurst.weaponId)===String(selectedWeapon.id)?activeBurst.nextShot:1,maxShots=inBattle191()?(activeBurst?.maxShots||rapidFireShots122(selectedWeapon)):1,targetSwitches=Math.max(0,num(activeBurst?.targetSwitches))+(activeBurst?.lastTargetId&&String(activeBurst.lastTargetId)!==String(selectedTarget.id)?1:0),burstPenalty=window.GRPGCombatRulesV119.burstPenalty(shotIndex,targetSwitches,selectedAttacker.brace229?.weaponId===selectedWeapon.id);
     const from = centerOf(selectedAttacker), to = centerOf(selectedTarget), max = shotRange229(selectedAttacker,selectedWeapon), distance = window.GRPGUnitSizeV184.distance(selectedAttacker,selectedTarget);
     local.preview = makeRoutePreview104(to, true); refreshPreviewDom104();
@@ -3808,7 +3937,7 @@
       attacker.actionUsed=true;
       if(entered.aimApplied229)attacker.aim229=null;
       const plannedContinuation=entered.attackRoll!==1&&shotIndex<maxShots&&(magazine.size===0||magazine.loaded-shotCost>=shotCost);
-      attacker.burstStateV122=plannedContinuation?{weaponId:weapon.id,nextShot:shotIndex+1,maxShots,lastTargetId:String(target.id),targetSwitches,aberrationCritical254:alreadyCritical,aberrationFinisher255:usedFinisher}:null;if(!plannedContinuation)completeDroneModule129(attacker);
+      attacker.burstStateV122=plannedContinuation?{weaponId:weapon.id,nextShot:shotIndex+1,maxShots,lastTargetId:String(target.id),targetSwitches,aberrationCritical254:alreadyCritical,aberrationFinisher255:usedFinisher,aberrationHit258:hadHit}:null;if(!plannedContinuation)completeDroneModule129(attacker);
       if(magazine.size>0){const currentMagazine=magazineState118(attacker,weapon);if(currentMagazine.loaded<shotCost)throw new Error('Патроны были израсходованы другим действием');currentMagazine.loaded-=shotCost;writeMagazineState118(attacker,weapon,currentMagazine);magazine.loaded=currentMagazine.loaded;magazine.ammoTypeId=currentMagazine.ammoTypeId;}
       if(entered.attackRoll===1)await applyWeaponFumble196(attacker,weapon);
       wearArmorOnTwentyV215(attacker,target,entered.attackRoll);
@@ -3818,7 +3947,10 @@
       // A confirmed reaction may move a target after payment. Keep that confirmed boundary, but never shoot through it.
       if(entered.attackRoll!==1)cover=validateShot197(attacker,target,weapon,scene);
       const rollDefense=incomingDefense119(target,weapon.weaponCategory||'light',cover,shotDamageType);rollDefense.defenseBonus+=postureDefense229(attacker,target,weapon)-checkPenalty199(target);beforeState.defenseBonus=num(beforeState.defenseBonus)-defense.defenseBonus+rollDefense.defenseBonus;defense=rollDefense;
-      const result=rules.resolveManualAttack({attackRoll:entered.attackRoll,defenseRoll:entered.defenseRoll,attackBonus:num(beforeState.attackBonus,hitBonus)+num(entered.attackBonusDelta204),defenseBonus:num(beforeState.defenseBonus,defense.defenseBonus)+num(entered.defenseBonusDelta204),damageRoll:entered.damageRoll,damageBonus:damageBonus+num(entered.aimApplied229),criticalRange:shotIndex===1?weaponAberration254(attacker,weapon,'weapon-3'):0,criticalBonus:alreadyCritical?0:weaponAberration254(attacker,weapon,'weapon-4'),damageReduction:0});meleeOutcome256(attacker,weapon,target,result,entered.damageRoll);await emit204('OnAttackResolved',attacker,{...context,hit:result.hit,critical:result.critical},beforeState);if(!result.hit)await emit204('OnMiss',attacker,{...context,hit:false});
+      const result=rules.resolveManualAttack({attackRoll:entered.attackRoll,defenseRoll:entered.defenseRoll,attackBonus:num(beforeState.attackBonus,hitBonus)+num(entered.attackBonusDelta204),defenseBonus:num(beforeState.defenseBonus,defense.defenseBonus)+num(entered.defenseBonusDelta204),damageRoll:entered.damageRoll,damageBonus:damageBonus+num(entered.aimApplied229),criticalRange:shotIndex===1?weaponAberration254(attacker,weapon,'weapon-3'):0,criticalBonus:alreadyCritical?0:weaponAberration254(attacker,weapon,'weapon-4'),damageReduction:0});if(jamOnHit258(attacker,weapon,result)){
+        attacker.burstStateV122=null;completeDroneModule129(attacker);
+      }
+      meleeOutcome256(attacker,weapon,target,result,entered.damageRoll);await emit204('OnAttackResolved',attacker,{...context,hit:result.hit,critical:result.critical},beforeState);if(!result.hit)await emit204('OnMiss',attacker,{...context,hit:false});
       ({attacker,target}=combatTransactionRefs120(transaction));if(!target)throw new Error('Цель больше не находится на сцене');
       let hpChange={before:num(target.hpCurrent),after:num(target.hpCurrent),applied:0},finalDamage=result.damageApplied,absorptionV138={absorbed:0,applied:result.damageApplied};
       // Begin OnHit/BeforeDamage with the damage left after the entered roll,
@@ -3826,25 +3958,33 @@
       // zero and previously caused every ordinary weapon hit to deal 0 damage.
       const effectState={damage:result.hit?result.damageApplied:0,damagePartsV138:result.hit?[{amount:result.damageApplied,absorptionSource:'all'}]:[],effects:beforeState.effects};
       if(result.hit){
+        if(!hadHit){
+          if(attacker.burstStateV122)attacker.burstStateV122.aberrationHit258=true;
+          await bonusDie258(attacker,weapon,effectState,shotDamageType);
+          ({attacker,target}=combatTransactionRefs120(transaction));
+          if(!target)throw new Error('Цель больше не находится на сцене');
+        }
         let hitContext={...context,attacker,target,caster:attacker,targets:[target],hit:true,critical:result.critical,damage:effectState.damage};
         await runAutomaticHooks119(attacker,'OnHit',hitContext,effectState);await chooseReaction119('OnHit',{...hitContext,damage:effectState.damage},effectState);
         ({attacker,target}=combatTransactionRefs120(transaction));if(!target)throw new Error('Цель больше не находится на сцене');hitContext={...hitContext,attacker,target,caster:attacker,targets:[target]};
         await runAutomaticHooks119(target,'BeforeDamage',{...hitContext,damage:effectState.damage},effectState);await chooseReaction119('BeforeDamage',{...hitContext,damage:effectState.damage},effectState);
         ({attacker,target}=combatTransactionRefs120(transaction));if(!target)throw new Error('Цель больше не находится на сцене');
         if(!usedFinisher)usedFinisher=finisher255(attacker,weapon,target,effectState);
-        const finalDefense=incomingDefense119(target,weapon.weaponCategory||'light',cover,shotDamageType);absorptionV138=applyAbsorptionV138(effectState,finalDefense);finalDamage=absorptionV138.applied;if(result.defenseCritical)finalDamage=Math.floor(finalDamage/2);
+        const finalDefense=incomingDefense119(target,weapon.weaponCategory||'light',cover,shotDamageType);absorptionV138=applyAbsorptionV138(effectState,finalDefense,type=>incomingDefense119(target,weapon.weaponCategory||'light',cover,type));finalDamage=absorptionV138.applied;if(result.defenseCritical)finalDamage=Math.floor(finalDamage/2);
         hpChange=await applyHit199(target,finalDamage,weapon.name,attacker,{damageType:shotDamageType,rawDamage:effectState.damage,absorbed:absorptionV138.absorbed});updatePlayerHp105(target);
         const afterContext={...hitContext,attacker,target,caster:attacker,targets:[target],damage:finalDamage};
         await runAutomaticHooks119(target,'OnTakeDamage',afterContext,effectState);await chooseReaction119('OnTakeDamage',afterContext,effectState);
         ({target}=combatTransactionRefs120(transaction));hpChange.after=num(target?.hpCurrent,hpChange.after);hpChange.applied=Math.max(0,hpChange.before-hpChange.after);if(target){updatePlayerHp105(target);}
       }
       ({attacker,target}=combatTransactionRefs120(transaction));
-      if(!result.hit)recoil255(attacker,weapon);
+      if(result.hit&&!hadHit)await secondaryHit258(attacker,weapon,target,shotDamageType);
+      ({attacker,target}=combatTransactionRefs120(transaction));
+      if(!result.hit&&attacker)recoil255(attacker,weapon);
       await emitShot238(attacker,{...context,attacker,target,hit:result.hit,critical:result.critical},magazine.size>0?shotCost:0,effectState);
       ({attacker,target}=combatTransactionRefs120(transaction));magazine=magazineState118(attacker,weapon);
-      const continues=!result.fumble&&!itemBrokenV138(attacker,weapon)&&shotIndex<maxShots&&(magazine.size===0||magazine.loaded>=shotCost);
+      const continues=!jamState258(attacker,weapon)?.jammed&&!result.fumble&&!itemBrokenV138(attacker,weapon)&&shotIndex<maxShots&&(magazine.size===0||magazine.loaded>=shotCost);
       if(!continues)attacker.aim229=null;
-      if(continues){attacker.burstStateV122={weaponId:weapon.id,nextShot:shotIndex+1,maxShots,lastTargetId:String(target.id),targetSwitches,aberrationCritical254:alreadyCritical||result.critical,aberrationFinisher255:usedFinisher};attacker.actionUsed=true;}else{attacker.burstStateV122=null;attacker.actionUsed=true;completeDroneModule129(attacker);}
+      if(continues){attacker.burstStateV122={weaponId:weapon.id,nextShot:shotIndex+1,maxShots,lastTargetId:String(target.id),targetSwitches,aberrationCritical254:alreadyCritical||result.critical,aberrationFinisher255:usedFinisher,aberrationHit258:hadHit||result.hit};attacker.actionUsed=true;}else{attacker.burstStateV122=null;attacker.actionUsed=true;completeDroneModule129(attacker);}
       const attackRoll=`${result.attackDie}${result.attackBonus?` ${result.attackBonus>=0?'+':'−'} ${Math.abs(result.attackBonus)}`:''} = ${result.attackTotal}`;
       const defenseRoll=`${result.defenseDie}${result.defenseBonus?` ${result.defenseBonus>=0?'+':'−'} защита ${Math.abs(result.defenseBonus)}`:''} = ${result.defenseTotal}`;
       const magazineText=magazine.size>0?`; магазин ${magazine.loaded} / ${magazine.size}`:'';
@@ -4130,7 +4270,7 @@
     const preview=Combat.getScene()?.id===scene.id&&previewVisibleToPlayers128(scene,liveRuntime,local.preview)?clone(local.preview):null;
     const shots=recentShots247.filter(shot=>shot.sceneId===scene.id&&Date.now()-shot.at<shot.duration+1500&&previewVisibleToPlayers128(scene,liveRuntime,shot)
       &&(!shot.targetTokenId||previewVisibleToPlayers128(scene,liveRuntime,{sourceTokenId:shot.targetTokenId})));
-    return {version:4,scene:displayScene,runtime,preview,shots,lootReveal:lootReveal252?.sceneId===scene.id&&Date.now()-lootReveal252.at<8000?lootReveal252:null,sentAt:new Date().toISOString()};
+    return {version:4,scene:displayScene,runtime,preview,shots,lootReveal:lootReveal252?.sceneId===scene.id&&Date.now()-lootReveal252.at<12000?lootReveal252:null,sentAt:new Date().toISOString()};
   }
   Combat.broadcastPlayerDisplayMirror = function(){
     if(!this.isDm()||!window.electronAPI?.updatePlayerDisplayView)return;
@@ -4419,7 +4559,7 @@
     return leaveCombat225(navigate);
   }
   function hideCombatEditor229(...args){
-    closeAbilityWindow192(false);closeCombatModal119(null);if(local.lua119.pointPicker)cancelAbilityPoint125();
+    closeAbilityWindow192(false);closeLootOverlay118();closeCombatModal119(null);if(local.lua119.pointPicker)cancelAbilityPoint125();
     local.hidingEditor191=true;
     try{return closeModuleBefore104(...args);}finally{local.hidingEditor191=false;local.preview=null;}
   }
@@ -4452,7 +4592,7 @@
   document.addEventListener('click',event=>{
     const openButton=event.target.closest?.('#open-combat');
     if(openButton){event.preventDefault();event.stopImmediatePropagation?.();if(Combat.isDm())UI.openModule('combat');else Toast.show('Сцены доступны только ДМу','info');return;}
-    const t=event.target.closest?.('#mod-combat [data-scene-search-v118],#mod-combat button,#mod-combat [data-scene-select-v104],.scene-context-v104 button');
+    const t=event.target.closest?.('#mod-combat [data-scene-search-v118],#mod-combat button,#mod-combat [data-scene-select-v104],.scene-context-v104 button,[data-loot-item-v137],[data-scene-loot-close-v118]');
     if(!t){if(local.context&&!event.target.closest('.scene-context-v104'))closeContext104();return;}
     if(t.dataset.operationAck194){event.preventDefault();const row=list(journal194().history).find(r=>r.id===t.dataset.operationAck194);if(row)row.acknowledged194=true;queueStoreSave();Combat.render();return;}
     if(operation194){event.preventDefault();Toast.show(operationReason191(),'info');return;}
@@ -4489,6 +4629,7 @@
     if(t.hasAttribute('data-scene-command-drone-v129')){event.preventDefault();void runCommand191(()=>commandDrone129());return;}
     if(t.hasAttribute('data-scene-treat-injury195')||t.hasAttribute('data-scene-clear-injuries-v129')){event.preventDefault();void runCommand191(()=>treatInjury195());return;}
     if(t.dataset.sceneSearchV118){event.preventDefault();searchNpc118(t.dataset.sceneSearchV118);return;}
+    if(t.closest('[data-loot-item-v137]')){lootContextMenuV137(event,t.closest('[data-loot-item-v137]'));return;}
     if(t.hasAttribute('data-scene-loot-close-v118')){event.preventDefault();closeLootOverlay118();return;}
     if(t.dataset.sceneActionV104){const action=t.dataset.sceneActionV104;local.ui.pendingPlacement=null;if(action==='height'){void runCommand191(chooseElevation233);return;}if(action==='clear'){local.preview=null;refreshPreviewDom104();return;}if(['move','attack','grenade'].includes(action)){const current=Combat.getCurrentTurnToken?.();const selected=selectedToken104();if(current&&!selected)Combat.selectedObject={kind:'token',id:current.id};}local.ui.action=action;Combat.render();return;}
     if(t.id==='scene-initiative-toggle-v112'){local.ui.initiativeOpen=!local.ui.initiativeOpen;Combat.render();return;}

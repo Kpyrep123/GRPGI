@@ -27,7 +27,7 @@ const html=fs.readFileSync(path.join(root,'renderer/index.html'),'utf8');
 w.document.write(html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi,''));
 // Every renderer script is evaluated unmodified, in index.html order, sharing
 // browser-style lexical globals. Only OS/cloud/bootstrap boundaries are mocked.
-for(const m of html.matchAll(/<script src="\.\/([^"?]+)[^"]*"/g)){let source=fs.readFileSync(path.join(root,'renderer',m[1]),'utf8');if(m[1]==='scene-editor-v113.js')source=source.replace('// New module is DM-only;','window.test215={wear:wearArmorOnTwentyV215,defense:incomingDefense119,state:itemRuntimeStateV138,mutate:mutateItemStateV138,meleeOutcome:meleeOutcome256,attackFailure:attackFailure256,requestAttackRolls:requestAttackRolls119,applyDelayedHits:applyDelayedHits256,damageType:damageType202,normalizeToken:normalizeCombatToken};\n// New module is DM-only;');vm.runInContext(source,context,{filename:m[1]});}
+for(const m of html.matchAll(/<script src="\.\/([^"?]+)[^"]*"/g)){let source=fs.readFileSync(path.join(root,'renderer',m[1]),'utf8');if(m[1]==='scene-editor-v113.js')source=source.replace('// New module is DM-only;','window.test215={wear:wearArmorOnTwentyV215,defense:incomingDefense119,state:itemRuntimeStateV138,mutate:mutateItemStateV138,meleeOutcome:meleeOutcome256,attackFailure:attackFailure256,requestAttackRolls:requestAttackRolls119,applyDelayedHits:applyDelayedHits256,damageType:damageType202,showLoot:showLootOverlay118,searchNpc:searchNpc118,jamOnHit:jamOnHit258,jamState:jamState258,reload:reloadUnitV138,bonusDie:bonusDie258,secondaryHit:secondaryHit258,fitToken:fitTokenToHex107,center:centerOf,normalizeToken:normalizeCombatToken};\n// New module is DM-only;');vm.runInContext(source,context,{filename:m[1]});}
 
 
 
@@ -157,6 +157,82 @@ await run('test215.applyDelayedHits(enemy215)');
 assert.equal(run('enemy215.hpCurrent'),7,'only the base damage repeats');
 await run('test215.applyDelayedHits(enemy215)');
 assert.equal(run('enemy215.hpCurrent'),7,'the pending hit is consumed once');
+run(`
+  window.scene258={id:'aberration-test',mode:'combat',width:60,height:40,assets:[],templates:[]};
+  Combat.getScene=()=>scene258;
+  Combat.getSceneIdForView=()=>scene258.id;
+  target215.lootStateV118={searched:true,items:[{itemId:'gun',qty:2,aberrations:[
+    {rarity:'common',budget:0,effects:[]},{rarity:'rare',budget:4,effects:['weapon-5-1']}
+  ]}]};
+  test215.showLoot(target215);
+`);
+const loot=w.document.querySelector('.scene-loot-overlay-v118');
+assert.equal(loot.parentElement,w.document.body);
+assert.match(loot.textContent,/Обычное/);
+assert.match(loot.textContent,/Редкое.*1d4/);
+loot.querySelector('[data-loot-item-v137] b').click();
+assert(w.document.querySelector('.scene-loot-menu-v137'),'click opens the transfer menu');
+loot.querySelector('[data-scene-loot-close-v118]').click();
+assert.equal(w.document.querySelector('.scene-loot-overlay-v118'),null);
+run(`
+  Data.getItem('gun').magazineSize=4;
+  Data.getItem('gun').ammoTypeId='ammo';
+  window.ranged258={...Data.getItem('gun'),id:'gun',weaponCategory:'light'};
+  window.copy258=GRPGItemInstancesV215.instance(App.state.users.p,'gun',-1,'primaryWeapon');
+  copy258.aberration252.effects=['weapon-15-1','weapon-5-3'];
+`);
+assert.equal(run("test215.jamOnHit(target215,ranged258,{attackDie:19,defenseFumble:true},'primaryWeapon')"),false);
+assert.equal(run("test215.jamOnHit(target215,ranged258,{attackDie:20,defenseFumble:true},'primaryWeapon')"),true);
+assert.equal(run("test215.jamState(target215,ranged258,'secondaryWeapon')"),null);
+assert.equal(run("test215.normalizeToken(target215).aberrationJams258[copy258.id].jammed"),true);
+assert.equal(run("test215.reload(target215,'primaryWeapon').state.loaded"),4);
+assert.equal(run("test215.jamState(target215,ranged258,'primaryWeapon').jammed"),false);
+assert.equal(run("test215.jamOnHit(target215,ranged258,{attackDie:20,defenseFumble:true},'primaryWeapon')"),false);
+run('window.damage258={damage:3,damagePartsV138:[{amount:3,absorptionSource:"all"}]};');
+const die=run("test215.bonusDie(target215,ranged258,damage258,'kinetic','primaryWeapon')");
+const dieForm=await waitAttackForm();
+dieForm.elements.value.value='6';
+dieForm.elements.damageType.value='energy';
+dieForm.dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));
+await die;
+assert.equal(run('damage258.damage'),9);
+assert.equal(run('damage258.damagePartsV138[1].damageType258'),'energy');
+run(`
+  copy258.aberration252.effects=['weapon-12-1'];
+  test215.fitToken(target215,scene258,{x:10,y:10});
+  test215.fitToken(enemy215,scene258,{x:11,y:10});
+  window.beforePush258=test215.center(enemy215);
+`);
+await run("test215.secondaryHit(target215,melee215,enemy215,'kinetic','primaryWeapon')");
+assert(run('test215.center(enemy215).x>beforePush258.x'),'push displaces the target away from the attacker');
+run(`
+  copy258.aberration252.effects=['weapon-11-1'];
+  window.ricochet258=test215.normalizeToken({id:'ricochet-victim',name:'Second target',hpCurrent:10,hpMax:10});
+  ricochet258.equipmentType='turret';
+  runtime215.tokens.push(ricochet258);
+  const origin258=test215.center(enemy215);
+  test215.fitToken(ricochet258,scene258,{x:origin258.x,y:origin258.y+1});
+`);
+const ricochet=run("test215.secondaryHit(target215,ranged258,enemy215,'kinetic','primaryWeapon')");
+const ricochetForm=await waitAttackForm();
+ricochetForm.querySelector('input').checked=true;
+ricochetForm.dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));
+await ricochet;
+assert.equal(run('ricochet258.hpCurrent'),9);
+run(`
+  scene258.mode='normal';
+  enemy215.npcId='loot-npc';
+  enemy215.hpCurrent=0;
+  enemy215.lootStateV118={searched:false,items:[]};
+  const originalGetNpc258=Data.getNpc.bind(Data);
+  Data.getNpc=id=>id==='loot-npc'?{dangerLevel:9,lootTable:[{itemId:'gun',chance:100,minQty:1,maxQty:1}]}:originalGetNpc258(id);
+  Combat.render=()=>{};
+  const originalRandom258=Math.random;
+  try{Math.random=()=>.999;test215.searchNpc(enemy215.id);}finally{Math.random=originalRandom258;}
+`);
+assert.equal(run("enemy215.lootStateV118.items[0].aberrations[0].rarity"),'legendary');
+assert.match(w.document.querySelector('.scene-loot-overlay-v118').textContent,/Легендарное/);
+console.log('PASS loot overlay, extra damage die, per-copy jam and reload, forced movement and ricochet');
 console.log('PASS melee aberrations: failure bonus and expiry; delayed damage survives normalization and applies once');
 console.log('PASS real renderer: legacy migration, independent weapon copies, Lua break/damage by slot and ID, DM repair, natural 20 and loss of kinetic/energy armor, slot binding and save/reload metadata');
 }finally{await w.happyDOM.abort();fs.rmSync(scratch,{recursive:true,force:true});}

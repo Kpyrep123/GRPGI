@@ -46,6 +46,12 @@ const available=rules.layout(data.playerJson).user.carryWeightMax;
 world.equipment.EQUIPMENT.heavy={id:'heavy',type:'weapon',mass:available-3.3,inventoryWidth:1,inventoryHeight:1};
 assert.equal(rules.canAdd(data.playerJson,'heavy',1).ok,true);
 assert.equal(rules.canAdd(data.playerJson,'heavy',1,[{effects:['weapon-7-1']}]).ok,false);
+for(const [index,effect] of ['weapon-5-3','weapon-11-1','weapon-12-2','weapon-15-1'].entries()){
+  body.operationId='test_new_effect_'+index;
+  body.lootTransferV137.aberrations[0]={rarity:'rare',budget:4,effects:[effect]};
+  assert.equal(transfer(request).status,'committed');
+  assert.deepEqual(data.playerJson.inventory[0].instancesV215.at(-1).aberration252.effects,[effect]);
+}
 console.log('PASS loot persists aberrations and rejects a changed replay');
 
 require('../renderer/combat-rules-v119.js');

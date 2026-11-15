@@ -337,7 +337,7 @@ window.GRPGAberrationCatalog = [
     "variants": [
       {
         "id": "weapon-12-1",
-        "value": "Сместить цель на 1",
+        "value": "1 гекс",
         "cost": 2
       },
       {
@@ -384,7 +384,7 @@ window.GRPGAberrationCatalog = [
     "variants": [
       {
         "id": "weapon-15-1",
-        "value": "После суперкрита требуется перезарядка",
+        "value": "1 · после суперкрита требуется перезарядка",
         "cost": -2
       }
     ]

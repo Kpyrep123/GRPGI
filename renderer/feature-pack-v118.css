@@ -68,3 +68,12 @@
   .item-card-info-v118{grid-column:1/-1}.inventory-slot-item-v1067.item-card-v118>.entity-thumb{grid-row:auto}
   .scene-bar-label-v118{display:none}.scene-measurebar-v118{padding:3px 5px}.scene-character-actions-v118{padding:6px 5px}
 }
+
+.scene-loot-overlay-v118 { position: fixed; overflow: auto; }
+.scene-loot-window-v118 { max-height: calc(100dvh - 48px); overflow: auto; }
+.scene-loot-menu-v137 { position: fixed; z-index: 910; }
+.scene-loot-result-row-v118 small { display: block; margin-top: .25rem; }
+.scene-loot-result-row-v118 [data-rarity="uncommon"] { color: #8cd997; }
+.scene-loot-result-row-v118 [data-rarity="rare"] { color: #83c9ff; }
+.scene-loot-result-row-v118 [data-rarity="epic"] { color: #d9a5ff; }
+.scene-loot-result-row-v118 [data-rarity="legendary"] { color: #ffd783; }
