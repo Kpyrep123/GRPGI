@@ -166,6 +166,7 @@
     next.luaResources204=clone(token.luaResources204||{});next.luaState204=clone(token.luaState204||{});next.reactionDebt204=Math.max(0,num(token.reactionDebt204));next.reactionWithheld204=String(token.reactionWithheld204||'');
     next.critical229=clone(token.critical229||null);next.dead229=token.dead229===true;
     next.aim229=clone(token.aim229||null);next.brace229=clone(token.brace229||null);next.help229=clone(token.help229||null);
+    next.aberrationRecoil255=clone(token.aberrationRecoil255||null);
     next.ownTurnV199=Math.max(0,Math.trunc(num(token.ownTurnV199)));
     next.moraleV199=window.GRPGCombatInstinctV199.effects(token.moraleV199);
     next.instinctPendingV199=clone(list(token.instinctPendingV199));
@@ -201,7 +202,7 @@
     next.attackRangeOverrideV122 = token.attackRangeOverrideV122 === true;
     next.weaponMalfunctionsV122 = token.weaponMalfunctionsV122&&typeof token.weaponMalfunctionsV122==='object'?{...token.weaponMalfunctionsV122}:{};
     next.timedModifiersV122 = list(token.timedModifiersV122).map(row=>({...row,effects:list(row?.effects).map(effect=>({...effect})),remainingTurns:Math.max(0,Math.trunc(num(row?.remainingTurns??row?.duration,0)))})).filter(row=>row.id&&row.remainingTurns>0);
-    next.burstStateV122=token.burstStateV122&&typeof token.burstStateV122==='object'?{weaponId:String(token.burstStateV122.weaponId||''),nextShot:Math.max(1,Math.trunc(num(token.burstStateV122.nextShot,1))),maxShots:Math.max(1,Math.trunc(num(token.burstStateV122.maxShots,1))),lastTargetId:String(token.burstStateV122.lastTargetId||''),targetSwitches:Math.max(0,Math.trunc(num(token.burstStateV122.targetSwitches))),aberrationCritical254:token.burstStateV122.aberrationCritical254===true}:null;
+    next.burstStateV122=token.burstStateV122&&typeof token.burstStateV122==='object'?{weaponId:String(token.burstStateV122.weaponId||''),nextShot:Math.max(1,Math.trunc(num(token.burstStateV122.nextShot,1))),maxShots:Math.max(1,Math.trunc(num(token.burstStateV122.maxShots,1))),lastTargetId:String(token.burstStateV122.lastTargetId||''),targetSwitches:Math.max(0,Math.trunc(num(token.burstStateV122.targetSwitches))),aberrationCritical254:token.burstStateV122.aberrationCritical254===true,aberrationFinisher255:token.burstStateV122.aberrationFinisher255===true}:null;
     next.weaponId = String(token.weaponId || next.weaponId || '');
     next.grenadeId = String(token.grenadeId || '');
     next.faunaId = String(token.faunaId || '');
@@ -1084,7 +1085,7 @@
     appendCombatLog105(Combat.getRuntime(),outcome==='dead'?`${token.name}: погибает в конце пятого хода.`:`${token.name}: выходит из критического состояния на пятом ходу.`);
     await conditionEvents225(token,before,{reason204:'critical-state'});
   }
-  function endMoraleTurn199(token){const before=moraleEffects199(token);token.moraleV199=window.GRPGCombatInstinctV199.expire(before,token.ownTurnV199);if(before.length!==token.moraleV199.length)appendCombatLog105(Combat.getRuntime(),`${token.name}: завершилось Потрясение/Паника по длительности.`);}
+  function endMoraleTurn199(token){if(token.aberrationRecoil255?.until===token.ownTurnV199)token.aberrationRecoil255.amount=0;const before=moraleEffects199(token);token.moraleV199=window.GRPGCombatInstinctV199.expire(before,token.ownTurnV199);if(before.length!==token.moraleV199.length)appendCombatLog105(Combat.getRuntime(),`${token.name}: завершилось Потрясение/Паника по длительности.`);}
   function instinctOwners199(){const session=local.store?.session193,actors=new Map(Object.entries(session?.participants||{})),runtime=App?.state?.toolState?.[COMBAT_STATE_KEY]?.scenes?.[session?.activeMapId]||Combat.getRuntime();for(const token of list(runtime?.tokens))actors.set(String(token.participantId193||token.id),token);return [...actors.values()];}
   function pendingInstinct199(){return instinctOwners199().flatMap(owner=>list(owner.instinctPendingV199).map(packet=>({owner,packet})));}
   function sourceInstinct199(source,name,origin){const scene=Combat.getScene(),point=origin||source&&centerOf(source);return{participantId:!origin&&source?String(source.participantId193||''):'',tokenId:!origin?String(source?.id||''):'',name:String(origin?name:source?`${source.name||source.id} · ${name||'атака'}`:name||'Источник неизвестен'),mapId:String(scene?.id||''),point:point?{x:num(point.x),y:num(point.y)}:null,key:origin?`${scene?.id}:${name}:${num(origin.x)}:${num(origin.y)}`:String(source?.id||name||'')};}
@@ -1485,12 +1486,16 @@
     }
     if(isTurretToken129(token))base=0;
     const speed=injurySpeed129(Math.max(0,base),token),result=window.GRPGCombatMovementV198.resolve({speed,weight,capacity:carries?num(computed.values?.carryCapacity,5+2*num(computed.abilities?.strength)):Number.MAX_SAFE_INTEGER,dash:inBattle191(scene)&&Boolean(token?.dashUsedV198||activeDroneCommand129(token)?.kindV200==='dash'),spent:token?.movedThisTurn});
+    const recoil=token?.aberrationRecoil255;
+    const movementPenalty=inBattle191(scene)&&recoil?.battleId===epochContext204(token).battleId
+      &&num(token.ownTurnV199)<=recoil.until?recoil.amount:0;
     const fullSpeed=result.speed;
     if(token?.proneV122||token?.movementModeV138==='climb'){
-      const speed=Math.ceil(fullSpeed/(token.proneV122?4:2)),budget=speed*(inBattle191(scene)&&token.dashUsedV198?2:1);
+      const speed=Math.ceil(fullSpeed/(token.proneV122?4:2)),budget=Math.max(0,speed*(inBattle191(scene)&&token.dashUsedV198?2:1)-movementPenalty);
       return {...result,speed,budget,remaining:Math.max(0,budget-result.spent),fullSpeed,baseSpeed:Math.max(0,base),injuredSpeed:speed,carries};
     }
-    return {...result,fullSpeed,baseSpeed:Math.max(0,base),injuredSpeed:speed,carries};
+    const budget=Math.max(0,result.budget-movementPenalty);
+    return {...result,budget,remaining:Math.max(0,budget-result.spent),fullSpeed,baseSpeed:Math.max(0,base),injuredSpeed:speed,carries};
   }
   function tokenMoveCells(token,scene){return movementState198(token,scene).speed;}
   function tokenMoveBudget198(token,scene){return movementState198(token,scene).budget;}
@@ -1519,6 +1524,26 @@
     const copy=window.GRPGItemInstancesV215.instance(entity,weapon.id,-1,key);
     return (window.GRPGAberrationWeapons?.effects(copy?.aberration252?.effects)||[])
       .filter(effect=>effect.group===group).reduce((sum,effect)=>sum+effect.value,0);
+  }
+  function finisher255(attacker,weapon,target,state,slot){
+    if(weapon.weaponCategory!=='melee'||num(target.hpCurrent)<=0||num(target.hpCurrent)*4>num(target.hpMax))return false;
+    const bonus=weaponAberration254(attacker,weapon,'weapon-13',slot);
+    if(bonus<=0)return false;
+    const parts=list(state.damagePartsV138);
+    if(parts.length&&parts.reduce((total,part)=>total+Math.max(0,num(part.amount)),0)===state.damage){
+      parts[0].amount+=bonus;
+    }
+    state.damage+=bonus;
+    return true;
+  }
+  function recoil255(attacker,weapon,slot){
+    if(!inBattle191()||weapon.weaponCategory==='melee')return;
+    const {battleId,round,turn}=epochContext204(attacker),previous=attacker.aberrationRecoil255;
+    if(previous?.battleId===battleId&&previous.round===round)return;
+    const amount=-weaponAberration254(attacker,weapon,'weapon-16',slot);
+    if(amount<=0)return;
+    attacker.aberrationRecoil255={battleId,round,until:turn+1,amount};
+    appendCombatLog105(Combat.getRuntime(),`${attacker.name}: отдача при промахе, движение −${amount} до конца следующего хода.`);
   }
   function weaponRangeBonus253(token,weapon,slot){
     return weaponAberration254(token,weapon,weapon?.weaponCategory==='melee'?'weapon-10':'weapon-9',slot);
@@ -2629,7 +2654,7 @@
       await runAutomaticHooks119(attacker,'BeforeAttackStart',{...context,attackBonus:pre.attackBonus,defenseBonus:pre.defenseBonus},pre);await chooseReaction119('BeforeAttackStart',{...context,attackBonus:pre.attackBonus,defenseBonus:pre.defenseBonus},pre);
       const result=rules.resolveManualAttack({attackRoll:entered.attackRoll,defenseRoll:entered.defenseRoll,attackBonus:pre.attackBonus+num(entered.attackBonusDelta204),defenseBonus:pre.defenseBonus+num(entered.defenseBonusDelta204),damageRoll:entered.damageRoll,damageBonus,damageReduction:0});await emit204('OnAttackResolved',attacker,{...context,hit:result.hit,critical:result.critical},pre);if(!result.hit)await emit204('OnMiss',attacker,{...context,hit:false});
       refs=combatTransactionRefs120(transaction);attacker=refs.attacker;victim=refs.target;let finalDamage=result.damageApplied,hp={before:num(victim?.hpCurrent),after:num(victim?.hpCurrent),applied:0},state={damage:result.hit?result.damageApplied:0,damagePartsV138:result.hit?[{amount:result.damageApplied,absorptionSource:'all'}]:[],effects:pre.effects};
-      if(result.hit&&victim){await runAutomaticHooks119(attacker,'OnHit',{...context,attacker,target:victim,damage:state.damage},state);await chooseReaction119('OnHit',{...context,attacker,target:victim,damage:state.damage},state);refs=combatTransactionRefs120(transaction);victim=refs.target;attacker=refs.attacker;if(victim){await runAutomaticHooks119(victim,'BeforeDamage',{...context,attacker,target:victim,damage:state.damage},state);await chooseReaction119('BeforeDamage',{...context,attacker,target:victim,damage:state.damage},state);finalDamage=applyAbsorptionV138(state,incomingDefense119(victim,'melee',null,damageType202(weapon))).applied;if(result.defenseCritical)finalDamage=Math.floor(finalDamage/2);hp=await applyHit199(victim,finalDamage,weapon.name,attacker,{damageType:damageType202(weapon)});updatePlayerHp105(victim);const afterContext={...context,attacker,target:victim,damage:finalDamage};await runAutomaticHooks119(victim,'OnTakeDamage',afterContext,state);await chooseReaction119('OnTakeDamage',afterContext,state);refs=combatTransactionRefs120(transaction);victim=refs.target;hp.after=num(victim?.hpCurrent,hp.after);hp.applied=Math.max(0,hp.before-hp.after);if(victim)updatePlayerHp105(victim);}}
+      if(result.hit&&victim){await runAutomaticHooks119(attacker,'OnHit',{...context,attacker,target:victim,damage:state.damage},state);await chooseReaction119('OnHit',{...context,attacker,target:victim,damage:state.damage},state);refs=combatTransactionRefs120(transaction);victim=refs.target;attacker=refs.attacker;if(victim){await runAutomaticHooks119(victim,'BeforeDamage',{...context,attacker,target:victim,damage:state.damage},state);await chooseReaction119('BeforeDamage',{...context,attacker,target:victim,damage:state.damage},state);refs=combatTransactionRefs120(transaction);victim=refs.target;attacker=refs.attacker;if(!victim||!attacker)return false;finisher255(attacker,weapon,victim,state);finalDamage=applyAbsorptionV138(state,incomingDefense119(victim,'melee',null,damageType202(weapon))).applied;if(result.defenseCritical)finalDamage=Math.floor(finalDamage/2);hp=await applyHit199(victim,finalDamage,weapon.name,attacker,{damageType:damageType202(weapon)});updatePlayerHp105(victim);const afterContext={...context,attacker,target:victim,damage:finalDamage};await runAutomaticHooks119(victim,'OnTakeDamage',afterContext,state);await chooseReaction119('OnTakeDamage',afterContext,state);refs=combatTransactionRefs120(transaction);victim=refs.target;hp.after=num(victim?.hpCurrent,hp.after);hp.applied=Math.max(0,hp.before-hp.after);if(victim)updatePlayerHp105(victim);}}
       if(weapon.shotSoundId247)audioApi()?.play?.(weapon.shotSoundId247);
       appendCombatLog105(refs.runtime,`${attacker.name} ${result.hit?'попадает':'промахивается'} атакой по возможности по ${victim?.name||target.name}${result.hit?`: ${hp.before} → ${hp.after} HP`:''}${result.fumble?' · натуральная 1':''}.`);
       Combat.syncInitiative(scene.id,false);flushLuaEffects119(state);await sealOperation194('Подтверждена атака по возможности');if(!options.deferCheckpoint)await checkpointCombat120('Сцена: атака по возможности',true);return num(victim?.hpCurrent,0)>0;
@@ -3280,11 +3305,12 @@
       before.defenseBonus+=worn.defenseBonus-checkPenalty199(target)-settledDefense.defenseBonus;
     }
     await runAutomaticHooks119(attacker,'BeforeAttackStart',context(rolls),before);refresh();await chooseReaction119('BeforeAttackStart',context(rolls),before);refresh();
-    const result=rules.resolveManualAttack({attackRoll:entered.attackRoll,defenseRoll:entered.defenseRoll,attackBonus:before.attackBonus+num(entered.attackBonusDelta204),defenseBonus:before.defenseBonus+num(entered.defenseBonusDelta204),damageRoll:entered.damageRoll,damageBonus,criticalRange:weaponAberration254(attacker,weapon,'weapon-3',selected.slot),criticalBonus:weaponAberration254(attacker,weapon,'weapon-4',selected.slot),damageReduction:0});await emit204('OnAttackResolved',attacker,context({hit:result.hit,critical:result.critical}),before);if(!result.hit)await emit204('OnMiss',attacker,context({hit:false}));let applied=0,absorbed=0,hp={before:num(target.hpCurrent),after:num(target.hpCurrent),applied:0};const effects={damage:result.hit?result.damageApplied:0,damagePartsV138:result.hit?[{amount:result.damageApplied,absorptionSource:'all'}]:[],effects:before.effects,standardAttackDepthV138:depth+1};
+    const result=rules.resolveManualAttack({attackRoll:entered.attackRoll,defenseRoll:entered.defenseRoll,attackBonus:before.attackBonus+num(entered.attackBonusDelta204),defenseBonus:before.defenseBonus+num(entered.defenseBonusDelta204),damageRoll:entered.damageRoll,damageBonus,criticalRange:weaponAberration254(attacker,weapon,'weapon-3',selected.slot),criticalBonus:weaponAberration254(attacker,weapon,'weapon-4',selected.slot),damageReduction:0});await emit204('OnAttackResolved',attacker,context({hit:result.hit,critical:result.critical}),before);if(!result.hit){await emit204('OnMiss',attacker,context({hit:false}));refresh();recoil255(attacker,weapon,selected.slot);}let applied=0,absorbed=0,hp={before:num(target.hpCurrent),after:num(target.hpCurrent),applied:0};const effects={damage:result.hit?result.damageApplied:0,damagePartsV138:result.hit?[{amount:result.damageApplied,absorptionSource:'all'}]:[],effects:before.effects,standardAttackDepthV138:depth+1};
     if(result.hit){
       const hit={...rolls,hit:true,critical:result.critical};
       await runAutomaticHooks119(attacker,'OnHit',context({...hit,damage:effects.damage}),effects);refresh();await chooseReaction119('OnHit',context({...hit,damage:effects.damage}),effects);refresh();
       await runAutomaticHooks119(target,'BeforeDamage',context({...hit,damage:effects.damage}),effects);refresh();await chooseReaction119('BeforeDamage',context({...hit,damage:effects.damage}),effects);refresh();
+      finisher255(attacker,weapon,target,effects,selected.slot);
       const reduced=applyAbsorptionV138(effects,incomingDefense119(target,weapon.weaponCategory||'light',cover,shotDamageType));absorbed=reduced.absorbed;applied=result.defenseCritical?Math.floor(reduced.applied/2):reduced.applied;hp=await applyHit199(target,applied,weapon.name,attacker,{damageType:shotDamageType,rawDamage:effects.damage,absorbed});updatePlayerHp105(target);
       await runAutomaticHooks119(target,'OnTakeDamage',context({...hit,damage:applied}),effects);refresh();await chooseReaction119('OnTakeDamage',context({...hit,damage:applied}),effects);refresh();
     }
@@ -3667,7 +3693,9 @@
     if(itemBrokenV138(selectedAttacker,selectedWeapon)){Toast.show('Выбранное оружие сломано','info');return;}
     if(heavyBlocked195(selectedAttacker)&&isHeavyWeapon129(selectedWeapon)){Toast.show('Травма 3-й степени не позволяет использовать тяжёлое оружие','info');return;}
     if(weaponMalfunction122(selectedAttacker,selectedWeapon)){Toast.show('Оружие отказало. Сначала устраните отказ отдельным действием.','info');return;}
-    const activeBurst=selectedAttacker.burstStateV122, alreadyCritical=activeBurst?.aberrationCritical254===true,shotIndex=activeBurst&&String(activeBurst.weaponId)===String(selectedWeapon.id)?activeBurst.nextShot:1,maxShots=inBattle191()?(activeBurst?.maxShots||rapidFireShots122(selectedWeapon)):1,targetSwitches=Math.max(0,num(activeBurst?.targetSwitches))+(activeBurst?.lastTargetId&&String(activeBurst.lastTargetId)!==String(selectedTarget.id)?1:0),burstPenalty=window.GRPGCombatRulesV119.burstPenalty(shotIndex,targetSwitches,selectedAttacker.brace229?.weaponId===selectedWeapon.id);
+    const activeBurst=selectedAttacker.burstStateV122;
+    let usedFinisher=activeBurst?.aberrationFinisher255===true;
+    const alreadyCritical=activeBurst?.aberrationCritical254===true,shotIndex=activeBurst&&String(activeBurst.weaponId)===String(selectedWeapon.id)?activeBurst.nextShot:1,maxShots=inBattle191()?(activeBurst?.maxShots||rapidFireShots122(selectedWeapon)):1,targetSwitches=Math.max(0,num(activeBurst?.targetSwitches))+(activeBurst?.lastTargetId&&String(activeBurst.lastTargetId)!==String(selectedTarget.id)?1:0),burstPenalty=window.GRPGCombatRulesV119.burstPenalty(shotIndex,targetSwitches,selectedAttacker.brace229?.weaponId===selectedWeapon.id);
     const from = centerOf(selectedAttacker), to = centerOf(selectedTarget), max = shotRange229(selectedAttacker,selectedWeapon), distance = window.GRPGUnitSizeV184.distance(selectedAttacker,selectedTarget);
     local.preview = makeRoutePreview104(to, true); refreshPreviewDom104();
     if (distance > Math.floor(max + 1e-6)) { Toast.show(`Цель вне дальности: ${hexLabel109(distance)} / ${hexLabel109(max)}`, 'info'); return; }
@@ -3708,7 +3736,7 @@
       attacker.actionUsed=true;
       if(entered.aimApplied229)attacker.aim229=null;
       const plannedContinuation=entered.attackRoll!==1&&shotIndex<maxShots&&(magazine.size===0||magazine.loaded-shotCost>=shotCost);
-      attacker.burstStateV122=plannedContinuation?{weaponId:weapon.id,nextShot:shotIndex+1,maxShots,lastTargetId:String(target.id),targetSwitches,aberrationCritical254:alreadyCritical}:null;if(!plannedContinuation)completeDroneModule129(attacker);
+      attacker.burstStateV122=plannedContinuation?{weaponId:weapon.id,nextShot:shotIndex+1,maxShots,lastTargetId:String(target.id),targetSwitches,aberrationCritical254:alreadyCritical,aberrationFinisher255:usedFinisher}:null;if(!plannedContinuation)completeDroneModule129(attacker);
       if(magazine.size>0){const currentMagazine=magazineState118(attacker,weapon);if(currentMagazine.loaded<shotCost)throw new Error('Патроны были израсходованы другим действием');currentMagazine.loaded-=shotCost;writeMagazineState118(attacker,weapon,currentMagazine);magazine.loaded=currentMagazine.loaded;magazine.ammoTypeId=currentMagazine.ammoTypeId;}
       if(entered.attackRoll===1)await applyWeaponFumble196(attacker,weapon);
       wearArmorOnTwentyV215(attacker,target,entered.attackRoll);
@@ -3731,6 +3759,7 @@
         ({attacker,target}=combatTransactionRefs120(transaction));if(!target)throw new Error('Цель больше не находится на сцене');hitContext={...hitContext,attacker,target,caster:attacker,targets:[target]};
         await runAutomaticHooks119(target,'BeforeDamage',{...hitContext,damage:effectState.damage},effectState);await chooseReaction119('BeforeDamage',{...hitContext,damage:effectState.damage},effectState);
         ({attacker,target}=combatTransactionRefs120(transaction));if(!target)throw new Error('Цель больше не находится на сцене');
+        if(!usedFinisher)usedFinisher=finisher255(attacker,weapon,target,effectState);
         const finalDefense=incomingDefense119(target,weapon.weaponCategory||'light',cover,shotDamageType);absorptionV138=applyAbsorptionV138(effectState,finalDefense);finalDamage=absorptionV138.applied;if(result.defenseCritical)finalDamage=Math.floor(finalDamage/2);
         hpChange=await applyHit199(target,finalDamage,weapon.name,attacker,{damageType:shotDamageType,rawDamage:effectState.damage,absorbed:absorptionV138.absorbed});updatePlayerHp105(target);
         const afterContext={...hitContext,attacker,target,caster:attacker,targets:[target],damage:finalDamage};
@@ -3738,17 +3767,18 @@
         ({target}=combatTransactionRefs120(transaction));hpChange.after=num(target?.hpCurrent,hpChange.after);hpChange.applied=Math.max(0,hpChange.before-hpChange.after);if(target){updatePlayerHp105(target);}
       }
       ({attacker,target}=combatTransactionRefs120(transaction));
+      if(!result.hit)recoil255(attacker,weapon);
       await emitShot238(attacker,{...context,attacker,target,hit:result.hit,critical:result.critical},magazine.size>0?shotCost:0,effectState);
       ({attacker,target}=combatTransactionRefs120(transaction));magazine=magazineState118(attacker,weapon);
       const continues=!result.fumble&&!itemBrokenV138(attacker,weapon)&&shotIndex<maxShots&&(magazine.size===0||magazine.loaded>=shotCost);
       if(!continues)attacker.aim229=null;
-      if(continues){attacker.burstStateV122={weaponId:weapon.id,nextShot:shotIndex+1,maxShots,lastTargetId:String(target.id),targetSwitches,aberrationCritical254:alreadyCritical||result.critical};attacker.actionUsed=true;}else{attacker.burstStateV122=null;attacker.actionUsed=true;completeDroneModule129(attacker);}
+      if(continues){attacker.burstStateV122={weaponId:weapon.id,nextShot:shotIndex+1,maxShots,lastTargetId:String(target.id),targetSwitches,aberrationCritical254:alreadyCritical||result.critical,aberrationFinisher255:usedFinisher};attacker.actionUsed=true;}else{attacker.burstStateV122=null;attacker.actionUsed=true;completeDroneModule129(attacker);}
       const attackRoll=`${result.attackDie}${result.attackBonus?` ${result.attackBonus>=0?'+':'−'} ${Math.abs(result.attackBonus)}`:''} = ${result.attackTotal}`;
       const defenseRoll=`${result.defenseDie}${result.defenseBonus?` ${result.defenseBonus>=0?'+':'−'} защита ${Math.abs(result.defenseBonus)}`:''} = ${result.defenseTotal}`;
       const magazineText=magazine.size>0?`; магазин ${magazine.loaded} / ${magazine.size}`:'';
       const refs=combatTransactionRefs120(transaction);attacker=refs.attacker;target=refs.target;const runtimeNow=refs.runtime;
       const coverText=cover.assets.length?`; защита между юнитами «${cover.label}»${cover.armorBonus?` (+${cover.armorBonus})`:''}${cover.hardness?`, Твёрдость ${cover.hardness}`:''}${attackDisadvantage?', помеха':''}`:'';
-      if(result.hit){const reductionText=absorptionV138.absorbed?` − поглощение ${absorptionV138.absorbed}`:'';const luaText=finalDamage!==result.damageApplied?` → после реакций${result.defenseCritical?' и натуральной 20 защиты':''} ${finalDamage}`:'';appendCombatLog105(runtimeNow,`${attacker.name} атакует ${target.name} из «${weapon.name||'оружия'}» (${damageLabel202(shotDamageType)})${ammo?` патронами «${ammo.name||ammo.id}»`:''}: атака d20 ${attackRoll} против d20 цели ${defenseRoll} — попадание${result.critical?' (натуральная 20 атаки, +1 урон)':''}${result.defenseFumble?' (натуральная 1 защиты, +1 урон)':''}; урон ${result.rawDamage}${reductionText}${luaText}; HP ${hpChange.before} → ${hpChange.after}${coverText}${magazineText}.`);}else appendCombatLog105(runtimeNow,`${attacker.name} атакует ${target.name} из «${weapon.name||'оружия'}» (${damageLabel202(shotDamageType)})${ammo?` патронами «${ammo.name||ammo.id}»`:''}: атака d20 ${attackRoll} против d20 цели ${defenseRoll} — промах${result.fumble?weapon.isUnarmedV122?' (натуральная 1: падение и потеря реакции)':' (натуральная 1: износ оружия и конец очереди)':''}${coverText}${magazineText}.`);
+      if(result.hit){const reductionText=absorptionV138.absorbed?` − поглощение ${absorptionV138.absorbed}`:'';const luaText=finalDamage!==result.damageApplied?` → после реакций${result.defenseCritical?' и натуральной 20 защиты':''} ${finalDamage}`:'';appendCombatLog105(runtimeNow,`${attacker.name} атакует ${target.name} из «${weapon.name||'оружия'}» (${damageLabel202(shotDamageType)})${ammo?` патронами «${ammo.name||ammo.id}»`:''}: атака d20 ${attackRoll} против d20 цели ${defenseRoll} — попадание${result.critical?' (критическое попадание)':''}${result.defenseFumble?' (натуральная 1 защиты, +1 урон)':''}; урон ${result.rawDamage}${reductionText}${luaText}; HP ${hpChange.before} → ${hpChange.after}${coverText}${magazineText}.`);}else appendCombatLog105(runtimeNow,`${attacker.name} атакует ${target.name} из «${weapon.name||'оружия'}» (${damageLabel202(shotDamageType)})${ammo?` патронами «${ammo.name||ammo.id}»`:''}: атака d20 ${attackRoll} против d20 цели ${defenseRoll} — промах${result.fumble?weapon.isUnarmedV122?' (натуральная 1: падение и потеря реакции)':' (натуральная 1: износ оружия и конец очереди)':''}${coverText}${magazineText}.`);
       local.preview={...local.preview,effect:result.hit?'shot':'miss',targetId:target.id,label:result.hit?`${weapon.name}: ${finalDamage} урона · HP ${hpChange.before} → ${hpChange.after}`:`${weapon.name}: промах · ${result.attackTotal} против ${result.defenseTotal}`};
       Combat.syncInitiative(scene.id,false);Combat.render();flushLuaEffects119(effectState);await checkpointCombat120(result.hit?'Сцена: атака и урон':'Сцена: атака',true);
       setTimeout(()=>{if(['shot','miss'].includes(local.preview?.effect)&&local.preview?.targetId===target.id){local.preview=null;refreshPreviewDom104();}},1100);

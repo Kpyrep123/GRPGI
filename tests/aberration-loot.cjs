@@ -35,6 +35,10 @@ assert.deepEqual(row.instancesV215[1].aberration252,body.lootTransferV137.aberra
 body.lootTransferV137.aberrations[0]={rarity:'uncommon',budget:1,effects:['weapon-1-4']};
 assert.throws(()=>transfer(request),/другими данными/);
 assert.equal(data.playerJson.inventory[0].qty,2);
+body.operationId='test_conditional_effects';
+body.lootTransferV137.aberrations[0]={rarity:'rare',budget:4,effects:['weapon-13-1','weapon-16-1']};
+assert.equal(transfer(request).status,'committed');
+assert.deepEqual(data.playerJson.inventory[0].instancesV215[2].aberration252,body.lootTransferV137.aberrations[0]);
 console.log('PASS loot persists aberrations and rejects a changed replay');
 
 require('../renderer/combat-rules-v119.js');

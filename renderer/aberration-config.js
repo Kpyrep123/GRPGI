@@ -25,7 +25,7 @@
   }
 
   // Only effects with an implemented combat rule enter the loot pool.
-  const supported = catalog.filter(effect => ['weapon-1','weapon-2','weapon-3','weapon-4','weapon-8','weapon-9','weapon-10'].includes(effect.id));
+  const supported = catalog.filter(effect => ['weapon-1','weapon-2','weapon-3','weapon-4','weapon-8','weapon-9','weapon-10','weapon-13','weapon-16'].includes(effect.id));
   const variants = supported.flatMap(effect => effect.variants.map(variant=>({...variant,group:effect.id,name:effect.name})));
   function resolve(id, overrides) {
     const variant=variants.find(row=>row.id===id);
@@ -40,8 +40,8 @@
       const pool=variants.map(row=>resolve(row.id,overrides)).filter(row=>Number.isInteger(row.value)&&Math.abs(row.value)<=20
         &&(row.group!=='weapon-8'||(Number(weapon?.magazineSize??weapon?.clipSize)>0
           &&Number(weapon?.magazineSize??weapon?.clipSize)+row.value>=1))
-        &&(row.group!=='weapon-9'||weapon?.weaponCategory!=='melee')
-        &&(row.group!=='weapon-10'||weapon?.weaponCategory==='melee'));
+        &&(!['weapon-9','weapon-16'].includes(row.group)||weapon?.weaponCategory!=='melee')
+        &&(!['weapon-10','weapon-13'].includes(row.group)||weapon?.weaponCategory==='melee'));
       const result=api.roll(danger,pool,{chances});
       if (!result) return {rarity:'common',budget:0,effects:[]};
       return result;
