@@ -219,7 +219,7 @@
     next.weaponMagazinesV118 = normalizeMagazineMap118(token.weaponMagazinesV118 || token.weaponMagazines);
     if(Array.isArray(token.combatInventoryV120))next.combatInventoryV120=clone(token.combatInventoryV120);
     const loot=token.lootStateV118&&typeof token.lootStateV118==='object'?token.lootStateV118:{};
-    next.lootStateV118={searched:Boolean(loot.searched),searchedAt:String(loot.searchedAt||''),pendingTransfersV137:clone(loot.pendingTransfersV137||{}),items:list(loot.items).map(row=>({itemId:String(row?.itemId||''),qty:Math.max(0,Math.trunc(num(row?.qty,0)))})).filter(row=>row.itemId&&row.qty>0)};
+    next.lootStateV118={searched:Boolean(loot.searched),searchedAt:String(loot.searchedAt||''),pendingTransfersV137:clone(loot.pendingTransfersV137||{}),items:list(loot.items).map(row=>({itemId:String(row?.itemId||''),qty:Math.max(0,Math.trunc(num(row?.qty,0))),...(Array.isArray(row?.aberrations)?{aberrations:clone(row.aberrations)}:{})})).filter(row=>row.itemId&&row.qty>0)};
     return next;
   };
   const normalizeTemplateBefore104 = normalizeCombatTemplate;
@@ -3481,6 +3481,7 @@
     return list(value).map(row=>({itemId:String(row?.itemId||''),chance:clamp104(row?.chance,0,100),minQty:Math.max(1,Math.trunc(num(row?.minQty,1))),maxQty:Math.max(1,Math.trunc(num(row?.maxQty,row?.minQty||1)))})).filter(row=>row.itemId);
   }
   const lootBusyV137=new Set();
+  let lootReveal252=null;
   const lootSourceQueueV137=window.GRPGPlayerSyncCoreV135.createQueue();
   function scenePlayersV137(sceneId){
     return unique(list(Combat.getRuntime(sceneId)?.tokens).map(token=>token.playerId)).map(id=>App.state.users[id])
@@ -3507,6 +3508,10 @@
     const remote=PlayerSync.shouldIsolateUsersFromSnapshot();
     if(prior&&(prior.remote!==remote||(prior.remote&&prior.campaignId!==String(Sync.config?.campaignId||'')))){Toast.show('Для завершения передачи восстановите прежний режим синхронизации.','err');return{ok:false,status:'pending'};}
     const job=prior||{operationId:window.GRPGPlayerSyncCoreV135.operationId(),playerId,itemId,qty,source:JSON.stringify([sceneId,tokenId]),remote,campaignId:String(Sync.config?.campaignId||'')};
+    if(!prior){
+      const rolls=list(state.items).filter(row=>row.itemId===itemId).flatMap(row=>Array.from({length:row.qty},(_,index)=>row.aberrations?.[index]||null));
+      if(rolls.some(Boolean))job.aberrations=rolls;
+    }
     lootBusyV137.add(key);
     try{
       // Persist intent BEFORE granting. Retrying after an unknown response reuses this ID.
@@ -3520,7 +3525,7 @@
       const result=await PlayerSync._queueV135.run(playerId,async()=>{
         let response;
         if(job.remote){
-          const request={playerId,operationId:job.operationId,lootTransferV137:{itemId,qty:job.qty,source:job.source,campaignId:job.campaignId},updatedBy:activeSyncActorLabel()};
+          const request={playerId,operationId:job.operationId,lootTransferV137:{itemId,qty:job.qty,source:job.source,campaignId:job.campaignId,...(job.aberrations?{aberrations:job.aberrations}:{})},updatedBy:activeSyncActorLabel()};
           for(let attempt=0;attempt<3;attempt++){
             try{response=await window.electronAPI.patchPlayer(request);}catch(error){response={ok:false,status:'error',message:error.message};}
             if(response?.ok&&(!['committed','replayed'].includes(response.status)||String(response.row?.playerId||response.row?.player_id||'')!==playerId))response={ok:false,status:'error',message:'Сервер не подтвердил выдачу. Проверьте подключение и повторите передачу.'};
@@ -3536,7 +3541,12 @@
             if(!check.ok)return{ok:false,status:'capacity',message:check.reason};
             const next=clone(user);let row=list(next.inventory).find(entry=>entry.itemId===itemId);
             if(!row){row={itemId,qty:0,positions:[]};(next.inventory||=[]).push(row);}
+            const offset=row.qty;
             window.GRPGItemInstancesV215.add(row,job.qty,equipmentItem105(itemId),()=>crypto.randomUUID());
+            for(const [index,roll] of (job.aberrations||[]).entries()){
+              const copy=row.instancesV215?.[offset+index];
+              if(copy&&roll){copy.aberration252=clone(roll);copy.rarity=roll.rarity==='common'?'обычный':roll.rarity;}
+            }
             next.__lootReceiptsV137={...next.__lootReceiptsV137,[job.operationId]:true};
             App.state.users[playerId]=normalizePlayerProfileV2(next);PLAYER_TEMPLATES[playerId]=clone(App.state.users[playerId]);
           }
@@ -3564,6 +3574,12 @@
       const completed=await saveStoreNow();
       if(!completed?.ok){token.lootStateV118=before;throw new Error('Передача подтверждена, но сцена не сохранена. Повторите передачу для завершения.');}
       appendCombatLog105(Combat.getRuntime(sceneId),`${App.state.users[playerId]?.displayName||playerId} получает ${equipmentItem105(itemId)?.name||itemId} ×${job.qty} при обыске ${token.name}.`);
+      const revealed=list(job.aberrations).filter(roll=>roll&&roll.rarity!=='common');
+      if(revealed.length){
+        lootReveal252={id:job.operationId,sceneId,at:Date.now(),name:equipmentItem105(itemId)?.name||itemId,
+          recipient:App.state.users[playerId]?.displayName||playerId,
+          items:revealed.map(roll=>({rarity:roll.rarity,effects:window.GRPGAberrationWeapons.effects(roll.effects).map(effect=>effect.name+' '+(effect.value>0?'+':'')+effect.value)}))};
+      }
       queueStoreSave();broadcastScene104();
       if(Combat.getSceneIdForView()===sceneId)showLootOverlay118(token);
       Toast.show('Добыча передана в инвентарь.','ok');return result;
@@ -3610,7 +3626,10 @@
       for(const row of lootRows118(npc.lootTable)){
         if(Math.random()*100>=num(row.chance,0))continue;
         const min=Math.max(1,Math.trunc(num(row.minQty,1))),max=Math.max(min,Math.trunc(num(row.maxQty,min)));
-        items.push({itemId:row.itemId,qty:min+Math.floor(Math.random()*(max-min+1))});
+        const qty=min+Math.floor(Math.random()*(max-min+1)),item=equipmentItem105(row.itemId);
+        const aberrations=inBattle191()&&item?.type==='weapon'&&window.GRPGAberrationWeapons
+          ? Array.from({length:qty},()=>window.GRPGAberrationWeapons.roll(npc.dangerLevel)) : null;
+        items.push({itemId:row.itemId,qty,...(aberrations?{aberrations}:{})});
       }
       token.lootStateV118={searched:true,searchedAt:new Date().toISOString(),items};
       appendCombatLog105(runtime,`${token.name} обыскан. Найдено: ${items.length?items.map(row=>`${equipmentItem105(row.itemId)?.name||row.itemId} ×${row.qty}`).join(', '):'ничего'}.`);
@@ -3650,7 +3669,7 @@
       const ammo=loadedAmmo238(attacker,weapon);
       const entity = entityForToken(attacker) || {};
       const temporaryModifiers=shotModifiers238(attacker,ammo);
-      const attack = window.GRPGStatsV113?.weaponAttack?.(entity, weapon, { kind: attacker.npcId ? 'npc' : 'player', inCombat:true, damageType:damageType202(weapon,ammo), temporaryModifiers });
+      const attack = window.GRPGStatsV113?.weaponAttack?.(entity, weapon, { kind: attacker.npcId ? 'npc' : 'player', inCombat:true, damageType:damageType202(weapon,ammo), firstShot:shotIndex===1, temporaryModifiers });
       const operator=isControlledDevice200(attacker)?operatorForDrone129(attacker):null;
       expireAim229(attacker);
       if(attacker.aim229?.targetId!==target.id)attacker.aim229=null;
@@ -3992,7 +4011,7 @@
     const preview=Combat.getScene()?.id===scene.id&&previewVisibleToPlayers128(scene,liveRuntime,local.preview)?clone(local.preview):null;
     const shots=recentShots247.filter(shot=>shot.sceneId===scene.id&&Date.now()-shot.at<shot.duration+1500&&previewVisibleToPlayers128(scene,liveRuntime,shot)
       &&(!shot.targetTokenId||previewVisibleToPlayers128(scene,liveRuntime,{sourceTokenId:shot.targetTokenId})));
-    return {version:4,scene:displayScene,runtime,preview,shots,sentAt:new Date().toISOString()};
+    return {version:4,scene:displayScene,runtime,preview,shots,lootReveal:lootReveal252?.sceneId===scene.id&&Date.now()-lootReveal252.at<8000?lootReveal252:null,sentAt:new Date().toISOString()};
   }
   Combat.broadcastPlayerDisplayMirror = function(){
     if(!this.isDm()||!window.electronAPI?.updatePlayerDisplayView)return;

@@ -192,6 +192,24 @@ function updatePlayerFacing231(scene,runtime){
   board.style.setProperty('--player-angle-v231',angle+'deg');
   board.classList.toggle('player-facing-side-v231',angle===90||angle===270);
 }
+let lastLootReveal252 = '';
+function renderLootReveal252(reveal) {
+  if(!reveal?.id||reveal.id===lastLootReveal252||Date.now()-reveal.at>=8000)return;
+  lastLootReveal252=reveal.id;
+  root.querySelector('.battle-loot-reveal')?.remove();
+  const panel=document.createElement('section');
+  panel.className='battle-loot-reveal';
+  const names={uncommon:'Необычное',rare:'Редкое',epic:'Эпическое',legendary:'Легендарное'};
+  const title=document.createElement('h2');title.textContent=reveal.name+' · '+reveal.recipient;panel.append(title);
+  for(const item of list(reveal.items)){
+    const row=document.createElement('div');
+    row.dataset.rarity=item.rarity;
+    row.textContent=[names[item.rarity],...list(item.effects)].join(' · ');
+    panel.append(row);
+  }
+  root.append(panel);
+  setTimeout(()=>panel.remove(),8000);
+}
 function renderCombatSnapshot(snapshot){
   const scene=normalizeScene(snapshot.scene);
   const runtime={...snapshot.runtime,tokens:list(snapshot.runtime?.tokens).map(normalizeToken),initiativeOrder:list(snapshot.runtime?.initiativeOrder)};
@@ -208,6 +226,7 @@ function renderCombatSnapshot(snapshot){
   if(layer)layer.innerHTML=previewMarkup(scene,preview);
   updateFog(scene,sources);
   GRPGCombatPresentationV227.paintShots(root.querySelector('.player-scene-stage-v104'),scene,snapshot.shots);
+  renderLootReveal252(snapshot.lootReveal);
 }
 function refresh(){
   if(playerDisplayFrame)return;

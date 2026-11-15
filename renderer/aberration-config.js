@@ -11,6 +11,30 @@
     return { chances:saved.chances || api.defaultChances.map(row=>row.slice()), variants:saved.variants || {} };
   }
 
+  // Only effects with an implemented combat rule enter the loot pool.
+  const supported = catalog.filter(effect => ['weapon-1','weapon-2'].includes(effect.id));
+  const variants = supported.flatMap(effect => effect.variants.map(variant=>({...variant,group:effect.id,name:effect.name})));
+  function resolve(id, overrides) {
+    const variant=variants.find(row=>row.id===id);
+    if (!variant) return null;
+    const saved=overrides[id];
+    const value=Number(String(saved?.value ?? variant.value).replace('−','-'));
+    return {...variant,cost:saved?.cost ?? variant.cost,value};
+  }
+  window.GRPGAberrationWeapons = {
+    roll(danger) {
+      const {chances,variants:overrides}=settings();
+      const pool=variants.map(row=>resolve(row.id,overrides)).filter(row=>Number.isInteger(row.value)&&Math.abs(row.value)<=20);
+      const result=api.roll(danger,pool,{chances});
+      if (!result) return {rarity:'common',budget:0,effects:[]};
+      return result;
+    },
+    effects(ids) {
+      const overrides=settings().variants;
+      return (ids||[]).map(id=>resolve(id,overrides)).filter(row=>row&&Number.isInteger(row.value)&&Math.abs(row.value)<=20);
+    }
+  };
+
   function openCatalog() {
     if (App.currentUser?.role !== 'gm') return;
     const key = storageKey();
@@ -36,7 +60,7 @@
 
     function drawEffects() {
       effects.innerHTML = catalog.filter(effect=>effect.category===category.value).map(effect=>`
-        <details><summary>${esc(effect.name)}</summary>
+        <details><summary>${esc(effect.name)}${supported.includes(effect)?'':' · в каталоге'}</summary>
         <p>${esc([effect.scope,effect.rule].filter(Boolean).join(' · '))}</p>
         ${effect.variants.map(variant=>{
           const saved = draft.variants[variant.id] || variant;

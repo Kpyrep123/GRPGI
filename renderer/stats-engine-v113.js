@@ -304,17 +304,26 @@
     const mods=[...stats.modifiers,...arr(copy?.attachments).flatMap(row=>arr(row.modifiers)
       .map(mod=>normalizeModifier(mod,{id:row.itemId,name:equipment(row.itemId)?.name||row.itemId,kind:'equipment'}))
       .filter(mod=>mod.enabled!==false))];
+    const aberrations=window.GRPGAberrationWeapons?.effects(copy?.aberration252?.effects)||[];
     let stat = window.GRPGWeaponHandlingV203.stat(weapon);
     const replaces=mods.filter(m=>m.target==='weapon_hit_stat'&&m.op==='replace_stat'&&m.statRef&&scopeMatches(m,{...context,entity,...options})).sort((a,b)=>(modifierSpecificity(a)-modifierSpecificity(b))||(a.priority-b.priority));
     if(replaces.length) stat=replaces[replaces.length-1].statRef;
     const detail=[{source:PRIMARY_LABELS[stat]||stat,value:n(stats.abilities[stat]),op:'base'}];
     let bonus=n(stats.abilities[stat],0)+n(weapon.hitBonus,0)+mounted;
+    for(const effect of aberrations.filter(row=>row.group==='weapon-1')){
+      bonus+=effect.value;
+      detail.push({source:effect.name,value:effect.value,op:'add'});
+    }
     if(mounted)detail.push({source:'Установленные модификации',value:mounted,op:'add'});
     if(n(weapon.hitBonus,0))detail.push({source:`${weapon.name}: базовый бонус`,value:n(weapon.hitBonus),op:'add'});
     if(weapon.weaponSkillId&&arr(entity.skills).map(String).includes(String(weapon.weaponSkillId))){bonus+=n(weapon.weaponSkillBonus,0);detail.push({source:`${skillById(weapon.weaponSkillId)?.name||weapon.weaponSkillId}: оружейный навык`,value:n(weapon.weaponSkillBonus,0),op:'add'});}
     mods.filter(m=>m.target==='weapon_hit_extra_stat'&&['add_stat','add'].includes(m.op)&&m.statRef&&scopeMatches(m,{...context,entity,...options})).forEach(m=>{bonus+=n(stats.abilities[m.statRef],0);detail.push({source:`${m.sourceName}: ${PRIMARY_LABELS[m.statRef]}`,value:n(stats.abilities[m.statRef],0),op:'add'});});
     mods.filter(m=>m.target==='attack_bonus'&&['add','set'].includes(m.op)&&scopeMatches(m,{...context,entity,...options})).sort((a,b)=>(a.priority-b.priority)||(modifierSpecificity(a)-modifierSpecificity(b))).forEach(m=>{bonus=m.op==='set'?n(m.value):bonus+n(m.value);detail.push({source:m.sourceName,value:n(m.value),op:m.op});});
     let damageBonus=0; const damageDetail=[]; mods.filter(m=>m.target==='damage_bonus'&&['add','set'].includes(m.op)&&scopeMatches(m,{...context,entity,...options})).sort((a,b)=>a.priority-b.priority).forEach(m=>{damageBonus=m.op==='set'?n(m.value):damageBonus+n(m.value);damageDetail.push({source:m.sourceName,value:n(m.value),op:m.op});});
+    if(options.firstShot!==false)for(const effect of aberrations.filter(row=>row.group==='weapon-2')){
+      damageBonus+=effect.value;
+      damageDetail.push({source:effect.name,value:effect.value,op:'add'});
+    }
     return { weapon, stat, bonus, detail, damage:String(weapon.damage||'—'), damageBonus, damageDetail, range:nonNeg(weapon.range,0) };
   }
 

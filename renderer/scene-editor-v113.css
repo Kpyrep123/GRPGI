@@ -712,3 +712,17 @@ body.combat-stability-v108 #gm-dock-btn {
 .battle-roster-list li[hidden] { display: none; }
 .battle-roster-list small { display: block; margin-top: .15rem; }
 .battle-roster-actions { display: flex; flex-wrap: wrap; gap: .25rem; }
+
+.battle-loot-reveal {
+  position: fixed; z-index: 240; inset: 18% auto auto 50%; transform: translateX(-50%);
+  max-width: min(38rem,90vw); max-height: 60vh; overflow: auto;
+  padding: 1rem 1.5rem; border: 1px solid #b9985d; border-radius: 8px;
+  background: #171411f5; color: #fff2d4; pointer-events: none;
+  animation: battle-loot-reveal .36s ease-out both;
+}
+.battle-loot-reveal [data-rarity="uncommon"] { color: #8cd997; }
+.battle-loot-reveal [data-rarity="rare"] { color: #83c9ff; }
+.battle-loot-reveal [data-rarity="epic"] { color: #d9a5ff; }
+.battle-loot-reveal [data-rarity="legendary"] { color: #ffd783; }
+@keyframes battle-loot-reveal { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .battle-loot-reveal { animation: none; } }

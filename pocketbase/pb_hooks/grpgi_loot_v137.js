@@ -3,7 +3,11 @@ function transfer(e){
   const b=e.requestInfo().body||{}, campaign=String(b.campaignId||''),playerId=String(b.playerId||''),operation=String(b.operationId||''),loot=b.lootTransferV137||{};
   const itemId=String(loot.itemId||''),qty=Number(loot.qty),source=String(loot.source||'');
   if(!campaign||!playerId||!itemId||!source||source.length>512||!Number.isSafeInteger(qty)||qty<1||qty>10000||!/^[-a-zA-Z0-9_]{8,120}$/.test(operation))throw new BadRequestError('Некорректная передача добычи.');
-  const fingerprint=$security.sha256(JSON.stringify([playerId,itemId,qty,source]));
+  const rolls=loot.aberrations;
+  if(rolls!==undefined&&(!Array.isArray(rolls)||rolls.length!==qty||rolls.some(roll=>!validRoll(roll))))throw new BadRequestError('Некорректные аберрации добычи.');
+  const identity=[playerId,itemId,qty,source];
+  if(rolls!==undefined)identity.push(rolls);
+  const fingerprint=$security.sha256(JSON.stringify(identity));
   let result;
   $app.runInTransaction((tx)=>{
     const record=tx.findFirstRecordByFilter('campaign_players','campaignId={:campaign} && playerId={:player}',{campaign,player:playerId});
@@ -25,6 +29,7 @@ function transfer(e){
     const rules=require(__hooks+'/grpgi_loot_core_v137.js').engine(world);
     const item=rules.equipment(itemId);
     if(!item||item.type==='stock'){result={ok:false,status:'rejected',message:'Предмет отсутствует в снаряжении кампании.',remote:record};return;}
+    if(rolls&&item.type!=='weapon')throw new BadRequestError('Аберрации добычи доступны только оружию.');
     const check=rules.canAdd(player,itemId,qty);
     if(!check.ok){result={ok:false,status:'capacity',message:check.reason,remote:record};return;}
     const migrated=rules.normalizePlayer(player);
@@ -39,7 +44,11 @@ function transfer(e){
       const newId=()=> 'item:'+ $security.randomString(24);
       // Restore old rows that predate instance IDs before appending new copies.
       copies.normalize(player,rules.equipment);
+      const offset=entry.qty;
       copies.add(entry,qty,item,newId);
+      for(const [index,roll] of (rolls||[]).entries()){
+        if(roll){const copy=entry.instancesV215[offset+index];copy.aberration252=roll;copy.rarity=roll.rarity==='common'?'обычный':roll.rarity;}
+      }
     }
     const now=new Date().toISOString();
     // The small profile receipt supports the normal v135 lost-response reconciliation.
@@ -53,5 +62,15 @@ function transfer(e){
     result={ok:true,status:'committed',row:record};
   });
   return e.json(200,result);
+}
+function validRoll(roll){
+  if(roll===null)return true;
+  const limits={common:[0,0],uncommon:[1,3],rare:[4,5],epic:[6,7],legendary:[8,8]};
+  if(!roll||!Object.prototype.hasOwnProperty.call(limits,roll.rarity))return false;
+  const [min,max]=limits[roll.rarity];
+  return Number.isInteger(roll.budget)&&roll.budget>=min&&roll.budget<=max&&Array.isArray(roll.effects)
+    &&(roll.rarity==='common'?roll.effects.length===0:roll.effects.length>=1&&roll.effects.length<=2)
+    &&roll.effects.every(id=>typeof id==='string'&&/^weapon-[12]-[1-6]$/.test(id))
+    &&new Set(roll.effects.map(id=>id.slice(0,8))).size===roll.effects.length;
 }
 module.exports={transfer};

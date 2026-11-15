@@ -79,7 +79,8 @@
         while (used.has(id)) id += ':copy';
         used.add(id);
         const copy = {...source, id};
-        if (copy.rarity == null && item?.rarity) copy.rarity = item.rarity;
+        if (item?.type === 'weapon') copy.rarity = copy.aberration252?.rarity || 'обычный';
+        else if (copy.rarity == null && item?.rarity) copy.rarity = item.rarity;
         copy.modifiers = list(copy.modifiers);
         copies.push(copy);
       }
@@ -161,7 +162,7 @@
     if (!tracked(item) && !Array.isArray(row.instancesV215)) return;
     row.instancesV215 ||= [];
     for (let i = previousQty; i < row.qty; i++) {
-      row.instancesV215[i] = updateResources({id:createId(), rarity:item?.rarity || '', modifiers:[]}, item);
+      row.instancesV215[i] = updateResources({id:createId(), rarity:item?.type === 'weapon' ? 'обычный' : item?.rarity || '', modifiers:[]}, item);
     }
   }
 
