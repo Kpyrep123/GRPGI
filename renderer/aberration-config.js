@@ -28,7 +28,7 @@
   const supported = catalog.filter(effect => ['weapon-1','weapon-2','weapon-3','weapon-4','weapon-5','weapon-6','weapon-7','weapon-8','weapon-9','weapon-10','weapon-11','weapon-12','weapon-13','weapon-14','weapon-15','weapon-16','weapon-17','armor-20','armor-25','armor-26','armor-27','armor-28'].includes(effect.id)||effect.variants.some(row=>window.GRPGItemInstancesV215.passiveEffect(row.id)));
   const variants = supported.flatMap(effect => effect.variants.map(variant=>({...variant,group:effect.id,name:effect.name})));
   const damageTypeIds=['kinetic','energy','electric','explosive','gas'];
-  const typedArmorGroups=['armor-20','armor-27'];
+  const randomDamageGroups=['weapon-5','armor-20','armor-27'];
   const attackKinds={melee:'Ближняя атака',ranged:'Дальняя атака',any:'Любая атака'};
   const damageTypeVariant=variants.find(row=>row.group==='weapon-6');
   function resolve(id, overrides) {
@@ -42,17 +42,18 @@
       if(!Object.hasOwn(attackKinds,type))return null;
       return {...variant,id,type,value:0,cost:saved?.cost??variant.cost};
     }
-    if(typedArmorGroups.includes(variant.group)){
+    if(randomDamageGroups.includes(variant.group)&&variant.group!=='weapon-5'){
       if(!damageTypeIds.includes(type))return null;
       const value=variant.group==='armor-27'?0:Number(variant.value.replace('−','-').split(/\s+/)[0]);
       return {...variant,id,type,value,cost:saved?.cost??variant.cost};
     }
+    if(variant.group==='weapon-5'&&type&&!damageTypeIds.includes(type))return null;
     const rawValue=String(saved?.value ?? variant.value);
     const fixed=window.GRPGItemInstancesV215.passiveEffect(id);
     const value=fixed?fixed.value:variant.group==='weapon-5'?Number(/^1d(4|6|8)\b/i.exec(rawValue)?.[1])
       :variant.group==='weapon-7'?window.GRPGItemInstancesV215.massPercent([id])
       :Number(String(saved?.value ?? variant.value).replace('−','-').trim().split(/\s+/)[0]);
-    return {...variant,cost:saved?.cost ?? variant.cost,value};
+    return {...variant,type,cost:saved?.cost ?? variant.cost,value};
   }
   function validEffect(row){
     if(!row)return false;
@@ -72,11 +73,11 @@
       if(!validEffect(effect))return '';
       const {group,name,value}=effect;
       if(group==='armor-28')return name+' · '+attackKinds[effect.type];
-      if(typedArmorGroups.includes(group)){
+      if(group==='armor-20'||group==='armor-27'){
         const type=window.GRPGDamageTypesV202.label(effect.type);
         return group==='armor-27'?name+' · '+type:name+' · '+(value>0?'+':'')+value+' · '+type;
       }
-      if(group==='weapon-5')return name+' · 1d'+value;
+      if(group==='weapon-5')return '+1d'+value+' урона'+(effect.type?' · '+window.GRPGDamageTypesV202.label(effect.type):'');
       if(group==='weapon-6')return name+' · '+window.GRPGDamageTypesV202.label(value);
       if(group==='weapon-15')return name+' · перезарядка после суперкрита';
       const sign=value>0&&!['weapon-11','weapon-12','weapon-14'].includes(group)?'+':'';
@@ -84,16 +85,16 @@
     },
     roll(danger,weapon) {
       const {chances,variants:overrides}=settings();
-      const category=window.GRPGItemInstancesV215.aberrationCategory(weapon);
+      const copies=window.GRPGItemInstancesV215;
       const target=window.GRPGDamageTypesV202.normalize(overrides[damageTypeVariant.id]?.value);
-      const pool=variants.filter(row=>row.group.startsWith(category+'-')).map(row=>{
+      const pool=variants.filter(row=>copies.canRollAberration(weapon,row.group.split('-')[0])).map(row=>{
         if(row.group==='armor-28'){
           const type=overrides[row.id]?.damageType;
           return Object.hasOwn(attackKinds,type)?resolve(row.id+':'+type,overrides):null;
         }
-        if(typedArmorGroups.includes(row.group)){
-          const type=window.GRPGDamageTypesV202.normalize(overrides[row.id]?.damageType);
-          return type?resolve(row.id+':'+type,overrides):null;
+        if(randomDamageGroups.includes(row.group)){
+          const type=damageTypeIds[Math.floor(Math.random()*damageTypeIds.length)];
+          return resolve(row.id+':'+type,overrides);
         }
         if(row.group!=='weapon-6')return resolve(row.id,overrides);
         if(!target)return null;
@@ -148,12 +149,11 @@
         ${effect.variants.map(variant=>{
           const saved = draft.variants[variant.id] || variant;
           const attack=effect.id==='armor-28';
-          const typed=typedArmorGroups.includes(effect.id)||attack;
-          const fixed=typed||effect.id==='weapon-7'||Boolean(window.GRPGItemInstancesV215.passiveEffect(variant.id));
+          const fixed=attack||['armor-20','armor-27','weapon-7'].includes(effect.id)||Boolean(window.GRPGItemInstancesV215.passiveEffect(variant.id));
           return `<div class="row" data-variant="${variant.id}"><label>Значение ${effect.id==='weapon-6'
             ? `<select class="select" data-field="value"><option value="">Выберите тип</option>${Object.entries(window.GRPGDamageTypesV202.labels).map(([id,label])=>`<option value="${id}" ${saved.value===id?'selected':''}>${esc(label)}</option>`).join('')}</select>`
             : `<input class="input" data-field="value" value="${esc(fixed?variant.value:saved.value)}" ${fixed?'readonly':''}>` }</label>
-            ${typed?`<label>${attack?'Тип атаки':'Тип урона'} <select class="select" data-field="damageType"><option value="">Выберите тип</option>${Object.entries(attack?attackKinds:window.GRPGDamageTypesV202.labels).map(([id,label])=>`<option value="${id}" ${saved.damageType===id?'selected':''}>${esc(label)}</option>`).join('')}</select></label>`:''}
+            ${attack?`<label>Тип атаки <select class="select" data-field="damageType"><option value="">Выберите тип</option>${Object.entries(attackKinds).map(([id,label])=>`<option value="${id}" ${saved.damageType===id?'selected':''}>${esc(label)}</option>`).join('')}</select></label>`:randomDamageGroups.includes(effect.id)?'<span>Тип урона определяется при выпадении</span>':''}
             <label>Бюджет <input class="input" type="number" step="1" data-field="cost" value="${saved.cost}"></label></div>`;
         }).join('')}</details>`).join('');
     }
@@ -198,12 +198,12 @@
   const render = Configurator.render;
   Configurator.render = function (...args) {
     const result = render.apply(this,args);
-    const panel = document.querySelector('#config-content .config-main');
+    const panel = document.querySelector('#config-content .config-type-list');
     if (panel && App.currentUser?.role==='gm' && !panel.querySelector('[data-aberration-catalog]')) {
       const button=document.createElement('button');
-      button.className='secondary';button.type='button';button.dataset.aberrationCatalog='';
+      button.className='secondary config-type-btn';button.type='button';button.dataset.aberrationCatalog='';
       button.textContent='Аберрации';button.onclick=openCatalog;
-      panel.prepend(button);
+      panel.append(button);
     }
     return result;
   };

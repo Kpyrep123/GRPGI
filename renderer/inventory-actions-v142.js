@@ -73,18 +73,24 @@
       const item=api.item(source.itemId),user=api.normalize(api.current());if(!item||!user)return;
       const dialog=document.createElement('dialog');dialog.className='sheet-item-dialog';dialog.setAttribute('aria-labelledby','sheet-item-title');
       const title=document.createElement('h2');title.id='sheet-item-title';title.textContent=item.name||source.itemId;
-      const facts=document.createElement('dl');
-      for(const row of root.GRPGItemFactsV141?.facts(item)||[]){const dt=document.createElement('dt'),dd=document.createElement('dd');dt.textContent=row.label;dd.textContent=String(row.value);facts.append(dt,dd);}
       const instances = root.GRPGItemInstancesV215;
       const copy = instances?.instance(user, source.itemId, source.unitIndex,
         source.source === 'slot' ? instances.slotKey(source.slot, source.index) : '');
-      if (copy?.durabilityMax || copy?.broken) {
-        const label = document.createElement('dt'), value = document.createElement('dd');
-        label.textContent = 'Прочность';
-        value.textContent = copy.durabilityMax
-          ? copy.durability + ' / ' + copy.durabilityMax + (copy.broken ? ' · Сломан' : '')
-          : 'Сломан';
-        facts.append(label, value);
+      const overrides=api.aberrationOverrides?.();
+      const detail=root.GRPGItemFactsV141;
+      const header=document.createElement('div');header.className='sheet-item-header';
+      if(api.thumb)header.insertAdjacentHTML('beforeend',api.thumb(item));
+      header.append(title);
+      const body=document.createElement('div');
+      body.innerHTML=detail.description(item)+detail.table(item,{instance:copy,profile:user,overrides})
+        +(root.GRPGAberrationPresentation?.copyMarkup(copy,overrides)||'');
+      if(api.related){
+        const related=document.createElement('div');
+        related.innerHTML=api.related(item);
+        related.addEventListener('click',event=>{
+          if(event.target.closest('button,a,[role="button"],[data-entity],[data-action]'))dialog.close();
+        },true);
+        body.append(related);
       }
       const message=document.createElement('p');message.setAttribute('role','status');
       const actions=document.createElement('div');actions.className='sheet-item-actions';
@@ -102,14 +108,11 @@
         }catch(error){message.textContent=error.message;}
         finally{busy=false;dialog.querySelectorAll('button').forEach(b=>b.disabled=false);}
       });
-      const aberrations=root.GRPGAberrationPresentation?.copyMarkup(copy,api.aberrationOverrides?.());
-      if(api.details)button('Описание',()=>{dialog.close();api.details(source.itemId,{copy});});
-      button('Закрыть',()=>dialog.close());dialog.append(title,facts);
-      if(aberrations)dialog.insertAdjacentHTML('beforeend',aberrations);
+      button('Закрыть',()=>dialog.close());dialog.append(header,body);
       dialog.append(message,actions);
       dialog.addEventListener('cancel',e=>{if(busy)e.preventDefault();});
       dialog.addEventListener('close',()=>{dialog.remove();if(node.isConnected)node.focus({preventScroll:true});else document.querySelector(api.selector)?.focus({preventScroll:true});});
-      document.body.append(dialog);dialog.showModal();
+      document.body.append(dialog);api.attachLinks?.(dialog);dialog.showModal();
     }
     document.addEventListener('click',e=>{const node=e.target.closest?.(api.selector);if(!node)return;e.preventDefault();e.stopImmediatePropagation();open(node);},true);
     document.addEventListener('keydown',e=>{if(!['Enter',' '].includes(e.key))return;const node=e.target.closest?.(api.selector);if(!node)return;e.preventDefault();e.stopImmediatePropagation();open(node);},true);

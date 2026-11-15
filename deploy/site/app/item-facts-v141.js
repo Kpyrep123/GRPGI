@@ -8,7 +8,7 @@
   const names = {
     strength:'Сила', dexterity:'Ловкость', endurance:'Выносливость', intelligence:'Интеллект',
     will:'Воля', glory:'Слава', max_hp:'Максимальное HP', armor_class:'Класс брони',
-    defense:'Защита', initiative_bonus:'Инициатива', movement:'Движение', vision:'Обзор',
+    defense:'Защита', shield_capacity:'Ёмкость энергетического щита', initiative_bonus:'Инициатива', movement:'Движение', vision:'Обзор',
     inventory_slots:'Ячейки инвентаря', carry_capacity:'Переносимый вес',
     implant_slots:'Слоты имплантов', social_bonus:'Социальный бонус', attack_bonus:'Попадание',
     damage_bonus:'Урон', weapon_hit_stat:'Характеристика попадания',
@@ -110,10 +110,88 @@
     });
     return result;
   }
+  function instanceFacts(item,copy,profile,overrides){
+    const rows=facts(item);
+    const copies=globalThis.GRPGItemInstancesV215;
+    const effects=globalThis.GRPGAberrationPresentation?.effectData(copy,overrides)||[];
+    const change=(label,value,delta,lowerIsBetter=false)=>{
+      const row=rows.find(row=>row.label===label);
+      const tone=delta===0?'':(delta<0)!==lowerIsBetter?'negative':'green';
+      const next={label,value:String(value),kind:'property',tone};
+      if(row)Object.assign(row,next);
+      else rows.push(next);
+    };
+    const delta=group=>effects.find(row=>row.group===group)?.value||0;
+    const massDelta=copies?.massPercent(copy?.aberration252?.effects)||0;
+    if(massDelta)change('Масса',copies.inventoryRowMass({qty:1,instancesV215:[copy]},Number(item.mass??item.weight??0)),massDelta,true);
+    const hit=delta('weapon-1');
+    if(hit)change(rows.some(row=>row.label==='Базовое попадание')?'Базовое попадание':'Попадание',signed(Number(item.hitBonus??item.attackBonus??0)+hit),hit);
+    const damage=delta('weapon-2');
+    if(damage){
+      const base=String(item.damage??'0').trim();
+      const adjusted=Number.isFinite(Number(base))?Math.max(0,Number(base)+damage):`${base} ${signed(damage)}`;
+      change('Урон',adjusted,damage);
+      change('Урон после первого выстрела',base,0);
+    }
+    const dice=effects.find(row=>row.group==='weapon-5');
+    if(dice)change('Дополнительный урон',`1d${dice.value} · ${dice.type?globalThis.GRPGDamageTypesV202.label(dice.type):'тип основного урона'}`,1);
+    const type=effects.find(row=>row.group==='weapon-6');
+    if(type){
+      const damageTypes=globalThis.GRPGDamageTypesV202;
+      change('Тип урона',damageTypes.label(type.value||type.type),0);
+      rows.find(row=>row.label==='Тип урона').tone='violet';
+    }
+    const range=delta('weapon-9')+delta('weapon-10');
+    if(range)change('Дальность',number(Math.max(0,Number(item.range??item.attackRange??0)+range))+' гекс.',range);
+    const critical=delta('weapon-3');
+    if(critical)change('Диапазон крита',critical<0?'Только суперкрит':`${20-critical}–20`,critical);
+    const criticalDamage=delta('weapon-4');
+    if(criticalDamage)change('Дополнительный урон крита','+'+Math.max(0,1+criticalDamage),criticalDamage);
+
+    const baseMagazine=Math.max(0,Math.trunc(Number(item.magazineSize??item.clipSize)||0));
+    const magazineBonus=delta('weapon-8');
+    if(item.type==='weapon'&&baseMagazine){
+      const max=Math.max(1,baseMagazine+magazineBonus);
+      const stored=profile?.weaponMagazines?.[item.id];
+      const initial=item.ammoTypeId||item.ammunitionId?max:0;
+      const loaded=Math.max(0,Math.min(max,Number(stored?.loaded??initial)||0));
+      change('Магазин',`${loaded} / ${max}`,magazineBonus);
+    }
+
+    if(copy?.durabilityMax||copy?.broken){
+      change('Прочность',copy.durabilityMax?`${copy.durability}${copy.broken?' · Сломан':''}`:'Сломан',0);
+      if(copy.durabilityMax)change('Максимальная прочность',copy.durabilityMax,copy.durabilityMax-Number(item.durabilityMax??item.maxDurability??0));
+    }
+    const adjustedModifiers=new Map();
+    for(const id of copy?.aberration252?.effects||[]){
+      const effect=copies?.passiveEffect(id);
+      if(effect?.target)adjustedModifiers.set(effect.target,(adjustedModifiers.get(effect.target)||0)+effect.value);
+    }
+    for(const [target,bonus] of adjustedModifiers){
+      if(!bonus)continue;
+      const label=names[target]||pretty(target);
+      const baseFields={armor_class:item.armorClass,defense:item.damageReduction??item.defense};
+      const modifiers=(item.modifiers||[]).filter(mod=>mod.target===target&&mod.enabled!==false);
+      if(modifiers.some(mod=>mod.scope&&mod.scope!=='global'||mod.condition&&mod.condition!=='always'||mod.op&&!['add','set'].includes(mod.op))){
+        change(label+' от аберрации',signed(bonus),bonus);
+        continue;
+      }
+      const base=modifiers.length?0:Number(baseFields[target])||0;
+      const total=mods=>mods.sort((a,b)=>Number(a.priority||0)-Number(b.priority||0))
+        .reduce((value,mod)=>mod.op==='set'?Number(mod.value)||0:value+(Number(mod.value)||0),base);
+      const value=total([...modifiers,{op:'add',value:bonus,priority:0}]);
+      const without=total(modifiers);
+      for(let index=rows.length-1;index>=0;index--){
+        if(rows[index].label===label||rows[index].label===`Базов${target==='defense'?'ая':'ый'} ${label.toLowerCase()}`)rows.splice(index,1);
+      }
+      change(label,target==='shield_capacity'?Math.max(0,value):signed(value),value-without);
+    }
+    return rows;
+  }
   function pills(item,options){return facts(item,options).map(row=>
     `<span class="pill item-fact-v141 ${row.kind==='modifier'?'item-modifier-v141':''}"><b>${escape(row.label)}:</b> ${escape(row.value)}</span>`).join('');}
-  function table(item,options){const rows=facts(item,options);return rows.length
-    ? `<div class="archive-equipment-facts-v131 item-facts-v141">${rows.map(row=>`<div class="${row.kind==='modifier'?'item-modifier-v141':''}"><span>${escape(row.label)}</span><b>${escape(row.value)}</b></div>`).join('')}</div>` : '';}
+  function table(item,options){const rows=options?.profile?instanceFacts(item,options.instance,options.profile,options.overrides):facts(item,options);return rows.length
+    ? `<div class="archive-equipment-facts-v131 item-facts-v141">${rows.map(row=>`<div class="${row.kind==='modifier'?'item-modifier-v141':''}"><span>${escape(row.label)}</span><b${row.tone?` data-effect-tone="${escape(row.tone)}"`: ''}>${escape(row.value)}</b></div>`).join('')}</div>` : '';}
   function description(item, fallback='Описание предмета не задано.') {
     const text=String((typeof item==='string'?item:item?.desc||item?.description||item?.summary)||fallback);
     if(!text.trim())return '';
@@ -122,5 +200,5 @@
     const content=typeof rich==='function'?rich(text):'<p>'+escape(text).replace(/\r\n/g,'\n').split(/\n\s*\n/).join('</p><p>').replace(/\n/g,'<br>')+'</p>';
     return `<div class="item-rich-description-v201 sc-rich176">${content}</div>`;
   }
-  return Object.freeze({facts,pills,table,description});
+  return Object.freeze({facts,instanceFacts,pills,table,description});
 });

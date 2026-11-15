@@ -5,7 +5,7 @@ function engine(world={}){
   const PRIMARY_LABELS = { strength:'Сила', dexterity:'Ловкость', endurance:'Выносливость', intelligence:'Интеллект', will:'Воля', glory:'Слава' };
   const TARGETS = [
     ['strength','Сила'],['dexterity','Ловкость'],['endurance','Выносливость'],['intelligence','Интеллект'],['will','Воля'],['glory','Слава'],
-    ['max_hp','Максимальное HP'],['armor_class','Класс брони'],['defense','Защита (снижение урона)'],['initiative_bonus','Бонус инициативы'],
+    ['max_hp','Максимальное HP'],['shield_capacity','Ёмкость энергетического щита'],['armor_class','Класс брони'],['defense','Защита (снижение урона)'],['initiative_bonus','Бонус инициативы'],
     ['movement','Дальность движения'],['vision','Дальность видимости'],['inventory_slots','Ячейки инвентаря'],['carry_capacity','Переносимый вес'],['implant_slots','Слоты имплантов'],
     ['drone_actions','Дополнительные действия дронам'],['social_bonus','Социальный бонус'],['attack_bonus','Бонус попадания'],['damage_bonus','Бонус урона'],['weapon_hit_stat','Характеристика попадания'],['weapon_hit_extra_stat','Доп. характеристика к попаданию']
   ];
@@ -229,7 +229,7 @@ function engine(world={}){
     breakdown.armorClass=[];
     derived.armorClass=applyStatFormula(base.armorClass,'dexterity','armor_class',mods,abilities,formulaContext,breakdown.armorClass,1,'База КБ');
     const entries = [
-      ['defense','defense',base.defense],
+      ['defense','defense',base.defense],['shieldMax','shield_capacity',n(entity.stats?.shieldMax,0)],
       ['droneActions','drone_actions',0],['movement','movement',base.movement],['vision','vision',base.vision],['inventorySlots','inventory_slots',base.inventorySlots],
       ['implantSlots','implant_slots',base.implantSlots]
     ];
@@ -244,6 +244,7 @@ function engine(world={}){
     derived.maxHp=Math.max(1,Math.round(maxHp));
     derived.armorClass=n(derived.armorClass,0);
     derived.defense=Math.max(0,n(derived.defense,0));
+    derived.shieldMax=Math.max(0,i(derived.shieldMax));
     derived.initiativeBonus=n(derived.initiativeBonus,0);
     derived.movement=Math.max(0,n(derived.movement,0));
     derived.vision=Math.max(0,n(derived.vision,0));

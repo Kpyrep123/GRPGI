@@ -7684,11 +7684,26 @@ const FormDrafts = {
       }
       values[field.name] = field.value;
     }
-    this.store[key] = values;
+    const lists = {};
+    for (const list of form.querySelectorAll('[data-config-draft-list]')) {
+      lists[list.dataset.configDraftList] = {
+        markup: list.innerHTML,
+        values: Array.from(list.querySelectorAll('input, select'), field => field.value)
+      };
+    }
+    this.store[key] = { ...values, configDraftLists: lists };
   },
   apply(key, form) {
     const values = this.store[key];
     if (!values || !form) return;
+    for (const list of form.querySelectorAll('[data-config-draft-list]')) {
+      const snapshot = values.configDraftLists?.[list.dataset.configDraftList];
+      if (!snapshot) continue;
+      list.innerHTML = snapshot.markup;
+      list.querySelectorAll('input, select').forEach((field, index) => {
+        field.value = snapshot.values[index];
+      });
+    }
     for (const field of Array.from(form.elements || [])) {
       if (!field?.name || !(field.name in values) || field.type === 'file') continue;
       if (field.name === 'wcInventoryStateV1068' && !key.endsWith(':new')) continue;
@@ -21622,7 +21637,7 @@ function legacyRegionMapsV181() {
       if (event.target?.closest?.('[data-registration-equipment-close-v1072]') || event.target?.hasAttribute?.('data-registration-equipment-modal-v1072')) { closeStartingEquipmentModalV1072(panel); return; }
       const equipmentCard = event.target?.closest?.('[data-registration-equipment-card-v1072]');
       if (equipmentCard) { event.preventDefault(); openStartingEquipmentModalV1072(panel, equipmentCard.dataset.itemId); return; }
-      if (event.target?.id === 'registration-close-v1052' || event.target?.classList?.contains('registration-window-v1054')) { panel.hidden = true; panel.innerHTML = ''; document.body.classList.remove('registration-open-v1054'); }
+      if (event.target?.closest?.('#registration-close-v1052')) { panel.hidden = true; panel.innerHTML = ''; document.body.classList.remove('registration-open-v1054'); }
     });
     panel.addEventListener('change', event => {
       const form = event.target?.closest?.('#registration-form-v1052');
@@ -21631,7 +21646,7 @@ function legacyRegionMapsV181() {
       else if (['socialOriginId','geographicOriginId','startingEquipmentIds'].includes(String(event.target?.name || ''))) updateRegistrationBudgetV1066(form);
     });
     panel.addEventListener('keydown', event => { const card = event.target?.closest?.('[data-registration-equipment-card-v1072]'); if (card && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); openStartingEquipmentModalV1072(panel, card.dataset.itemId); } });
-    document.addEventListener('keydown', event => { if (event.key === 'Escape' && panel.querySelector('[data-registration-equipment-modal-v1072]')) { closeStartingEquipmentModalV1072(panel); return; } if (event.key === 'Escape' && !panel.hidden) { panel.hidden = true; panel.innerHTML = ''; document.body.classList.remove('registration-open-v1054'); } });
+    document.addEventListener('keydown', event => { if (event.key === 'Escape' && panel.querySelector('[data-registration-equipment-modal-v1072]')) { closeStartingEquipmentModalV1072(panel); return; } });
     panel.addEventListener('submit', async event => {
       if (event.target?.id !== 'registration-form-v1052') return;
       event.preventDefault();
