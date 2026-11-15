@@ -1508,15 +1508,27 @@
     appendCombatLog105(Combat.getRuntime(),`${token.name} выполняет Рывок действием: скорость ${movement.speed}, запас ${movement.budget}, уже потрачено ${movement.spent}, осталось ${movement.remaining}.`);
     local.preview=null;Combat.render();await checkpointCombat120('Рывок',false);
   }
-  function tokenAttackCells(token, scene) {
-    if (num(token?.attackRange, 0) > 0) return Math.max(0, num(token.attackRange));
-    const weapon = weaponForToken105(token) || {};
-    return Math.max(0, num(weapon.range ?? weapon.attackRange ?? weapon.maxRange ?? weapon.distance, 0));
+  function weaponRangeBonus253(token,weapon,slot){
+    if(!weapon?.id)return 0;
+    const entity=entityForToken(token);
+    const key=slot||['primaryWeapon','secondaryWeapon'].find(name=>entity?.equipmentSlots?.[name]===weapon?.id);
+    if(!key)return 0;
+    const copy=window.GRPGItemInstancesV215.instance(entity,weapon.id,-1,key);
+    const group=weapon.weaponCategory==='melee'?'weapon-10':'weapon-9';
+    return (window.GRPGAberrationWeapons?.effects(copy?.aberration252?.effects)||[])
+      .filter(effect=>effect.group===group).reduce((sum,effect)=>sum+effect.value,0);
   }
-  function shotBaseRange229(token,weapon){return weapon?.id===weaponForToken105(token)?.id?tokenAttackCells(token,Combat.getScene()):Math.max(0,num(weapon?.range));}
-  function shotRange229(token,weapon){return shotBaseRange229(token,weapon)*(weapon?.weaponCategory==='melee'?1:2);}
-  function longRangePenalty229(token,target,weapon){
-    return weapon?.weaponCategory!=='melee'&&window.GRPGUnitSizeV184.distance(token,target)>Math.floor(shotBaseRange229(token,weapon)+1e-6)?2:0;
+  function tokenAttackCells(token,scene){
+    const weapon=weaponForToken105(token);
+    return Math.max(0,(num(token?.attackRange)>0?num(token.attackRange):num(weapon?.range))+weaponRangeBonus253(token,weapon));
+  }
+  function shotBaseRange229(token,weapon,slot){
+    if(!slot&&weapon?.id===weaponForToken105(token)?.id)return tokenAttackCells(token,Combat.getScene());
+    return Math.max(0,num(weapon?.range)+weaponRangeBonus253(token,weapon,slot));
+  }
+  function shotRange229(token,weapon,slot){return shotBaseRange229(token,weapon,slot)*(weapon?.weaponCategory==='melee'?1:2);}
+  function longRangePenalty229(token,target,weapon,slot){
+    return weapon?.weaponCategory!=='melee'&&window.GRPGUnitSizeV184.distance(token,target)>Math.floor(shotBaseRange229(token,weapon,slot)+1e-6)?2:0;
   }
   function postureDefense229(attacker,target,weapon){
     if(!target?.proneV122)return 0;
@@ -3247,10 +3259,10 @@
     const refresh=()=>{attacker=tokenById119(command.attackerId);target=tokenById119(command.targetId);if(!scene||!rules||!attacker||!target)throw new Error('StandardAttack: атакующий или цель не найдены');};refresh();
     const selected=weaponForSlotV138(attacker,command.slot||command.weaponId),weapon=selected?.item;if(!weapon)throw new Error('StandardAttack: оружие не найдено');
     const validateWeapon=()=>{if(isControlledDevice200(attacker)&&inBattle191()&&!droneLinkState129(attacker).ok)throw Error('StandardAttack: устройство не имеет связи с действующим оператором');if(weaponMalfunction122(attacker,weapon))throw new Error('StandardAttack: сначала устраните отказ оружия');if(heavyBlocked195(attacker)&&isHeavyWeapon129(weapon))throw Error('StandardAttack: травма 3-й степени запрещает тяжёлое оружие');if(itemBrokenV138(attacker,weapon,selected.slot))throw new Error(`StandardAttack: «${weapon.name||weapon.id}» сломано`);};validateWeapon();
-    const distance=window.GRPGUnitSizeV184.distance(attacker,target),range=shotRange229(attacker,weapon),cover=coverBetween120(scene,centerOf(attacker),centerOf(target),weapon.weaponCategory!=='melee');if(distance>Math.floor(range+1e-6))throw new Error(`StandardAttack: цель вне дальности (${hexLabel109(distance)} / ${hexLabel109(range)})`);if(cover.blocksAttack||sightSegmentBlocked105(scene,centerOf(attacker),centerOf(target),[attacker.id,target.id]))throw new Error('StandardAttack: линия огня перекрыта');
+    const distance=window.GRPGUnitSizeV184.distance(attacker,target),range=shotRange229(attacker,weapon,selected.slot),cover=coverBetween120(scene,centerOf(attacker),centerOf(target),weapon.weaponCategory!=='melee');if(distance>Math.floor(range+1e-6))throw new Error(`StandardAttack: цель вне дальности (${hexLabel109(distance)} / ${hexLabel109(range)})`);if(cover.blocksAttack||sightSegmentBlocked105(scene,centerOf(attacker),centerOf(target),[attacker.id,target.id]))throw new Error('StandardAttack: линия огня перекрыта');
     const shotCost=ammoPerShot118(weapon),validateMagazine=()=>{const value=magazineState118(attacker,weapon);if(value.size>0&&value.loaded<shotCost)throw new Error(`StandardAttack: магазин пуст (${value.loaded} / ${value.size})`);return value;};validateMagazine();
     const ammo=loadedAmmo238(attacker,weapon),shotDamageType=damageType202(weapon,ammo);
-    const entity=entityForToken(attacker)||{},attack=window.GRPGStatsV113?.weaponAttack?.(entity,weapon,{kind:attacker.npcId?'npc':'player',inCombat:true,damageType:shotDamageType,temporaryModifiers:shotModifiers238(attacker,ammo)})||{},damageBonus=num(attack.damageBonus),baseHit=isControlledDevice200(attacker)?operatorIntelligence129(operatorForDrone129(attacker))+num(weapon.hitBonus)-checkPenalty199(operatorForDrone129(attacker)||attacker):num(attack.bonus??weapon.hitBonus)-checkPenalty199(attacker)-longRangePenalty229(attacker,target,weapon)+postureAttack229(target,weapon),defense=incomingDefense119(target,weapon.weaponCategory||'light',cover,shotDamageType);defense.defenseBonus+=postureDefense229(attacker,target,weapon)-checkPenalty199(target);
+    const entity=entityForToken(attacker)||{},attack=window.GRPGStatsV113?.weaponAttack?.(entity,weapon,{kind:attacker.npcId?'npc':'player',inCombat:true,weaponSlot:selected.slot,damageType:shotDamageType,temporaryModifiers:shotModifiers238(attacker,ammo)})||{},damageBonus=num(attack.damageBonus),baseHit=isControlledDevice200(attacker)?operatorIntelligence129(operatorForDrone129(attacker))+num(weapon.hitBonus)-checkPenalty199(operatorForDrone129(attacker)||attacker):num(attack.bonus??weapon.hitBonus)-checkPenalty199(attacker)-longRangePenalty229(attacker,target,weapon,selected.slot)+postureAttack229(target,weapon),defense=incomingDefense119(target,weapon.weaponCategory||'light',cover,shotDamageType);defense.defenseBonus+=postureDefense229(attacker,target,weapon)-checkPenalty199(target);
     const context=extra=>({attacker,target,caster:attacker,targets:[target],weapon,ammo,weaponSlot:selected.slot,damageType:shotDamageType,sourceName:`StandardAttack: ${weapon.name||weapon.id}`,...extra});
     const declared={damage:0,attackBonus:baseHit,defenseBonus:defense.defenseBonus,effects:[],standardAttackDepthV138:depth+1};await runAutomaticHooks119(attacker,'OnAttackDeclared',context(),declared);refresh();await chooseReaction119('OnAttackDeclared',context(),declared);refresh();validateWeapon();validateMagazine();assertShotAmmo238(attacker,weapon,ammo);const settledDefense=incomingDefense119(target,weapon.weaponCategory||'light',cover,shotDamageType);settledDefense.defenseBonus+=postureDefense229(attacker,target,weapon)-checkPenalty199(target);declared.defenseBonus+=settledDefense.defenseBonus-defense.defenseBonus;
     const entered=await requestAttackRolls119({attacker,target,weapon,attackBonus:declared.attackBonus,defenseBonus:declared.defenseBonus,damageBonus,attackDisadvantage:(cover.concealment&&!ignoresConcealment122(attacker))||injuryDisadvantage129(isControlledDevice200(attacker)?operatorForDrone129(attacker)||attacker:attacker),defenseDisadvantage:injuryDisadvantage129(target)});if(!entered)throw new Error('StandardAttack: атака отменена');
@@ -3628,7 +3640,7 @@
         const min=Math.max(1,Math.trunc(num(row.minQty,1))),max=Math.max(min,Math.trunc(num(row.maxQty,min)));
         const qty=min+Math.floor(Math.random()*(max-min+1)),item=equipmentItem105(row.itemId);
         const aberrations=inBattle191()&&item?.type==='weapon'&&window.GRPGAberrationWeapons
-          ? Array.from({length:qty},()=>window.GRPGAberrationWeapons.roll(npc.dangerLevel)) : null;
+          ? Array.from({length:qty},()=>window.GRPGAberrationWeapons.roll(npc.dangerLevel,item)) : null;
         items.push({itemId:row.itemId,qty,...(aberrations?{aberrations}:{})});
       }
       token.lootStateV118={searched:true,searchedAt:new Date().toISOString(),items};

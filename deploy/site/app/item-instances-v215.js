@@ -185,6 +185,14 @@
     return '<span class="inventory-charge-count" title="Заряды" aria-label="Заряды ' + value + '">' + value + '</span>';
   }
 
+  function inventoryBadges(profile, itemId, index = -1, slot = '') {
+    const rarity = instance(profile,itemId,index,slot)?.aberration252?.rarity;
+    const names={uncommon:'Необычное',rare:'Редкое',epic:'Эпическое',legendary:'Легендарное'};
+    const badge=Object.prototype.hasOwnProperty.call(names,rarity)
+      ? '<i class="inventory-rarity-glint" data-rarity="'+rarity+'" title="'+names[rarity]+'" aria-label="'+names[rarity]+'"></i>' : '';
+    return chargeBadge(profile,itemId,index,slot)+badge;
+  }
+
   function mounts(item) {
     if (!['weapon','shield','armor','backpack'].includes(item?.type)) return [];
     return list(item.mounts).map(value => String(value).trim()).filter(Boolean);
@@ -225,7 +233,7 @@
     return list(copy?.attachments).reduce((sum,row)=>sum+(Number(row.hitBonus)||0),0);
   }
 
-  const api = {mounts, installed, changeAttachment, attachmentHitBonus,chargeBadge, tracked, normalize, reconcile, instance, choose, bind, remove, add, repair, updateResources, slotKey, clone};
+  const api = {mounts, installed, changeAttachment, attachmentHitBonus,inventoryBadges,chargeBadge, tracked, normalize, reconcile, instance, choose, bind, remove, add, repair, updateResources, slotKey, clone};
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.GRPGItemInstancesV215 = api;
 })(typeof window === 'undefined' ? globalThis : window);

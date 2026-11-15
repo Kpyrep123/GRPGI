@@ -124,3 +124,13 @@ html[data-era-theme="technological"] .character-sheet-v142 .entity-thumb.fallbac
 .character-sheet-v142 :is(.web-inventory-tile-v1067,.inventory-tile-v1067,.web-inventory-slot-item-v1067,.inventory-slot-item-v1067) {
   position: relative;
 }
+
+.inventory-rarity-glint {
+  position: absolute; z-index: 2; inset: 1px; border-radius: inherit;
+  border: 1px solid currentColor; box-shadow: inset 0 0 8px currentColor;
+  pointer-events: none;
+}
+.inventory-rarity-glint[data-rarity="uncommon"] { color: #82d48f; }
+.inventory-rarity-glint[data-rarity="rare"] { color: #75bdff; }
+.inventory-rarity-glint[data-rarity="epic"] { color: #cb98ff; }
+.inventory-rarity-glint[data-rarity="legendary"] { color: #ffd87c; }

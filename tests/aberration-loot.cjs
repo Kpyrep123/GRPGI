@@ -22,13 +22,14 @@ const tx={
 };
 global.$app={runInTransaction:fn=>fn(tx)};
 const {transfer}=require('../pocketbase/pb_hooks/grpgi_loot_v137.js');
-const body={campaignId:'c',playerId:'p',operationId:'test_operation',lootTransferV137:{itemId:'rifle',qty:1,source:'scene/npc',aberrations:[{rarity:'rare',budget:4,effects:['weapon-1-4','weapon-2-5']}]}};
+const body={campaignId:'c',playerId:'p',operationId:'test_operation',lootTransferV137:{itemId:'rifle',qty:1,source:'scene/npc',aberrations:[{rarity:'rare',budget:4,effects:['weapon-1-4','weapon-2-4','weapon-9-5']}]}};
 const request={requestInfo:()=>({body}),json:(_code,value)=>value};
 assert.equal(transfer(request).status,'committed');
 assert.equal(transfer(request).status,'replayed');
 const row=data.playerJson.inventory[0];
 assert.equal(row.qty,2);
 assert.equal(row.instancesV215[0].id,'old');
+assert.match(require('../pocketbase/pb_hooks/item-instances-v215.js').inventoryBadges(data.playerJson,'rifle',1),/data-rarity="rare"/);
 assert.equal(row.instancesV215[0].durability,2);
 assert.deepEqual(row.instancesV215[1].aberration252,body.lootTransferV137.aberrations[0]);
 body.lootTransferV137.aberrations[0]={rarity:'uncommon',budget:1,effects:['weapon-1-4']};

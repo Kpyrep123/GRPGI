@@ -4,15 +4,28 @@
   const catalog = window.GRPGAberrationCatalog;
   const rarityNames = ['Обычное', 'Необычное', 'Редкое', 'Эпическое', 'Легендарное'];
   const categories = {weapon:'Оружие',armor:'Броня',shield:'Щиты',backpack:'Рюкзаки',implant:'Импланты'};
-  const storageKey = () => 'grpgi.aberrations:' + String(Sync.config?.campaignId || 'local');
+  const campaignId = () => String(Sync.config?.campaignId || 'main');
+  let campaignSettings = {};
+  worldLoadSteps.push(payload => {
+    const data = payload.campaigns?.ABERRATION_SETTINGS;
+    campaignSettings = data && typeof data==='object' && !Array.isArray(data) ? deep(data) : {};
+  });
+  worldSaveSections.push(snapshot => {
+    snapshot.campaigns.ABERRATION_SETTINGS = deep(campaignSettings);
+  });
 
   function settings() {
-    const saved = JSON.parse(localStorage.getItem(storageKey()) || '{}');
-    return { chances:saved.chances || api.defaultChances.map(row=>row.slice()), variants:saved.variants || {} };
+    const id=campaignId();
+    let saved=Object.hasOwn(campaignSettings,id)?campaignSettings[id]:null;
+    if(!saved){
+      try { saved=JSON.parse(localStorage.getItem('grpgi.aberrations:'+id) || localStorage.getItem('grpgi.aberrations:local') || '{}'); }
+      catch { saved={}; }
+    }
+    return { chances:deep(saved?.chances || api.defaultChances), variants:deep(saved?.variants || {}) };
   }
 
   // Only effects with an implemented combat rule enter the loot pool.
-  const supported = catalog.filter(effect => ['weapon-1','weapon-2'].includes(effect.id));
+  const supported = catalog.filter(effect => ['weapon-1','weapon-2','weapon-9','weapon-10'].includes(effect.id));
   const variants = supported.flatMap(effect => effect.variants.map(variant=>({...variant,group:effect.id,name:effect.name})));
   function resolve(id, overrides) {
     const variant=variants.find(row=>row.id===id);
@@ -22,9 +35,11 @@
     return {...variant,cost:saved?.cost ?? variant.cost,value};
   }
   window.GRPGAberrationWeapons = {
-    roll(danger) {
+    roll(danger,weapon) {
       const {chances,variants:overrides}=settings();
-      const pool=variants.map(row=>resolve(row.id,overrides)).filter(row=>Number.isInteger(row.value)&&Math.abs(row.value)<=20);
+      const pool=variants.map(row=>resolve(row.id,overrides)).filter(row=>Number.isInteger(row.value)&&Math.abs(row.value)<=20
+        &&(row.group!=='weapon-9'||weapon?.weaponCategory!=='melee')
+        &&(row.group!=='weapon-10'||weapon?.weaponCategory==='melee'));
       const result=api.roll(danger,pool,{chances});
       if (!result) return {rarity:'common',budget:0,effects:[]};
       return result;
@@ -37,7 +52,7 @@
 
   function openCatalog() {
     if (App.currentUser?.role !== 'gm') return;
-    const key = storageKey();
+    const key = campaignId();
     const draft = settings();
     const dialog = document.createElement('dialog');
     dialog.style.cssText = 'width:min(920px,95vw);max-height:85vh;overflow:auto';
@@ -84,11 +99,21 @@
     });
     category.addEventListener('change',drawEffects);
     dialog.querySelector('[data-aberration-close]').onclick=()=>dialog.close();
-    dialog.querySelector('form').onsubmit=event=>{
+    dialog.querySelector('form').onsubmit=async event=>{
       event.preventDefault();
-      if (App.currentUser?.role!=='gm' || storageKey()!==key) return;
-      try { localStorage.setItem(key,JSON.stringify(draft));dialog.close(); }
-      catch (error) { Toast.show(error.message,'err'); }
+      if(App.currentUser?.role!=='gm'||campaignId()!==key)return;
+      const submit=dialog.querySelector('[type="submit"]');
+      if(submit.disabled)return;
+      submit.disabled=true;
+      const before=campaignSettings;
+      campaignSettings={...before,[key]:deep(draft)};
+      try{
+        const result=await Configurator.persistAll('Аберрации сохранены',{worldSections:['campaigns']});
+        if(result?.localSaved)dialog.close();
+        else campaignSettings=before;
+      }catch(error){
+        campaignSettings=before;Toast.show(error.message,'err');
+      }finally{submit.disabled=false;}
     };
     dialog.addEventListener('close',()=>dialog.remove(),{once:true});
     drawChances();drawEffects();

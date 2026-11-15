@@ -69,8 +69,8 @@ function validRoll(roll){
   if(!roll||!Object.prototype.hasOwnProperty.call(limits,roll.rarity))return false;
   const [min,max]=limits[roll.rarity];
   return Number.isInteger(roll.budget)&&roll.budget>=min&&roll.budget<=max&&Array.isArray(roll.effects)
-    &&(roll.rarity==='common'?roll.effects.length===0:roll.effects.length>=1&&roll.effects.length<=2)
-    &&roll.effects.every(id=>typeof id==='string'&&/^weapon-[12]-[1-6]$/.test(id))
-    &&new Set(roll.effects.map(id=>id.slice(0,8))).size===roll.effects.length;
+    &&(roll.rarity==='common'?roll.effects.length===0:roll.effects.length>=1&&roll.effects.length<=3)
+    &&roll.effects.every(id=>typeof id==='string'&&/^weapon-(?:[129]-[1-6]|10-[1-3])$/.test(id))
+    &&new Set(roll.effects.map(id=>id.slice(0,id.lastIndexOf('-')))).size===roll.effects.length;
 }
 module.exports={transfer};
