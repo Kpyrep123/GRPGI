@@ -25,7 +25,7 @@
   }
 
   // Only effects with an implemented combat rule enter the loot pool.
-  const supported = catalog.filter(effect => ['weapon-1','weapon-2','weapon-3','weapon-4','weapon-6','weapon-7','weapon-8','weapon-9','weapon-10','weapon-13','weapon-14','weapon-16','weapon-17'].includes(effect.id));
+  const supported = catalog.filter(effect => ['weapon-1','weapon-2','weapon-3','weapon-4','weapon-5','weapon-6','weapon-7','weapon-8','weapon-9','weapon-10','weapon-11','weapon-12','weapon-13','weapon-14','weapon-15','weapon-16','weapon-17'].includes(effect.id));
   const variants = supported.flatMap(effect => effect.variants.map(variant=>({...variant,group:effect.id,name:effect.name})));
   const damageTypeIds=['kinetic','energy','electric','explosive','gas'];
   const damageTypeVariant=variants.find(row=>row.group==='weapon-6');
@@ -35,16 +35,30 @@
     const variant=variants.find(row=>row.id===id);
     if (!variant) return null;
     const saved=overrides[id];
-    const value=variant.group==='weapon-7'?window.GRPGItemInstancesV215.massPercent([id])
+    const rawValue=String(saved?.value ?? variant.value);
+    const value=variant.group==='weapon-5'?Number(/^1d(4|6|8)\b/i.exec(rawValue)?.[1])
+      :variant.group==='weapon-7'?window.GRPGItemInstancesV215.massPercent([id])
       :Number(String(saved?.value ?? variant.value).replace('−','-').trim().split(/\s+/)[0]);
     return {...variant,cost:saved?.cost ?? variant.cost,value};
   }
   function validEffect(row){
     if(!row)return false;
     if(row.group==='weapon-6')return Boolean(row.value);
+    if(row.group==='weapon-12')return [1,2].includes(row.value);
+    if(row.group==='weapon-15')return row.value===1;
     return Number.isInteger(row.value)&&Math.abs(row.value)<=(row.group==='weapon-7'?30:20);
   }
   window.GRPGAberrationWeapons = {
+    describe(id) {
+      const effect=resolve(id,settings().variants);
+      if(!validEffect(effect))return '';
+      const {group,name,value}=effect;
+      if(group==='weapon-5')return name+' · 1d'+value;
+      if(group==='weapon-6')return name+' · '+window.GRPGDamageTypesV202.label(value);
+      if(group==='weapon-15')return name+' · перезарядка после суперкрита';
+      const sign=value>0&&!['weapon-11','weapon-12','weapon-14'].includes(group)?'+':'';
+      return name+' · '+sign+value+(group==='weapon-7'?'%':'');
+    },
     roll(danger,weapon) {
       const {chances,variants:overrides}=settings();
       const target=window.GRPGDamageTypesV202.normalize(overrides[damageTypeVariant.id]?.value);
@@ -58,8 +72,9 @@
         &&(row.group!=='weapon-7'||Number(weapon?.mass)>0)
         &&(row.group!=='weapon-8'||(Number(weapon?.magazineSize??weapon?.clipSize)>0
           &&Number(weapon?.magazineSize??weapon?.clipSize)+row.value>=1))
-        &&(!['weapon-9','weapon-16'].includes(row.group)||weapon?.weaponCategory!=='melee')
-        &&(!['weapon-10','weapon-13','weapon-14','weapon-17'].includes(row.group)||weapon?.weaponCategory==='melee'));
+        &&(row.group!=='weapon-15'||Number(weapon?.magazineSize??weapon?.clipSize)>0)
+        &&(!['weapon-9','weapon-11','weapon-15','weapon-16'].includes(row.group)||weapon?.weaponCategory!=='melee')
+        &&(!['weapon-10','weapon-11','weapon-12','weapon-13','weapon-14','weapon-17'].includes(row.group)||weapon?.weaponCategory==='melee'));
       const result=api.roll(danger,pool,{chances});
       if (!result) return {rarity:'common',budget:0,effects:[]};
       return result;
