@@ -29,13 +29,15 @@
     const defenseDie=clamp(integer(options.defenseRoll,0),1,1000);
     const attackBonus=number(options.attackBonus,0),defenseBonus=number(options.defenseBonus,0);
     const attackTotal=attackDie+attackBonus,defenseTotal=defenseDie+defenseBonus;
-    const critical=attackDie===20,fumble=attackDie===1,defenseCritical=defenseDie===20,defenseFumble=defenseDie===1;
-    const hit=!fumble&&(critical||attackTotal>=defenseTotal);
+    const naturalTwenty=attackDie===20,fumble=attackDie===1,defenseCritical=defenseDie===20,defenseFumble=defenseDie===1;
+    const hit=!fumble&&(naturalTwenty||attackTotal>=defenseTotal);
+    const critical=hit&&(naturalTwenty&&defenseFumble||attackDie<=20&&attackDie>=20-integer(options.criticalRange,0));
+    const criticalDamage=critical?Math.max(0,1+(defenseFumble?1:0)+integer(options.criticalBonus,0)):(defenseFumble?1:0);
     const rolledDamage=Math.max(0,number(options.damageRoll,0));
     const damageBonus=number(options.damageBonus,0);
     // Critical additions happen before armor and reactions. A natural defense 20
     // is halved by the scene pipeline only after those reductions.
-    const rawDamage=hit?Math.max(0,Math.round(rolledDamage+damageBonus+(critical?1:0)+(defenseFumble?1:0))):0;
+    const rawDamage=hit?Math.max(0,Math.round(rolledDamage+damageBonus+criticalDamage)):0;
     const reduced=reduceDamage(rawDamage,options.damageReduction||0);
     return {hit,critical,fumble,defenseCritical,defenseFumble,attackDie,defenseDie,attackBonus,defenseBonus,attackTotal,defenseTotal,rolledDamage,damageBonus,rawDamage:reduced.raw,damageReduction:reduced.reduction,absorbed:reduced.absorbed,damageApplied:hit?reduced.applied:0};
   }

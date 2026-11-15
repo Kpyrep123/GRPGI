@@ -79,7 +79,8 @@
         while (used.has(id)) id += ':copy';
         used.add(id);
         const copy = {...source, id};
-        if (copy.rarity == null && item?.rarity) copy.rarity = item.rarity;
+        if (item?.type === 'weapon') copy.rarity = copy.aberration252?.rarity || 'обычный';
+        else if (copy.rarity == null && item?.rarity) copy.rarity = item.rarity;
         copy.modifiers = list(copy.modifiers);
         copies.push(copy);
       }
@@ -161,7 +162,7 @@
     if (!tracked(item) && !Array.isArray(row.instancesV215)) return;
     row.instancesV215 ||= [];
     for (let i = previousQty; i < row.qty; i++) {
-      row.instancesV215[i] = updateResources({id:createId(), rarity:item?.rarity || '', modifiers:[]}, item);
+      row.instancesV215[i] = updateResources({id:createId(), rarity:item?.type === 'weapon' ? 'обычный' : item?.rarity || '', modifiers:[]}, item);
     }
   }
 
@@ -182,6 +183,14 @@
     if (!copy?.chargesMax) return '';
     const value = count(copy.charges) + '/' + count(copy.chargesMax);
     return '<span class="inventory-charge-count" title="Заряды" aria-label="Заряды ' + value + '">' + value + '</span>';
+  }
+
+  function inventoryBadges(profile, itemId, index = -1, slot = '') {
+    const rarity = instance(profile,itemId,index,slot)?.aberration252?.rarity;
+    const names={uncommon:'Необычное',rare:'Редкое',epic:'Эпическое',legendary:'Легендарное'};
+    const badge=Object.prototype.hasOwnProperty.call(names,rarity)
+      ? '<i class="inventory-rarity-glint" data-rarity="'+rarity+'" title="'+names[rarity]+'" aria-label="'+names[rarity]+'"></i>' : '';
+    return chargeBadge(profile,itemId,index,slot)+badge;
   }
 
   function mounts(item) {
@@ -224,7 +233,23 @@
     return list(copy?.attachments).reduce((sum,row)=>sum+(Number(row.hitBonus)||0),0);
   }
 
-  const api = {mounts, installed, changeAttachment, attachmentHitBonus,chargeBadge, tracked, normalize, reconcile, instance, choose, bind, remove, add, repair, updateResources, slotKey, clone};
+  const massPercents = Object.freeze([30,20,10,-10,-20,-30]);
+  function massPercent(effects) {
+    for (const id of list(effects)) {
+      const match = /^weapon-7-([1-6])$/.exec(id);
+      if (match) return massPercents[Number(match[1])-1];
+    }
+    return 0;
+  }
+  function inventoryRowMass(row, baseMass, quantity = row.qty) {
+    const count = Math.max(0, Math.trunc(Number(quantity)||0));
+    const percent = list(row.instancesV215).slice(0,count).reduce(
+      (sum,copy)=>sum+massPercent(copy?.aberration252?.effects),0
+    );
+    return baseMass*(100*count+percent)/100;
+  }
+
+  const api = {massPercent,inventoryRowMass,mounts, installed, changeAttachment, attachmentHitBonus,inventoryBadges,chargeBadge, tracked, normalize, reconcile, instance, choose, bind, remove, add, repair, updateResources, slotKey, clone};
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.GRPGItemInstancesV215 = api;
 })(typeof window === 'undefined' ? globalThis : window);

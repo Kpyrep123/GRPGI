@@ -4,16 +4,75 @@
   const catalog = window.GRPGAberrationCatalog;
   const rarityNames = ['Обычное', 'Необычное', 'Редкое', 'Эпическое', 'Легендарное'];
   const categories = {weapon:'Оружие',armor:'Броня',shield:'Щиты',backpack:'Рюкзаки',implant:'Импланты'};
-  const storageKey = () => 'grpgi.aberrations:' + String(Sync.config?.campaignId || 'local');
+  const campaignId = () => String(Sync.config?.campaignId || 'main');
+  let campaignSettings = {};
+  worldLoadSteps.push(payload => {
+    const data = payload.campaigns?.ABERRATION_SETTINGS;
+    campaignSettings = data && typeof data==='object' && !Array.isArray(data) ? deep(data) : {};
+  });
+  worldSaveSections.push(snapshot => {
+    snapshot.campaigns.ABERRATION_SETTINGS = deep(campaignSettings);
+  });
 
   function settings() {
-    const saved = JSON.parse(localStorage.getItem(storageKey()) || '{}');
-    return { chances:saved.chances || api.defaultChances.map(row=>row.slice()), variants:saved.variants || {} };
+    const id=campaignId();
+    let saved=Object.hasOwn(campaignSettings,id)?campaignSettings[id]:null;
+    if(!saved){
+      try { saved=JSON.parse(localStorage.getItem('grpgi.aberrations:'+id) || localStorage.getItem('grpgi.aberrations:local') || '{}'); }
+      catch { saved={}; }
+    }
+    return { chances:deep(saved?.chances || api.defaultChances), variants:deep(saved?.variants || {}) };
   }
+
+  // Only effects with an implemented combat rule enter the loot pool.
+  const supported = catalog.filter(effect => ['weapon-1','weapon-2','weapon-3','weapon-4','weapon-6','weapon-7','weapon-8','weapon-9','weapon-10','weapon-13','weapon-14','weapon-16','weapon-17'].includes(effect.id));
+  const variants = supported.flatMap(effect => effect.variants.map(variant=>({...variant,group:effect.id,name:effect.name})));
+  const damageTypeIds=['kinetic','energy','electric','explosive','gas'];
+  const damageTypeVariant=variants.find(row=>row.group==='weapon-6');
+  function resolve(id, overrides) {
+    const damageMatch=/^weapon-6-([1-5])$/.exec(id);
+    if(damageMatch)return {...damageTypeVariant,id,value:damageTypeIds[Number(damageMatch[1])-1]};
+    const variant=variants.find(row=>row.id===id);
+    if (!variant) return null;
+    const saved=overrides[id];
+    const value=variant.group==='weapon-7'?window.GRPGItemInstancesV215.massPercent([id])
+      :Number(String(saved?.value ?? variant.value).replace('−','-').trim().split(/\s+/)[0]);
+    return {...variant,cost:saved?.cost ?? variant.cost,value};
+  }
+  function validEffect(row){
+    if(!row)return false;
+    if(row.group==='weapon-6')return Boolean(row.value);
+    return Number.isInteger(row.value)&&Math.abs(row.value)<=(row.group==='weapon-7'?30:20);
+  }
+  window.GRPGAberrationWeapons = {
+    roll(danger,weapon) {
+      const {chances,variants:overrides}=settings();
+      const target=window.GRPGDamageTypesV202.normalize(overrides[damageTypeVariant.id]?.value);
+      const pool=variants.map(row=>{
+        if(row.group!=='weapon-6')return resolve(row.id,overrides);
+        if(!target)return null;
+        const id='weapon-6-'+(damageTypeIds.indexOf(target)+1);
+        return {...resolve(id,overrides),cost:overrides[damageTypeVariant.id]?.cost??row.cost};
+      }).filter(row=>validEffect(row)
+        &&(row.group!=='weapon-6'||row.value!==window.GRPGDamageTypesV202.effective(weapon))
+        &&(row.group!=='weapon-7'||Number(weapon?.mass)>0)
+        &&(row.group!=='weapon-8'||(Number(weapon?.magazineSize??weapon?.clipSize)>0
+          &&Number(weapon?.magazineSize??weapon?.clipSize)+row.value>=1))
+        &&(!['weapon-9','weapon-16'].includes(row.group)||weapon?.weaponCategory!=='melee')
+        &&(!['weapon-10','weapon-13','weapon-14','weapon-17'].includes(row.group)||weapon?.weaponCategory==='melee'));
+      const result=api.roll(danger,pool,{chances});
+      if (!result) return {rarity:'common',budget:0,effects:[]};
+      return result;
+    },
+    effects(ids) {
+      const overrides=settings().variants;
+      return (ids||[]).map(id=>resolve(id,overrides)).filter(validEffect);
+    }
+  };
 
   function openCatalog() {
     if (App.currentUser?.role !== 'gm') return;
-    const key = storageKey();
+    const key = campaignId();
     const draft = settings();
     const dialog = document.createElement('dialog');
     dialog.style.cssText = 'width:min(920px,95vw);max-height:85vh;overflow:auto';
@@ -36,11 +95,13 @@
 
     function drawEffects() {
       effects.innerHTML = catalog.filter(effect=>effect.category===category.value).map(effect=>`
-        <details><summary>${esc(effect.name)}</summary>
+        <details><summary>${esc(effect.name)}${supported.includes(effect)?'':' · в каталоге'}</summary>
         <p>${esc([effect.scope,effect.rule].filter(Boolean).join(' · '))}</p>
         ${effect.variants.map(variant=>{
           const saved = draft.variants[variant.id] || variant;
-          return `<div class="row" data-variant="${variant.id}"><label>Значение <input class="input" data-field="value" value="${esc(saved.value)}"></label>
+          return `<div class="row" data-variant="${variant.id}"><label>Значение ${effect.id==='weapon-6'
+            ? `<select class="select" data-field="value"><option value="">Выберите тип</option>${Object.entries(window.GRPGDamageTypesV202.labels).map(([id,label])=>`<option value="${id}" ${saved.value===id?'selected':''}>${esc(label)}</option>`).join('')}</select>`
+            : `<input class="input" data-field="value" value="${esc(effect.id==='weapon-7'?variant.value:saved.value)}" ${effect.id==='weapon-7'?'readonly':''}>` }</label>
             <label>Бюджет <input class="input" type="number" step="1" data-field="cost" value="${saved.cost}"></label></div>`;
         }).join('')}</details>`).join('');
     }
@@ -56,15 +117,25 @@
       const row=event.target.closest('[data-variant]');
       if(!row)return;
       const [value,cost]=[row.querySelector('[data-field="value"]').value,row.querySelector('[data-field="cost"]').valueAsNumber];
-      if (value.trim() && Number.isSafeInteger(cost)) draft.variants[row.dataset.variant]={value:value.trim(),cost};
+      if ((value.trim() || row.dataset.variant==='weapon-6-1') && Number.isSafeInteger(cost)) draft.variants[row.dataset.variant]={value:value.trim(),cost};
     });
     category.addEventListener('change',drawEffects);
     dialog.querySelector('[data-aberration-close]').onclick=()=>dialog.close();
-    dialog.querySelector('form').onsubmit=event=>{
+    dialog.querySelector('form').onsubmit=async event=>{
       event.preventDefault();
-      if (App.currentUser?.role!=='gm' || storageKey()!==key) return;
-      try { localStorage.setItem(key,JSON.stringify(draft));dialog.close(); }
-      catch (error) { Toast.show(error.message,'err'); }
+      if(App.currentUser?.role!=='gm'||campaignId()!==key)return;
+      const submit=dialog.querySelector('[type="submit"]');
+      if(submit.disabled)return;
+      submit.disabled=true;
+      const before=campaignSettings;
+      campaignSettings={...before,[key]:deep(draft)};
+      try{
+        const result=await Configurator.persistAll('Аберрации сохранены',{worldSections:['campaigns']});
+        if(result?.localSaved)dialog.close();
+        else campaignSettings=before;
+      }catch(error){
+        campaignSettings=before;Toast.show(error.message,'err');
+      }finally{submit.disabled=false;}
     };
     dialog.addEventListener('close',()=>dialog.remove(),{once:true});
     drawChances();drawEffects();

@@ -3,10 +3,11 @@
 const fs=require('node:fs'),path=require('node:path');
 const root=path.resolve(__dirname,'..'),source=fs.readFileSync(path.join(root,'renderer/stats-engine-v113.js'),'utf8');
 function part(start,end){const a=source.indexOf(start),b=source.indexOf(end,a+start.length);if(a<0||b<0)throw Error(start);return source.slice(a,b);}
-const header=part("  const VERSION =",'  const previousNormalizeEquipment');
-const math=part('  function synthesizeLegacyItemModifiers','  function weaponAttack');
-const packing=part('  function inventoryItem','  function slotAccepts');
+const header=part("  const VERSION =",'  const previousNormalizeEquipment').replace(/^  const WEAPON_(?:STATS|LABELS) = .*;\n/gm,'');
+const math=part('  function synthesizeLegacyItemModifiers','  function weaponAttack').replaceAll('window.GRPGItemInstancesV215','itemInstances');
+const packing=part('  function inventoryItem','  function slotAccepts').replaceAll('window.GRPGItemInstancesV215','itemInstances');
 const adapters=`
+  const itemInstances=require((typeof __hooks==='undefined'?'./':__hooks+'/')+'item-instances-v215.js');
   const EQUIPMENT=world.equipment?.EQUIPMENT||{}, Data={getItem:id=>EQUIPMENT[id],getSkill:id=>world.skills?.SKILLS?.[id],socialOrigins:world.socialOrigins?.SOCIAL_ORIGINS,geographicOrigins:world.geographicOrigins?.GEOGRAPHIC_ORIGINS};
   const worldData=world;
   function equipment(id){if(!id)return null;const raw=EQUIPMENT[id];if(!raw)return null;
@@ -27,7 +28,7 @@ const adapters=`
   function originById(section,id){return(section==='social'?Data.socialOrigins:Data.geographicOrigins)?.[id]||null;}
   function normalizePlayerProfileV2(raw={}){
     const next=copy(raw);
-    next.inventory=arr(raw.inventory).map(row=>({itemId:String(row.itemId||''),qty:Math.max(0,i(row.qty)),positions:arr(row.positions)})).filter(row=>row.itemId&&row.qty);
+    next.inventory=arr(raw.inventory).map(row=>({itemId:String(row.itemId||''),qty:Math.max(0,i(row.qty)),positions:arr(row.positions),...(Array.isArray(row.instancesV215)?{instancesV215:copy(row.instancesV215)}:{})})).filter(row=>row.itemId&&row.qty);
     next.textInventoryItems=arr(raw.textInventoryItems??raw.weightlessItems??raw.inventoryTextItems??raw.looseItems).map(row=>typeof row==='string'?{name:row,qty:1}:copy(row));
     next.inventory=next.inventory.filter(row=>{const item=equipment(row.itemId);if(!item?.legacyTextOnlyInventoryV131)return true;next.textInventoryItems.push({name:item.name||row.itemId,qty:row.qty});return false;});
     const derived=compute(next,{kind:'player'});

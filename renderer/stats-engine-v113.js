@@ -297,24 +297,35 @@
   function weaponAttack(entity={}, weaponOrId, options={}) {
     const weapon = typeof weaponOrId === 'string' ? equipment(weaponOrId) : normalizeEquipmentItemV2(weaponOrId || {});
     if (!weapon?.id && !weapon?.name) return null;
-    const stats=compute(entity,options), context={weaponId:weapon.id,weaponCategory:window.GRPGWeaponHandlingV203.category(weapon),damageType:options.damageType||window.GRPGDamageTypesV202.effective(weapon)};
+    const stats=compute(entity,options);
     const copies=window.GRPGItemInstancesV215, slot=options.weaponSlot || ['primaryWeapon','secondaryWeapon'].find(key=>entity.equipmentSlots?.[key]===weapon.id);
     const copy=slot?copies.instance(entity,weapon.id,-1,slot):null;
     const mounted=copies.attachmentHitBonus(copy);
     const mods=[...stats.modifiers,...arr(copy?.attachments).flatMap(row=>arr(row.modifiers)
       .map(mod=>normalizeModifier(mod,{id:row.itemId,name:equipment(row.itemId)?.name||row.itemId,kind:'equipment'}))
       .filter(mod=>mod.enabled!==false))];
+    const aberrations=window.GRPGAberrationWeapons?.effects(copy?.aberration252?.effects)||[];
+    const damageType=options.damageType||aberrations.find(row=>row.group==='weapon-6')?.value||window.GRPGDamageTypesV202.effective(weapon);
+    const context={weaponId:weapon.id,weaponCategory:window.GRPGWeaponHandlingV203.category(weapon),damageType};
     let stat = window.GRPGWeaponHandlingV203.stat(weapon);
     const replaces=mods.filter(m=>m.target==='weapon_hit_stat'&&m.op==='replace_stat'&&m.statRef&&scopeMatches(m,{...context,entity,...options})).sort((a,b)=>(modifierSpecificity(a)-modifierSpecificity(b))||(a.priority-b.priority));
     if(replaces.length) stat=replaces[replaces.length-1].statRef;
     const detail=[{source:PRIMARY_LABELS[stat]||stat,value:n(stats.abilities[stat]),op:'base'}];
     let bonus=n(stats.abilities[stat],0)+n(weapon.hitBonus,0)+mounted;
+    for(const effect of aberrations.filter(row=>row.group==='weapon-1')){
+      bonus+=effect.value;
+      detail.push({source:effect.name,value:effect.value,op:'add'});
+    }
     if(mounted)detail.push({source:'Установленные модификации',value:mounted,op:'add'});
     if(n(weapon.hitBonus,0))detail.push({source:`${weapon.name}: базовый бонус`,value:n(weapon.hitBonus),op:'add'});
     if(weapon.weaponSkillId&&arr(entity.skills).map(String).includes(String(weapon.weaponSkillId))){bonus+=n(weapon.weaponSkillBonus,0);detail.push({source:`${skillById(weapon.weaponSkillId)?.name||weapon.weaponSkillId}: оружейный навык`,value:n(weapon.weaponSkillBonus,0),op:'add'});}
     mods.filter(m=>m.target==='weapon_hit_extra_stat'&&['add_stat','add'].includes(m.op)&&m.statRef&&scopeMatches(m,{...context,entity,...options})).forEach(m=>{bonus+=n(stats.abilities[m.statRef],0);detail.push({source:`${m.sourceName}: ${PRIMARY_LABELS[m.statRef]}`,value:n(stats.abilities[m.statRef],0),op:'add'});});
     mods.filter(m=>m.target==='attack_bonus'&&['add','set'].includes(m.op)&&scopeMatches(m,{...context,entity,...options})).sort((a,b)=>(a.priority-b.priority)||(modifierSpecificity(a)-modifierSpecificity(b))).forEach(m=>{bonus=m.op==='set'?n(m.value):bonus+n(m.value);detail.push({source:m.sourceName,value:n(m.value),op:m.op});});
     let damageBonus=0; const damageDetail=[]; mods.filter(m=>m.target==='damage_bonus'&&['add','set'].includes(m.op)&&scopeMatches(m,{...context,entity,...options})).sort((a,b)=>a.priority-b.priority).forEach(m=>{damageBonus=m.op==='set'?n(m.value):damageBonus+n(m.value);damageDetail.push({source:m.sourceName,value:n(m.value),op:m.op});});
+    if(options.firstShot!==false)for(const effect of aberrations.filter(row=>row.group==='weapon-2')){
+      damageBonus+=effect.value;
+      damageDetail.push({source:effect.name,value:effect.value,op:'add'});
+    }
     return { weapon, stat, bonus, detail, damage:String(weapon.damage||'—'), damageBonus, damageDetail, range:nonNeg(weapon.range,0) };
   }
 
@@ -378,7 +389,7 @@
   /* Inventory v113 */
   function inventoryItem(id){return equipment(id)||{id,name:id,type:'gear',mass:0,inventoryWidth:1,inventoryHeight:1,stackable:false,textOnlyInventory:false};}
   function equippedCounts(user={}){const map=new Map(),add=id=>{id=String(id||'');if(id)map.set(id,(map.get(id)||0)+1)};['primaryWeapon','secondaryWeapon','armor','backpack'].forEach(k=>add(user.equipmentSlots?.[k]));arr(user.implantSlots).forEach(add);return map;}
-  function weight(user={}){return arr(user.inventory).reduce((sum,row)=>sum+nonNeg(inventoryItem(row.itemId).mass,0)*Math.max(0,i(row.qty,0)),0);}
+  function weight(user={}){return arr(user.inventory).reduce((sum,row)=>sum+window.GRPGItemInstancesV215.inventoryRowMass(row,nonNeg(inventoryItem(row.itemId).mass,0)),0);}
   function cellUse(instance){return Math.max(0,i(instance.w))*Math.max(0,i(instance.h));}
   function fits(total,occupied,x,y,w,h){if(x<0||y<0||x+w>5)return false;for(let yy=y;yy<y+h;yy++)for(let xx=x;xx<x+w;xx++){const idx=yy*5+xx;if(idx<0||idx>=total||occupied.has(`${xx}:${yy}`))return false;}return true;}
   function mark(occ,x,y,w,h){for(let yy=y;yy<y+h;yy++)for(let xx=x;xx<x+w;xx++)occ.add(`${xx}:${yy}`);}
@@ -405,7 +416,7 @@
     const wgt=weight(user), overloaded=wgt>user.carryWeightMax+1e-9||overflow.length>0;
     return{user,total,size:total,cols:5,rows:Math.ceil(Math.max(1,total)/5),instances,overflow,text,occupied,weight:wgt,usedCells:instances.reduce((s,x)=>s+cellUse(x),0)+overflow.reduce((s,x)=>s+cellUse(x),0),overloaded};
   }
-  function canAdd(rawUser,itemId,qty=1){const user=normalizePlayerProfileV2(rawUser), item=inventoryItem(itemId);if(layout(user).overloaded)return{ok:false,reason:'Персонаж перегружен. Сначала освободите вес или место.'};const clone=copy(user);let row=clone.inventory.find(r=>r.itemId===itemId);if(!row){row={itemId,qty:0,positions:[]};clone.inventory.push(row);}row.qty+=Math.max(1,i(qty,1));const l=layout(clone);if(l.weight>clone.carryWeightMax+1e-9)return{ok:false,reason:`Превышен переносимый вес: ${l.weight.toFixed(1)} / ${clone.carryWeightMax.toFixed(1)}`};if(l.overflow.length)return{ok:false,reason:'Недостаточно ячеек инвентаря.'};return{ok:true};}
+  function canAdd(rawUser,itemId,qty=1,rolls=[]){const user=normalizePlayerProfileV2(rawUser), item=inventoryItem(itemId);if(layout(user).overloaded)return{ok:false,reason:'Персонаж перегружен. Сначала освободите вес или место.'};const clone=copy(user);let row=clone.inventory.find(r=>r.itemId===itemId);if(!row){row={itemId,qty:0,positions:[]};clone.inventory.push(row);}row.qty+=Math.max(1,i(qty,1));const l=layout(clone),weight=l.weight+nonNeg(item.mass,0)*arr(rolls).reduce((sum,roll)=>sum+window.GRPGItemInstancesV215.massPercent(roll?.effects),0)/100;if(weight>clone.carryWeightMax+1e-9)return{ok:false,reason:`Превышен переносимый вес: ${weight.toFixed(1)} / ${clone.carryWeightMax.toFixed(1)}`};if(l.overflow.length)return{ok:false,reason:'Недостаточно ячеек инвентаря.'};return{ok:true};}
   function slotAccepts(slot,item){if(slot==='armor')return item.type==='armor';if(slot==='backpack')return item.type==='backpack';if(slot==='implant')return item.type==='implant';if(slot==='primaryWeapon')return item.type==='weapon'||item.type==='shield';if(slot==='secondaryWeapon')return item.type==='weapon';return false;}
   function setSlot(user,slot,index,itemId,instanceId){window.GRPGItemInstancesV215?.bind(user,itemId,window.GRPGItemInstancesV215.slotKey(slot,index),instanceId);user.equipmentSlots={primaryWeapon:'',secondaryWeapon:'',armor:'',backpack:'',...(user.equipmentSlots||{})};if(slot==='implant'){user.implantSlots=Array.from({length:user.implantSlotCount},(_,j)=>String(user.implantSlots?.[j]||''));if(index<0||index>=user.implantSlotCount)return false;user.implantSlots[index]=String(itemId||'');user.installedImplantIds=user.implantSlots.filter(Boolean);return true;}user.equipmentSlots[slot]=String(itemId||'');return true;}
   function postChangeValid(user){const normalized=normalizePlayerProfileV2(user), l=layout(normalized);if(l.weight>normalized.carryWeightMax+1e-9)return{ok:false,reason:`После изменения вес ${l.weight.toFixed(1)} превысит предел ${normalized.carryWeightMax.toFixed(1)}.`};if(l.overflow.length)return{ok:false,reason:`После изменения не поместятся предметы: ${l.overflow.length}.`};return{ok:true,user:normalized};}
@@ -502,13 +513,13 @@
     const id=slot==='implant'?user.implantSlots?.[index]:user.equipmentSlots?.[slot],item=inventoryItem(id),filled=!!id;
     return `<div class="inventory-equip-slot-v1067 inventory-equip-slot-v115 ${filled?'filled':''}" data-slot-v113="${slot}" data-slot-index-v113="${index}">
       <div class="inventory-slot-label-v1067">${safe(label)}</div>
-      ${filled?`<div class="inventory-slot-item-v1067" draggable="true" data-inv113-drag-slot data-slot-v113="${slot}" data-slot-index-v113="${index}" data-item-id="${safe(id)}" data-entity="item" data-id="${safe(id)}" title="${safe(item.name||id)}">${typeof renderThumb==='function'?renderThumb(item,{size:'sm',type:'item',glyph:initials(item.name,'▣')}):''}<span>${safe(item.name||id)}</span>${window.GRPGItemInstancesV215.chargeBadge(user,id,-1,window.GRPGItemInstancesV215.slotKey(slot,index))}</div>`:'<div class="inventory-slot-empty-v1067">Перетащите предмет</div>'}
+      ${filled?`<div class="inventory-slot-item-v1067" draggable="true" data-inv113-drag-slot data-slot-v113="${slot}" data-slot-index-v113="${index}" data-item-id="${safe(id)}" data-entity="item" data-id="${safe(id)}" title="${safe(item.name||id)}">${typeof renderThumb==='function'?renderThumb(item,{size:'sm',type:'item',glyph:initials(item.name,'▣')}):''}<span>${safe(item.name||id)}</span>${window.GRPGItemInstancesV215.inventoryBadges(user,id,-1,window.GRPGItemInstancesV215.slotKey(slot,index))}</div>`:'<div class="inventory-slot-empty-v1067">Перетащите предмет</div>'}
     </div>`;
   }
   function gridMarkup(user){
     const l=layout(user);
     const cells=Array.from({length:l.total},(_,idx)=>`<div class="inventory-grid-cell-v1067" style="grid-column:${idx%5+1};grid-row:${Math.floor(idx/5)+1}"></div>`).join('');
-    const tiles=l.instances.map(x=>`<div class="inventory-tile-v1067 inventory-tile-v115 profile-inventory-tile" draggable="true" data-inv113-drag-grid data-item-id="${safe(x.itemId)}" data-unit-index="${x.unitIndex}" data-entity="item" data-id="${safe(x.itemId)}" style="grid-column:${x.pos.x+1}/span ${x.w};grid-row:${x.pos.y+1}/span ${x.h}" title="${safe(x.item.name)}">${typeof renderThumb==='function'?renderThumb(x.item,{size:'sm',type:'item',glyph:initials(x.item.name,'▣')}):''}<span>${safe(x.item.name)}</span>${x.stackLimit>1?`<small class="inventory-stack-count" aria-label="${x.qty} из ${x.stackLimit}">${x.qty}/${x.stackLimit}</small>`:''}${window.GRPGItemInstancesV215.chargeBadge(l.user,x.itemId,x.unitIndex)}</div>`).join('');
+    const tiles=l.instances.map(x=>`<div class="inventory-tile-v1067 inventory-tile-v115 profile-inventory-tile" draggable="true" data-inv113-drag-grid data-item-id="${safe(x.itemId)}" data-unit-index="${x.unitIndex}" data-entity="item" data-id="${safe(x.itemId)}" style="grid-column:${x.pos.x+1}/span ${x.w};grid-row:${x.pos.y+1}/span ${x.h}" title="${safe(x.item.name)}">${typeof renderThumb==='function'?renderThumb(x.item,{size:'sm',type:'item',glyph:initials(x.item.name,'▣')}):''}<span>${safe(x.item.name)}</span>${x.stackLimit>1?`<small class="inventory-stack-count" aria-label="${x.qty} из ${x.stackLimit}">${x.qty}/${x.stackLimit}</small>`:''}${window.GRPGItemInstancesV215.inventoryBadges(l.user,x.itemId,x.unitIndex)}</div>`).join('');
     const overflow=l.overflow.length?`<div class="inventory-overflow-v1067"><b>Не помещается: ${l.overflow.length}</b></div>`:'';
     return `<div class="inventory-grid-v1067 inventory-grid-v115" data-inv113-grid style="--inv-cols:5;--inv-rows:${l.rows}">${cells}${tiles}</div>${overflow}`;
   }

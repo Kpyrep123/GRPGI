@@ -761,7 +761,10 @@ function normalizeSkillsSectionForSync(section = {}) {
 }
 
 function normalizeCampaignsSectionForSync(section = {}) {
-  return normalizeMapListSectionForSync(section, 'CAMPAIGNS', 'CAMPAIGN_LIST', ['id', 'name', 'title']);
+  const campaigns = normalizeMapListSectionForSync(section, 'CAMPAIGNS', 'CAMPAIGN_LIST', ['id', 'name', 'title']);
+  const settings = section?.ABERRATION_SETTINGS;
+  if (settings && typeof settings === 'object' && !Array.isArray(settings)) campaigns.ABERRATION_SETTINGS = settings;
+  return campaigns;
 }
 
 async function normalizeSnapshotImagesForCloud(config = {}, snapshot = {}) {
