@@ -3,7 +3,7 @@
   'use strict';
 
   const slots = ['primaryWeapon', 'secondaryWeapon', 'armor', 'backpack'];
-  const trackedTypes = ['modification','weapon', 'armor', 'backpack', 'drone', 'turret', 'shield'];
+  const trackedTypes = ['modification','weapon', 'armor', 'backpack', 'drone', 'turret', 'shield', 'implant'];
   const list = value => Array.isArray(value) ? value : [];
   const count = value => Math.max(0, Math.trunc(Number(value) || 0));
   const clone = value => JSON.parse(JSON.stringify(value));
@@ -26,7 +26,8 @@
 
   function updateResources(copy, item) {
     if (!item) return copy;
-    const durabilityMax = count(item.durabilityMax ?? item.maxDurability);
+    const baseDurability = count(item.durabilityMax ?? item.maxDurability);
+    const durabilityMax = Math.ceil(baseDurability*(100+effectValue(copy,'armor-21'))/100);
     const chargesMax = count(item.chargesMax ?? item.maxCharges);
     let pendingWear = count(copy.pendingWear197);
     if (!durabilityMax && copy.durabilityMax > 0) pendingWear += Math.max(0, copy.durabilityMax - copy.durability);
@@ -234,9 +235,59 @@
   }
 
   const massPercents = Object.freeze([30,20,10,-10,-20,-30]);
+  const six = Object.freeze([-3,-2,-1,1,2,3]);
+  const four = Object.freeze([-2,-1,1,2]);
+  const passive = Object.freeze({
+    'armor-18':['armor_class',six], 'armor-19':['defense',four],
+    'armor-21':['',[-30,-20,-10,10,20,30]], 'armor-22':['',massPercents],
+    'armor-23':['carry_capacity',six], 'armor-24':['movement',four],
+    'shield-31':['',massPercents], 'shield-32':['movement',four],
+    'backpack-38':['inventory_slots',six], 'backpack-39':['carry_capacity',six],
+    'backpack-40':['',massPercents], 'backpack-42':['movement',four],
+    'implant-47':['max_hp',six], 'implant-50':['vision',[-4,-2,2,4]],
+    'implant-51':['movement',four], 'implant-52':['drone_actions',[-1,1,2]]
+  });
+
+  function aberrationCategory(item) {
+    const type=String(item?.type||'').toLowerCase();
+    if(item?.textOnlyInventory||item?.legacyTextOnlyInventoryV131)return '';
+    return ['weapon','armor','shield','backpack','implant'].includes(type)?type:'';
+  }
+
+  function passiveEffect(id) {
+    const match=/^([a-z]+-\d+)-([1-6])$/.exec(id);
+    const row=match&&passive[match[1]];
+    const value=row?.[1][Number(match[2])-1];
+    return value===undefined?null:{group:match[1],target:row[0],value};
+  }
+
+  function effectValue(copy,group) {
+    return list(copy?.aberration252?.effects).map(passiveEffect).find(effect=>effect?.group===group)?.value||0;
+  }
+
+  function equippedAberrationModifiers(copy,item) {
+    const category=aberrationCategory(item);
+    if(!category||copy?.broken)return [];
+    return list(copy?.aberration252?.effects).map(passiveEffect)
+      .filter(effect=>effect?.target&&effect.group.startsWith(category+'-'))
+      .map(({target,value})=>({target,value,op:'add',scope:'global',condition:'always',enabled:true,
+        priority:0,sourceName:(item.name||item.id)+' · аберрация'}));
+  }
+
+  function storeAberration(copy,item,roll) {
+    if(!copy||!roll)return;
+    copy.aberration252=clone(roll);
+    copy.rarity=roll.rarity==='common'?'обычный':roll.rarity;
+    if(effectValue(copy,'armor-21')){
+      copy.durabilityMax=0;
+      copy.durability=undefined;
+      updateResources(copy,item);
+    }
+  }
+
   function massPercent(effects) {
     for (const id of list(effects)) {
-      const match = /^weapon-7-([1-6])$/.exec(id);
+      const match = /^(?:weapon-7|armor-22|shield-31|backpack-40)-([1-6])$/.exec(id);
       if (match) return massPercents[Number(match[1])-1];
     }
     return 0;
@@ -249,7 +300,7 @@
     return baseMass*(100*count+percent)/100;
   }
 
-  const api = {massPercent,inventoryRowMass,mounts, installed, changeAttachment, attachmentHitBonus,inventoryBadges,chargeBadge, tracked, normalize, reconcile, instance, choose, bind, remove, add, repair, updateResources, slotKey, clone};
+  const api = {aberrationCategory,passiveEffect,equippedAberrationModifiers,storeAberration,massPercent,inventoryRowMass,mounts, installed, changeAttachment, attachmentHitBonus,inventoryBadges,chargeBadge, tracked, normalize, reconcile, instance, choose, bind, remove, add, repair, updateResources, slotKey, clone};
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.GRPGItemInstancesV215 = api;
 })(typeof window === 'undefined' ? globalThis : window);

@@ -688,7 +688,7 @@ window.GRPGAberrationCatalog = [
     "variants": [
       {
         "id": "armor-26-1",
-        "value": "Дополнительная потеря 1",
+        "value": "1 прочность",
         "cost": -2
       },
       {

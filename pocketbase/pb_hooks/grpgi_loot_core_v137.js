@@ -141,9 +141,14 @@ function engine(world={}){
       if (!item || copy?.broken) return;
       push(item, 'equipment', item.id, item.name);
       sources.push(...synthesizeLegacyItemModifiers(item));
+      sources.push(...(itemInstances?.equippedAberrationModifiers(copy,item)||[]));
     });
     uniq(entity.implantSlots?.length ? entity.implantSlots : entity.installedImplantIds).forEach(id => {
       const item = equipment(id); if (!item) return; push(item,'implant',item.id,item.name); sources.push(...synthesizeLegacyItemModifiers(item));
+    });
+    arr(entity.implantSlots?.length?entity.implantSlots:entity.installedImplantIds).forEach((id,index)=>{
+      const items=itemInstances;
+      if(id&&items)sources.push(...items.equippedAberrationModifiers(items.instance(entity,id,-1,'implant:'+index),equipment(id)));
     });
     arr(options.temporaryModifiers || entity.temporaryModifiers).forEach(raw => { const mod=normalizeModifier(raw,{id:raw.sourceId||'temporary',name:raw.sourceName||'Временный эффект',kind:'temporary'}); if(mod) sources.push(mod); });
     return sources.filter(Boolean);
