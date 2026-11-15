@@ -22,7 +22,7 @@ const tx={
 };
 global.$app={runInTransaction:fn=>fn(tx)};
 const {transfer}=require('../pocketbase/pb_hooks/grpgi_loot_v137.js');
-const body={campaignId:'c',playerId:'p',operationId:'test_operation',lootTransferV137:{itemId:'rifle',qty:1,source:'scene/npc',aberrations:[{rarity:'rare',budget:4,effects:['weapon-1-4','weapon-2-4','weapon-9-5']}]}};
+const body={campaignId:'c',playerId:'p',operationId:'test_operation',lootTransferV137:{itemId:'rifle',qty:1,source:'scene/npc',aberrations:[{rarity:'rare',budget:4,effects:['weapon-3-2','weapon-4-3','weapon-8-4']}]}};
 const request={requestInfo:()=>({body}),json:(_code,value)=>value};
 assert.equal(transfer(request).status,'committed');
 assert.equal(transfer(request).status,'replayed');
@@ -36,3 +36,14 @@ body.lootTransferV137.aberrations[0]={rarity:'uncommon',budget:1,effects:['weapo
 assert.throws(()=>transfer(request),/другими данными/);
 assert.equal(data.playerJson.inventory[0].qty,2);
 console.log('PASS loot persists aberrations and rejects a changed replay');
+
+require('../renderer/combat-rules-v119.js');
+const {resolveManualAttack}=global.GRPGCombatRulesV119;
+const die={attackRoll:19,defenseRoll:10,damageRoll:4};
+assert.equal(resolveManualAttack(die).rawDamage,4);
+assert.equal(resolveManualAttack({...die,criticalRange:1,criticalBonus:2}).rawDamage,7);
+assert.equal(resolveManualAttack({...die,criticalRange:1,defenseRoll:20}).hit,false);
+assert.equal(resolveManualAttack({...die,attackRoll:20,criticalRange:-1}).rawDamage,4);
+assert.equal(resolveManualAttack({...die,attackRoll:20,defenseRoll:1,criticalRange:-1}).rawDamage,6);
+assert.equal(resolveManualAttack({...die,attackRoll:20,criticalBonus:-2}).rawDamage,4);
+console.log('PASS critical range, guaranteed natural hit and suppressed critical bonus');
