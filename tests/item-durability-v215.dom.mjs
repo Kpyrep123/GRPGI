@@ -27,7 +27,7 @@ const html=fs.readFileSync(path.join(root,'renderer/index.html'),'utf8');
 w.document.write(html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi,''));
 // Every renderer script is evaluated unmodified, in index.html order, sharing
 // browser-style lexical globals. Only OS/cloud/bootstrap boundaries are mocked.
-for(const m of html.matchAll(/<script src="\.\/([^"?]+)[^"]*"/g)){let source=fs.readFileSync(path.join(root,'renderer',m[1]),'utf8');if(m[1]==='scene-editor-v113.js')source=source.replace('// New module is DM-only;','window.test215={wear:wearArmorOnTwentyV215,defense:incomingDefense119,state:itemRuntimeStateV138,mutate:mutateItemStateV138,meleeOutcome:meleeOutcome256,attackFailure:attackFailure256,requestAttackRolls:requestAttackRolls119,applyDelayedHits:applyDelayedHits256,damageType:damageType202,applyWeaponHit:applyWeaponHit261,showLoot:showLootOverlay118,renderSearch:renderSearchAction118,jamOnHit:jamOnHit258,jamState:jamState258,reload:reloadUnitV138,bonusDie:bonusDie258,secondaryHit:secondaryHit258,fitToken:fitTokenToHex107,center:centerOf,normalizeToken:normalizeCombatToken};\n// New module is DM-only;');vm.runInContext(source,context,{filename:m[1]});}
+for(const m of html.matchAll(/<script src="\.\/([^"?]+)[^"]*"/g)){let source=fs.readFileSync(path.join(root,'renderer',m[1]),'utf8');if(m[1]==='scene-editor-v113.js')source=source.replace('// New module is DM-only;','window.test215={wear:wearArmorOnTwentyV215,defense:incomingDefense119,state:itemRuntimeStateV138,mutate:mutateItemStateV138,meleeOutcome:meleeOutcome256,attackFailure:attackFailure256,requestAttackRolls:requestAttackRolls119,applyDelayedHits:applyDelayedHits256,damageType:damageType202,applyWeaponHit:applyWeaponHit261,absorb:applyAbsorptionV138,cancelImmuneAttack:cancelImmuneAttack263,showLoot:showLootOverlay118,renderSearch:renderSearchAction118,jamOnHit:jamOnHit258,jamState:jamState258,reload:reloadUnitV138,bonusDie:bonusDie258,secondaryHit:secondaryHit258,fitToken:fitTokenToHex107,center:centerOf,normalizeToken:normalizeCombatToken};\n// New module is DM-only;');vm.runInContext(source,context,{filename:m[1]});}
 
 
 
@@ -307,6 +307,42 @@ run('runtime215.round++;');
 await armorHit(true);
 assert.equal(run('enemy215.hpCurrent'),6);
 assert.equal(run("GRPGItemInstancesV215.instance(App.state.users.p,'armor',-1,'armor').durability"),9);
+run(`
+  const copy262=GRPGItemInstancesV215.instance(App.state.users.p,'armor',-1,'armor');
+  copy262.aberration252.effects=['armor-20-1:kinetic','armor-27-1:energy'];
+  window.kinetic262=test215.defense(target215,'light',null,'kinetic');
+  window.energy262=test215.defense(target215,'light',null,'energy');
+  window.mixed262=test215.absorb({damage:7,damagePartsV138:[
+    {amount:1},{amount:2},{amount:4,damageType258:'energy'}
+  ]},kinetic262,()=>energy262);
+`);
+assert.match(run("GRPGAberrationWeapons.describe('armor-20-1:kinetic')"),/Кинетический/);
+assert.equal(run('kinetic262.typedArmorDelta'),2);
+assert.equal(run('energy262.typedArmorImmune'),true);
+assert.equal(run('mixed262.applied'),5,'vulnerability applies once and immunity removes only its own type');
+assert.equal(run('mixed262.absorbed'),4);
+assert.equal(run('test215.absorb({damage:0},kinetic262).applied'),0);
+run(`
+  GRPGItemInstancesV215.instance(App.state.users.p,'armor',-1,'armor').aberration252.effects=['armor-20-4:energy'];
+  window.resistant262=test215.defense(target215,'light',null,'energy');
+`);
+assert.equal(run('test215.absorb({damage:3},resistant262).applied'),1);
+run(`
+  GRPGItemInstancesV215.instance(App.state.users.p,'armor',-1,'armor').aberration252.effects=['armor-28-1:ranged'];
+  window.queue263=[];
+  window.result263={hit:true,critical:true,damageApplied:4};
+`);
+assert.equal(run("test215.cancelImmuneAttack(target215,{weaponCategory:'melee'},result263,queue263)"),false);
+assert.equal(run("test215.cancelImmuneAttack(target215,ranged258,{hit:false},queue263)"),false);
+assert.equal(run("test215.cancelImmuneAttack(target215,ranged258,result263,queue263)"),true);
+assert.equal(run('result263.damageApplied'),0);
+assert.equal(run('result263.critical'),false);
+assert.equal(run("test215.cancelImmuneAttack(enemy215,ranged258,{hit:true},queue263)"),false);
+run(`window.queue263=test215.normalizeToken({...enemy215,burstStateV122:{immuneTargets263:queue263}}).burstStateV122.immuneTargets263;`);
+assert.equal(run("test215.cancelImmuneAttack(target215,ranged258,{hit:true},queue263)"),true);
+assert.equal(run("test215.cancelImmuneAttack(target215,ranged258,{hit:true},[])"),false);
+console.log('PASS armor cancels only the matching attack and retains immunity across burst target switches');
+console.log('PASS typed armor effects, mixed damage, and one delta per damage type');
 console.log('PASS armor reflection once per round and fragility once per battle, including normalization');
 console.log('PASS equipped armor, shield, backpack and implant aberrations contribute their own stats');
 console.log('PASS loot overlay, extra damage die, per-copy jam and reload, forced movement and ricochet');

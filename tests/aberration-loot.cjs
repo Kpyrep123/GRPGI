@@ -70,6 +70,17 @@ body.operationId='test_armor_reaction';
 body.lootTransferV137.aberrations[0]={rarity:'rare',budget:4,effects:['armor-25-2','armor-26-1']};
 assert.equal(transfer(request).status,'committed');
 assert.deepEqual(data.playerJson.inventory.find(row=>row.itemId==='armor').instancesV215.at(-1).aberration252.effects,['armor-25-2','armor-26-1']);
+body.operationId='test_armor_damage_type';
+body.lootTransferV137.aberrations[0]={rarity:'legendary',budget:8,effects:['armor-27-1:energy','armor-20-1:kinetic']};
+assert.equal(transfer(request).status,'committed');
+assert.deepEqual(data.playerJson.inventory.find(row=>row.itemId==='armor').instancesV215.at(-1).aberration252.effects,['armor-27-1:energy','armor-20-1:kinetic']);
+body.operationId='test_invalid_armor_damage_type';
+body.lootTransferV137.aberrations[0].effects=['armor-27-1:invalid'];
+assert.throws(()=>transfer(request),/Некорректные аберрации/);
+body.operationId='test_armor_attack_immunity';
+body.lootTransferV137.aberrations[0].effects=['armor-28-1:ranged'];
+assert.equal(transfer(request).status,'committed');
+assert.deepEqual(data.playerJson.inventory.find(row=>row.itemId==='armor').instancesV215.at(-1).aberration252.effects,['armor-28-1:ranged']);
 console.log('PASS loot persists aberrations and rejects a changed replay');
 
 require('../renderer/combat-rules-v119.js');
