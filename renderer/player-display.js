@@ -194,22 +194,53 @@ function updatePlayerFacing231(scene,runtime){
 }
 let lastLootReveal252 = '';
 function renderLootReveal252(reveal) {
-  if(!reveal?.id||Date.now()-reveal.at>=12000)return;
+  const elapsed=Date.now()-Number(reveal?.at);
+  if(!reveal?.id||elapsed>=16000)return;
   if(reveal.id===lastLootReveal252&&root.querySelector('.battle-loot-reveal'))return;
   lastLootReveal252=reveal.id;
   root.querySelector('.battle-loot-reveal')?.remove();
+  const presentation=window.GRPGAberrationPresentation;
   const panel=document.createElement('section');
-  panel.className='battle-loot-reveal';
-  const names={common:'Обычное',uncommon:'Необычное',rare:'Редкое',epic:'Эпическое',legendary:'Легендарное'};
-  const title=document.createElement('h2');title.textContent=reveal.name+(reveal.qty>1?' ×'+reveal.qty:'')+' · '+reveal.recipient;panel.append(title);
-  for(const item of list(reveal.items)){
-    const row=document.createElement('div');
-    row.dataset.rarity=item.rarity;
-    row.textContent=[names[item.rarity]+(item.qty>1?' ×'+item.qty:''),...list(item.effects)].join(' · ');
-    panel.append(row);
+  panel.className='battle-loot-reveal loot-reveal-animated';
+  const title=document.createElement('h2');
+  title.textContent=reveal.name+(reveal.qty>1?' ×'+reveal.qty:'')+' · '+reveal.recipient;
+  panel.append(title);
+  const copies=list(reveal.items);
+  const steps=copies.reduce((total,item)=>total+list(item.presentation||item.effects).length+1,0);
+  const interval=Math.min(700,10000/Math.max(1,steps));
+  const reduced=window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  let time=350;
+  const schedule=(delay,show)=>{
+    if(reduced||elapsed>=delay){show();return;}
+    setTimeout(()=>{if(panel.isConnected)show();},delay-elapsed);
+  };
+  for(const item of copies){
+    const row=document.createElement('section');
+    row.className='loot-reveal-item';
+    row.dataset.lootRarity='common';
+    const label=document.createElement('strong');
+    const effectList=document.createElement('ul');
+    effectList.className='loot-reveal-effects';
+    const setRarity=rarity=>{
+      row.dataset.lootRarity=rarity;
+      label.textContent=presentation.labels[rarity]+(item.qty>1?' ×'+item.qty:'');
+    };
+    setRarity('common');row.append(label,effectList);panel.append(row);
+    let budget=0;
+    for(const effect of list(item.presentation||item.effects)){
+      const entry=document.createElement('li');
+      entry.textContent=typeof effect==='string'?effect:effect.text;
+      if(effect?.tone)entry.dataset.effectTone=effect.tone;
+      budget+=Number(effect?.cost)||0;
+      const rarity=presentation.rarityForBudget(budget);
+      schedule(time,()=>{effectList.append(entry);setRarity(rarity);});
+      time+=interval;
+    }
+    schedule(time,()=>{setRarity(presentation.cleanRarity(item.rarity));row.classList.add('is-final');});
+    time+=interval;
   }
   root.append(panel);
-  setTimeout(()=>panel.remove(),Math.max(0,12000-(Date.now()-reveal.at)));
+  setTimeout(()=>panel.remove(),Math.max(0,16000-elapsed));
 }
 function renderCombatSnapshot(snapshot){
   const scene=normalizeScene(snapshot.scene);

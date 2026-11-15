@@ -186,12 +186,14 @@
     return '<span class="inventory-charge-count" title="Заряды" aria-label="Заряды ' + value + '">' + value + '</span>';
   }
 
-  function inventoryBadges(profile, itemId, index = -1, slot = '') {
-    const rarity = instance(profile,itemId,index,slot)?.aberration252?.rarity;
+  function inventoryBadges(profile, itemId, index = -1, slot = '', overrides) {
+    const copy=instance(profile,itemId,index,slot);
+    const rarity = copy?.aberration252?.rarity;
     const names={uncommon:'Необычное',rare:'Редкое',epic:'Эпическое',legendary:'Легендарное'};
     const badge=Object.prototype.hasOwnProperty.call(names,rarity)
       ? '<i class="inventory-rarity-glint" data-rarity="'+rarity+'" title="'+names[rarity]+'" aria-label="'+names[rarity]+'"></i>' : '';
-    return chargeBadge(profile,itemId,index,slot)+badge;
+    return chargeBadge(profile,itemId,index,slot)+badge
+      +(root.GRPGAberrationPresentation?.hoverMarker(copy,overrides)||'');
   }
 
   function mounts(item) {

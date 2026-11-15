@@ -169,7 +169,7 @@ run(`
 const loot=w.document.querySelector('.scene-loot-overlay-v118');
 assert.equal(loot.parentElement,w.document.body);
 assert.match(loot.textContent,/Обычное/);
-assert.match(loot.textContent,/Редкое.*1d4/);
+assert.match(loot.textContent,/Редкое[\s\S]*1d4/);
 loot.querySelector('[data-loot-item-v137] b').click();
 assert(w.document.querySelector('.scene-loot-menu-v137'),'click opens the transfer menu');
 loot.querySelector('[data-scene-loot-close-v118]').click();
@@ -341,6 +341,45 @@ assert.equal(run("test215.cancelImmuneAttack(enemy215,ranged258,{hit:true},queue
 run(`window.queue263=test215.normalizeToken({...enemy215,burstStateV122:{immuneTargets263:queue263}}).burstStateV122.immuneTargets263;`);
 assert.equal(run("test215.cancelImmuneAttack(target215,ranged258,{hit:true},queue263)"),true);
 assert.equal(run("test215.cancelImmuneAttack(target215,ranged258,{hit:true},[])"),false);
+run(`
+  const shown264=GRPGItemInstancesV215.instance(App.state.users.p,'armor',-1,'armor');
+  shown264.aberration252={rarity:'epic',effects:['armor-28-1:ranged','armor-20-1:kinetic','armor-18-4']};
+  Configurator.selectedType='players';Configurator.selectedId='p';Configurator.render();
+  const hover264=document.createElement('div');hover264.setAttribute('draggable','true');
+  hover264.innerHTML=GRPGItemInstancesV215.inventoryBadges(App.state.users.p,'armor',-1,'armor');
+  document.body.append(hover264);
+  hover264.dispatchEvent(new Event('pointerover',{bubbles:true}));
+`);
+assert.match(Array.from(w.document.querySelectorAll('[data-wc-durability-row-v215] .aberration-list'),row=>row.textContent).join(' '),/Дальняя атака/);
+const hover=w.document.querySelector('.aberration-tooltip .aberration-list');
+assert.equal(hover.dataset.lootRarity,'epic');
+assert.deepEqual(Array.from(hover.querySelectorAll('li'),row=>row.dataset.effectTone),['violet','negative','green']);
+const display=new Window({settings:{disableJavaScriptFileLoading:true}});
+try{
+  display.document.body.innerHTML='<div id="player-display-root"></div>';
+  display.requestAnimationFrame=()=>0;
+  const timers=[];
+  display.setTimeout=(callback,delay)=>{timers.push({callback,delay});return timers.length;};
+  const displayContext=vm.isContext(display)?display:vm.createContext(display);
+  const evalDisplay=code=>vm.runInContext(code,displayContext);
+  for(const file of ['aberration-presentation.js','player-display.js']){
+    evalDisplay(fs.readFileSync(path.join(root,'renderer',file),'utf8'));
+  }
+  evalDisplay(`renderLootReveal252({id:'drop',at:Date.now(),name:'Броня',recipient:'Игрок',
+    items:[{rarity:'rare',presentation:[{text:'Сильная защита',tone:'violet',cost:6},
+      {text:'Уязвимость',tone:'negative',cost:-2}]}]});`);
+  const reward=display.document.querySelector('.loot-reveal-item');
+  assert.equal(reward.dataset.lootRarity,'common');
+  timers[0].callback();
+  assert.equal(reward.dataset.lootRarity,'epic');
+  assert.equal(reward.querySelectorAll('li').length,1);
+  timers[1].callback();
+  assert.equal(reward.dataset.lootRarity,'rare');
+  assert.equal(reward.querySelector('li:last-child').dataset.effectTone,'negative');
+  timers[2].callback();
+  assert(reward.classList.contains('is-final'));
+}finally{await display.happyDOM.abort();}
+console.log('PASS colored aberration lists in World Config and hover, with timed rarity changes on the player screen');
 console.log('PASS armor cancels only the matching attack and retains immunity across burst target switches');
 console.log('PASS typed armor effects, mixed damage, and one delta per damage type');
 console.log('PASS armor reflection once per round and fragility once per battle, including normalization');

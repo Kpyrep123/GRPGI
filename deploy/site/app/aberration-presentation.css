@@ -1,0 +1,64 @@
+[data-loot-rarity="common"] { --loot-color: #d5d9df; }
+[data-loot-rarity="uncommon"] { --loot-color: #8cde9c; }
+[data-loot-rarity="rare"] { --loot-color: #89caff; }
+[data-loot-rarity="epic"] { --loot-color: #d7a3ff; }
+[data-loot-rarity="legendary"] { --loot-color: #ffd681; }
+
+[data-effect-tone="negative"] { color: #ff8e94; }
+[data-effect-tone="green"] { color: #94e7a4; }
+[data-effect-tone="blue"] { color: #96d5ff; }
+[data-effect-tone="violet"] { color: #ddb1ff; }
+
+.aberration-list {
+  color: var(--loot-color);
+  border-inline-start: 2px solid var(--loot-color);
+  padding: .4rem .65rem;
+  min-width: 0;
+}
+.aberration-list ul, .loot-reveal-effects {
+  display: grid;
+  gap: .32rem;
+  padding: 0;
+  margin: .35rem 0 0;
+  list-style: none;
+}
+.aberration-list-heading { color: var(--loot-color); }
+.aberration-tooltip {
+  position: fixed;
+  z-index: 20000;
+  pointer-events: none;
+  max-width: min(22rem, calc(100vw - 16px));
+  background: #13151cf7;
+  border: 1px solid #434653;
+  border-radius: .4rem;
+  padding: .4rem;
+  box-shadow: 0 .55rem 1.8rem #0009;
+}
+.battle-loot-reveal.loot-reveal-animated {
+  width: min(36rem,90vw);
+  background: radial-gradient(ellipse at top, #312820, transparent 65%), #111116f8;
+}
+.loot-reveal-animated h2 { margin: 0 0 .7rem; }
+.loot-reveal-item {
+  margin-top: .55rem;
+  padding: .55rem .7rem;
+  border: 1px solid var(--loot-color);
+  border-radius: .35rem;
+  color: var(--loot-color);
+  transition: color .35s ease, border-color .35s ease, box-shadow .35s ease;
+}
+.loot-reveal-item.is-final { box-shadow: inset 0 0 1.1rem color-mix(in srgb, var(--loot-color) 26%, transparent); }
+.loot-reveal-effects li { animation: aberration-appear .28s ease-out both; }
+@keyframes aberration-appear {
+  from { opacity: 0; transform: translateX(-.7rem); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .loot-reveal-item, .loot-reveal-effects li { animation: none; transition: none; }
+}
+
+.loot-reveal-item.is-final { animation: loot-rarity-final .6s ease-out; }
+@keyframes loot-rarity-final {
+  35% { box-shadow: inset 0 0 1.8rem color-mix(in srgb, var(--loot-color) 50%, transparent), 0 0 1.25rem color-mix(in srgb, var(--loot-color) 45%, transparent); }
+}
+@media (prefers-reduced-motion: reduce) { .loot-reveal-item.is-final { animation: none; } }

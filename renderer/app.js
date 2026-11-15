@@ -22694,7 +22694,7 @@ function legacyRegionMapsV181() {
         const charges = copy.chargesMax > 0
           ? `<label>Заряды <input class="input" type="number" min="0" max="${copy.chargesMax}" step="1" value="${copy.charges}" data-wc-charges-value aria-label="Заряды ${label}"></label><span>/ ${copy.chargesMax}</span><button type="button" class="secondary" data-wc-charges-save="${esc(copy.id)}">Записать заряды</button>`
           : '';
-        return `<div class="row" data-wc-durability-row-v215><b title="${esc(copy.id)}">${label}</b>${copy.slot?'<span>Экипирован</span>':''}${copy.broken?'<span>Сломан</span>':''}${control}${charges}</div>`;
+        return `<div class="row" data-wc-durability-row-v215><b title="${esc(copy.id)}">${label}</b>${copy.slot?'<span>Экипирован</span>':''}${copy.broken?'<span>Сломан</span>':''}${control}${charges}${window.GRPGAberrationPresentation?.copyMarkup(copy)||''}</div>`;
       });
     });
     return rows.length ? `<div class="section-title">Прочность и заряды экземпляров</div><p class="small-note">0 — предмет сломан. После ремонта укажите новую прочность.</p>${rows.join('')}` : '';

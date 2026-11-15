@@ -614,7 +614,11 @@
       }
       return persistInventory(user,notice);
     },
-    details:itemId=>Wiki.showEntity('item',itemId,true)
+    details:(itemId,{copy}={})=>{
+      Wiki.showEntity('item',itemId,true);
+      const panel=document.getElementById('wiki-detail'),markup=window.GRPGAberrationPresentation?.copyMarkup(copy);
+      if(panel&&markup)panel.insertAdjacentHTML('beforeend',markup);
+    }
   });
   let drag113=null;document.addEventListener('dragstart',e=>{const g=e.target.closest?.('[data-inv113-drag-grid]'),s=e.target.closest?.('[data-inv113-drag-slot]');if(!g&&!s)return;drag113=g?{source:'grid',itemId:g.dataset.itemId,unitIndex:i(g.dataset.unitIndex,-1)}:{source:'slot',itemId:s.dataset.itemId,slot:s.dataset.slotV113,index:i(s.dataset.slotIndexV113,-1)};e.dataTransfer.effectAllowed='move';});document.addEventListener('dragend',()=>drag113=null);
   document.addEventListener('dragover',e=>{if(drag113&&e.target.closest?.('[data-inv113-grid],[data-slot-v113]'))e.preventDefault();});
