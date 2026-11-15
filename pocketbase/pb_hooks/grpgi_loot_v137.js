@@ -72,7 +72,7 @@ function validRoll(roll,copies){
   const [min,max]=limits[roll.rarity];
   return Number.isInteger(roll.budget)&&roll.budget>=min&&roll.budget<=max&&Array.isArray(roll.effects)
     &&(roll.rarity==='common'?roll.effects.length===0:roll.effects.length>=1&&roll.effects.length<=3)
-    &&roll.effects.every(id=>typeof id==='string'&&(/^weapon-(?:[12789]-[1-6]|[3]-[1-3]|[46]-[1-5]|(?:5|10)-[1-3]|12-[1-2]|(?:11|13|14|15|16|17)-1)$/.test(id)||/^armor-2[56]-[12]$/.test(id)||copies.passiveEffect(id)))
+    &&roll.effects.every(id=>typeof id==='string'&&(/^weapon-(?:[12789]-[1-6]|[3]-[1-3]|[46]-[1-5]|(?:5|10)-[1-3]|12-[1-2]|(?:11|13|14|15|16|17)-1)$/.test(id)||/^armor-2[56]-[12]$/.test(id)||/^armor-(?:20-[1-4]|27-1):(?:kinetic|energy|electric|explosive|gas)$/.test(id)||copies.passiveEffect(id)))
     &&new Set(roll.effects.map(id=>id.slice(0,id.lastIndexOf('-')))).size===roll.effects.length;
 }
 module.exports={transfer};

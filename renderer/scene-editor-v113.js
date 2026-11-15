@@ -1269,6 +1269,8 @@
   }
   function incomingDefense119(token,weaponCategory='light',cover=null,damageType=weaponCategory) {
     const category=String(weaponCategory||'light').trim().toLowerCase(),entity=entityForToken(token);
+    const resolvedType=window.GRPGDamageTypesV202.normalize(damageType,'kinetic');
+    let typedArmorDelta=0,typedArmorImmune=false;
     let baseArmorClass=num(tokenDefense105(token),0),shieldArmorClass=0,coverArmorClass=Math.max(0,num(cover?.armorBonus,0));
     let baseAbsorption=token?.defenseOverrideV120?Math.max(0,num(token?.defense,0)):0,armorAbsorption=0,shieldAbsorption=0,coverAbsorption=Math.max(0,num(cover?.hardness,0));
     if(entity&&window.GRPGStatsV113?.compute){
@@ -1278,7 +1280,18 @@
       const implants=list(source.implantSlots?.length?source.implantSlots:source.installedImplantIds).map((id,index)=>itemBrokenV138(token,equipmentItem105(id),`implant:${index}`)?'':id);
       source.implantSlots=implants;source.installedImplantIds=implants.slice();
       const wornArmor=equipmentItem105(source.equipmentSlots.armor),wornShields=['primaryWeapon','secondaryWeapon'].map(slot=>({slot,item:equipmentItem105(source.equipmentSlots[slot])})).filter(row=>itemIsPhysicalShield122(row.item||{}));
-      if(window.GRPGDamageTypesV202.normalize(damageType)==='energy'){
+      if(wornArmor){
+        const copy=window.GRPGItemInstancesV215.instance(entity,wornArmor.id,-1,'armor');
+        const ids=list(copy?.aberration252?.effects);
+        if(ids.some(id=>/^armor-(?:20|27)-/.test(id))){
+          for(const effect of window.GRPGAberrationWeapons?.effects(ids)||[]){
+            if(effect.type!==resolvedType)continue;
+            if(effect.group==='armor-20')typedArmorDelta=effect.value;
+            if(effect.group==='armor-27')typedArmorImmune=true;
+          }
+        }
+      }
+      if(resolvedType==='energy'){
         if(wornArmor&&!itemProtectsFromEnergy119(wornArmor))source.equipmentSlots.armor='';
         for(const {slot,item} of wornShields)if(!itemProtectsFromEnergy119(item))source.equipmentSlots[slot]='';
         source.implantSlots=implants.map(id=>{const item=equipmentItem105(id)||{};return itemIsPhysicalArmor119(item)&&!itemProtectsFromEnergy119(item)?'':id;});
@@ -1303,7 +1316,7 @@
       }catch(error){console.warn('SCENE_INCOMING_DEFENSE_V119',error);}
     }
     const defenseBonus=baseArmorClass+Math.max(shieldArmorClass,coverArmorClass),damageReduction=baseAbsorption+armorAbsorption+shieldAbsorption+coverAbsorption;
-    return {defenseBonus,damageReduction,category,damageType:window.GRPGDamageTypesV202.normalize(damageType,'kinetic'),coverBonus:coverArmorClass,baseArmorClass,shieldArmorClass,coverArmorClass,baseAbsorption,armorAbsorption,shieldAbsorption,coverAbsorption,absorptionSources:{base:baseAbsorption,armor:armorAbsorption,shield:shieldAbsorption,cover:coverAbsorption}};
+    return {defenseBonus,damageReduction,category,damageType:resolvedType,typedArmorDelta,typedArmorImmune,coverBonus:coverArmorClass,baseArmorClass,shieldArmorClass,coverArmorClass,baseAbsorption,armorAbsorption,shieldAbsorption,coverAbsorption,absorptionSources:{base:baseAbsorption,armor:armorAbsorption,shield:shieldAbsorption,cover:coverAbsorption}};
   }
   function entityForToken(token) {
     if (token?.playerId) { const p = App.state?.users?.[token.playerId] || PLAYER_TEMPLATES?.[token.playerId]; return p ? normalizePlayerProfileV2(p) : null; }
@@ -3264,8 +3277,34 @@
   function applyAbsorptionV138(state={},defense={},typedDefense=null){
     const total=Math.max(0,num(state.damage,0)),parts=list(state.damagePartsV138).length?list(state.damagePartsV138):[{amount:total,absorptionSource:'all'}];
     const partsTotal=parts.reduce((sum,row)=>sum+Math.max(0,num(row?.amount,0)),0);if(Math.abs(partsTotal-total)>.001){parts.length=0;parts.push({amount:total,absorptionSource:'all'});}
-    let applied=0,absorbed=0;
-    for(const part of parts){const raw=Math.max(0,num(part.amount,0)),source=absorptionSourceV138(part.absorptionSource),globalRule=state.absorptionRulesV138?.[source]||state.absorptionRulesV138?.all||{},base=absorptionAmountV138(part.damageType258&&typedDefense?typedDefense(part.damageType258):defense,source),penetration=Math.max(0,num(part.penetration)>0?num(part.penetration):num(globalRule.penetration)),flat=Math.max(0,num(part.ignoreAbsorption)>0?num(part.ignoreAbsorption):num(globalRule.flat)),percent=clamp104(num(part.ignorePercent)>0?num(part.ignorePercent):num(globalRule.percent),0,100),effective=Math.max(0,base-penetration-flat)*(1-percent/100),taken=Math.min(raw,Math.max(0,Math.round(effective)));absorbed+=taken;applied+=Math.max(0,raw-taken);}
+    const portions=new Map();
+    let absorbed=0;
+    for(const part of parts){
+      const raw=Math.max(0,num(part.amount,0));
+      if(!raw)continue;
+      const currentDefense=part.damageType258&&typedDefense?typedDefense(part.damageType258):defense;
+      const type=currentDefense.damageType||part.damageType258||'kinetic';
+      const portion=portions.get(type)||{damage:0,delta:num(currentDefense.typedArmorDelta),immune:currentDefense.typedArmorImmune};
+      portions.set(type,portion);
+      if(currentDefense.typedArmorImmune){absorbed+=raw;continue;}
+      const source=absorptionSourceV138(part.absorptionSource);
+      const rule=state.absorptionRulesV138?.[source]||state.absorptionRulesV138?.all||{};
+      const base=absorptionAmountV138(currentDefense,source);
+      const penetration=Math.max(0,num(part.penetration)>0?num(part.penetration):num(rule.penetration));
+      const flat=Math.max(0,num(part.ignoreAbsorption)>0?num(part.ignoreAbsorption):num(rule.flat));
+      const percent=clamp104(num(part.ignorePercent)>0?num(part.ignorePercent):num(rule.percent),0,100);
+      const effective=Math.max(0,base-penetration-flat)*(1-percent/100);
+      const taken=Math.min(raw,Math.max(0,Math.round(effective)));
+      absorbed+=taken;
+      portion.damage+=raw-taken;
+    }
+    let applied=0;
+    for(const portion of portions.values()){
+      if(portion.immune)continue;
+      const remaining=Math.max(0,portion.damage+portion.delta);
+      if(portion.delta<0)absorbed+=portion.damage-remaining;
+      applied+=remaining;
+    }
     return{raw:total,absorbed:Math.min(total,absorbed),applied:Math.max(0,Math.round(applied))};
   }
   function weaponForSlotV138(token,slotOrId=''){
