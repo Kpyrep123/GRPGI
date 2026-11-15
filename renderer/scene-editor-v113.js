@@ -1637,14 +1637,15 @@
     return true;
   }
   async function bonusDie258(attacker,weapon,state,damageType,slot){
-    const sides=weaponAberration254(attacker,weapon,'weapon-5',slot);
-    if(!sides)return;
-    const choices=sides===8?Object.entries(window.GRPGDamageTypesV202.labels):[];
+    const effect=weaponAberrationEffects257(attacker,weapon,slot).find(row=>row.group==='weapon-5');
+    if(!effect)return;
+    const sides=effect.value, type=effect.type||damageType;
+    const legacyTypes=sides===8&&!effect.type?Object.entries(window.GRPGDamageTypesV202.labels):[];
     const roll=await combatModal119({
-      title:`Дополнительный урон · 1d${sides}`,subtitle:weapon.name,decline:'',
-      body:`<label class="field">Результат физического броска<input class="input" name="value" type="number" required min="1" max="${sides}"></label>${choices.length?`<label class="field">Тип дополнительного урона
-        <select class="select" name="damageType">${choices.map(([id,label])=>`<option value="${id}" ${id===damageType?'selected':''}>${html(label)}</option>`).join('')}</select></label>`:''}`,
-      read:form=>({value:Number(form.elements.value.value),type:form.elements.damageType?.value||damageType}),
+      title:`Дополнительный урон · 1d${sides}`,subtitle:`${weapon.name} · ${damageLabel202(type)}`,decline:'',
+      body:`<label class="field">Результат физического броска<input class="input" name="value" type="number" required min="1" max="${sides}"></label>${legacyTypes.length?`<label class="field">Тип дополнительного урона
+        <select class="select" name="damageType">${legacyTypes.map(([id,label])=>`<option value="${id}" ${id===type?'selected':''}>${html(label)}</option>`).join('')}</select></label>`:''}`,
+      read:form=>({value:Number(form.elements.value.value),type:form.elements.damageType?.value||type}),
       validate:({value})=>!Number.isInteger(value)||value<1||value>sides?`Введите число от 1 до ${sides}`:''
     });
     if(!roll)throw new Error('Ввод дополнительного урона прерван');
@@ -3950,7 +3951,7 @@
 
   function closeLootOverlay118(){document.querySelector('.scene-loot-menu-v137')?.remove();document.querySelector('.scene-loot-overlay-v118')?.remove();}
   function rollLootCopy258(item,danger){
-    return window.GRPGItemInstancesV215.aberrationCategory(item)?window.GRPGAberrationWeapons?.roll(danger,item)||null:null;
+    return (window.GRPGItemInstancesV215.aberrationCategory(item)||window.GRPGItemInstancesV215.hasEnergyShield(item))?window.GRPGAberrationWeapons?.roll(danger,item)||null:null;
   }
   function lootDetails258(rolls){
     const groups=new Map();
@@ -3999,7 +4000,7 @@
         if(Math.random()*100>=num(row.chance,0))continue;
         const min=Math.max(1,Math.trunc(num(row.minQty,1))),max=Math.max(min,Math.trunc(num(row.maxQty,min)));
         const qty=min+Math.floor(Math.random()*(max-min+1)),item=equipmentItem105(row.itemId);
-        const aberrations=window.GRPGItemInstancesV215.aberrationCategory(item)
+        const aberrations=(window.GRPGItemInstancesV215.aberrationCategory(item)||window.GRPGItemInstancesV215.hasEnergyShield(item))
           ? Array.from({length:qty},()=>rollLootCopy258(item,npc.dangerLevel)) : null;
         items.push({itemId:row.itemId,qty,...(aberrations?{aberrations}:{})});
       }

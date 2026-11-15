@@ -11,7 +11,7 @@
   const WEAPON_LABELS = window.GRPGWeaponHandlingV203.labels;
   const TARGETS = [
     ['strength','Сила'],['dexterity','Ловкость'],['endurance','Выносливость'],['intelligence','Интеллект'],['will','Воля'],['glory','Слава'],
-    ['max_hp','Максимальное HP'],['armor_class','Класс брони'],['defense','Защита (снижение урона)'],['initiative_bonus','Бонус инициативы'],
+    ['max_hp','Максимальное HP'],['shield_capacity','Ёмкость энергетического щита'],['armor_class','Класс брони'],['defense','Защита (снижение урона)'],['initiative_bonus','Бонус инициативы'],
     ['movement','Дальность движения'],['vision','Дальность видимости'],['inventory_slots','Ячейки инвентаря'],['carry_capacity','Переносимый вес'],['implant_slots','Слоты имплантов'],
     ['drone_actions','Дополнительные действия дронам'],['social_bonus','Социальный бонус'],['attack_bonus','Бонус попадания'],['damage_bonus','Бонус урона'],['weapon_hit_stat','Характеристика попадания'],['weapon_hit_extra_stat','Доп. характеристика к попаданию']
   ];
@@ -274,7 +274,7 @@
     breakdown.armorClass=[];
     derived.armorClass=applyStatFormula(base.armorClass,'dexterity','armor_class',mods,abilities,formulaContext,breakdown.armorClass,1,'База КБ');
     const entries = [
-      ['defense','defense',base.defense],
+      ['defense','defense',base.defense],['shieldMax','shield_capacity',n(entity.stats?.shieldMax,0)],
       ['droneActions','drone_actions',0],['movement','movement',base.movement],['vision','vision',base.vision],['inventorySlots','inventory_slots',base.inventorySlots],
       ['implantSlots','implant_slots',base.implantSlots]
     ];
@@ -289,6 +289,7 @@
     derived.maxHp=Math.max(1,Math.round(maxHp));
     derived.armorClass=n(derived.armorClass,0);
     derived.defense=Math.max(0,n(derived.defense,0));
+    derived.shieldMax=Math.max(0,i(derived.shieldMax));
     derived.initiativeBonus=n(derived.initiativeBonus,0);
     derived.movement=Math.max(0,n(derived.movement,0));
     derived.vision=Math.max(0,n(derived.vision,0));
@@ -453,9 +454,17 @@
       <button class="ghost modifier-remove-v115" type="button" data-remove-modifier-v113 title="Удалить модификатор">×</button>
     </div>`;
   }
-  function modifierEditor(mods=[],title='Модификаторы'){return `<div class="modifier-editor-v113" data-modifier-editor-v113><div class="section-title">${safe(title)}</div><div class="small-note">Добавляйте только нужные изменения. Отрицательные значения разрешены. Замена характеристики применяется к выбранной формуле.</div><div class="modifier-list-v113">${arr(mods).map(modifierRow).join('')}</div><button class="secondary" type="button" data-add-modifier-v113>+ ДОБАВИТЬ МОДИФИКАТОР</button></div>`;}
+  function modifierEditor(mods=[],title='Модификаторы'){return `<div class="modifier-editor-v113" data-modifier-editor-v113><div class="section-title">${safe(title)}</div><div class="small-note">Добавляйте только нужные изменения. Отрицательные значения разрешены. Замена характеристики применяется к выбранной формуле.</div><div class="modifier-list-v113" data-config-draft-list="modifiers">${arr(mods).map(modifierRow).join('')}</div><button class="secondary" type="button" data-add-modifier-v113>+ ДОБАВИТЬ МОДИФИКАТОР</button></div>`;}
   function readModifiers(form){return Array.from(form.querySelectorAll('[data-modifier-row-v113]')).map(row=>normalizeModifier({target:row.querySelector('[data-mod-target-v113]')?.value,op:row.querySelector('[data-mod-op-v113]')?.value,value:row.querySelector('[data-mod-value-v113]')?.value,statRef:row.querySelector('[data-mod-stat-v113]')?.value,scope:row.querySelector('[data-mod-scope-v113]')?.value,scopeValue:row.querySelector('[data-mod-scope-value-v113]')?.value,priority:row.querySelector('[data-mod-priority-v113]')?.value,condition:row.querySelector('[data-mod-condition-v113]')?.value,conditionValue:row.querySelector('[data-mod-condition-value-v113]')?.value})).filter(Boolean);}
-  document.addEventListener('click',event=>{const add=event.target.closest?.('[data-add-modifier-v113]');if(add){add.closest('[data-modifier-editor-v113]')?.querySelector('.modifier-list-v113')?.insertAdjacentHTML('beforeend',modifierRow());return;}const rem=event.target.closest?.('[data-remove-modifier-v113]');if(rem)rem.closest('[data-modifier-row-v113]')?.remove();});
+  document.addEventListener('click',event=>{
+    const button=event.target.closest?.('[data-add-modifier-v113],[data-remove-modifier-v113]');
+    if(!button)return;
+    const form=button.closest('form');
+    if(button.matches('[data-add-modifier-v113]')){
+      button.closest('[data-modifier-editor-v113]')?.querySelector('.modifier-list-v113')?.insertAdjacentHTML('beforeend',modifierRow());
+    }else button.closest('[data-modifier-row-v113]')?.remove();
+    form?.dispatchEvent(new Event('change',{bubbles:true}));
+  });
 
   /* Configurator: equipment */
   const renderEquipment113=Configurator.renderEquipmentEditor.bind(Configurator);
@@ -614,11 +623,9 @@
       }
       return persistInventory(user,notice);
     },
-    details:(itemId,{copy}={})=>{
-      Wiki.showEntity('item',itemId,true);
-      const panel=document.getElementById('wiki-detail'),markup=window.GRPGAberrationPresentation?.copyMarkup(copy);
-      if(panel&&markup)panel.insertAdjacentHTML('beforeend',markup);
-    }
+    thumb:item=>renderThumb(item,{size:'hero',type:'item',glyph:initials(item.name)}),
+    related:item=>renderRelatedArticlesSection(item.relatedArticleIds),
+    attachLinks:root=>UI.attachEntityLinks?.(root)
   });
   let drag113=null;document.addEventListener('dragstart',e=>{const g=e.target.closest?.('[data-inv113-drag-grid]'),s=e.target.closest?.('[data-inv113-drag-slot]');if(!g&&!s)return;drag113=g?{source:'grid',itemId:g.dataset.itemId,unitIndex:i(g.dataset.unitIndex,-1)}:{source:'slot',itemId:s.dataset.itemId,slot:s.dataset.slotV113,index:i(s.dataset.slotIndexV113,-1)};e.dataTransfer.effectAllowed='move';});document.addEventListener('dragend',()=>drag113=null);
   document.addEventListener('dragover',e=>{if(drag113&&e.target.closest?.('[data-inv113-grid],[data-slot-v113]'))e.preventDefault();});

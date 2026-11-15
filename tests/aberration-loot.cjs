@@ -46,7 +46,7 @@ const available=rules.layout(data.playerJson).user.carryWeightMax;
 world.equipment.EQUIPMENT.heavy={id:'heavy',type:'weapon',mass:available-3.3,inventoryWidth:1,inventoryHeight:1};
 assert.equal(rules.canAdd(data.playerJson,'heavy',1).ok,true);
 assert.equal(rules.canAdd(data.playerJson,'heavy',1,[{effects:['weapon-7-1']}]).ok,false);
-for(const [index,effect] of ['weapon-5-3','weapon-11-1','weapon-12-2','weapon-15-1'].entries()){
+for(const [index,effect] of ['weapon-5-3:gas','weapon-11-1','weapon-12-2','weapon-15-1'].entries()){
   body.operationId='test_new_effect_'+index;
   body.lootTransferV137.aberrations[0]={rarity:'rare',budget:4,effects:[effect]};
   assert.equal(transfer(request).status,'committed');
@@ -66,6 +66,12 @@ assert.equal(rules.layout(data.playerJson).user.carryWeightMax,baseCapacity+1);
 body.operationId='test_cross_category_aberration';
 body.lootTransferV137.aberrations[0].effects=['shield-31-1'];
 assert.throws(()=>transfer(request),/не соответствуют типу/);
+world.equipment.EQUIPMENT.armor.modifiers=[{target:'shield_capacity',op:'add',value:5}];
+body.operationId='test_shield_aberration';
+body.lootTransferV137.aberrations[0].effects=['shield-29-4','armor-23-4'];
+assert.equal(transfer(request).status,'committed');
+assert.deepEqual(data.playerJson.inventory.find(row=>row.itemId==='armor').instancesV215.at(-1).aberration252.effects,['shield-29-4','armor-23-4']);
+delete world.equipment.EQUIPMENT.armor.modifiers;
 body.operationId='test_armor_reaction';
 body.lootTransferV137.aberrations[0]={rarity:'rare',budget:4,effects:['armor-25-2','armor-26-1']};
 assert.equal(transfer(request).status,'committed');

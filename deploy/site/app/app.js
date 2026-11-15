@@ -4731,10 +4731,10 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
     if(equipmentCard&&equipmentCard.closest('#registration-panel-v1052')){event.preventDefault();openStartingEquipmentModalWebV1072(equipmentCard.dataset.itemId);return;}
     const equipmentSelect=event.target?.closest?.('[data-registration-equipment-select-v1072]');
     if(equipmentSelect){const form=document.getElementById('register-form-v1052');const itemId=String(equipmentSelect.dataset.itemId||'');const input=form?.querySelector(`[name="startingEquipmentIds"][value="${CSS.escape(itemId)}"]`);if(input){input.checked=!input.checked;input.dispatchEvent(new Event('change',{bubbles:true}));}closeProfileItemModalV1060();return;}
-    if(event.target?.id==='register-close-v1052'||event.target?.classList?.contains('registration-window-v1054'))closeRegistrationV1052();
+    if(event.target?.closest?.('#register-close-v1052'))closeRegistrationV1052();
   });
   document.addEventListener('change',event=>{const form=event.target?.closest?.('#register-form-v1052');if(!form)return;if(event.target?.name==='campaignId')refreshRegistrationChoicesWebV1066(form);else if(['socialOriginId','geographicOriginId','startingEquipmentIds'].includes(String(event.target?.name||'')))updateCreationBudgetWebV1066(form);});
-  document.addEventListener('keydown',event=>{const card=event.target?.closest?.('[data-registration-equipment-card-v1072]');if(card&&(event.key==='Enter'||event.key===' ')){event.preventDefault();openStartingEquipmentModalWebV1072(card.dataset.itemId);return;}if(event.key==='Escape'&&App.ui.profileItemModal?.registrationEquipment){closeProfileItemModalV1060();return;}if(event.key==='Escape'&&!$('#registration-panel-v1052')?.classList.contains('hidden'))closeRegistrationV1052();});
+  document.addEventListener('keydown',event=>{const card=event.target?.closest?.('[data-registration-equipment-card-v1072]');if(card&&(event.key==='Enter'||event.key===' ')){event.preventDefault();openStartingEquipmentModalWebV1072(card.dataset.itemId);return;}if(event.key==='Escape'&&App.ui.profileItemModal?.registrationEquipment){closeProfileItemModalV1060();return;}});
   document.addEventListener('keydown', event => { if (event.key === 'Escape' && document.getElementById('profile-item-modal-v1060')) closeProfileItemModalV1060(); });
   document.addEventListener('submit',async event=>{
     if(event.target?.id!=='register-form-v1052')return;event.preventDefault();
@@ -5783,7 +5783,7 @@ function stockFeesV213(fees){if(!fees)return 'Тарифы загрузятся 
   }
 
   /* v1.0.122 — desktop-parity inventory, equipment, implants and readable modifiers */
-  const WEB118_TARGETS={strength:'Сила',dexterity:'Ловкость',endurance:'Выносливость',intelligence:'Интеллект',will:'Воля',glory:'Слава',max_hp:'Максимальное HP',armor_class:'Класс брони',defense:'Защита',initiative_bonus:'Инициатива',movement:'Движение',vision:'Обзор',inventory_slots:'Ячейки инвентаря',carry_capacity:'Переносимый вес',implant_slots:'Слоты имплантов',social_bonus:'Социальный бонус',attack_bonus:'Попадание',damage_bonus:'Урон',weapon_hit_stat:'Характеристика попадания',weapon_hit_extra_stat:'Дополнительная характеристика попадания'};
+  const WEB118_TARGETS={shield_capacity:'Ёмкость энергетического щита',strength:'Сила',dexterity:'Ловкость',endurance:'Выносливость',intelligence:'Интеллект',will:'Воля',glory:'Слава',max_hp:'Максимальное HP',armor_class:'Класс брони',defense:'Защита',initiative_bonus:'Инициатива',movement:'Движение',vision:'Обзор',inventory_slots:'Ячейки инвентаря',carry_capacity:'Переносимый вес',implant_slots:'Слоты имплантов',social_bonus:'Социальный бонус',attack_bonus:'Попадание',damage_bonus:'Урон',weapon_hit_stat:'Характеристика попадания',weapon_hit_extra_stat:'Дополнительная характеристика попадания'};
   const WEB118_STATS={strength:'Сила',dexterity:'Ловкость',endurance:'Выносливость',intelligence:'Интеллект',will:'Воля',glory:'Слава'};
   const WEB118_WEAPON_STATS=window.GRPGWeaponHandlingV203.stats;
   function signedWeb118(value){const n=Number(value||0);return`${n>=0?'+':''}${Number.isInteger(n)?n:n.toFixed(1)}`;}
@@ -5864,7 +5864,8 @@ function stockFeesV213(fees){if(!fees)return 'Тарифы загрузятся 
     const defense=Math.max(0,applyModifierWeb118(Number(base.defense??player.baseDefense??0),'defense',mods,player,{abilities}));
     const vision=Math.max(0,applyModifierWeb118(Number(base.vision??player.baseVision??player.combat?.visionRange??6),'vision',mods,player,{abilities}));
     const movement=Math.max(0,applyModifierWeb118(Number(base.movement??player.baseMovement??player.combat?.moveRange??6),'movement',mods,player,{abilities}));
-    return{abilities,mods,hpBase,maxHp,inventorySlots,carryCapacity,implantSlots,armorClass,defense,vision,movement};
+    const shieldMax=Math.max(0,Math.trunc(applyModifierWeb118(player.stats?.shieldMax,'shield_capacity',mods,player,{abilities})));
+    return{abilities,mods,hpBase,maxHp,inventorySlots,carryCapacity,implantSlots,armorClass,defense,vision,movement,shieldMax};
   }
   function ownedCountWeb118(player,itemId){return Math.max(0,Math.trunc(Number((player.inventory||[]).find(row=>String(row.itemId)===String(itemId))?.qty||0)));}
   normalizeInventoryPlayerWebV1067=function(player={}){
@@ -5877,7 +5878,7 @@ function stockFeesV213(fees){if(!fees)return 'Тарифы загрузятся 
     const derived=derivedPlayerWeb118(next);next.inventorySize=derived.inventorySlots;next.carryWeightMax=derived.carryCapacity;next.implantSlotCount=derived.implantSlots;
     next.implantSlots=Array.from({length:next.implantSlotCount},(_,index)=>String(ownedImplants[index]||''));
     next.installedImplantIds=next.implantSlots.filter(Boolean);next.implants=[];
-    next.baseStats={...(next.baseStats||{}),hpBase:derived.hpBase};next.abilities=derived.abilities;next.stats={...(next.stats||{}),hpMax:derived.maxHp,hpCurrent:Math.min(derived.maxHp,Math.max(0,Number(next.stats?.hpCurrent??derived.maxHp))),armorClass:derived.armorClass,defense:derived.defense};next.combat={...(next.combat||{}),visionRange:derived.vision,moveRange:derived.movement};next.derivedStatsV113={...(next.derivedStatsV113||{}),armorClass:derived.armorClass,defense:derived.defense,vision:derived.vision,movement:derived.movement,inventorySlots:derived.inventorySlots,carryCapacity:derived.carryCapacity,implantSlots:derived.implantSlots};
+    next.baseStats={...(next.baseStats||{}),hpBase:derived.hpBase};next.abilities=derived.abilities;next.stats={...(next.stats||{}),hpMax:derived.maxHp,hpCurrent:Math.min(derived.maxHp,Math.max(0,Number(next.stats?.hpCurrent??derived.maxHp))),armorClass:derived.armorClass,defense:derived.defense};next.combat={...(next.combat||{}),visionRange:derived.vision,moveRange:derived.movement};next.derivedStatsV113={...(next.derivedStatsV113||{}),shieldMax:derived.shieldMax,armorClass:derived.armorClass,defense:derived.defense,vision:derived.vision,movement:derived.movement,inventorySlots:derived.inventorySlots,carryCapacity:derived.carryCapacity,implantSlots:derived.implantSlots};
     return next;
   };
   inventoryColsWebV1067=function(){return 5;};
@@ -6233,7 +6234,7 @@ function stockFeesV213(fees){if(!fees)return 'Тарифы загрузятся 
     selector:'#screen-profile [data-web-inventory-drag-v1067]',
     current:currentPlayer,item:itemWebV1067,normalize:normalizeInventoryPlayerWebV1067,
     layout:buildInventoryLayoutWebV1067,accepts:slotAcceptsWebV1067,
-    commit:(mutator,notice)=>commitPlayerMutation(mutator,notice),details:(itemId,{copy}={})=>openProfileItemModalV1060(itemId,{copyId:copy?.id}),aberrationOverrides:aberrationOverridesWeb264
+    commit:(mutator,notice)=>commitPlayerMutation(mutator,notice),thumb:item=>renderEntityThumb(item,'hero'),related:item=>renderRelatedSectionWebV1100('article',item.relatedArticleIds,'Связанные статьи'),aberrationOverrides:aberrationOverridesWeb264
   });
   window.GRPGNewsBridgeV159 = {
     root:()=>document.getElementById('screen-news'),current:currentPlayer,campaign:()=>String(App.session?.campaignId||App.config?.campaignId||'main'),

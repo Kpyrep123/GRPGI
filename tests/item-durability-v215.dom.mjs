@@ -179,7 +179,7 @@ run(`
   Data.getItem('gun').ammoTypeId='ammo';
   window.ranged258={...Data.getItem('gun'),id:'gun',weaponCategory:'light'};
   window.copy258=GRPGItemInstancesV215.instance(App.state.users.p,'gun',-1,'primaryWeapon');
-  copy258.aberration252.effects=['weapon-15-1','weapon-5-3'];
+  copy258.aberration252.effects=['weapon-15-1','weapon-5-3:energy'];
 `);
 assert.equal(run("test215.jamOnHit(target215,ranged258,{attackDie:19,defenseFumble:true},'primaryWeapon')"),false);
 assert.equal(run("test215.jamOnHit(target215,ranged258,{attackDie:20,defenseFumble:true},'primaryWeapon')"),true);
@@ -192,7 +192,7 @@ run('window.damage258={damage:3,damagePartsV138:[{amount:3,absorptionSource:"all
 const die=run("test215.bonusDie(target215,ranged258,damage258,'kinetic','primaryWeapon')");
 const dieForm=await waitAttackForm();
 dieForm.elements.value.value='6';
-dieForm.elements.damageType.value='energy';
+assert.equal(dieForm.elements.namedItem('damageType'),null);
 dieForm.dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));
 await die;
 assert.equal(run('damage258.damage'),9);
@@ -354,6 +354,56 @@ assert.match(Array.from(w.document.querySelectorAll('[data-wc-durability-row-v21
 const hover=w.document.querySelector('.aberration-tooltip .aberration-list');
 assert.equal(hover.dataset.lootRarity,'epic');
 assert.deepEqual(Array.from(hover.querySelectorAll('li'),row=>row.dataset.effectTone),['violet','negative','green']);
+run(`
+  const gunDetails=Data.getItem('gun');
+  gunDetails.mass=1;
+  gunDetails.magazineSize=4;
+  const cardCopy=GRPGItemInstancesV215.instance(App.state.users.p,'gun',-1,'primaryWeapon');
+  cardCopy.aberration252={rarity:'rare',effects:['weapon-7-2','weapon-8-4','weapon-5-1:gas']};
+  const cardProfile={...App.state.users.p,weaponMagazines:{gun:{loaded:2}}};
+  window.facts265=GRPGItemFactsV141.instanceFacts(gunDetails,cardCopy,cardProfile);
+  window.rule265=GRPGAberrationPresentation.copyMarkup(cardCopy);
+`);
+const fact=label=>w.facts265.find(row=>row.label===label);
+assert.equal(fact('Масса').value,'1.2');
+assert.equal(fact('Масса').tone,'negative');
+assert.equal(fact('Магазин').value,'2 / 5');
+assert.match(w.rule265,/<summary>[^<]*Газ<\/summary>/);
+assert.match(w.rule265,/Тип урона выпадает вместе с предметом/);
+
+run(`Configurator.selectedType='equipment';Configurator.equipmentCategoryV1052='weapon';Configurator.selectedId='gun';Configurator.render();`);
+const add=w.document.querySelector('[data-add-modifier-v113]');
+assert(add);
+add.click();
+const lastRow=()=>Array.from(w.document.querySelectorAll('[data-modifier-row-v113]')).at(-1);
+const target=lastRow().querySelector('[data-mod-target-v113]');
+target.value='shield_capacity';
+target.dispatchEvent(new w.Event('change',{bubbles:true}));
+const modValue=lastRow().querySelector('[data-mod-value-v113]');
+modValue.value='5';
+modValue.dispatchEvent(new w.Event('input',{bubbles:true}));
+run('Configurator.render()');
+assert.equal(lastRow().querySelector('[data-mod-target-v113]').value,'shield_capacity');
+assert.equal(lastRow().querySelector('[data-mod-value-v113]').value,'5');
+assert(w.document.querySelector('.config-type-list [data-aberration-catalog]'));
+
+run(`
+  NPCS.draft265={id:'draft265',name:'Draft',lootTable:[]};
+  Configurator.selectedType='npcs';Configurator.selectedId='draft265';Configurator.render();
+`);
+const addLoot=w.document.querySelector('[data-add-loot-v118]');
+assert(addLoot);
+addLoot.click();
+const lootSelect=w.document.querySelector('[data-loot-item-v118]');
+lootSelect.value='gun';
+lootSelect.dispatchEvent(new w.Event('change',{bubbles:true}));
+addLoot.click();
+run('Configurator.render()');
+assert.deepEqual(Array.from(w.document.querySelectorAll('[data-loot-item-v118]'),field=>field.value),['gun','']);
+w.document.querySelector('[data-remove-loot-v118]').click();
+run('Configurator.render()');
+assert.deepEqual(Array.from(w.document.querySelectorAll('[data-loot-item-v118]'),field=>field.value),['']);
+console.log('PASS instance facts, fixed damage type and unsaved World Config rows after refresh');
 const display=new Window({settings:{disableJavaScriptFileLoading:true}});
 try{
   display.document.body.innerHTML='<div id="player-display-root"></div>';

@@ -194,7 +194,7 @@
   }
   function lootEditorMarkup(npc={}){
     const rows=normalizeLootTable(npc.lootTable);
-    return `<section class="npc-loot-editor-v118" data-npc-loot-editor-v118><div class="section-title">Таблица возможного лута</div><div class="small-note">Каждая строка проверяется независимо при первом обыске NPC с 0 HP. Результат сохраняется в сцене и повторно не перебрасывается.</div><div class="npc-loot-list-v118">${rows.map(lootRowMarkup).join('')}</div><button class="secondary" type="button" data-add-loot-v118>+ ДОБАВИТЬ ПРЕДМЕТ</button></section>`;
+    return `<section class="npc-loot-editor-v118" data-npc-loot-editor-v118><div class="section-title">Таблица возможного лута</div><div class="small-note">Каждая строка проверяется независимо при первом обыске NPC с 0 HP. Результат сохраняется в сцене и повторно не перебрасывается.</div><div class="npc-loot-list-v118" data-config-draft-list="npc-loot">${rows.map(lootRowMarkup).join('')}</div><button class="secondary" type="button" data-add-loot-v118>+ ДОБАВИТЬ ПРЕДМЕТ</button></section>`;
   }
   if(Configurator.renderNpcEditorV60){
     const renderNpcBefore118=Configurator.renderNpcEditorV60.bind(Configurator);
@@ -304,10 +304,14 @@
   document.addEventListener('click',event=>{
     const ammoTab=event.target.closest?.('[data-equipment-category-v118="ammo"]');
     if(ammoTab){event.preventDefault();event.stopImmediatePropagation();Configurator.equipmentCategoryV1052='ammo';Configurator.selectedId=null;Configurator.render();return;}
-    const add=event.target.closest?.('[data-add-loot-v118]');
-    if(add){event.preventDefault();add.closest('[data-npc-loot-editor-v118]')?.querySelector('.npc-loot-list-v118')?.insertAdjacentHTML('beforeend',lootRowMarkup({chance:100,minQty:1,maxQty:1}));return;}
-    const remove=event.target.closest?.('[data-remove-loot-v118]');
-    if(remove){event.preventDefault();remove.closest('[data-npc-loot-row-v118]')?.remove();return;}
+    const button=event.target.closest?.('[data-add-loot-v118],[data-remove-loot-v118]');
+    if(!button)return;
+    event.preventDefault();
+    const form=button.closest('form');
+    if(button.matches('[data-add-loot-v118]')){
+      button.closest('[data-npc-loot-editor-v118]')?.querySelector('.npc-loot-list-v118')?.insertAdjacentHTML('beforeend',lootRowMarkup({chance:100,minQty:1,maxQty:1}));
+    }else button.closest('[data-npc-loot-row-v118]')?.remove();
+    form?.dispatchEvent(new Event('change',{bubbles:true}));
   },true);
   document.addEventListener('change',event=>{
     const select=event.target.closest?.('#config-editor-form select[name="type"]');

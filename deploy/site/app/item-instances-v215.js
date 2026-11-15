@@ -13,7 +13,7 @@
 
   function tracked(item) {
     return !!item && (trackedTypes.includes(String(item.type || item.category).toLowerCase())
-      || count(item.durabilityMax ?? item.maxDurability) > 0 || count(item.chargesMax ?? item.maxCharges) > 0);
+      || hasEnergyShield(item) || count(item.durabilityMax ?? item.maxDurability) > 0 || count(item.chargesMax ?? item.maxCharges) > 0);
   }
 
   function equipment(profile) {
@@ -243,7 +243,7 @@
     'armor-18':['armor_class',six], 'armor-19':['defense',four],
     'armor-21':['',[-30,-20,-10,10,20,30]], 'armor-22':['',massPercents],
     'armor-23':['carry_capacity',six], 'armor-24':['movement',four],
-    'shield-31':['',massPercents], 'shield-32':['movement',four],
+    'shield-29':['shield_capacity',six], 'shield-31':['',massPercents], 'shield-32':['movement',four],
     'backpack-38':['inventory_slots',six], 'backpack-39':['carry_capacity',six],
     'backpack-40':['',massPercents], 'backpack-42':['movement',four],
     'implant-47':['max_hp',six], 'implant-50':['vision',[-4,-2,2,4]],
@@ -254,6 +254,15 @@
     const type=String(item?.type||'').toLowerCase();
     if(item?.textOnlyInventory||item?.legacyTextOnlyInventoryV131)return '';
     return ['weapon','armor','shield','backpack','implant'].includes(type)?type:'';
+  }
+
+  function hasEnergyShield(item) {
+    return !item?.textOnlyInventory && !item?.legacyTextOnlyInventoryV131
+      && list(item?.modifiers).some(mod=>mod?.target==='shield_capacity' && mod.enabled!==false);
+  }
+
+  function canRollAberration(item, category) {
+    return category==='shield' ? hasEnergyShield(item) : Boolean(category) && aberrationCategory(item)===category;
   }
 
   function passiveEffect(id) {
@@ -269,9 +278,9 @@
 
   function equippedAberrationModifiers(copy,item) {
     const category=aberrationCategory(item);
-    if(!category||copy?.broken)return [];
+    if(copy?.broken)return [];
     return list(copy?.aberration252?.effects).map(passiveEffect)
-      .filter(effect=>effect?.target&&effect.group.startsWith(category+'-'))
+      .filter(effect=>effect?.target&&(effect.group.startsWith(category+'-')&&effect.target!=='shield_capacity'||canRollAberration(item,effect.group.split('-')[0])))
       .map(({target,value})=>({target,value,op:'add',scope:'global',condition:'always',enabled:true,
         priority:0,sourceName:(item.name||item.id)+' · аберрация'}));
   }
@@ -288,11 +297,10 @@
   }
 
   function massPercent(effects) {
-    for (const id of list(effects)) {
+    return list(effects).reduce((sum,id)=>{
       const match = /^(?:weapon-7|armor-22|shield-31|backpack-40)-([1-6])$/.exec(id);
-      if (match) return massPercents[Number(match[1])-1];
-    }
-    return 0;
+      return match ? sum+massPercents[Number(match[1])-1] : sum;
+    },0);
   }
   function inventoryRowMass(row, baseMass, quantity = row.qty) {
     const count = Math.max(0, Math.trunc(Number(quantity)||0));
@@ -302,7 +310,7 @@
     return baseMass*(100*count+percent)/100;
   }
 
-  const api = {aberrationCategory,passiveEffect,equippedAberrationModifiers,storeAberration,massPercent,inventoryRowMass,mounts, installed, changeAttachment, attachmentHitBonus,inventoryBadges,chargeBadge, tracked, normalize, reconcile, instance, choose, bind, remove, add, repair, updateResources, slotKey, clone};
+  const api = {aberrationCategory,hasEnergyShield,canRollAberration,passiveEffect,equippedAberrationModifiers,storeAberration,massPercent,inventoryRowMass,mounts, installed, changeAttachment, attachmentHitBonus,inventoryBadges,chargeBadge, tracked, normalize, reconcile, instance, choose, bind, remove, add, repair, updateResources, slotKey, clone};
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.GRPGItemInstancesV215 = api;
 })(typeof window === 'undefined' ? globalThis : window);

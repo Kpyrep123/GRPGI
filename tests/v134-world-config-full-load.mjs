@@ -283,12 +283,13 @@ assert.equal(metadata.matches(hideMetadata),true);
 assert.equal(count.matches(hideMetadata),false);
 metadata.remove();
 
-run("App.currentUserId='pool_player'; Wiki.showEntity=(...args)=>{window.itemDescriptionArgs=args;}");
+run("App.currentUserId='pool_player'");
 tile.click();
-const descriptionButton = [...w.document.querySelectorAll('.sheet-item-actions button')].find(button=>button.textContent==='Описание');
-assert.ok(descriptionButton);
-descriptionButton.click();
-assert.deepEqual(Array.from(w.itemDescriptionArgs),['item','stack_ammo',true]);
+const itemDialog=w.document.querySelector('.sheet-item-dialog');
+assert.ok(itemDialog.querySelector('.item-rich-description-v201'));
+assert.ok(itemDialog.querySelector('.archive-equipment-facts-v131'));
+assert.equal([...itemDialog.querySelectorAll('button')].some(button=>button.textContent==='Описание'),false);
+[...itemDialog.querySelectorAll('button')].find(button=>button.textContent==='Закрыть').click();
 run("App.currentUserId='gm'");
 run(`
  Configurator.insertEntity('equipment',{id:'charged_kit',type:'gear',name:'Набор',chargesMax:3,mass:0.5});

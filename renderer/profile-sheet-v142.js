@@ -99,7 +99,9 @@
     hero.querySelectorAll(':scope > .stat-grid,:scope > .stat,[data-web-inventory-limits-v1067],[data-web-combat-stats-v118],[data-web-combat-stats-v120]').forEach(el=>el.remove());
     hero.querySelectorAll('.data-row').forEach(row=>{if(['Баланс','Класс брони','Защита','Движение','Обзор','Последнее обновление','Локация'].includes(row.querySelector('.data-label')?.textContent.trim()))row.remove();});
     const metrics=document.createElement('div');metrics.className='sheet-metrics';const s=user.stats||{},c=user.combat||{};
-    metrics.append(metric('health','Здоровье',`${s.hpCurrent??0} / ${s.hpMax??0}`,s.hpCurrent,s.hpMax),metric('shield','Щит',`${s.shieldCurrent??0} / ${s.shieldMax??0}`,s.shieldCurrent,s.shieldMax),metric('energy','Энергия',`${s.energyCurrent??0} / ${s.energyMax??0}`,s.energyCurrent,s.energyMax),metric('inventory','Инвентарь / вес',`${user.inventorySize??0} яч. / ${user.carryWeightMax??0}`),metric('movement','Движение',`${c.moveRange??0} гекс.`),metric('vision','Обзор',`${c.visionRange??0} гекс.`),metric('armor-class','Класс брони',s.armorClass??0),metric('defense','Защита',s.defense??0));
+    const shieldMax=user.derivedStatsV113?.shieldMax??s.shieldMax??0;
+    const shieldCurrent=Math.max(0,Math.min(shieldMax,s.shieldCurrent??0));
+    metrics.append(metric('health','Здоровье',`${s.hpCurrent??0} / ${s.hpMax??0}`,s.hpCurrent,s.hpMax),metric('shield','Щит',`${shieldCurrent} / ${shieldMax}`,shieldCurrent,shieldMax),metric('energy','Энергия',`${s.energyCurrent??0} / ${s.energyMax??0}`,s.energyCurrent,s.energyMax),metric('inventory','Инвентарь / вес',`${user.inventorySize??0} яч. / ${user.carryWeightMax??0}`),metric('movement','Движение',`${c.moveRange??0} гекс.`),metric('vision','Обзор',`${c.visionRange??0} гекс.`),metric('armor-class','Класс брони',s.armorClass??0),metric('defense','Защита',s.defense??0));
     header.after(metrics);
     hero.querySelectorAll(':scope > .divider').forEach(el=>el.remove());
   }

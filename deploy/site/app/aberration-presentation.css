@@ -62,3 +62,20 @@
   35% { box-shadow: inset 0 0 1.8rem color-mix(in srgb, var(--loot-color) 50%, transparent), 0 0 1.25rem color-mix(in srgb, var(--loot-color) 45%, transparent); }
 }
 @media (prefers-reduced-motion: reduce) { .loot-reveal-item.is-final { animation: none; } }
+
+.aberration-list details > summary { cursor: pointer; }
+.aberration-list details > p { color: #eee4d0; margin: .35rem 0 .6rem; }
+.sheet-item-dialog:has(.sheet-item-header) { width: min(640px, calc(100% - 24px)); }
+.sheet-item-header { display: flex; gap: 1rem; align-items: center; margin-bottom: 1rem; }
+.sheet-item-header h2 { margin: 0; overflow-wrap: anywhere; }
+.sheet-item-dialog .archive-equipment-facts-v131 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr));
+  gap: .45rem .8rem;
+  margin: 1rem 0;
+}
+.sheet-item-dialog .archive-equipment-facts-v131 > div { display: grid; gap: .2rem; padding: .45rem .6rem; border: 1px solid #665740; border-radius: .35rem; }
+.sheet-item-dialog .archive-equipment-facts-v131 span { color: #c9bea9; }
+.sheet-item-dialog .archive-equipment-facts-v131 b[data-effect-tone="negative"] { color: #ff8e94; }
+.sheet-item-dialog .archive-equipment-facts-v131 b[data-effect-tone="green"] { color: #94e7a4; }
+.sheet-item-dialog .archive-equipment-facts-v131 b[data-effect-tone="violet"] { color: #ddb1ff; }
