@@ -25,7 +25,7 @@
   }
 
   // Only effects with an implemented combat rule enter the loot pool.
-  const supported = catalog.filter(effect => ['weapon-1','weapon-2','weapon-3','weapon-4','weapon-5','weapon-6','weapon-7','weapon-8','weapon-9','weapon-10','weapon-11','weapon-12','weapon-13','weapon-14','weapon-15','weapon-16','weapon-17'].includes(effect.id)||effect.variants.some(row=>window.GRPGItemInstancesV215.passiveEffect(row.id)));
+  const supported = catalog.filter(effect => ['weapon-1','weapon-2','weapon-3','weapon-4','weapon-5','weapon-6','weapon-7','weapon-8','weapon-9','weapon-10','weapon-11','weapon-12','weapon-13','weapon-14','weapon-15','weapon-16','weapon-17','armor-25','armor-26'].includes(effect.id)||effect.variants.some(row=>window.GRPGItemInstancesV215.passiveEffect(row.id)));
   const variants = supported.flatMap(effect => effect.variants.map(variant=>({...variant,group:effect.id,name:effect.name})));
   const damageTypeIds=['kinetic','energy','electric','explosive','gas'];
   const damageTypeVariant=variants.find(row=>row.group==='weapon-6');
@@ -45,7 +45,7 @@
   function validEffect(row){
     if(!row)return false;
     if(row.group==='weapon-6')return Boolean(row.value);
-    if(row.group==='weapon-12')return [1,2].includes(row.value);
+    if(['weapon-12','armor-25','armor-26'].includes(row.group))return [1,2].includes(row.value);
     if(row.group==='weapon-15')return row.value===1;
     return Number.isInteger(row.value)&&Math.abs(row.value)<=(/^(weapon-7|armor-21|armor-22|shield-31|backpack-40)$/.test(row.group)?30:20);
   }
@@ -72,7 +72,7 @@
       }).filter(row=>validEffect(row)
         &&(row.group!=='weapon-6'||row.value!==window.GRPGDamageTypesV202.effective(weapon))
         &&(!/^(weapon-7|armor-22|shield-31|backpack-40)$/.test(row.group)||Number(weapon?.mass)>0)
-        &&(row.group!=='armor-21'||Number(weapon?.durabilityMax??weapon?.maxDurability)>0)
+        &&(!['armor-21','armor-26'].includes(row.group)||Number(weapon?.durabilityMax??weapon?.maxDurability)>0)
         &&(row.group!=='weapon-8'||(Number(weapon?.magazineSize??weapon?.clipSize)>0
           &&Number(weapon?.magazineSize??weapon?.clipSize)+row.value>=1))
         &&(row.group!=='weapon-15'||Number(weapon?.magazineSize??weapon?.clipSize)>0)

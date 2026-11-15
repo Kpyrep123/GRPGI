@@ -66,6 +66,10 @@ assert.equal(rules.layout(data.playerJson).user.carryWeightMax,baseCapacity+1);
 body.operationId='test_cross_category_aberration';
 body.lootTransferV137.aberrations[0].effects=['shield-31-1'];
 assert.throws(()=>transfer(request),/не соответствуют типу/);
+body.operationId='test_armor_reaction';
+body.lootTransferV137.aberrations[0]={rarity:'rare',budget:4,effects:['armor-25-2','armor-26-1']};
+assert.equal(transfer(request).status,'committed');
+assert.deepEqual(data.playerJson.inventory.find(row=>row.itemId==='armor').instancesV215.at(-1).aberration252.effects,['armor-25-2','armor-26-1']);
 console.log('PASS loot persists aberrations and rejects a changed replay');
 
 require('../renderer/combat-rules-v119.js');
