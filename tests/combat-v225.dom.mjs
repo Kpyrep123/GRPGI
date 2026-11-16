@@ -27,7 +27,7 @@ const html=fs.readFileSync(path.join(root,'renderer/index.html'),'utf8');
 w.document.write(html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi,''));
 // Every renderer script is evaluated unmodified, in index.html order, sharing
 // browser-style lexical globals. Only OS/cloud/bootstrap boundaries are mocked.
-for(const m of html.matchAll(/<script src="\.\/([^"?]+)[^"]*"/g))vm.runInContext(fs.readFileSync(path.join(root,'renderer',m[1]),'utf8').replace('// New module is DM-only;', 'window.test225={local,applyStore,collectStoreFromRuntime,luaUnitRows119,applyLuaCommands119,runInteractiveLuaHookV138,requestAttackRolls119,commitAttack105:id=>commitAttack105(id),performLuaStandardAttackV138,itemRuntimeStateV138,playerVisionSources112,droneActions225,droneShareVision225,deviceCommandReason200,checkpointCombat120,conditionEvents225,positionEvents204,refreshRuntimeSources122,centerOf,updatePlayerHp105,mergeCombatProfile225,importCombatProfiles225,runAutomaticHooks119,chooseReaction119,commitMove104:()=>commitMove104(),makeRoutePreview104,hexStepDistance109,activeSkillsForToken118,useActiveSkill118:id=>useActiveSkill118(id),fitTokenToHex107};\n// New module is DM-only;'),context,{filename:m[1]});
+for(const m of html.matchAll(/<script src="\.\/([^"?]+)[^"]*"/g))vm.runInContext(fs.readFileSync(path.join(root,'renderer',m[1]),'utf8').replace('// New module is DM-only;', 'window.test225={shotRange229,longRangeDisadvantage229,local,applyStore,collectStoreFromRuntime,luaUnitRows119,applyLuaCommands119,runInteractiveLuaHookV138,requestAttackRolls119,commitAttack105:id=>commitAttack105(id),performLuaStandardAttackV138,itemRuntimeStateV138,playerVisionSources112,droneActions225,droneShareVision225,deviceCommandReason200,checkpointCombat120,conditionEvents225,positionEvents204,refreshRuntimeSources122,centerOf,updatePlayerHp105,mergeCombatProfile225,importCombatProfiles225,runAutomaticHooks119,chooseReaction119,commitMove104:()=>commitMove104(),makeRoutePreview104,hexStepDistance109,activeSkillsForToken118,useActiveSkill118:id=>useActiveSkill118(id),fitTokenToHex107};\n// New module is DM-only;'),context,{filename:m[1]});
 const {Worker}=await import('node:worker_threads');
 w.electronAPI.runCombatLuaHook=payload=>new Promise((resolve,reject)=>{
  const worker=new Worker(path.join(root,'lua-sandbox-worker.cjs'));
@@ -66,6 +66,11 @@ try{
  run("UI.openModule('combat')");
  const token=id=>run("Combat.getRuntime().tokens").find(row=>row.id===id);
  assert.equal(token('a').hpCurrent,8,'entry imports profile HP');
+ const rangedRange={id:'range-regression',range:0.01,weaponCategory:'light'};
+ assert.equal(api.shotRange229(token('a'),rangedRange,'primaryWeapon'),Infinity);
+ assert.equal(api.longRangeDisadvantage229(token('a'),token('b'),rangedRange,'primaryWeapon'),true);
+ assert.equal(api.longRangeDisadvantage229(token('a'),token('b'),{...rangedRange,range:10000},'primaryWeapon'),false);
+ assert.equal(api.shotRange229(token('a'),{...rangedRange,weaponCategory:'melee'},'primaryWeapon'),0.01);
  assert.equal(token('a').actionUsed,true,'entry preserves turn budget');
  assert.equal(api.droneActions225(token('a')),2,'equipped implant grants actions');
  assert.equal(api.droneShareVision225(token('d')),true);
