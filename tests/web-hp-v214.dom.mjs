@@ -19,11 +19,17 @@ run(source);
 try{
 const api=w.hp214;api.App.config={url:'https://test',campaignId:'main'};api.App.session={userId:'p',role:'player'};api.App.data.world={};
 const p={id:'p',role:'player',stats:{hpCurrent:1,hpMax:1},abilityBase:{endurance:0},abilities:{endurance:0},skillPoints:5,inventory:[]};api.App.data.players.set('p',p);w.confirm=()=>true;
-await api.upgrade('endurance');assert.equal(p.abilityBase.endurance,1);assert.equal(p.stats.hpMax,2);assert.equal(p.stats.hpCurrent,1);assert.equal(p.baseStats.hpBase,1);
-api.render();assert.match(w.document.getElementById('screen-profile').textContent,/1\s*\/\s*2/);
-let result=api.normalize(p);assert.equal(result.stats.hpMax,2);assert.equal(result.stats.hpCurrent,1);
-await api.upgrade('endurance');assert.equal(p.stats.hpMax,3);assert.equal(p.stats.hpCurrent,1);
-result=api.normalize({...p,baseStats:{hpBase:1},stats:{hpCurrent:0,hpMax:3},modifiers:[{target:'max_hp',op:'add',value:2}]});assert.equal(result.stats.hpMax,5);assert.equal(result.stats.hpCurrent,0);
-assert.equal(api.normalize({...p,baseStats:{hpBase:1.6}}).stats.hpMax,4);
+await api.upgrade('endurance');assert.equal(p.abilityBase.endurance,1);assert.equal(p.stats.hpMax,6);assert.equal(p.stats.hpCurrent,1);assert.equal(p.baseStats.hpBase,4);
+api.render();assert.match(w.document.getElementById('screen-profile').textContent,/1\s*\/\s*6/);
+let result=api.normalize(p);assert.equal(result.stats.hpMax,6);assert.equal(result.stats.hpCurrent,1);
+await api.upgrade('endurance');assert.equal(p.stats.hpMax,8);assert.equal(p.stats.hpCurrent,1);
+result=api.normalize({...p,baseStats:{hpBase:1},stats:{hpCurrent:0,hpMax:3},modifiers:[{target:'max_hp',op:'add',value:2}]});assert.equal(result.stats.hpMax,10);assert.equal(result.stats.hpCurrent,0);
+assert.equal(api.normalize({...p,baseStats:{hpBase:1.6}}).stats.hpMax,8);
+for(let endurance=0;endurance<=5;endurance++){
+ const profile=api.normalize({...p,abilityBase:{endurance},stats:{hpCurrent:99,hpMax:99}});
+ assert.equal(profile.stats.hpMax,4+2*endurance);
+ assert.equal(profile.stats.hpCurrent,profile.stats.hpMax);
+ assert.equal(api.normalize(profile).stats.hpCurrent,profile.stats.hpCurrent);
+}
 console.log('PASS v214 web HP: endurance upgrade persists base and max, repeated normalization stable, current HP unchanged, zero HP and max_hp modifier');
 }finally{await w.happyDOM.abort();}
