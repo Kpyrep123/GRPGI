@@ -1269,11 +1269,6 @@
     // and must never be used as an Armor Class fallback.
     return Math.max(0, num(entity?.armorClass ?? entity?.stats?.armorClass ?? token.armorClass, 10));
   }
-  function itemProtectsFromEnergy119(item={}) {
-    if(typeof item.energyProtection==='boolean')return item.energyProtection;
-    if(item.protectsAgainstEnergy===true)return true;
-    return list(item.tags).some(tag=>['энергозащита','энергетическая защита','energy protection'].includes(String(tag||'').trim().toLowerCase()));
-  }
   function itemIsPhysicalArmor119(item={}) {
     if(item.physicalArmor===true)return true;
     return list(item.tags).some(tag=>['физическая броня','physical armor'].includes(String(tag||'').trim().toLowerCase()));
@@ -1301,7 +1296,7 @@
   function incomingDefense119(token,weaponCategory='light',cover=null,damageType=weaponCategory) {
     const category=String(weaponCategory||'light').trim().toLowerCase(),entity=entityForToken(token);
     const resolvedType=window.GRPGDamageTypesV202.normalize(damageType,'kinetic');
-    let typedArmorDelta=0,typedArmorImmune=false,wornArmorAbsorption=0,gasProtectionFlat=0,gasProtectionPercent=0;
+    let typedArmorDelta=0,typedArmorImmune=false,wornArmorAbsorption=0,gasProtectionFlat=0,gasProtectionPercent=0,energyProtectionPercent=0;
     let baseArmorClass=num(tokenDefense105(token),0),shieldArmorClass=0,coverArmorClass=Math.max(0,num(cover?.armorBonus,0));
     let baseAbsorption=token?.defenseOverrideV120?Math.max(0,num(token?.defense,0)):0,armorAbsorption=0,shieldAbsorption=0,coverAbsorption=Math.max(0,num(cover?.hardness,0));
     if(entity&&window.GRPGStatsV113?.compute){
@@ -1322,17 +1317,13 @@
           }
         }
       }
-      if(resolvedType==='energy'){
-        if(wornArmor&&!itemProtectsFromEnergy119(wornArmor))source.equipmentSlots.armor='';
-        for(const {slot,item} of wornShields)if(!itemProtectsFromEnergy119(item))source.equipmentSlots[slot]='';
-        source.implantSlots=implants.map(id=>{const item=equipmentItem105(id)||{};return itemIsPhysicalArmor119(item)&&!itemProtectsFromEnergy119(item)?'':id;});
-        source.installedImplantIds=source.implantSlots.slice();
-      }
+      if(resolvedType==='energy')for(const {slot} of wornShields)source.equipmentSlots[slot]='';
       try{
         const slots=source.equipmentSlots,shields=wornShields.filter(row=>slots[row.slot]),withoutShield=clone(source);
         for(const {slot} of shields)withoutShield.equipmentSlots[slot]='';
         const withoutArmor=clone(withoutShield);withoutArmor.equipmentSlots.armor='';withoutArmor.implantSlots=list(withoutArmor.implantSlots).map(id=>itemIsPhysicalArmor119(equipmentItem105(id)||{})?'':id);withoutArmor.installedImplantIds=withoutArmor.implantSlots.slice();
         const computeOptions={kind:token?.npcId?'npc':'player',inCombat:true,incomingWeaponCategory:category,incomingDamageType:window.GRPGDamageTypesV202.normalize(damageType),temporaryModifiers:timedStatModifiers122(token)},computedBase=window.GRPGStatsV113.compute(withoutArmor,computeOptions),computed=window.GRPGStatsV113.compute(withoutShield,computeOptions);
+        if(resolvedType==='energy')energyProtectionPercent=clamp104(num(computed?.values?.energyProtectionPercent),0,100);
         if(resolvedType==='gas'){
           gasProtectionFlat=Math.max(0,num(computed?.values?.gasProtectionFlat));
           gasProtectionPercent=clamp104(num(computed?.values?.gasProtectionPercent),0,100);
@@ -1354,9 +1345,10 @@
         }
       }catch(error){console.warn('SCENE_INCOMING_DEFENSE_V119',error);}
     }
+    if(resolvedType==='energy'){baseAbsorption=0;armorAbsorption=0;}
     if(resolvedType==='electric')armorAbsorption=Math.floor(armorAbsorption/2);
     const defenseBonus=baseArmorClass+Math.max(shieldArmorClass,coverArmorClass),damageReduction=baseAbsorption+armorAbsorption+shieldAbsorption+coverAbsorption;
-    return {defenseBonus,damageReduction,category,damageType:resolvedType,typedArmorDelta,typedArmorImmune,wornArmorAbsorption,gasProtectionFlat,gasProtectionPercent,coverBonus:coverArmorClass,baseArmorClass,shieldArmorClass,coverArmorClass,baseAbsorption,armorAbsorption,shieldAbsorption,coverAbsorption,absorptionSources:{base:baseAbsorption,armor:armorAbsorption,shield:shieldAbsorption,cover:coverAbsorption}};
+    return {defenseBonus,damageReduction,category,damageType:resolvedType,typedArmorDelta,typedArmorImmune,wornArmorAbsorption,gasProtectionFlat,gasProtectionPercent,energyProtectionPercent,coverBonus:coverArmorClass,baseArmorClass,shieldArmorClass,coverArmorClass,baseAbsorption,armorAbsorption,shieldAbsorption,coverAbsorption,absorptionSources:{base:baseAbsorption,armor:armorAbsorption,shield:shieldAbsorption,cover:coverAbsorption}};
   }
   function entityForToken(token) {
     if (token?.playerId) { const p = App.state?.users?.[token.playerId] || PLAYER_TEMPLATES?.[token.playerId]; return p ? normalizePlayerProfileV2(p) : null; }
@@ -3144,7 +3136,7 @@
     rollState204.attackBonus+=failureAmount;
     attackBonus=rollState204.attackBonus;defenseBonus=rollState204.defenseBonus;
     const expression=String(weapon?.damage||'').trim(),suggested=window.GRPGCombatRulesV119?.suggestedDamage?.(expression)||0;
-    const body=`<div class="small-note">Тип урона: ${html(damageLabel202(rollContext204.damageType))}</div><div class="scene-lua-participants-v119"><b>${html(attacker?.name||'Атакующий')}</b><span>→</span><b>${html(target?.name||'Цель')}</b>${shotIndex>1?`<strong>Выстрел ${shotIndex} · штраф ${burstPenalty}${targetSwitches?` (смен целей: ${targetSwitches})`:''}</strong>`:''}</div>${aimBonus?`<div class="small-note">Прицеливание: +${aimBonus} к попаданию и урону.${allowDeferAim?' <label><input type="checkbox" name="deferAim229"/> Оставить бонус для следующего выстрела</label>':''}</div>`:''}${attackDisadvantage?'<div class="small-note scene-injury-note-v195">ПОМЕХА К АТАКЕ: выполните бросок на столе и введите выбранный d20.</div>':''}${defenseDisadvantage?'<div class="small-note scene-injury-note-v195">ПОМЕХА К ЗАЩИТЕ: выполните бросок на столе и введите выбранный d20.</div>':''}<div class="cols4"><div class="field"><label>Результат d20 атаки</label><input class="input" required type="number" min="1" max="20" name="attackRoll"/><small>Бонус атаки: ${num(attackBonus)>=0?'+':''}${num(attackBonus)} (включая штраф травмы)</small></div><div class="field"><label>Результат d20 цели</label><input class="input" required type="number" min="1" max="20" name="defenseRoll"/><small>Бонус защиты: ${num(defenseBonus)>=0?'+':''}${num(defenseBonus)} (включая штраф травмы)</small></div><div class="field"><label>${html(manualDamageLabel119(expression))}</label><input class="input" required type="number" min="0" name="damageRoll" value="${suggested||''}"/><small>Бонус урона: ${num(damageBonus)>=0?'+':''}${num(damageBonus)}</small></div></div><div class="small-note">Все кубики бросаются на столе. Натуральные значения проверяются до бонусов. Помеха — напоминание; приложение не выбирает кубик за игроков.</div><div class="scene-lua-modal-error-v119" data-lua-modal-error-v119></div>`;
+    const body=`<div class="small-note">Тип урона: ${html(damageLabel202(rollContext204.damageType))}</div><div class="scene-lua-participants-v119"><b>${html(attacker?.name||'Атакующий')}</b><span>→</span><b>${html(target?.name||'Цель')}</b>${shotIndex>1?`<strong>Выстрел ${shotIndex} · штраф ${burstPenalty}${targetSwitches?` (смен целей: ${targetSwitches})`:''}</strong>`:''}</div>${aimBonus?`<div class="small-note">Прицеливание: +${aimBonus} к попаданию и урону.${allowDeferAim?' <label><input type="checkbox" name="deferAim229"/> Оставить бонус для следующего выстрела</label>':''}</div>`:''}${attackDisadvantage?'<div class="small-note scene-injury-note-v195">ПОМЕХА К АТАКЕ: выполните бросок на столе и введите выбранный d20.</div>':''}${defenseDisadvantage?'<div class="small-note scene-injury-note-v195">ПОМЕХА К ЗАЩИТЕ: выполните бросок на столе и введите выбранный d20.</div>':''}<div class="cols4"><div class="field"><label>Результат d20 атаки</label><input class="input" required type="number" min="1" max="20" name="attackRoll"/><small>Бонус атаки: ${num(attackBonus)>=0?'+':''}${num(attackBonus)} (включая штраф травмы)</small></div><div class="field"><label>Активная броня цели · d20</label><input class="input" required type="number" min="1" max="20" name="defenseRoll"/><small>Бонус к Активной броне: ${num(defenseBonus)>=0?'+':''}${num(defenseBonus)} (включая штраф травмы)</small></div><div class="field"><label>${html(manualDamageLabel119(expression))}</label><input class="input" required type="number" min="0" name="damageRoll" value="${suggested||''}"/><small>Бонус урона: ${num(damageBonus)>=0?'+':''}${num(damageBonus)}</small></div></div><div class="small-note">Все кубики бросаются на столе. Натуральные значения проверяются до бонусов. Помеха — напоминание; приложение не выбирает кубик за игроков.</div><div class="scene-lua-modal-error-v119" data-lua-modal-error-v119></div>`;
     const answer204=await combatModalBase225({title:`Атака: ${weapon?.name||'оружие'}`,subtitle:'Введите результаты физических бросков',body,confirm:'РАССЧИТАТЬ И ПРИМЕНИТЬ',decline:'ОТМЕНИТЬ АТАКУ',read:form=>{const attackRoll=num(form.elements.attackRoll.value),defenseRoll=num(form.elements.defenseRoll.value);return{attackRoll,attackRolls:[attackRoll],defenseRoll,defenseRolls:[defenseRoll],damageRoll:num(form.elements.damageRoll.value),aimApplied229:form.elements.deferAim229?.checked?0:aimBonus};},validate:value=>value.attackRoll<1||value.defenseRoll<1?'Введите все результаты d20.':''});
     if(answer204){
       const liveTarget=tokenById119(target?.id)||target;
@@ -3364,7 +3356,11 @@
         continue;
       }
       const effective=Math.max(0,base-penetration-flat)*(1-percent/100);
-      const taken=Math.min(raw,Math.max(0,Math.round(effective)));
+      let taken=Math.min(raw,Math.max(0,Math.round(effective)));
+      if(type==='energy'&&(source==='all'||source==='base')){
+        const protection=clamp104(num(currentDefense.energyProtectionPercent),0,100)*(1-percent/100);
+        taken+=Math.floor((raw-taken)*protection/100);
+      }
       absorbed+=taken;
       if(type==='explosive'&&(source==='all'||source==='armor')&&currentDefense.wornArmorAbsorption>0){
         const withoutArmor=Math.max(0,base-currentDefense.wornArmorAbsorption-penetration-flat)*(1-percent/100);
@@ -4194,11 +4190,11 @@
       if(!continues)attacker.aim229=null;
       if(continues){attacker.burstStateV122={weaponId:weapon.id,nextShot:shotIndex+1,maxShots,lastTargetId:String(target.id),targetSwitches,aberrationCritical254:alreadyCritical||result.critical,aberrationFinisher255:usedFinisher,aberrationHit258:hadHit||result.hit,immuneTargets263:immuneTargets};attacker.actionUsed=true;}else{attacker.burstStateV122=null;attacker.actionUsed=true;completeDroneModule129(attacker);}
       const attackRoll=`${result.attackDie}${result.attackBonus?` ${result.attackBonus>=0?'+':'−'} ${Math.abs(result.attackBonus)}`:''} = ${result.attackTotal}`;
-      const defenseRoll=`${result.defenseDie}${result.defenseBonus?` ${result.defenseBonus>=0?'+':'−'} защита ${Math.abs(result.defenseBonus)}`:''} = ${result.defenseTotal}`;
+      const defenseRoll=`${result.defenseDie}${result.defenseBonus?` ${result.defenseBonus>=0?'+':'−'} бонус ${Math.abs(result.defenseBonus)}`:''} = ${result.defenseTotal}`;
       const magazineText=magazine.size>0?`; магазин ${magazine.loaded} / ${magazine.size}`:'';
       const refs=combatTransactionRefs120(transaction);attacker=refs.attacker;target=refs.target;const runtimeNow=refs.runtime;
       const coverText=cover.assets.length?`; защита между юнитами «${cover.label}»${cover.armorBonus?` (+${cover.armorBonus})`:''}${cover.hardness?`, Твёрдость ${cover.hardness}`:''}${attackDisadvantage?', помеха':''}`:'';
-      if(result.hit){const reductionText=absorptionV138.absorbed?` − поглощение ${absorptionV138.absorbed}`:'';const luaText=finalDamage!==result.damageApplied?` → после реакций${result.defenseCritical?' и натуральной 20 защиты':''} ${finalDamage}`:'';appendCombatLog105(runtimeNow,`${attacker.name} атакует ${target.name} из «${weapon.name||'оружия'}» (${damageLabel202(shotDamageType)})${ammo?` патронами «${ammo.name||ammo.id}»`:''}: атака d20 ${attackRoll} против d20 цели ${defenseRoll} — попадание${result.critical?' (критическое попадание)':''}${result.defenseFumble?' (натуральная 1 защиты, +1 урон)':''}; урон ${result.rawDamage}${reductionText}${luaText}; HP ${hpChange.before} → ${hpChange.after}${coverText}${magazineText}.`);}else if(!cancelled)appendCombatLog105(runtimeNow,`${attacker.name} атакует ${target.name} из «${weapon.name||'оружия'}» (${damageLabel202(shotDamageType)})${ammo?` патронами «${ammo.name||ammo.id}»`:''}: атака d20 ${attackRoll} против d20 цели ${defenseRoll} — промах${result.fumble?weapon.isUnarmedV122?' (натуральная 1: падение и потеря реакции)':' (натуральная 1: износ оружия и конец очереди)':''}${coverText}${magazineText}.`);
+      if(result.hit){const reductionText=absorptionV138.absorbed?` − поглощение ${absorptionV138.absorbed}`:'';const luaText=finalDamage!==result.damageApplied?` → после реакций${result.defenseCritical?' и натуральной 20 Активной брони':''} ${finalDamage}`:'';appendCombatLog105(runtimeNow,`${attacker.name} атакует ${target.name} из «${weapon.name||'оружия'}» (${damageLabel202(shotDamageType)})${ammo?` патронами «${ammo.name||ammo.id}»`:''}: атака d20 ${attackRoll} против Активной брони ${defenseRoll} — попадание${result.critical?' (критическое попадание)':''}${result.defenseFumble?' (натуральная 1 Активной брони, +1 урон)':''}; урон ${result.rawDamage}${reductionText}${luaText}; HP ${hpChange.before} → ${hpChange.after}${coverText}${magazineText}.`);}else if(!cancelled)appendCombatLog105(runtimeNow,`${attacker.name} атакует ${target.name} из «${weapon.name||'оружия'}» (${damageLabel202(shotDamageType)})${ammo?` патронами «${ammo.name||ammo.id}»`:''}: атака d20 ${attackRoll} против Активной брони ${defenseRoll} — промах${result.fumble?weapon.isUnarmedV122?' (натуральная 1: падение и потеря реакции)':' (натуральная 1: износ оружия и конец очереди)':''}${coverText}${magazineText}.`);
       local.preview={...local.preview,effect:result.hit?'shot':'miss',targetId:target.id,label:result.hit?`${weapon.name}: ${finalDamage} урона · HP ${hpChange.before} → ${hpChange.after}`:cancelled?'Попадание отменено бронёй':`${weapon.name}: промах · ${result.attackTotal} против ${result.defenseTotal}`};
       Combat.syncInitiative(scene.id,false);Combat.render();flushLuaEffects119(effectState);await checkpointCombat120(result.hit?'Сцена: атака и урон':'Сцена: атака',true);
       setTimeout(()=>{if(['shot','miss'].includes(local.preview?.effect)&&local.preview?.targetId===target.id){local.preview=null;refreshPreviewDom104();}},1100);
