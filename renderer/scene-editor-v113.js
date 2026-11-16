@@ -4175,6 +4175,18 @@
     return impact;
   }
   function hexAxial229(node){return {q:node.col,r:node.row-Math.floor(node.col/2)};}
+  function blastReachesTarget093(scene,impact,target,radius){
+    if(window.GRPGUnitSizeV184.distance(target,{x:impact.x,y:impact.y,w:0,h:0})>radius)return false;
+    const center=centerOf(target);
+    if(coverBetween120(scene,impact,center).blocksAttack||window.GRPGCombatVisionV225.elevationBlocksSight(scene,impact,center))return false;
+    const geometry={tokens:[],moving:null,assets:list(scene.assets),zones:list(scene.templates)};
+    const steps=Math.max(2,Math.ceil(dist(impact,center)/.08));
+    for(let i=1;i<steps;i++){
+      const t=i/steps,x=impact.x+(center.x-impact.x)*t,y=impact.y+(center.y-impact.y)*t;
+      if(movementBlockedAt(scene,x,y,'',0,true,false,geometry))return false;
+    }
+    return true;
+  }
   async function commitGrenade105(point){
     if(local.commandBusy191){Toast.show(operationReason191(),'info');return;}
     const scene=Combat.getScene(),runtime=Combat.getRuntime(),selectedAttacker=selectedToken104(),selectedGrenade=grenadeForToken105(selectedAttacker);
@@ -4189,7 +4201,7 @@
     if(!rules){Toast.show('Модуль ручного расчёта боя не загружен','err');return;}
     const impact=await grenadeImpact229(selectedAttacker,preview.end,scene);if(!impact)return;
     const radiusHexes=Math.max(0,num(preview.radiusHexes,grenadeRadiusCells105(selectedGrenade,scene))),targetIds=[];
-    for(const target of list(runtime.tokens)){const c=centerOf(target);if(window.GRPGUnitSizeV184.distance(target,{x:impact.x,y:impact.y,w:0,h:0})>radiusHexes)continue;if(coverBetween120(scene,impact,c).blocksAttack||sightSegmentBlocked105(scene,impact,c,[target.id]))continue;targetIds.push(String(target.id));}
+    for(const target of list(runtime.tokens))if(blastReachesTarget093(scene,impact,target,radiusHexes))targetIds.push(String(target.id));
     const transaction=beginCombatTransaction120('grenade',scene.id,selectedAttacker.id,targetIds);if(!transaction)return;
     try{
       let refs=combatTransactionRefs120(transaction),attacker=refs.attacker,targets=refs.targets,grenade=grenadeForToken105(attacker);
@@ -4206,21 +4218,22 @@
       local.instinctDefer199=Math.max(0,num(local.instinctDefer199))+1;
       try{for(const targetId of transaction.targetIds){
         refs=combatTransactionRefs120(transaction);attacker=refs.attacker;const target=list(refs.runtime.tokens).find(row=>String(row.id)===String(targetId));if(!target)continue;
-        const cover=coverBetween120(refs.scene,impact,centerOf(target)),defense=incomingDefense119(target,grenade.weaponCategory||'heavy',cover,incomingCategory);
+        if(!blastReachesTarget093(refs.scene,impact,target,radiusHexes))continue;
         const state={damage:preState.damage,damagePartsV138:clone(preState.damagePartsV138),absorptionRulesV138:clone(preState.absorptionRulesV138||{}),effects:allEffects.effects};let context={...beforeContext,attacker,caster:attacker,target,targets:[target],damage:state.damage};
         await runAutomaticHooks119(attacker,'OnHit',context,state);await chooseReaction119('OnHit',{...context,damage:state.damage},state);
         refs=combatTransactionRefs120(transaction);const currentTarget=list(refs.runtime.tokens).find(row=>String(row.id)===String(targetId));if(!currentTarget)continue;attacker=refs.attacker;context={...context,attacker,caster:attacker,target:currentTarget,targets:[currentTarget]};
         await runAutomaticHooks119(currentTarget,'BeforeDamage',{...context,damage:state.damage},state);await chooseReaction119('BeforeDamage',{...context,damage:state.damage},state);
-        refs=combatTransactionRefs120(transaction);const damageTarget=list(refs.runtime.tokens).find(row=>String(row.id)===String(targetId));if(!damageTarget)continue;
-        const reduced=applyAbsorptionV138(state,incomingDefense119(damageTarget,grenade.weaponCategory||'heavy',cover,incomingCategory)),finalDamage=reduced.applied,hp=await applyHit199(damageTarget,finalDamage,grenade.name,refs.attacker,{defer:true,origin:impact,damageType:incomingCategory,rawDamage:state.damage,absorbed:reduced.absorbed});updatePlayerHp105(damageTarget);
+        refs=combatTransactionRefs120(transaction);const damageTarget=list(refs.runtime.tokens).find(row=>String(row.id)===String(targetId));if(!damageTarget||!blastReachesTarget093(refs.scene,impact,damageTarget,radiusHexes))continue;
+        const defenseFor=type=>incomingDefense119(damageTarget,grenade.weaponCategory||'heavy',null,type);
+        const reduced=applyAbsorptionV138(state,defenseFor(incomingCategory),defenseFor),finalDamage=reduced.applied,hp=await applyHit199(damageTarget,finalDamage,grenade.name,refs.attacker,{defer:true,origin:impact,damageType:incomingCategory,rawDamage:state.damage,absorbed:reduced.absorbed});updatePlayerHp105(damageTarget);
         context={...context,attacker:refs.attacker,caster:refs.attacker,target:damageTarget,targets:[damageTarget],damage:finalDamage};
         await runAutomaticHooks119(damageTarget,'OnTakeDamage',context,state);await chooseReaction119('OnTakeDamage',context,state);
         refs=combatTransactionRefs120(transaction);const finalTarget=list(refs.runtime.tokens).find(row=>String(row.id)===String(targetId));const after=num(finalTarget?.hpCurrent,hp.after),applied=Math.max(0,hp.before-after);if(finalTarget){updatePlayerHp105(finalTarget);}
-        affected.push({name:finalTarget?.name||damageTarget.name,damage:applied,absorbed:reduced.absorbed,before:hp.before,after,cover:cover.label});allEffects.effects=state.effects;
+        affected.push({name:finalTarget?.name||damageTarget.name,damage:applied,absorbed:reduced.absorbed,before:hp.before,after});allEffects.effects=state.effects;
       }
       }finally{local.instinctDefer199=Math.max(0,num(local.instinctDefer199)-1);}
       refs=combatTransactionRefs120(transaction);attacker=refs.attacker;attacker.actionUsed=true;
-      const affectedText=affected.length?affected.map(row=>`${row.name}: −${row.damage} HP (${row.before} → ${row.after}${row.absorbed?`, защита ${row.absorbed}`:''}${row.cover?`, укрытие ${row.cover}`:''})`).join('; '):'нет целей';
+      const affectedText=affected.length?affected.map(row=>`${row.name}: −${row.damage} HP (${row.before} → ${row.after}${row.absorbed?`, защита ${row.absorbed}`:''})`).join('; '):'нет целей';
       appendCombatLog105(refs.runtime,`${attacker.name} бросает «${grenade.name}» (${damageLabel202(incomingCategory)}): введённый урон ${entered.damageRoll}${num(grenade.damageBonus)?` + ${num(grenade.damageBonus)} = ${rolledTotal}`:''}, радиус ${hexLabel109(radiusHexes)}. ${affectedText}.`);
       if(pendingInstinct199().length){await sealOperation194('Взрыв рассчитан для всех целей; ожидается Инстинкт');for(const {owner,packet} of pendingInstinct199())await resolveInstinct199(owner,packet);}
       local.preview={...preview,end:impact,effect:'grenade',label:`${grenade.name}: базовый урон ${rolledTotal} · целей ${affected.length}`};
