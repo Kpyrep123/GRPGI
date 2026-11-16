@@ -178,8 +178,8 @@ function engine(world={}){
     let value=n(staticBase,0);
     breakdown.push({source:baseLabel,value:n(staticBase,0),op:'base'});
     if(replacement)breakdown.push({source:replacement.sourceName||replacement.sourceId||'Модификатор',value:0,op:'replace_stat',statRef:stat});
-    if(stat){const part=n(abilities?.[stat],0)*scale;value+=part;breakdown.push({source:PRIMARY_LABELS[stat]||stat,value:part,op:'base',statRef:stat});}
-    scoped.filter(m=>m.op==='add_stat'&&m.statRef).forEach(m=>{const part=n(abilities?.[m.statRef],0)*scale;value+=part;breakdown.push({source:`${m.sourceName}: ${PRIMARY_LABELS[m.statRef]||m.statRef}`,value:part,op:'add_stat',statRef:m.statRef});});
+    if(stat){const part=n(abilities?.[stat],0)*(target==='max_hp'&&replacement?1:scale);value+=part;breakdown.push({source:PRIMARY_LABELS[stat]||stat,value:part,op:'base',statRef:stat});}
+    scoped.filter(m=>m.op==='add_stat'&&m.statRef).forEach(m=>{const part=n(abilities?.[m.statRef],0)*(target==='max_hp'?1:scale);value+=part;breakdown.push({source:`${m.sourceName}: ${PRIMARY_LABELS[m.statRef]||m.statRef}`,value:part,op:'add_stat',statRef:m.statRef});});
     scoped.filter(m=>['add','set'].includes(m.op)).forEach(m=>{value=m.op==='set'?n(m.value,0):value+n(m.value,0);breakdown.push({source:m.sourceName||m.sourceId||'Модификатор',value:n(m.value,0),op:m.op});});
     return value;
   }
@@ -194,7 +194,7 @@ function engine(world={}){
     const bs = entity.baseStats || {};
     const combat = entity.combat || {};
     return {
-      hpBase: n(bs.hpBase ?? entity.hpBase ?? (()=>{const legacy=n(stats.hpMax ?? entity.hpMax ?? entity.hp,0),end=n((entity.abilityBase||entity.abilities||{}).endurance,0);return legacy>0?Math.max(0,legacy-end):1;})(), 1),
+      hpBase: kind==='player'?4:n(bs.hpBase ?? entity.hpBase ?? (()=>{const legacy=n(stats.hpMax ?? entity.hpMax ?? entity.hp,0),end=n((entity.abilityBase||entity.abilities||{}).endurance,0);return legacy>0?Math.max(0,legacy-end):1;})(), 1),
       movement: nonNeg(bs.movement ?? entity.baseMovement ?? combat.moveRange, 6),
       vision: nonNeg(bs.vision ?? entity.baseVision ?? combat.visionRange, 6),
       armorClass: n(bs.armorClass ?? entity.baseArmorClassBonus, 0),
@@ -221,7 +221,7 @@ function engine(world={}){
       abilities[stat]=applyValue(primaryBase[stat],stat,mods,{entity,...options},breakdown[stat],PRIMARY_LABELS[stat]);
     });
     const formulaContext={entity,abilities,...options};
-    breakdown.maxHp=[]; const maxHp=applyStatFormula(base.hpBase,'endurance','max_hp',mods,abilities,formulaContext,breakdown.maxHp,1,'База HP');
+    breakdown.maxHp=[]; const maxHp=applyStatFormula(base.hpBase,'endurance','max_hp',mods,abilities,formulaContext,breakdown.maxHp,kind==='player'?2:1,'База HP');
     const derived = {};
     // Armor Class is the permanent bonus added to the physical defense roll:
     // Dexterity + base AC bonus + equipped/skill/implant modifiers. Skills may
