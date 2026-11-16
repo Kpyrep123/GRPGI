@@ -58,8 +58,8 @@
       carryWeightMax: 12,
       carryBase: 12,
       stats: {
-        hpCurrent: 10,
-        hpMax: 10,
+        hpCurrent: 4,
+        hpMax: 4,
         shieldCurrent: 0,
         shieldMax: 0,
         energyCurrent: 1,
@@ -67,7 +67,7 @@
         baseArmorClass: 10,
       },
       baseStats: {
-        hpBase: 10,
+        hpBase: 4,
         inventorySlots: 12,
         carryBase: 12,
         implantSlots: 0,
@@ -605,6 +605,7 @@
         "equipmentSlots",
         "skills",
         "characterGrants178",
+        "stats",
         "baseStats",
         "inventoryBaseSlots",
         "inventorySize",
