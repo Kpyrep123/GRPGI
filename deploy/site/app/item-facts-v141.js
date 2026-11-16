@@ -8,7 +8,9 @@
   const names = {
     strength:'Сила', dexterity:'Ловкость', endurance:'Выносливость', intelligence:'Интеллект',
     will:'Воля', glory:'Слава', max_hp:'Максимальное HP', armor_class:'Класс брони',
-    defense:'Защита', shield_capacity:'Ёмкость энергетического щита', initiative_bonus:'Инициатива', movement:'Движение', vision:'Обзор',
+    defense:'Защита', shield_capacity:'Ёмкость Эгиды',
+    energy_protection_percent:'Защита от энергетических атак (%)', gas_protection_flat:'Защита от газа (ед.)',
+    gas_protection_percent:'Защита от газа (%)', initiative_bonus:'Инициатива', movement:'Движение', vision:'Обзор',
     inventory_slots:'Ячейки инвентаря', carry_capacity:'Переносимый вес',
     implant_slots:'Слоты имплантов', social_bonus:'Социальный бонус', attack_bonus:'Попадание',
     damage_bonus:'Урон', weapon_hit_stat:'Характеристика попадания',
