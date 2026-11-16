@@ -248,7 +248,7 @@
 
   // A root operation has one durable identity. Retries write its result, never rerun its logic.
   let operation194=null,recovery194=null,navigation194=null,retrying194=false;
-  const profileFields194=['stats','inventory','equipmentSlots','implantSlots','installedImplantIds','weaponMagazines','itemStateV138','traumaV195','inventoryBaseSlots','carryBase','baseImplantSlots','inventorySize','carryWeightMax','implantSlotCount'];
+  const profileFields194=['stats','inventory','equipmentSlots','implantSlots','installedImplantIds','weaponMagazines','itemStateV138','traumaV195','combatState093','inventoryBaseSlots','carryBase','baseImplantSlots','inventorySize','carryWeightMax','implantSlotCount'];
   function profiles194(){return Object.fromEntries(Object.entries(App.state?.users||{}).filter(([,u])=>u.role!=='gm').map(([id,u])=>[id,Object.fromEntries(profileFields194.filter(k=>u[k]!==undefined).map(k=>[k,clone(u[k])]))]));}
   function changedProfiles194(){
     const before=operation194?.startProfiles||{},current=profiles194();
@@ -1059,7 +1059,7 @@
   function currentTurnToken129(runtime=Combat.getRuntime()){const order=list(runtime?.initiativeOrder),id=String(order[Math.max(0,Math.min(order.length-1,num(runtime?.turnIndex,0)))]||'');return list(runtime?.tokens).find(row=>String(row.id)===id)||null;}
   const Trauma195=window.GRPGCombatTraumaV195;
   const createPlayerBefore195=createPlayerCombatToken;
-  createPlayerCombatToken=function(playerId){const token=createPlayerBefore195(playerId),profile=App.state?.users?.[playerId]||PLAYER_TEMPLATES?.[playerId];if(token&&profile?.traumaV195?.schema===195)token.traumaV195=Trauma195.normalize(profile.traumaV195);return token;};
+  createPlayerCombatToken=function(playerId){const token=createPlayerBefore195(playerId),profile=App.state?.users?.[playerId]||PLAYER_TEMPLATES?.[playerId];if(token&&profile?.traumaV195?.schema===195)token.traumaV195=Trauma195.normalize(profile.traumaV195);if(token)restoreCombatState093(token,profile?.combatState093);return token;};
   function injurySeverity129(token={}){return Trauma195.ensure(token).degree;}
   function injuryCheckPenalty129(token={}){return Trauma195.effects(token).checkPenalty;}
   function injuryDisadvantage129(token={}){return Trauma195.effects(token).disadvantage;}
@@ -1085,11 +1085,12 @@
   }
   function moraleEffects199(token){return window.GRPGCombatInstinctV199.effects(token?.moraleV199);}
   function checkPenalty199(token){return injuryCheckPenalty129(token)+window.GRPGCombatInstinctV199.penalty(token?.moraleV199);}
-  function startMoraleTurn199(token){token.ownTurnV199=Math.max(0,num(token.ownTurnV199))+1;if(token.loseNextAction093){token.actionUsed=true;token.loseNextAction093=false;}const pool=resources204(token).reaction;if(num(token.reactionDebt204)>0){if(pool){const n=Math.min(pool.value,token.reactionDebt204);Lua204.spend(token.luaResources204,'reaction',n,epochContext204(token));token.reactionDebt204-=n;}else{token.reactionDebt204--;token.reactionWithheld204=Lua204.epoch('turn',epochContext204(token));}}}
+  function startMoraleTurn199(token){token.ownTurnV199=Math.max(0,num(token.ownTurnV199))+1;const lostAction=token.loseNextAction093;if(lostAction){token.actionUsed=true;token.loseNextAction093=false;}if(lostAction||token.conditionsV138?.dying)updatePlayerHp105(token);const pool=resources204(token).reaction;if(num(token.reactionDebt204)>0){if(pool){const n=Math.min(pool.value,token.reactionDebt204);Lua204.spend(token.luaResources204,'reaction',n,epochContext204(token));token.reactionDebt204-=n;}else{token.reactionDebt204--;token.reactionWithheld204=Lua204.epoch('turn',epochContext204(token));}}}
   async function processCriticalTurn229(token,phase){
     const before=clone(conditionStateV138(token)),outcome=window.GRPGCombatRulesV119.criticalTurn(token,phase);
     if(!outcome)return;
     appendCombatLog105(Combat.getRuntime(),outcome==='dead'?`${token.name}: погибает в конце пятого хода.`:`${token.name}: выходит из критического состояния на пятом ходу.`);
+    updatePlayerHp105(token);
     await conditionEvents225(token,before,{reason204:'critical-state'});
   }
   function endMoraleTurn199(token){if(token.aberrationRecoil255?.until===token.ownTurnV199)token.aberrationRecoil255.amount=0;const before=moraleEffects199(token);token.moraleV199=window.GRPGCombatInstinctV199.expire(before,token.ownTurnV199);if(before.length!==token.moraleV199.length)appendCombatLog105(Combat.getRuntime(),`${token.name}: завершилось Потрясение/Паника по длительности.`);}
@@ -3010,7 +3011,35 @@
     }catch(error){operationFailure194(error);console.error('SCENE_POSTURE_V128_FAILED',error);Toast.show(`Смена положения не сохранена: ${error?.message||error}`,'err');}
     finally{local.moveBusyV122=false;Combat.render();}
   }
-  function updatePlayerHp105(token){if(token?.playerId&&App.state?.users?.[token.playerId]){const user=normalizePlayerProfileV2(App.state.users[token.playerId]);user.traumaV195=clone(Trauma195.ensure(token));user.stats={...(user.stats||{}),hpCurrent:token.hpCurrent,hpMax:Math.max(num(user.stats?.hpMax,0),num(token.hpMax,1))};App.state.users[token.playerId]=user;}}
+  function captureCombatState093(token){
+    const conditions=conditionStateV138(token);
+    return {schema:1,ownTurn:Math.max(0,Math.trunc(num(token.ownTurnV199))),critical:clone(token.critical229||null),
+      dying:conditions.dying,stabilized:conditions.stabilized,unconscious:conditions.unconscious,dead:token.dead229===true,
+      loseNextAction:token.loseNextAction093===true};
+  }
+  function restoreCombatState093(token,state){
+    if(state?.schema!==1)return;
+    const recordedTurn=Math.max(0,Math.trunc(num(state.ownTurn)));
+    token.ownTurnV199=Math.max(recordedTurn,Math.trunc(num(token.ownTurnV199)));
+    token.critical229=clone(state.critical||null);
+    if(token.critical229)token.critical229.fallTurn=num(token.critical229.fallTurn,recordedTurn)+token.ownTurnV199-recordedTurn;
+    token.dead229=state.dead===true;
+    token.loseNextAction093=state.loseNextAction===true;
+    const conditions=conditionStateV138(token);
+    conditions.dying=state.dying===true;
+    conditions.stabilized=state.stabilized===true;
+    conditions.unconscious=state.unconscious===true;
+    if(conditions.dying||conditions.unconscious){conditions.prone=true;token.proneV122=true;}
+  }
+  function updatePlayerHp105(token){
+    if(!token?.playerId||!App.state?.users?.[token.playerId])return;
+    const user=normalizePlayerProfileV2(App.state.users[token.playerId]);
+    user.traumaV195=clone(Trauma195.ensure(token));
+    user.stats={...(user.stats||{}),hpCurrent:token.hpCurrent,hpMax:Math.max(num(user.stats?.hpMax,0),num(token.hpMax,1))};
+    const state=captureCombatState093(token);
+    if(user.combatState093||state.critical||state.dying||state.stabilized||state.unconscious||state.dead||state.loseNextAction)user.combatState093=state;
+    App.state.users[token.playerId]=user;
+  }
   function combatProfilePatch120(user={}){
     return{
       stats:clone(user.stats||{}),
@@ -3021,6 +3050,7 @@
       weaponMagazines:clone(user.weaponMagazines||{}),
       itemStateV138:clone(user.itemStateV138||{}),
       ...(user.traumaV195?.schema===195?{traumaV195:clone(user.traumaV195)}:{}),
+      ...(user.combatState093?.schema===1?{combatState093:clone(user.combatState093)}:{}),
       inventoryBaseSlots:user.inventoryBaseSlots,
       carryBase:user.carryBase,
       baseImplantSlots:user.baseImplantSlots,
@@ -4704,7 +4734,8 @@
       token.hpCurrent=clamp104(user.stats?.hpCurrent,0,Math.max(1,num(user.stats?.hpMax,token.hpMax)));
       token.hpMax=Math.max(1,num(user.stats?.hpMax,token.hpMax));
       token.traumaV195=clone(user.traumaV195?.schema===195?Trauma195.normalize(user.traumaV195):Trauma195.ensure({hpCurrent:token.hpCurrent,hpMax:token.hpMax,injuriesV129:user.injuriesV129}));
-      if(token.hpCurrent>0&&token.conditionsV138?.stabilized&&!token.critical229?.unconsciousAlready)conditionStateV138(token).unconscious=false;
+      restoreCombatState093(token,user.combatState093);
+      if(token.hpCurrent>0&&token.conditionsV138?.stabilized&&!token.conditionsV138?.dying&&!token.critical229?.unconsciousAlready)conditionStateV138(token).unconscious=false;
       token.itemStateV138=clone(user.itemStateV138||{});
       token.weaponMagazinesV118=clone(user.weaponMagazines||{});
     };
