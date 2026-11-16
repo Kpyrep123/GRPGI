@@ -1301,7 +1301,7 @@
   function incomingDefense119(token,weaponCategory='light',cover=null,damageType=weaponCategory) {
     const category=String(weaponCategory||'light').trim().toLowerCase(),entity=entityForToken(token);
     const resolvedType=window.GRPGDamageTypesV202.normalize(damageType,'kinetic');
-    let typedArmorDelta=0,typedArmorImmune=false,wornArmorAbsorption=0;
+    let typedArmorDelta=0,typedArmorImmune=false,wornArmorAbsorption=0,gasProtectionFlat=0,gasProtectionPercent=0;
     let baseArmorClass=num(tokenDefense105(token),0),shieldArmorClass=0,coverArmorClass=Math.max(0,num(cover?.armorBonus,0));
     let baseAbsorption=token?.defenseOverrideV120?Math.max(0,num(token?.defense,0)):0,armorAbsorption=0,shieldAbsorption=0,coverAbsorption=Math.max(0,num(cover?.hardness,0));
     if(entity&&window.GRPGStatsV113?.compute){
@@ -1333,6 +1333,10 @@
         for(const {slot} of shields)withoutShield.equipmentSlots[slot]='';
         const withoutArmor=clone(withoutShield);withoutArmor.equipmentSlots.armor='';withoutArmor.implantSlots=list(withoutArmor.implantSlots).map(id=>itemIsPhysicalArmor119(equipmentItem105(id)||{})?'':id);withoutArmor.installedImplantIds=withoutArmor.implantSlots.slice();
         const computeOptions={kind:token?.npcId?'npc':'player',inCombat:true,incomingWeaponCategory:category,incomingDamageType:window.GRPGDamageTypesV202.normalize(damageType),temporaryModifiers:timedStatModifiers122(token)},computedBase=window.GRPGStatsV113.compute(withoutArmor,computeOptions),computed=window.GRPGStatsV113.compute(withoutShield,computeOptions);
+        if(resolvedType==='gas'){
+          gasProtectionFlat=Math.max(0,num(computed?.values?.gasProtectionFlat));
+          gasProtectionPercent=clamp104(num(computed?.values?.gasProtectionPercent),0,100);
+        }
         if(!token?.armorClassOverrideV120)baseArmorClass=num(computed?.values?.armorClass,baseArmorClass);
         if(!token?.defenseOverrideV120){baseAbsorption=Math.max(0,num(computedBase?.values?.defense,0));armorAbsorption=Math.max(0,num(computed?.values?.defense,0)-baseAbsorption);}
         if(resolvedType==='explosive'&&wornArmor&&armorAbsorption>0){
@@ -1352,7 +1356,7 @@
     }
     if(resolvedType==='electric')armorAbsorption=Math.floor(armorAbsorption/2);
     const defenseBonus=baseArmorClass+Math.max(shieldArmorClass,coverArmorClass),damageReduction=baseAbsorption+armorAbsorption+shieldAbsorption+coverAbsorption;
-    return {defenseBonus,damageReduction,category,damageType:resolvedType,typedArmorDelta,typedArmorImmune,wornArmorAbsorption,coverBonus:coverArmorClass,baseArmorClass,shieldArmorClass,coverArmorClass,baseAbsorption,armorAbsorption,shieldAbsorption,coverAbsorption,absorptionSources:{base:baseAbsorption,armor:armorAbsorption,shield:shieldAbsorption,cover:coverAbsorption}};
+    return {defenseBonus,damageReduction,category,damageType:resolvedType,typedArmorDelta,typedArmorImmune,wornArmorAbsorption,gasProtectionFlat,gasProtectionPercent,coverBonus:coverArmorClass,baseArmorClass,shieldArmorClass,coverArmorClass,baseAbsorption,armorAbsorption,shieldAbsorption,coverAbsorption,absorptionSources:{base:baseAbsorption,armor:armorAbsorption,shield:shieldAbsorption,cover:coverAbsorption}};
   }
   function entityForToken(token) {
     if (token?.playerId) { const p = App.state?.users?.[token.playerId] || PLAYER_TEMPLATES?.[token.playerId]; return p ? normalizePlayerProfileV2(p) : null; }
@@ -3348,6 +3352,17 @@
       const penetration=Math.max(0,num(part.penetration)>0?num(part.penetration):num(rule.penetration));
       const flat=Math.max(0,num(part.ignoreAbsorption)>0?num(part.ignoreAbsorption):num(rule.flat));
       const percent=clamp104(num(part.ignorePercent)>0?num(part.ignorePercent):num(rule.percent),0,100);
+      if(type==='gas'){
+        const gasOnly=source==='all'||source==='base';
+        const factor=1-percent/100;
+        const gasFlat=gasOnly?Math.max(0,num(currentDefense.gasProtectionFlat)-penetration-flat)*factor:0;
+        const gasPercent=gasOnly?clamp104(num(currentDefense.gasProtectionPercent),0,100)*factor:0;
+        const remaining=Math.max(0,raw-gasFlat);
+        const afterGas=remaining-Math.floor(remaining*gasPercent/100);
+        absorbed+=raw-afterGas;
+        portion.damage+=afterGas;
+        continue;
+      }
       const effective=Math.max(0,base-penetration-flat)*(1-percent/100);
       const taken=Math.min(raw,Math.max(0,Math.round(effective)));
       absorbed+=taken;
