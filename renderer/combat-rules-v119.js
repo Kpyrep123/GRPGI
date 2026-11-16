@@ -24,6 +24,12 @@
     const absorbed=Math.min(raw,Math.max(0,Math.round(requested)));
     return {raw,reduction:requested,absorbed,applied:Math.max(0,raw-absorbed)};
   }
+  function attenuateEnergyDamage(baseDamage,distance,range){
+    const damage=Math.max(0,number(baseDamage,0)),reach=number(range,0);
+    if(reach<=0)return damage;
+    const remaining=Math.max(0,reach-Math.max(0,number(distance,0)));
+    return Math.floor(damage*remaining/reach);
+  }
   function resolveManualAttack(options={}){
     const attackDie=clamp(integer(options.attackRoll,0),1,1000);
     const defenseDie=clamp(integer(options.defenseRoll,0),1,1000);
@@ -99,5 +105,5 @@
   function burstPenalty(shotIndex,targetSwitches,braced){
     return -Math.max(0,integer(shotIndex,1)-1-(braced?1:0))-Math.max(0,integer(targetSwitches));
   }
-  root.GRPGCombatRulesV119=Object.freeze({version:'1.0.122',normalizeDamageExpression,requiresManualDamage,suggestedDamage,reduceDamage,resolveManualAttack,applyDamage,applyHeal,stabilizationDifficulty,stabilize,criticalTurn,grenadeScatter,burstPenalty});
+  root.GRPGCombatRulesV119=Object.freeze({version:'1.0.122',normalizeDamageExpression,requiresManualDamage,suggestedDamage,reduceDamage,attenuateEnergyDamage,resolveManualAttack,applyDamage,applyHeal,stabilizationDifficulty,stabilize,criticalTurn,grenadeScatter,burstPenalty});
 })(typeof window!=='undefined'?window:globalThis);
