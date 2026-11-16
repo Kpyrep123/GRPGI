@@ -157,6 +157,11 @@ try{
  assert.equal(rules.burstPenalty(3,2,true),-3,'bracing does not reduce target-switch penalties');
  assert.equal(rules.grenadeScatter(1,6),2);
  assert.equal(rules.grenadeScatter(5,5),2);
+ for(const [distance,damage] of [[0,20],[2.5,15],[5,10],[7.5,5],[10,0],[15,0]]){
+  assert.equal(rules.attenuateEnergyDamage(20,distance,10),damage);
+ }
+ assert.equal(rules.attenuateEnergyDamage(10,8,10),2);
+ assert.equal(rules.attenuateEnergyDamage(8,2,0),8);
  const fallen={hpCurrent:2,hpMax:10,ownTurnV199:3,traumaV195:{schema:195,degree:0}};
  rules.applyDamage(fallen,5);rules.applyDamage(fallen,3);
  assert.equal(rules.stabilizationDifficulty(fallen),16);
