@@ -3465,7 +3465,22 @@
       }else if(kind==='remove_modifier'){
         const target=tokenById119(command.targetId);if(target){target.timedModifiersV122=list(target.timedModifiersV122).filter(row=>String(row.id)!==String(command.modifierId||''));statsChanged=true;refreshRuntimeSources122(scene?.id);await emit204('OnModifierChanged',target,{...context,target,unit:target,reason204:'removed:'+String(command.modifierId)});}
       }else if(kind==='damage'||kind==='heal'){
-        const target=tokenById119(command.targetId),damageSource204=tokenById119(command.casterId)||context.caster||context.attacker;if(!target)continue;let amount=Math.max(0,num(command.amount)),absorbed=0;if(kind==='damage'){const pending={damage:amount,damagePartsV138:[{amount,absorptionSource:command.absorptionSource,penetration:command.penetration,ignoreAbsorption:command.ignoreAbsorption,ignorePercent:command.ignorePercent}],effects:[]};await emit204('BeforeDamage',target,{...context,caster:damageSource204,attacker:damageSource204,target,targets:[target],damage:amount,damageType:command.damageType||context.damageType},pending);amount=pending.damage;state.effects.push(...pending.effects);const damageType=window.GRPGDamageTypesV202.normalize(command.damageType)||window.GRPGDamageTypesV202.normalize(context.damageType)||damageType202(context.weapon||context.ability||context.scriptSource?.raw),defense=incomingDefense119(target,context.weapon?.weaponCategory||'light',null,damageType),reduced=applyAbsorptionV138(pending,defense);amount=reduced.applied;absorbed=reduced.absorbed;}const result=kind==='damage'?await applyHit199(target,amount,context.sourceName||'Lua',damageSource204,{damageType:command.damageType||context.damageType,rawDamage:command.amount,absorbed}):rules?.applyHeal?.(target,amount);updatePlayerHp105(target);if(kind==='heal')await emit204('OnHealApplied',target,{...context,target,targets:[target],damage:Math.max(0,num(result?.after)-num(result?.before))});appendCombatLog105(runtime,`${context.sourceName||'Lua'}: ${kind==='damage'?'урон':'лечение'} ${target.name} ${num(result?.before)} → ${num(result?.after)}${absorbed?` (поглощено ${absorbed})`:''}.`);
+        const target=tokenById119(command.targetId),damageSource204=tokenById119(command.casterId)||context.caster||context.attacker;
+        if(!target)continue;
+        let amount=Math.max(0,num(command.amount)),absorbed=0,damageType;
+        if(kind==='damage'){
+          damageType=window.GRPGDamageTypesV202.normalize(command.damageType)||window.GRPGDamageTypesV202.normalize(context.damageType)||damageType202(context.weapon||context.ability||context.scriptSource?.raw);
+          const pending={damage:amount,damagePartsV138:[{amount,absorptionSource:command.absorptionSource,penetration:command.penetration,ignoreAbsorption:command.ignoreAbsorption,ignorePercent:command.ignorePercent}],effects:[]};
+          await emit204('BeforeDamage',target,{...context,caster:damageSource204,attacker:damageSource204,target,targets:[target],damage:amount,damageType},pending);
+          state.effects.push(...pending.effects);
+          const defenseFor=type=>incomingDefense119(target,context.weapon?.weaponCategory||'light',null,type);
+          const reduced=applyAbsorptionV138(pending,defenseFor(damageType),defenseFor);
+          amount=reduced.applied;absorbed=reduced.absorbed;
+        }
+        const result=kind==='damage'?await applyHit199(target,amount,context.sourceName||'Lua',damageSource204,{damageType,rawDamage:command.amount,absorbed}):rules?.applyHeal?.(target,amount);
+        updatePlayerHp105(target);
+        if(kind==='heal')await emit204('OnHealApplied',target,{...context,target,targets:[target],damage:Math.max(0,num(result?.after)-num(result?.before))});
+        appendCombatLog105(runtime,`${context.sourceName||'Lua'}: ${kind==='damage'?'урон':'лечение'} ${target.name} ${num(result?.before)} → ${num(result?.after)}${absorbed?` (поглощено ${absorbed})`:''}.`);
       }else if(kind==='heal_injury'){
         const target=tokenById119(command.targetId);if(!target)throw Error('HealInjury: цель не найдена');const change=Trauma195.treat(target,command.amount);syncTraumaProfile195(target);appendCombatLog105(runtime,`${context.sourceName||'Lua'}: лечение травмы ${target.name} ${change.before} → ${change.after}.`);
       }else if(kind==='move_to'){
