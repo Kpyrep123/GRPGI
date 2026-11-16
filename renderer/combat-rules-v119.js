@@ -72,7 +72,7 @@
   }
 
   function stabilizationDifficulty(target){
-    return 12+Math.max(0,integer(target?.critical229?.damage));
+    return 12+Math.floor(Math.max(0,integer(target?.critical229?.damage))/2);
   }
   function stabilize(target){
     if(!target?.conditionsV138?.dying||target.dead229)return false;
