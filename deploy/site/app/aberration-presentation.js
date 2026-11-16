@@ -2,7 +2,7 @@
   'use strict';
   const rarities=['common','uncommon','rare','epic','legendary'];
   const labels={common:'Обычное',uncommon:'Необычное',rare:'Редкое',epic:'Эпическое',legendary:'Легендарное'};
-  const damageTypes=['kinetic','energy','electric','explosive','gas'];
+  const damageTypes=root.GRPGDamageTypesV202?.aberrationTypeIds || [];
   const attackKinds={melee:'Ближняя атака',ranged:'Дальняя атака',any:'Любая атака'};
   const unique=new Set(['weapon-5','weapon-6','weapon-11','weapon-12','weapon-13','weapon-14','armor-25','armor-27','armor-28']);
   const list=value=>Array.isArray(value)?value:[];
@@ -26,7 +26,7 @@
     if(root.GRPGItemInstancesV215?.passiveEffect(base)||row.group==='weapon-7')detail=row.value;
     const dice=row.group==='weapon-5'&&/^1d(4|6|8)\b/i.exec(value);
     return {...row,type:resolvedType,cost:saved?.cost??row.cost,
-      text:dice?'+1d'+dice[1]+' урона'+(type?' · '+root.GRPGDamageTypesV202.label(type):''):row.name+' · '+detail,
+      text:dice?'+1d'+dice[1]+' урона'+' · '+(type?(root.GRPGDamageTypesV202?.label(type)||type):'Тип по оружию'):row.name+' · '+detail,
       value:Number(dice?.[1]??/^[-+]?\d+/.exec(value.replace('−','-'))?.[0])};
   }
 

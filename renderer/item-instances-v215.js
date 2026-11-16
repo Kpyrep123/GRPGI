@@ -24,8 +24,17 @@
     ].filter(([, id]) => id);
   }
 
+  function typeBonusDamage(roll,item){
+    const types=root.GRPGDamageTypesV202;
+    if(!types||item?.type!=='weapon'||!list(roll?.effects).some(id=>/^weapon-5-[1-3]$/.test(id)))return roll;
+    const override=list(roll.effects).map(id=>/^weapon-6-([1-5])$/.exec(id)).find(Boolean);
+    const type=override?types.aberrationTypeIds[Number(override[1])-1]:types.effective(item);
+    return {...roll,effects:roll.effects.map(id=>/^weapon-5-[1-3]$/.test(id)?id+':'+type:id)};
+  }
+
   function updateResources(copy, item) {
     if (!item) return copy;
+    if(copy.aberration252)copy.aberration252=typeBonusDamage(copy.aberration252,item);
     const baseDurability = count(item.durabilityMax ?? item.maxDurability);
     const durabilityMax = Math.ceil(baseDurability*(100+effectValue(copy,'armor-21'))/100);
     const chargesMax = count(item.chargesMax ?? item.maxCharges);
@@ -287,7 +296,7 @@
 
   function storeAberration(copy,item,roll) {
     if(!copy||!roll)return;
-    copy.aberration252=clone(roll);
+    copy.aberration252=typeBonusDamage(clone(roll),item);
     copy.rarity=roll.rarity==='common'?'обычный':roll.rarity;
     if(effectValue(copy,'armor-21')){
       copy.durabilityMax=0;
@@ -310,7 +319,7 @@
     return baseMass*(100*count+percent)/100;
   }
 
-  const api = {aberrationCategory,hasEnergyShield,canRollAberration,passiveEffect,equippedAberrationModifiers,storeAberration,massPercent,inventoryRowMass,mounts, installed, changeAttachment, attachmentHitBonus,inventoryBadges,chargeBadge, tracked, normalize, reconcile, instance, choose, bind, remove, add, repair, updateResources, slotKey, clone};
+  const api = {typeBonusDamage,aberrationCategory,hasEnergyShield,canRollAberration,passiveEffect,equippedAberrationModifiers,storeAberration,massPercent,inventoryRowMass,mounts, installed, changeAttachment, attachmentHitBonus,inventoryBadges,chargeBadge, tracked, normalize, reconcile, instance, choose, bind, remove, add, repair, updateResources, slotKey, clone};
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.GRPGItemInstancesV215 = api;
 })(typeof window === 'undefined' ? globalThis : window);
