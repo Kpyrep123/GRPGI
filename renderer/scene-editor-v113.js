@@ -1781,6 +1781,16 @@
     return Math.max(0,num(weapon?.range)+weaponRangeBonus253(token,weapon,slot));
   }
   function shotRange229(token,weapon,slot){return weapon?.weaponCategory==='melee'?shotBaseRange229(token,weapon,slot):Infinity;}
+  function primaryShotDamage093(result,attacker,target,weapon,damageType,slot){
+    if(!result.hit)return 0;
+    const base=result.damageApplied;
+    if(damageType!=='energy'||weapon?.weaponCategory==='melee')return base;
+    const distance=window.GRPGUnitSizeV184.distance(attacker,target),range=shotBaseRange229(attacker,weapon,slot);
+    if(range<=0)return base;
+    const damage=window.GRPGCombatRulesV119.attenuateEnergyDamage(base,distance,range);
+    appendCombatLog105(Combat.getRuntime(),`«${weapon.name||weapon.id}»: ослабление энергии на ${hexLabel109(distance)} из ${hexLabel109(range)} · ${base} → ${damage} урона.`);
+    return damage;
+  }
   function longRangeDisadvantage229(token,target,weapon,slot){
     return weapon?.weaponCategory!=='melee'&&window.GRPGUnitSizeV184.distance(token,target)>shotBaseRange229(token,weapon,slot)+1e-6;
   }
@@ -3592,7 +3602,8 @@
       jamOnHit258(attacker,weapon,result,selected.slot);
       meleeOutcome256(attacker,weapon,target,result,entered.damageRoll,selected.slot);
     }
-    if(!result.cancelled263)await emit204('OnAttackResolved',attacker,context({hit:result.hit,critical:result.critical}),before);if(!result.hit&&!result.cancelled263){await emit204('OnMiss',attacker,context({hit:false}));refresh();recoil255(attacker,weapon,selected.slot);}let applied=0,absorbed=0,hp={before:num(target.hpCurrent),after:num(target.hpCurrent),applied:0};const effects={damage:result.hit?result.damageApplied:0,damagePartsV138:result.hit?[{amount:result.damageApplied,absorptionSource:'all'}]:[],effects:before.effects,standardAttackDepthV138:depth+1};
+    if(!result.cancelled263)await emit204('OnAttackResolved',attacker,context({hit:result.hit,critical:result.critical}),before);if(!result.hit&&!result.cancelled263){await emit204('OnMiss',attacker,context({hit:false}));refresh();recoil255(attacker,weapon,selected.slot);}let applied=0,absorbed=0,hp={before:num(target.hpCurrent),after:num(target.hpCurrent),applied:0};const primaryDamage=primaryShotDamage093(result,attacker,target,weapon,shotDamageType,selected.slot);
+    const effects={damage:primaryDamage,damagePartsV138:result.hit?[{amount:primaryDamage,absorptionSource:'all'}]:[],effects:before.effects,standardAttackDepthV138:depth+1};
     if(result.hit){
       await bonusDie258(attacker,weapon,effects,shotDamageType,selected.slot);refresh();
       const hit={...rolls,hit:true,critical:result.critical};
@@ -4093,7 +4104,8 @@
       // Begin OnHit/BeforeDamage with the damage left after the entered roll,
       // critical additions and armor. The pre-attack state normally starts at
       // zero and previously caused every ordinary weapon hit to deal 0 damage.
-      const effectState={damage:result.hit?result.damageApplied:0,damagePartsV138:result.hit?[{amount:result.damageApplied,absorptionSource:'all'}]:[],effects:beforeState.effects};
+      const primaryDamage=primaryShotDamage093(result,attacker,target,weapon,shotDamageType);
+      const effectState={damage:primaryDamage,damagePartsV138:result.hit?[{amount:primaryDamage,absorptionSource:'all'}]:[],effects:beforeState.effects};
       if(result.hit){
         if(!hadHit){
           if(attacker.burstStateV122)attacker.burstStateV122.aberrationHit258=true;
