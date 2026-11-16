@@ -1349,6 +1349,7 @@
         }
       }catch(error){console.warn('SCENE_INCOMING_DEFENSE_V119',error);}
     }
+    if(resolvedType==='electric')armorAbsorption=Math.floor(armorAbsorption/2);
     const defenseBonus=baseArmorClass+Math.max(shieldArmorClass,coverArmorClass),damageReduction=baseAbsorption+armorAbsorption+shieldAbsorption+coverAbsorption;
     return {defenseBonus,damageReduction,category,damageType:resolvedType,typedArmorDelta,typedArmorImmune,wornArmorAbsorption,coverBonus:coverArmorClass,baseArmorClass,shieldArmorClass,coverArmorClass,baseAbsorption,armorAbsorption,shieldAbsorption,coverAbsorption,absorptionSources:{base:baseAbsorption,armor:armorAbsorption,shield:shieldAbsorption,cover:coverAbsorption}};
   }
