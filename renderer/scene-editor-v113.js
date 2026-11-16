@@ -1300,7 +1300,7 @@
   function incomingDefense119(token,weaponCategory='light',cover=null,damageType=weaponCategory) {
     const category=String(weaponCategory||'light').trim().toLowerCase(),entity=entityForToken(token);
     const resolvedType=window.GRPGDamageTypesV202.normalize(damageType,'kinetic');
-    let typedArmorDelta=0,typedArmorImmune=false;
+    let typedArmorDelta=0,typedArmorImmune=false,wornArmorAbsorption=0;
     let baseArmorClass=num(tokenDefense105(token),0),shieldArmorClass=0,coverArmorClass=Math.max(0,num(cover?.armorBonus,0));
     let baseAbsorption=token?.defenseOverrideV120?Math.max(0,num(token?.defense,0)):0,armorAbsorption=0,shieldAbsorption=0,coverAbsorption=Math.max(0,num(cover?.hardness,0));
     if(entity&&window.GRPGStatsV113?.compute){
@@ -1334,6 +1334,10 @@
         const computeOptions={kind:token?.npcId?'npc':'player',inCombat:true,incomingWeaponCategory:category,incomingDamageType:window.GRPGDamageTypesV202.normalize(damageType),temporaryModifiers:timedStatModifiers122(token)},computedBase=window.GRPGStatsV113.compute(withoutArmor,computeOptions),computed=window.GRPGStatsV113.compute(withoutShield,computeOptions);
         if(!token?.armorClassOverrideV120)baseArmorClass=num(computed?.values?.armorClass,baseArmorClass);
         if(!token?.defenseOverrideV120){baseAbsorption=Math.max(0,num(computedBase?.values?.defense,0));armorAbsorption=Math.max(0,num(computed?.values?.defense,0)-baseAbsorption);}
+        if(resolvedType==='explosive'&&wornArmor&&armorAbsorption>0){
+          const withoutWornArmor=clone(withoutShield);withoutWornArmor.equipmentSlots.armor='';
+          wornArmorAbsorption=clamp104(num(computed?.values?.defense)-num(window.GRPGStatsV113.compute(withoutWornArmor,computeOptions)?.values?.defense),0,armorAbsorption);
+        }
         // A shield in either hand participates. Multiple shields do not sum their bonuses.
         const choices=shields.map(({slot,item})=>{const equipped=clone(withoutShield);equipped.equipmentSlots[slot]=slots[slot];const value=window.GRPGStatsV113.compute(equipped,computeOptions);return{bonus:Math.max(0,shieldBonus122(item),num(value?.values?.armorClass)-num(computed?.values?.armorClass)),absorption:Math.max(0,num(value?.values?.defense)-num(computed?.values?.defense))};}).sort((a,b)=>b.bonus-a.bonus||b.absorption-a.absorption);
         shieldArmorClass=choices[0]?.bonus||0;if(!token?.defenseOverrideV120)shieldAbsorption=choices[0]?.absorption||0;
@@ -1345,8 +1349,9 @@
         }
       }catch(error){console.warn('SCENE_INCOMING_DEFENSE_V119',error);}
     }
+    if(resolvedType==='electric')armorAbsorption=Math.floor(armorAbsorption/2);
     const defenseBonus=baseArmorClass+Math.max(shieldArmorClass,coverArmorClass),damageReduction=baseAbsorption+armorAbsorption+shieldAbsorption+coverAbsorption;
-    return {defenseBonus,damageReduction,category,damageType:resolvedType,typedArmorDelta,typedArmorImmune,coverBonus:coverArmorClass,baseArmorClass,shieldArmorClass,coverArmorClass,baseAbsorption,armorAbsorption,shieldAbsorption,coverAbsorption,absorptionSources:{base:baseAbsorption,armor:armorAbsorption,shield:shieldAbsorption,cover:coverAbsorption}};
+    return {defenseBonus,damageReduction,category,damageType:resolvedType,typedArmorDelta,typedArmorImmune,wornArmorAbsorption,coverBonus:coverArmorClass,baseArmorClass,shieldArmorClass,coverArmorClass,baseAbsorption,armorAbsorption,shieldAbsorption,coverAbsorption,absorptionSources:{base:baseAbsorption,armor:armorAbsorption,shield:shieldAbsorption,cover:coverAbsorption}};
   }
   function entityForToken(token) {
     if (token?.playerId) { const p = App.state?.users?.[token.playerId] || PLAYER_TEMPLATES?.[token.playerId]; return p ? normalizePlayerProfileV2(p) : null; }
@@ -2884,7 +2889,7 @@
       attacker.reactionUsedV119=true;if(entered.attackRoll===1)await applyWeaponFumble196(attacker,weapon);
       const context={...declaredContext,attackRoll:entered.attackRoll,defenseRoll:entered.defenseRoll},pre={damage:0,attackBonus:declared.attackBonus,defenseBonus:declared.defenseBonus,effects:declared.effects};
       const protectFromWear=attackImmunity263(victim,weapon);
-      if(!protectFromWear&&wearArmorOnTwentyV215(attacker,victim,entered.attackRoll)){
+      if(!protectFromWear&&context.damageType!=='explosive'&&wearArmorOnTwentyV215(attacker,victim,entered.attackRoll)){
         const worn=incomingDefense119(victim,'melee',null,damageType202(weapon,null,attacker));
         pre.defenseBonus+=worn.defenseBonus-checkPenalty199(victim)-defense.defenseBonus;
       }
@@ -2892,12 +2897,12 @@
       const result=rules.resolveManualAttack({attackRoll:entered.attackRoll,defenseRoll:entered.defenseRoll,attackBonus:pre.attackBonus+num(entered.attackBonusDelta204),defenseBonus:pre.defenseBonus+num(entered.defenseBonusDelta204),damageRoll:entered.damageRoll,damageBonus,damageReduction:0});
       const liveVictim=combatTransactionRefs120(transaction).target;
       if(!cancelImmuneAttack263(liveVictim,weapon,result)){
-        if(protectFromWear)wearArmorOnTwentyV215(attacker,liveVictim,entered.attackRoll);
+        if(protectFromWear&&context.damageType!=='explosive')wearArmorOnTwentyV215(attacker,liveVictim,entered.attackRoll);
         meleeOutcome256(attacker,weapon,liveVictim,result,entered.damageRoll);
       }
       if(!result.cancelled263)await emit204('OnAttackResolved',attacker,{...context,hit:result.hit,critical:result.critical},pre);if(!result.hit&&!result.cancelled263)await emit204('OnMiss',attacker,{...context,hit:false});
       refs=combatTransactionRefs120(transaction);attacker=refs.attacker;victim=refs.target;let finalDamage=result.damageApplied,hp={before:num(victim?.hpCurrent),after:num(victim?.hpCurrent),applied:0},state={damage:result.hit?result.damageApplied:0,damagePartsV138:result.hit?[{amount:result.damageApplied,absorptionSource:'all'}]:[],effects:pre.effects};
-      if(result.hit&&victim){await bonusDie258(attacker,weapon,state,damageType202(weapon,null,attacker));refs=combatTransactionRefs120(transaction);attacker=refs.attacker;victim=refs.target;if(!attacker||!victim)return false;await runAutomaticHooks119(attacker,'OnHit',{...context,attacker,target:victim,damage:state.damage},state);await chooseReaction119('OnHit',{...context,attacker,target:victim,damage:state.damage},state);refs=combatTransactionRefs120(transaction);victim=refs.target;attacker=refs.attacker;if(victim){await runAutomaticHooks119(victim,'BeforeDamage',{...context,attacker,target:victim,damage:state.damage},state);await chooseReaction119('BeforeDamage',{...context,attacker,target:victim,damage:state.damage},state);refs=combatTransactionRefs120(transaction);victim=refs.target;attacker=refs.attacker;if(!victim||!attacker)return false;finisher255(attacker,weapon,victim,state);finalDamage=applyAbsorptionV138(state,incomingDefense119(victim,'melee',null,damageType202(weapon,null,attacker)),type=>incomingDefense119(victim,'melee',null,type)).applied;if(result.defenseCritical)finalDamage=Math.floor(finalDamage/2);hp=await applyWeaponHit261(victim,finalDamage,attacker,weapon,result,{damageType:damageType202(weapon,null,attacker)});updatePlayerHp105(victim);const afterContext={...context,attacker,target:victim,damage:finalDamage};await runAutomaticHooks119(victim,'OnTakeDamage',afterContext,state);await chooseReaction119('OnTakeDamage',afterContext,state);refs=combatTransactionRefs120(transaction);victim=refs.target;hp.after=num(victim?.hpCurrent,hp.after);hp.applied=Math.max(0,hp.before-hp.after);if(victim)updatePlayerHp105(victim);}}
+      if(result.hit&&victim){await bonusDie258(attacker,weapon,state,damageType202(weapon,null,attacker));refs=combatTransactionRefs120(transaction);attacker=refs.attacker;victim=refs.target;if(!attacker||!victim)return false;await runAutomaticHooks119(attacker,'OnHit',{...context,attacker,target:victim,damage:state.damage},state);await chooseReaction119('OnHit',{...context,attacker,target:victim,damage:state.damage},state);refs=combatTransactionRefs120(transaction);victim=refs.target;attacker=refs.attacker;if(victim){await runAutomaticHooks119(victim,'BeforeDamage',{...context,attacker,target:victim,damage:state.damage},state);await chooseReaction119('BeforeDamage',{...context,attacker,target:victim,damage:state.damage},state);refs=combatTransactionRefs120(transaction);victim=refs.target;attacker=refs.attacker;if(!victim||!attacker)return false;finisher255(attacker,weapon,victim,state);const reduced=applyAbsorptionV138(state,incomingDefense119(victim,'melee',null,damageType202(weapon,null,attacker)),type=>incomingDefense119(victim,'melee',null,type));wearArmorFromBlast093(victim,reduced);finalDamage=reduced.applied;if(result.defenseCritical)finalDamage=Math.floor(finalDamage/2);hp=await applyWeaponHit261(victim,finalDamage,attacker,weapon,result,{damageType:damageType202(weapon,null,attacker)});updatePlayerHp105(victim);const afterContext={...context,attacker,target:victim,damage:finalDamage};await runAutomaticHooks119(victim,'OnTakeDamage',afterContext,state);await chooseReaction119('OnTakeDamage',afterContext,state);refs=combatTransactionRefs120(transaction);victim=refs.target;hp.after=num(victim?.hpCurrent,hp.after);hp.applied=Math.max(0,hp.before-hp.after);if(victim)updatePlayerHp105(victim);}}
       if(result.hit&&victim)await secondaryHit258(attacker,weapon,victim,damageType202(weapon,null,attacker));
       if(weapon.shotSoundId247)audioApi()?.play?.(weapon.shotSoundId247);
       if(!result.cancelled263)appendCombatLog105(refs.runtime,`${attacker.name} ${result.hit?'попадает':'промахивается'} атакой по возможности по ${victim?.name||target.name}${result.hit?`: ${hp.before} → ${hp.after} HP`:''}${result.fumble?' · натуральная 1':''}.`);
@@ -3326,7 +3331,7 @@
     const total=Math.max(0,num(state.damage,0)),parts=list(state.damagePartsV138).length?list(state.damagePartsV138):[{amount:total,absorptionSource:'all'}];
     const partsTotal=parts.reduce((sum,row)=>sum+Math.max(0,num(row?.amount,0)),0);if(Math.abs(partsTotal-total)>.001){parts.length=0;parts.push({amount:total,absorptionSource:'all'});}
     const portions=new Map();
-    let absorbed=0;
+    let absorbed=0,explosiveArmorBlocked=0;
     for(const part of parts){
       const raw=Math.max(0,num(part.amount,0));
       if(!raw)continue;
@@ -3344,6 +3349,10 @@
       const effective=Math.max(0,base-penetration-flat)*(1-percent/100);
       const taken=Math.min(raw,Math.max(0,Math.round(effective)));
       absorbed+=taken;
+      if(type==='explosive'&&(source==='all'||source==='armor')&&currentDefense.wornArmorAbsorption>0){
+        const withoutArmor=Math.max(0,base-currentDefense.wornArmorAbsorption-penetration-flat)*(1-percent/100);
+        explosiveArmorBlocked+=Math.max(0,taken-Math.min(raw,Math.round(withoutArmor)));
+      }
       portion.damage+=raw-taken;
     }
     let applied=0;
@@ -3353,7 +3362,20 @@
       if(portion.delta<0)absorbed+=portion.damage-remaining;
       applied+=remaining;
     }
-    return{raw:total,absorbed:Math.min(total,absorbed),applied:Math.max(0,Math.round(applied))};
+    return{raw:total,absorbed:Math.min(total,absorbed),applied:Math.max(0,Math.round(applied)),explosiveArmorBlocked};
+  }
+  function wearArmorFromBlast093(target,reduction){
+    const blocked=Math.floor(num(reduction.explosiveArmorBlocked));
+    if(blocked<=0)return;
+    const armor=equipmentItem105(entityForToken(target)?.equipmentSlots?.armor);
+    if(!armor)return;
+    const copy=itemRuntimeStateV138(target,armor,'armor');
+    if(copy.broken||!copy.durabilityMax)return;
+    const loss=Math.min(copy.durability,blocked);
+    if(loss<=0)return;
+    copy.durability-=loss;
+    copy.broken=copy.durability===0;
+    appendCombatLog105(Combat.getRuntime(),`${target.name}: «${armor.name||armor.id}» остановила ${blocked} взрывного урона, −${loss} прочности (${copy.durability}/${copy.durabilityMax}).`);
   }
   function weaponForSlotV138(token,slotOrId=''){
     const entry=equippedEntryV138(token,slotOrId);if(entry?.item?.type==='weapon')return{...entry};
@@ -3591,14 +3613,14 @@
     if(entered.attackRoll===1)await applyWeaponFumble196(attacker,weapon);
     const rolls={attackRoll:entered.attackRoll,defenseRoll:entered.defenseRoll},before={damage:0,attackBonus:declared.attackBonus,defenseBonus:declared.defenseBonus,effects:declared.effects,standardAttackDepthV138:depth+1};
     const protectFromWear=attackImmunity263(target,weapon);
-    if(!protectFromWear&&wearArmorOnTwentyV215(attacker,target,entered.attackRoll)){
+    if(!protectFromWear&&shotDamageType!=='explosive'&&wearArmorOnTwentyV215(attacker,target,entered.attackRoll)){
       const worn=incomingDefense119(target,weapon.weaponCategory||'light',cover,shotDamageType);
       before.defenseBonus+=worn.defenseBonus-checkPenalty199(target)-settledDefense.defenseBonus;
     }
     await runAutomaticHooks119(attacker,'BeforeAttackStart',context(rolls),before);refresh();await chooseReaction119('BeforeAttackStart',context(rolls),before);refresh();
     const result=rules.resolveManualAttack({attackRoll:entered.attackRoll,defenseRoll:entered.defenseRoll,attackBonus:before.attackBonus+num(entered.attackBonusDelta204),defenseBonus:before.defenseBonus+num(entered.defenseBonusDelta204),damageRoll:entered.damageRoll,damageBonus,criticalRange:weaponAberration254(attacker,weapon,'weapon-3',selected.slot),criticalBonus:weaponAberration254(attacker,weapon,'weapon-4',selected.slot),damageReduction:0});
     if(!cancelImmuneAttack263(target,weapon,result)){
-      if(protectFromWear)wearArmorOnTwentyV215(attacker,target,entered.attackRoll);
+      if(protectFromWear&&shotDamageType!=='explosive')wearArmorOnTwentyV215(attacker,target,entered.attackRoll);
       jamOnHit258(attacker,weapon,result,selected.slot);
       meleeOutcome256(attacker,weapon,target,result,entered.damageRoll,selected.slot);
     }
@@ -3610,7 +3632,7 @@
       await runAutomaticHooks119(attacker,'OnHit',context({...hit,damage:effects.damage}),effects);refresh();await chooseReaction119('OnHit',context({...hit,damage:effects.damage}),effects);refresh();
       await runAutomaticHooks119(target,'BeforeDamage',context({...hit,damage:effects.damage}),effects);refresh();await chooseReaction119('BeforeDamage',context({...hit,damage:effects.damage}),effects);refresh();
       finisher255(attacker,weapon,target,effects,selected.slot);
-      const reduced=applyAbsorptionV138(effects,incomingDefense119(target,weapon.weaponCategory||'light',cover,shotDamageType),type=>incomingDefense119(target,weapon.weaponCategory||'light',cover,type));absorbed=reduced.absorbed;applied=result.defenseCritical?Math.floor(reduced.applied/2):reduced.applied;hp=await applyWeaponHit261(target,applied,attacker,weapon,result,{damageType:shotDamageType,rawDamage:effects.damage,absorbed});updatePlayerHp105(target);
+      const reduced=applyAbsorptionV138(effects,incomingDefense119(target,weapon.weaponCategory||'light',cover,shotDamageType),type=>incomingDefense119(target,weapon.weaponCategory||'light',cover,type));wearArmorFromBlast093(target,reduced);absorbed=reduced.absorbed;applied=result.defenseCritical?Math.floor(reduced.applied/2):reduced.applied;hp=await applyWeaponHit261(target,applied,attacker,weapon,result,{damageType:shotDamageType,rawDamage:effects.damage,absorbed});updatePlayerHp105(target);
       await runAutomaticHooks119(target,'OnTakeDamage',context({...hit,damage:applied}),effects);refresh();await chooseReaction119('OnTakeDamage',context({...hit,damage:applied}),effects);refresh();
     }
     if(result.hit){await secondaryHit258(attacker,weapon,target,shotDamageType,selected.slot);refresh();}
@@ -4084,7 +4106,7 @@
       if(magazine.size>0){const currentMagazine=magazineState118(attacker,weapon);if(currentMagazine.loaded<shotCost)throw new Error('Патроны были израсходованы другим действием');currentMagazine.loaded-=shotCost;writeMagazineState118(attacker,weapon,currentMagazine);magazine.loaded=currentMagazine.loaded;magazine.ammoTypeId=currentMagazine.ammoTypeId;}
       if(entered.attackRoll===1)await applyWeaponFumble196(attacker,weapon);
       const protectFromWear=immuneTargets.includes(target.id)||attackImmunity263(target,weapon);
-      if(!protectFromWear)wearArmorOnTwentyV215(attacker,target,entered.attackRoll);
+      if(!protectFromWear&&shotDamageType!=='explosive')wearArmorOnTwentyV215(attacker,target,entered.attackRoll);
       const context={attacker,target,caster:attacker,targets:[target],weapon,ammo,damageType:shotDamageType,attackRoll:entered.attackRoll,defenseRoll:entered.defenseRoll,sourceName:weapon.name||'Атака'};
       const beforeState={damage:0,attackBonus:num(declaredState.attackBonus,hitBonus),defenseBonus:num(declaredState.defenseBonus,defense.defenseBonus),effects:declaredState.effects};await runAutomaticHooks119(attacker,'BeforeAttackStart',{...context,damage:0,attackBonus:beforeState.attackBonus,defenseBonus:beforeState.defenseBonus},beforeState);await chooseReaction119('BeforeAttackStart',{...context,damage:0,attackBonus:beforeState.attackBonus,defenseBonus:beforeState.defenseBonus},beforeState);
       ({attacker,target}=combatTransactionRefs120(transaction));
@@ -4093,7 +4115,7 @@
       const rollDefense=incomingDefense119(target,weapon.weaponCategory||'light',cover,shotDamageType);rollDefense.defenseBonus+=postureDefense229(attacker,target,weapon)-checkPenalty199(target);beforeState.defenseBonus=num(beforeState.defenseBonus)-defense.defenseBonus+rollDefense.defenseBonus;defense=rollDefense;
       const result=rules.resolveManualAttack({attackRoll:entered.attackRoll,defenseRoll:entered.defenseRoll,attackBonus:num(beforeState.attackBonus,hitBonus)+num(entered.attackBonusDelta204),defenseBonus:num(beforeState.defenseBonus,defense.defenseBonus)+num(entered.defenseBonusDelta204),damageRoll:entered.damageRoll,damageBonus:damageBonus+num(entered.aimApplied229),criticalRange:shotIndex===1?weaponAberration254(attacker,weapon,'weapon-3'):0,criticalBonus:alreadyCritical?0:weaponAberration254(attacker,weapon,'weapon-4'),damageReduction:0});
       const cancelled=cancelImmuneAttack263(target,weapon,result,immuneTargets);
-      if(!cancelled&&protectFromWear)wearArmorOnTwentyV215(attacker,target,entered.attackRoll);
+      if(!cancelled&&protectFromWear&&shotDamageType!=='explosive')wearArmorOnTwentyV215(attacker,target,entered.attackRoll);
       if(!cancelled&&jamOnHit258(attacker,weapon,result)){
         attacker.burstStateV122=null;completeDroneModule129(attacker);
       }
@@ -4119,7 +4141,7 @@
         await runAutomaticHooks119(target,'BeforeDamage',{...hitContext,damage:effectState.damage},effectState);await chooseReaction119('BeforeDamage',{...hitContext,damage:effectState.damage},effectState);
         ({attacker,target}=combatTransactionRefs120(transaction));if(!target)throw new Error('Цель больше не находится на сцене');
         if(!usedFinisher)usedFinisher=finisher255(attacker,weapon,target,effectState);
-        const finalDefense=incomingDefense119(target,weapon.weaponCategory||'light',cover,shotDamageType);absorptionV138=applyAbsorptionV138(effectState,finalDefense,type=>incomingDefense119(target,weapon.weaponCategory||'light',cover,type));finalDamage=absorptionV138.applied;if(result.defenseCritical)finalDamage=Math.floor(finalDamage/2);
+        const finalDefense=incomingDefense119(target,weapon.weaponCategory||'light',cover,shotDamageType);absorptionV138=applyAbsorptionV138(effectState,finalDefense,type=>incomingDefense119(target,weapon.weaponCategory||'light',cover,type));wearArmorFromBlast093(target,absorptionV138);finalDamage=absorptionV138.applied;if(result.defenseCritical)finalDamage=Math.floor(finalDamage/2);
         hpChange=await applyWeaponHit261(target,finalDamage,attacker,weapon,result,{damageType:shotDamageType,rawDamage:effectState.damage,absorbed:absorptionV138.absorbed});updatePlayerHp105(target);
         const afterContext={...hitContext,attacker,target,caster:attacker,targets:[target],damage:finalDamage};
         await runAutomaticHooks119(target,'OnTakeDamage',afterContext,effectState);await chooseReaction119('OnTakeDamage',afterContext,effectState);
@@ -4175,6 +4197,18 @@
     return impact;
   }
   function hexAxial229(node){return {q:node.col,r:node.row-Math.floor(node.col/2)};}
+  function blastReachesTarget093(scene,impact,target,radius){
+    if(window.GRPGUnitSizeV184.distance(target,{x:impact.x,y:impact.y,w:0,h:0})>radius)return false;
+    const center=centerOf(target);
+    if(coverBetween120(scene,impact,center).blocksAttack||window.GRPGCombatVisionV225.elevationBlocksSight(scene,impact,center))return false;
+    const geometry={tokens:[],moving:null,assets:list(scene.assets),zones:list(scene.templates)};
+    const steps=Math.max(2,Math.ceil(dist(impact,center)/.08));
+    for(let i=1;i<steps;i++){
+      const t=i/steps,x=impact.x+(center.x-impact.x)*t,y=impact.y+(center.y-impact.y)*t;
+      if(movementBlockedAt(scene,x,y,'',0,true,false,geometry))return false;
+    }
+    return true;
+  }
   async function commitGrenade105(point){
     if(local.commandBusy191){Toast.show(operationReason191(),'info');return;}
     const scene=Combat.getScene(),runtime=Combat.getRuntime(),selectedAttacker=selectedToken104(),selectedGrenade=grenadeForToken105(selectedAttacker);
@@ -4189,7 +4223,7 @@
     if(!rules){Toast.show('Модуль ручного расчёта боя не загружен','err');return;}
     const impact=await grenadeImpact229(selectedAttacker,preview.end,scene);if(!impact)return;
     const radiusHexes=Math.max(0,num(preview.radiusHexes,grenadeRadiusCells105(selectedGrenade,scene))),targetIds=[];
-    for(const target of list(runtime.tokens)){const c=centerOf(target);if(window.GRPGUnitSizeV184.distance(target,{x:impact.x,y:impact.y,w:0,h:0})>radiusHexes)continue;if(coverBetween120(scene,impact,c).blocksAttack||sightSegmentBlocked105(scene,impact,c,[target.id]))continue;targetIds.push(String(target.id));}
+    for(const target of list(runtime.tokens))if(blastReachesTarget093(scene,impact,target,radiusHexes))targetIds.push(String(target.id));
     const transaction=beginCombatTransaction120('grenade',scene.id,selectedAttacker.id,targetIds);if(!transaction)return;
     try{
       let refs=combatTransactionRefs120(transaction),attacker=refs.attacker,targets=refs.targets,grenade=grenadeForToken105(attacker);
@@ -4206,21 +4240,24 @@
       local.instinctDefer199=Math.max(0,num(local.instinctDefer199))+1;
       try{for(const targetId of transaction.targetIds){
         refs=combatTransactionRefs120(transaction);attacker=refs.attacker;const target=list(refs.runtime.tokens).find(row=>String(row.id)===String(targetId));if(!target)continue;
-        const cover=coverBetween120(refs.scene,impact,centerOf(target)),defense=incomingDefense119(target,grenade.weaponCategory||'heavy',cover,incomingCategory);
+        if(!blastReachesTarget093(refs.scene,impact,target,radiusHexes))continue;
         const state={damage:preState.damage,damagePartsV138:clone(preState.damagePartsV138),absorptionRulesV138:clone(preState.absorptionRulesV138||{}),effects:allEffects.effects};let context={...beforeContext,attacker,caster:attacker,target,targets:[target],damage:state.damage};
         await runAutomaticHooks119(attacker,'OnHit',context,state);await chooseReaction119('OnHit',{...context,damage:state.damage},state);
         refs=combatTransactionRefs120(transaction);const currentTarget=list(refs.runtime.tokens).find(row=>String(row.id)===String(targetId));if(!currentTarget)continue;attacker=refs.attacker;context={...context,attacker,caster:attacker,target:currentTarget,targets:[currentTarget]};
         await runAutomaticHooks119(currentTarget,'BeforeDamage',{...context,damage:state.damage},state);await chooseReaction119('BeforeDamage',{...context,damage:state.damage},state);
-        refs=combatTransactionRefs120(transaction);const damageTarget=list(refs.runtime.tokens).find(row=>String(row.id)===String(targetId));if(!damageTarget)continue;
-        const reduced=applyAbsorptionV138(state,incomingDefense119(damageTarget,grenade.weaponCategory||'heavy',cover,incomingCategory)),finalDamage=reduced.applied,hp=await applyHit199(damageTarget,finalDamage,grenade.name,refs.attacker,{defer:true,origin:impact,damageType:incomingCategory,rawDamage:state.damage,absorbed:reduced.absorbed});updatePlayerHp105(damageTarget);
+        refs=combatTransactionRefs120(transaction);const damageTarget=list(refs.runtime.tokens).find(row=>String(row.id)===String(targetId));if(!damageTarget||!blastReachesTarget093(refs.scene,impact,damageTarget,radiusHexes))continue;
+        const defenseFor=type=>incomingDefense119(damageTarget,grenade.weaponCategory||'heavy',null,type);
+        const reduced=applyAbsorptionV138(state,defenseFor(incomingCategory),defenseFor),finalDamage=reduced.applied;
+        wearArmorFromBlast093(damageTarget,reduced);
+        const hp=await applyHit199(damageTarget,finalDamage,grenade.name,refs.attacker,{defer:true,origin:impact,damageType:incomingCategory,rawDamage:state.damage,absorbed:reduced.absorbed});updatePlayerHp105(damageTarget);
         context={...context,attacker:refs.attacker,caster:refs.attacker,target:damageTarget,targets:[damageTarget],damage:finalDamage};
         await runAutomaticHooks119(damageTarget,'OnTakeDamage',context,state);await chooseReaction119('OnTakeDamage',context,state);
         refs=combatTransactionRefs120(transaction);const finalTarget=list(refs.runtime.tokens).find(row=>String(row.id)===String(targetId));const after=num(finalTarget?.hpCurrent,hp.after),applied=Math.max(0,hp.before-after);if(finalTarget){updatePlayerHp105(finalTarget);}
-        affected.push({name:finalTarget?.name||damageTarget.name,damage:applied,absorbed:reduced.absorbed,before:hp.before,after,cover:cover.label});allEffects.effects=state.effects;
+        affected.push({name:finalTarget?.name||damageTarget.name,damage:applied,absorbed:reduced.absorbed,before:hp.before,after});allEffects.effects=state.effects;
       }
       }finally{local.instinctDefer199=Math.max(0,num(local.instinctDefer199)-1);}
       refs=combatTransactionRefs120(transaction);attacker=refs.attacker;attacker.actionUsed=true;
-      const affectedText=affected.length?affected.map(row=>`${row.name}: −${row.damage} HP (${row.before} → ${row.after}${row.absorbed?`, защита ${row.absorbed}`:''}${row.cover?`, укрытие ${row.cover}`:''})`).join('; '):'нет целей';
+      const affectedText=affected.length?affected.map(row=>`${row.name}: −${row.damage} HP (${row.before} → ${row.after}${row.absorbed?`, защита ${row.absorbed}`:''})`).join('; '):'нет целей';
       appendCombatLog105(refs.runtime,`${attacker.name} бросает «${grenade.name}» (${damageLabel202(incomingCategory)}): введённый урон ${entered.damageRoll}${num(grenade.damageBonus)?` + ${num(grenade.damageBonus)} = ${rolledTotal}`:''}, радиус ${hexLabel109(radiusHexes)}. ${affectedText}.`);
       if(pendingInstinct199().length){await sealOperation194('Взрыв рассчитан для всех целей; ожидается Инстинкт');for(const {owner,packet} of pendingInstinct199())await resolveInstinct199(owner,packet);}
       local.preview={...preview,end:impact,effect:'grenade',label:`${grenade.name}: базовый урон ${rolledTotal} · целей ${affected.length}`};
