@@ -7569,7 +7569,7 @@ function statBarMarkupV2(label, current, max, accentLabel = '') {
   const normalizedLabel = String(label || '').toLowerCase();
   const resourceClass = normalizedLabel.includes('здоров') || normalizedLabel === 'hp'
     ? 'resource-health'
-    : normalizedLabel.includes('щит') || normalizedLabel.includes('shield')
+    : normalizedLabel === 'эгида' || normalizedLabel.includes('щит') || normalizedLabel.includes('shield')
       ? 'resource-shield'
       : normalizedLabel.includes('энерг') || normalizedLabel.includes('energy')
         ? 'resource-energy'
