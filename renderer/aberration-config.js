@@ -27,7 +27,7 @@
   // Only effects with an implemented combat rule enter the loot pool.
   const supported = catalog.filter(effect => ['weapon-1','weapon-2','weapon-3','weapon-4','weapon-5','weapon-6','weapon-7','weapon-8','weapon-9','weapon-10','weapon-11','weapon-12','weapon-13','weapon-14','weapon-15','weapon-16','weapon-17','armor-20','armor-25','armor-26','armor-27','armor-28'].includes(effect.id)||effect.variants.some(row=>window.GRPGItemInstancesV215.passiveEffect(row.id)));
   const variants = supported.flatMap(effect => effect.variants.map(variant=>({...variant,group:effect.id,name:effect.name})));
-  const damageTypeIds=['kinetic','energy','electric','explosive','gas'];
+  const damageTypeIds=window.GRPGDamageTypesV202.aberrationTypeIds;
   const randomDamageGroups=['weapon-5','armor-20','armor-27'];
   const attackKinds={melee:'Ближняя атака',ranged:'Дальняя атака',any:'Любая атака'};
   const damageTypeVariant=variants.find(row=>row.group==='weapon-6');
@@ -77,7 +77,7 @@
         const type=window.GRPGDamageTypesV202.label(effect.type);
         return group==='armor-27'?name+' · '+type:name+' · '+(value>0?'+':'')+value+' · '+type;
       }
-      if(group==='weapon-5')return '+1d'+value+' урона'+(effect.type?' · '+window.GRPGDamageTypesV202.label(effect.type):'');
+      if(group==='weapon-5')return '+1d'+value+' урона'+' · '+(effect.type?window.GRPGDamageTypesV202.label(effect.type):'Тип по оружию');
       if(group==='weapon-6')return name+' · '+window.GRPGDamageTypesV202.label(value);
       if(group==='weapon-15')return name+' · перезарядка после суперкрита';
       const sign=value>0&&!['weapon-11','weapon-12','weapon-14'].includes(group)?'+':'';
@@ -151,7 +151,9 @@
           return `<div class="row" data-variant="${variant.id}"><label>Значение ${effect.id==='weapon-6'
             ? `<select class="select" data-field="value"><option value="">Выберите тип</option>${Object.entries(window.GRPGDamageTypesV202.labels).map(([id,label])=>`<option value="${id}" ${saved.value===id?'selected':''}>${esc(label)}</option>`).join('')}</select>`
             : `<input class="input" data-field="value" value="${esc(fixed?variant.value:saved.value)}" ${fixed?'readonly':''}>` }</label>
-            ${attack?`<label>Тип атаки <select class="select" data-field="damageType"><option value="">Выберите тип</option>${Object.entries(attackKinds).map(([id,label])=>`<option value="${id}" ${saved.damageType===id?'selected':''}>${esc(label)}</option>`).join('')}</select></label>`:randomDamageGroups.includes(effect.id)?'<span>Тип урона определяется при выпадении</span>':''}
+            ${attack?`<label>Тип атаки <select class="select" data-field="damageType"><option value="">Выберите тип</option>${Object.entries(attackKinds).map(([id,label])=>`<option value="${id}" ${saved.damageType===id?'selected':''}>${esc(label)}</option>`).join('')}</select></label>`:effect.id==='weapon-5'
+              ?`<span>При выпадении выбирается тип: ${damageTypeIds.map(id=>esc(window.GRPGDamageTypesV202.label(id))).join(', ')}</span>`
+              :randomDamageGroups.includes(effect.id)?'<span>Тип урона определяется при выпадении</span>':''}
             <label>Бюджет <input class="input" type="number" step="1" data-field="cost" value="${saved.cost}"></label></div>`;
         }).join('')}</details>`).join('');
     }

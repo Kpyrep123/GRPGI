@@ -1637,15 +1637,15 @@
     return true;
   }
   async function bonusDie258(attacker,weapon,state,damageType,slot){
-    const effect=weaponAberrationEffects257(attacker,weapon,slot).find(row=>row.group==='weapon-5');
+    const copy=weaponCopy258(attacker,weapon,slot);
+    const rollData=window.GRPGItemInstancesV215.typeBonusDamage(copy?.aberration252,weapon);
+    const effect=window.GRPGAberrationWeapons?.effects(rollData?.effects).find(row=>row.group==='weapon-5');
     if(!effect)return;
-    const sides=effect.value, type=effect.type||damageType;
-    const legacyTypes=sides===8&&!effect.type?Object.entries(window.GRPGDamageTypesV202.labels):[];
+    const sides=effect.value, type=effect.type||window.GRPGDamageTypesV202.effective(weapon);
     const roll=await combatModal119({
       title:`Дополнительный урон · 1d${sides}`,subtitle:`${weapon.name} · ${damageLabel202(type)}`,decline:'',
-      body:`<label class="field">Результат физического броска<input class="input" name="value" type="number" required min="1" max="${sides}"></label>${legacyTypes.length?`<label class="field">Тип дополнительного урона
-        <select class="select" name="damageType">${legacyTypes.map(([id,label])=>`<option value="${id}" ${id===type?'selected':''}>${html(label)}</option>`).join('')}</select></label>`:''}`,
-      read:form=>({value:Number(form.elements.value.value),type:form.elements.damageType?.value||type}),
+      body:`<label class="field">Результат физического броска<input class="input" name="value" type="number" required min="1" max="${sides}"></label>`,
+      read:form=>({value:Number(form.elements.value.value),type}),
       validate:({value})=>!Number.isInteger(value)||value<1||value>sides?`Введите число от 1 до ${sides}`:''
     });
     if(!roll)throw new Error('Ввод дополнительного урона прерван');
@@ -3918,7 +3918,7 @@
       appendCombatLog105(Combat.getRuntime(sceneId),`${App.state.users[playerId]?.displayName||playerId} получает ${equipmentItem105(itemId)?.name||itemId} ×${job.qty} при обыске ${token.name}.`);
       lootReveal252={id:job.operationId,sceneId,at:Date.now(),name:equipmentItem105(itemId)?.name||itemId,
         recipient:App.state.users[playerId]?.displayName||playerId,qty:job.qty,
-        items:lootDetails258(job.aberrations)};
+        items:lootDetails258(job.aberrations,equipmentItem105(itemId))};
       queueStoreSave();broadcastScene104();
       if(Combat.getSceneIdForView()===sceneId)showLootOverlay118(token);
       Toast.show('Добыча передана в инвентарь.','ok');return result;
@@ -3953,9 +3953,10 @@
   function rollLootCopy258(item,danger){
     return (window.GRPGItemInstancesV215.aberrationCategory(item)||window.GRPGItemInstancesV215.hasEnergyShield(item))?window.GRPGAberrationWeapons?.roll(danger,item)||null:null;
   }
-  function lootDetails258(rolls){
+  function lootDetails258(rolls,item){
     const groups=new Map();
-    for(const roll of list(rolls)){
+    for(const entry of list(rolls)){
+      const roll=window.GRPGItemInstancesV215.typeBonusDamage(entry,item);
       const rarity=roll?.rarity||'common';
       const effects=list(roll?.effects).map(id=>window.GRPGAberrationWeapons?.describe(id)).filter(Boolean);
       const presentation=window.GRPGAberrationPresentation.model({aberration252:roll}).effects;
@@ -3977,7 +3978,7 @@
     const names={common:'Обычное',uncommon:'Необычное',rare:'Редкое',epic:'Эпическое',legendary:'Легендарное'};
     const rows=Array.from(grouped,([itemId,row])=>{
       const item=equipmentItem105(itemId);
-      const details=lootDetails258(row.rolls).map(detail=>{
+      const details=lootDetails258(row.rolls,item).map(detail=>{
         const description=[names[detail.rarity],...detail.effects].join(' · ');
         return detail.presentation.length
           ?window.GRPGAberrationPresentation.markup({rarity:detail.rarity,effects:detail.presentation,qty:detail.qty})

@@ -435,6 +435,16 @@ w.document.querySelector('[data-remove-loot-v118]').click();
 run('Configurator.render()');
 assert.deepEqual(Array.from(w.document.querySelectorAll('[data-loot-item-v118]'),field=>field.value),['']);
 console.log('PASS instance facts, fixed damage type and unsaved World Config rows after refresh');
+run(`
+  const legacyBonus={rarity:'rare',effects:['weapon-5-1','weapon-6-5']};
+  window.typedBonus269=GRPGItemInstancesV215.typeBonusDamage(legacyBonus,{type:'weapon',damageType:'kinetic'});
+  window.typedRows269=[4,6,8].map((sides,index)=>{
+    const applied=GRPGItemInstancesV215.typeBonusDamage({effects:['weapon-5-'+(index+1)]},{type:'weapon',damageType:'electric'});
+    return GRPGAberrationPresentation.model({aberration252:applied}).effects[0].text;
+  });
+`);
+assert.equal(w.typedBonus269.effects[0],'weapon-5-1:gas');
+assert.deepEqual(Array.from(w.typedRows269),[4,6,8].map(sides=>'+1d'+sides+' урона · Электрический'));
 const display=new Window({settings:{disableJavaScriptFileLoading:true}});
 try{
   display.document.body.innerHTML='<div id="player-display-root"></div>';
