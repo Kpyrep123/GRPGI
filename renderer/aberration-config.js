@@ -119,22 +119,20 @@
     }
   };
 
-  function openCatalog() {
-    if (App.currentUser?.role !== 'gm') return;
-    const key = campaignId();
+  function buildCatalog(key) {
     const draft = settings();
-    const dialog = document.createElement('dialog');
-    dialog.style.cssText = 'width:min(920px,95vw);max-height:85vh;overflow:auto';
-    dialog.innerHTML = `<form><h2>Аберрации</h2>
-      <table><thead><tr><th>Опасность</th><th>Бюджет</th>${rarityNames.map(name=>`<th>${name}</th>`).join('')}</tr></thead>
-      <tbody data-aberration-chances></tbody></table>
+    const form = document.createElement('form');
+    form.dataset.aberrationEditor = '';
+    form.className = 'form';
+    form.innerHTML = `<h2 class="section-title">Аберрации</h2>
+      <div style="overflow-x:auto"><table><thead><tr><th>Опасность</th><th>Бюджет</th>${rarityNames.map(name=>`<th>${name}</th>`).join('')}</tr></thead>
+      <tbody data-aberration-chances></tbody></table></div>
       <label>Снаряжение <select class="select" data-aberration-category>${Object.entries(categories).map(([id,name])=>`<option value="${id}">${name}</option>`).join('')}</select></label>
       <div data-aberration-effects></div>
-      <button class="primary" type="submit">Сохранить</button>
-      <button class="secondary" type="button" data-aberration-close>Закрыть</button></form>`;
-    const chanceBody = dialog.querySelector('[data-aberration-chances]');
-    const effects = dialog.querySelector('[data-aberration-effects]');
-    const category = dialog.querySelector('[data-aberration-category]');
+      <button class="primary" type="submit">Сохранить</button>`;
+    const chanceBody = form.querySelector('[data-aberration-chances]');
+    const effects = form.querySelector('[data-aberration-effects]');
+    const category = form.querySelector('[data-aberration-category]');
     const thresholds = [0,1,4,6,8];
 
     function drawChances() {
@@ -172,38 +170,69 @@
       if ((value.trim() || row.dataset.variant==='weapon-6-1') && Number.isSafeInteger(cost)) draft.variants[row.dataset.variant]={value:value.trim(),cost,damageType:row.querySelector('[data-field="damageType"]')?.value};
     });
     category.addEventListener('change',drawEffects);
-    dialog.querySelector('[data-aberration-close]').onclick=()=>dialog.close();
-    dialog.querySelector('form').onsubmit=async event=>{
+    form.addEventListener('submit',async event=>{
       event.preventDefault();
       if(App.currentUser?.role!=='gm'||campaignId()!==key)return;
-      const submit=dialog.querySelector('[type="submit"]');
+      const submit=form.querySelector('[type="submit"]');
       if(submit.disabled)return;
       submit.disabled=true;
       const before=campaignSettings;
       campaignSettings={...before,[key]:deep(draft)};
       try{
         const result=await Configurator.persistAll('Аберрации сохранены',{worldSections:['campaigns']});
-        if(result?.localSaved)dialog.close();
-        else campaignSettings=before;
+        if(!result?.localSaved)campaignSettings=before;
       }catch(error){
         campaignSettings=before;Toast.show(error.message,'err');
       }finally{submit.disabled=false;}
-    };
-    dialog.addEventListener('close',()=>dialog.remove(),{once:true});
+    });
     drawChances();drawEffects();
-    document.body.append(dialog);
-    dialog.showModal();
+    return form;
   }
+
+  let active = false;
+  let editor;
+  let editorKey;
+  document.addEventListener('click',event=>{
+    if(event.target.closest?.('#config-content .config-type-btn[data-type]'))active=false;
+  },true);
 
   const render = Configurator.render;
   Configurator.render = function (...args) {
     const result = render.apply(this,args);
-    const panel = document.querySelector('#config-content .config-type-list');
-    if (panel && App.currentUser?.role==='gm' && !panel.querySelector('[data-aberration-catalog]')) {
-      const button=document.createElement('button');
+    const root = document.getElementById('config-content');
+    const categories = root?.querySelector('.config-type-list');
+    const main = root?.querySelector('.config-main');
+    if (App.currentUser?.role!=='gm') {
+      active=false;
+      editor=null;
+      return result;
+    }
+    if (!categories || !main) return result;
+
+    let button=categories.querySelector('[data-aberration-catalog]');
+    if(!button){
+      button=document.createElement('button');
       button.className='secondary config-type-btn';button.type='button';button.dataset.aberrationCatalog='';
-      button.textContent='Аберрации';button.onclick=openCatalog;
-      panel.append(button);
+      button.textContent='Аберрации';
+      button.onclick=()=>{
+        if(active)return;
+        active=true;
+        this.render();
+        root.querySelector('[data-aberration-catalog]')?.focus();
+      };
+      categories.append(button);
+    }
+    if(active){
+      categories.querySelectorAll('.config-type-btn.active').forEach(node=>node.classList.remove('active'));
+      button.classList.add('active');
+      button.setAttribute('aria-current','page');
+      for(let node=categories.nextElementSibling;node;node=node.nextElementSibling)node.style.display='none';
+      const key=campaignId(),identity=JSON.stringify([App.currentUser.id,key]);
+      if(!editor||editorKey!==identity){
+        editor=buildCatalog(key);
+        editorKey=identity;
+      }
+      if(editor.parentNode!==main)main.replaceChildren(editor);
     }
     return result;
   };
