@@ -4498,7 +4498,7 @@ const UI = {
                 <div class="bar"><div class="fill" style="width:${clamp(user.stats.hp,0,100)}%"></div></div>
               </div>
               <div>
-                <div class="data-row"><span class="data-label">Щит</span><span class="data-value">${user.stats.shield}</span></div>
+                <div class="data-row"><span class="data-label">Эгида</span><span class="data-value">${user.stats.shield}</span></div>
                 <div class="bar"><div class="fill" style="width:${clamp(user.stats.shield/1.5,0,100)}%"></div></div>
               </div>
               <div>
@@ -7569,7 +7569,7 @@ function statBarMarkupV2(label, current, max, accentLabel = '') {
   const normalizedLabel = String(label || '').toLowerCase();
   const resourceClass = normalizedLabel.includes('здоров') || normalizedLabel === 'hp'
     ? 'resource-health'
-    : normalizedLabel.includes('щит') || normalizedLabel.includes('shield')
+    : normalizedLabel === 'эгида' || normalizedLabel.includes('щит') || normalizedLabel.includes('shield')
       ? 'resource-shield'
       : normalizedLabel.includes('энерг') || normalizedLabel.includes('energy')
         ? 'resource-energy'
@@ -7785,7 +7785,7 @@ UI.renderProfile = function() {
           <div class="small-note profile-lore-rich-v1086" style="margin-bottom:18px">${__renderRichText(user.lore, '<p>Нет досье</p>')}</div>
           <div class="stat">
             ${statBarMarkupV2('Здоровье', user.stats.hpCurrent, user.stats.hpMax)}
-            ${statBarMarkupV2('Щит', user.stats.shieldCurrent, user.stats.shieldMax)}
+            ${statBarMarkupV2('Эгида', user.stats.shieldCurrent, user.stats.shieldMax)}
             ${statBarMarkupV2('Энергия', user.stats.energyCurrent, effectiveEnergyMax)}
           </div>
           <div style="margin-top:18px">
@@ -7911,7 +7911,7 @@ Configurator.renderPlayerEditor = function(user) {
   const armorOptions = getArmorOptionsV2();
   return `
     <form id="config-editor-form" class="form" data-entity-type="players">
-      ${this.renderHeader(user, 'Шаблон персонажа с точным здоровьем, щитом, энергией, экипировкой и имплантами. При сохранении обновляется players.json и живое состояние профилей.')}
+      ${this.renderHeader(user, 'Шаблон персонажа с точным здоровьем, Эгидой, энергией, экипировкой и имплантами. При сохранении обновляется players.json и живое состояние профилей.')}
       ${imageFieldMarkup(user, 'Портрет персонажа')}
       <div class="cols3">
         <div class="field"><label>ID</label><input class="input" name="id" value="${esc(user.id)}" /></div>
@@ -7934,8 +7934,8 @@ Configurator.renderPlayerEditor = function(user) {
         <div class="field"><label>Энергия (текущая)</label><input class="input" type="number" name="energyCurrent" value="${Number(user.stats.energyCurrent || 0)}" /></div>
       </div>
       <div class="cols3">
-        <div class="field"><label>Текущий щит</label><input class="input" type="number" name="shieldCurrent" value="${Number(user.stats.shieldCurrent || 0)}" /></div>
-        <div class="field"><label>Макс. щит</label><input class="input" type="number" name="shieldMax" value="${Number(user.stats.shieldMax || 0)}" /></div>
+        <div class="field"><label>Текущая Эгида</label><input class="input" type="number" name="shieldCurrent" value="${Number(user.stats.shieldCurrent || 0)}" /></div>
+        <div class="field"><label>Макс. Эгида</label><input class="input" type="number" name="shieldMax" value="${Number(user.stats.shieldMax || 0)}" /></div>
         <div class="field"><label>Энергия (базовый максимум)</label><input class="input" type="number" name="energyMax" value="${Number(user.stats.energyMax || 1)}" /></div>
       </div>
       <div class="cols3">
@@ -19328,7 +19328,7 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
       <div class="cols3"><div class="field"><label>Отображаемое имя</label><input class="input" name="displayName" value="${esc(user.displayName)}" /></div><div class="field"><label>Ранг</label><input class="input" name="rank" value="${esc(user.rank || '')}" /></div><div class="field"><label>Глиф</label><input class="input" name="avatarGlyph" value="${esc(user.avatarGlyph || '')}" /></div></div>
       <div class="cols3"><div class="field"><label>Кредиты</label><input class="input" type="number" name="credits" value="${Number(user.credits || 0)}" /></div><div class="field"><label>Текущая планета</label><select class="select" name="currentPlanetId"><option value="">Не задана</option>${Object.values(PLANETS).map(option => `<option value="${option.id}" ${option.id === (user.currentPlanetId || '') ? 'selected' : ''}>${esc(option.name)}</option>`).join('')}</select></div></div>
       <div class="cols3"><div class="field"><label>Текущее здоровье</label><input class="input" type="number" name="hpCurrent" value="${Number(user.stats.hpCurrent || 0)}" /></div><div class="field"><label>Макс. здоровье</label><input class="input" type="number" name="hpMax" value="${Number(user.stats.hpMax || 0)}" /></div><div class="field"><label>Энергия (текущая)</label><input class="input" type="number" name="energyCurrent" value="${Number(user.stats.energyCurrent || 0)}" /></div></div>
-      <div class="cols3"><div class="field"><label>Текущий щит</label><input class="input" type="number" name="shieldCurrent" value="${Number(user.stats.shieldCurrent || 0)}" /></div><div class="field"><label>Макс. щит</label><input class="input" type="number" name="shieldMax" value="${Number(user.stats.shieldMax || 0)}" /></div><div class="field"><label>Энергия (базовый максимум)</label><input class="input" type="number" name="energyMax" value="${Number(user.stats.energyMax || 1)}" /></div></div>
+      <div class="cols3"><div class="field"><label>Текущая Эгида</label><input class="input" type="number" name="shieldCurrent" value="${Number(user.stats.shieldCurrent || 0)}" /></div><div class="field"><label>Макс. Эгида</label><input class="input" type="number" name="shieldMax" value="${Number(user.stats.shieldMax || 0)}" /></div><div class="field"><label>Энергия (базовый максимум)</label><input class="input" type="number" name="energyMax" value="${Number(user.stats.energyMax || 1)}" /></div></div>
       <div class="section-title">Характеристики</div>${renderAbilityInputsV50(user)}
       <div class="section-title">Специализации</div>${renderSpecializationInputsV55(user)}
       <div class="cols3"><div class="field"><label>Основное оружие / щит</label><select class="select" name="primaryWeapon"><option value="">—</option>${primaryOptions.map(option => `<option value="${option.id}" ${option.id === (user.equipmentSlots?.primaryWeapon || '') ? 'selected' : ''}>${esc(option.name)}</option>`).join('')}</select></div><div class="field"><label>Вторичное оружие</label><select class="select" name="secondaryWeapon"><option value="">—</option>${secondaryOptions.map(option => `<option value="${option.id}" ${option.id === (user.equipmentSlots?.secondaryWeapon || '') ? 'selected' : ''}>${esc(option.name)}</option>`).join('')}</select></div><div class="field"><label>Броня</label><select class="select" name="armor"><option value="">—</option>${armorOptions.map(option => `<option value="${option.id}" ${option.id === (user.equipmentSlots?.armor || '') ? 'selected' : ''}>${esc(option.name)}</option>`).join('')}</select></div></div>
@@ -19847,7 +19847,7 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
       <div class="field"><label>Черты / заметки, по одной на строку</label><textarea class="area" name="traits">${esc(listText(npc.traits || []))}</textarea></div>
       <div class="section-title">Боевые показатели NPC</div>
       <div class="cols3"><div class="field"><label>HP тек.</label><input class="input" type="number" name="npcHpCurrent" value="${Number(npc.stats.hpCurrent || 0)}" /></div><div class="field"><label>HP макс.</label><input class="input" type="number" name="npcHpMax" value="${Number(npc.stats.hpMax || 0)}" /></div><div class="field"><label>Энергия макс.</label><input class="input" type="number" name="npcEnergyMax" value="${Number(npc.stats.energyMax || 1)}" /></div></div>
-      <div class="cols3"><div class="field"><label>Щит тек.</label><input class="input" type="number" name="npcShieldCurrent" value="${Number(npc.stats.shieldCurrent || 0)}" /></div><div class="field"><label>Щит макс.</label><input class="input" type="number" name="npcShieldMax" value="${Number(npc.stats.shieldMax || 0)}" /></div><div class="field"><label>Энергия тек.</label><input class="input" type="number" name="npcEnergyCurrent" value="${Number(npc.stats.energyCurrent || 0)}" /></div></div>
+      <div class="cols3"><div class="field"><label>Текущая Эгида</label><input class="input" type="number" name="npcShieldCurrent" value="${Number(npc.stats.shieldCurrent || 0)}" /></div><div class="field"><label>Макс. Эгида</label><input class="input" type="number" name="npcShieldMax" value="${Number(npc.stats.shieldMax || 0)}" /></div><div class="field"><label>Энергия тек.</label><input class="input" type="number" name="npcEnergyCurrent" value="${Number(npc.stats.energyCurrent || 0)}" /></div></div>
       <div class="section-title">Характеристики NPC</div>${npcAbilityInputsV60(npc)}
       <div class="field"><label>Навыки и специализации NPC</label>${renderNpcSkillSelectorV60(npc.skills || [])}</div>
       <div class="field"><label>Значения специализаций NPC</label>${npcSpecializationValuesMarkupV60(npc.specializations || {})}</div>
@@ -21053,7 +21053,7 @@ function legacyRegionMapsV181() {
 
   function unitCombatItemFieldsV105(item = {}, label = 'Юнит') {
     return `<div class="cols3"><div class="field"><label>Урон встроенной атаки</label><input class="input" name="damage" value="${esc(item.damage || '')}" placeholder="например 2d6" /></div><div class="field"><label>Дальность атаки (гексы)</label><input class="input" type="number" min="0" step="1" name="range" value="${Number(item.range || 0)}" /></div><div class="field"><label>Бонус к попаданию</label><input class="input" type="number" step="1" name="hitBonus" value="${Number(item.hitBonus || 0)}" /></div></div>
-      <div class="cols3"><div class="field"><label>HP</label><input class="input" type="number" min="1" step="1" name="unitHp" value="${Number(item.unitHp || 10)}" /></div><div class="field"><label>Класс брони / защиты</label><input class="input" type="number" min="0" step="1" name="unitArmorClass" value="${Number(item.unitArmorClass ?? 10)}" /></div><div class="field"><label>Инициатива по умолчанию</label><input class="input" type="number" step="1" name="unitInitiative" value="${Number(item.unitInitiative || 0)}" /></div></div>
+      <div class="cols3"><div class="field"><label>HP</label><input class="input" type="number" min="1" step="1" name="unitHp" value="${Number(item.unitHp || 10)}" /></div><div class="field"><label>Класс брони (КБ)</label><input class="input" type="number" min="0" step="1" name="unitArmorClass" value="${Number(item.unitArmorClass ?? 10)}" /></div><div class="field"><label>Инициатива по умолчанию</label><input class="input" type="number" step="1" name="unitInitiative" value="${Number(item.unitInitiative || 0)}" /></div></div>
       <div class="cols2"><div class="field"><label>Дальность видимости (гексы)</label><input class="input" type="number" min="0" step="1" name="unitVisionRange" value="${Number(item.unitVisionRange || 0)}" /></div><div class="field"><label>Дальность движения (гексы)</label><input class="input" type="number" min="0" step="1" name="unitMoveRange" value="${Number(item.unitMoveRange || 0)}" /></div></div>
       <div class="small-note">${esc(label)} появляется во вкладке «Юниты» редактора сцен и участвует в инициативе. Все тактические дальности задаются в гексах.</div>`;
   }
@@ -21095,7 +21095,7 @@ function legacyRegionMapsV181() {
       </div>
       <div class="item-specific-v1052 ${isShield ? '' : 'hidden'}" data-for-item="shield">
         <div class="small-note">Щит занимает слот основного оружия. Его бонус не складывается с укрытием.</div>
-        <div class="cols2"><div class="field"><label>Бонус физического щита</label><input class="input" type="number" min="0" step="1" name="shieldCoverBonusV122" value="${Number(item.shieldCoverBonus || 0)}" /></div><div class="field"><label>Предел Ловкости</label><input class="input" type="number" min="0" step="1" name="shieldDexterityCapV122" value="${item.shieldDexterityCap ?? ''}" placeholder="без ограничения" /></div></div>
+        <div class="cols2"><div class="field"><label>Бонус щита к КБ</label><input class="input" type="number" min="0" step="1" name="shieldCoverBonusV122" value="${Number(item.shieldCoverBonus || 0)}" /></div><div class="field"><label>Предел Ловкости</label><input class="input" type="number" min="0" step="1" name="shieldDexterityCapV122" value="${item.shieldDexterityCap ?? ''}" placeholder="без ограничения" /></div></div>
         <div class="field"><label>Бонус изученного навыка</label><input class="input" type="number" step="1" name="weaponSkillBonusV122" value="${Number(item.weaponSkillBonus || 0)}" /></div>
         ${requirementInputsV1052(item)}
       </div>
