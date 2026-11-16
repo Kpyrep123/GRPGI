@@ -4506,6 +4506,40 @@
     try{PlayerSync?.stopPolling?.();}catch{}try{ChatSync?.stopPolling?.();ChatSync?.stopRealtimeBridge?.();}catch{}try{Combat.stopRuntimeSync?.();}catch{}
   }
   let combatEntry225=null,combatExit225=null;
+  function mergeCombatInventory(base, localInventory, remote) {
+    const core=window.GRPGPlayerSyncCoreV135;
+    // Positions are stored in parallel to copies. Index both by the stable copy
+    // ID because equipping an item can move its row to the front of the array.
+    const encode=inventory=>inventory.map(row=>{
+      if(!Array.isArray(row.instancesV215)||row.instancesV215.length!==row.qty||
+        row.instancesV215.some(copy=>!copy?.id)||
+        new Set(row.instancesV215.map(copy=>copy.id)).size!==row.qty)return row;
+      const {instancesV215,positions,qty,...metadata}=row;
+      return {...metadata,copiesById:Object.fromEntries(instancesV215.map((copy,index)=>
+        ['copy:'+copy.id,{copy,position:positions?.[index]??null}]))};
+    });
+    const encodedLocal=encode(localInventory),encodedRemote=encode(remote);
+    const {inventory}=core.mergePatch({inventory:encode(base)},{inventory:encodedLocal},{inventory:encodedRemote});
+    const orderByItem=new Map();
+    for(const row of [...encodedRemote,...encodedLocal]){
+      if(!row.copiesById)continue;
+      const ids=orderByItem.get(row.itemId)||new Set();
+      for(const id of Object.keys(row.copiesById))ids.add(id);
+      orderByItem.set(row.itemId,ids);
+    }
+    const occupiedSlots=new Set();
+    return inventory.map(row=>{
+      if(!row.copiesById)return row;
+      const {copiesById,...metadata}=row;
+      const pairs=Array.from(orderByItem.get(row.itemId)||[],id=>copiesById[id]).filter(Boolean);
+      for(const {copy} of pairs){
+        if(!copy.slot)continue;
+        if(occupiedSlots.has(copy.slot))throw Error('inventory.slot');
+        occupiedSlots.add(copy.slot);
+      }
+      return pairs.length?{...metadata,qty:pairs.length,instancesV215:pairs.map(pair=>pair.copy),positions:pairs.map(pair=>pair.position)}:null;
+    }).filter(Boolean);
+  }
   function mergeCombatProfile225(base,localProfile,remote,playerId){
     const equal=window.GRPGPlayerSyncCoreV135.equal,result={...remote};
     for(const key of Object.keys(localProfile)){
@@ -4518,7 +4552,17 @@
           result.stats[field]=clone(l);
         }
       }else if(!equal(base[key],localProfile[key])){
-        if(!equal(base[key],remote[key])&&!equal(localProfile[key],remote[key]))throw Error('Профиль '+playerId+' изменён вне сцены: '+key);
+        if(!equal(base[key],remote[key])&&!equal(localProfile[key],remote[key])){
+          if(key==='inventory'&&[base[key],localProfile[key],remote[key]].every(Array.isArray)){
+            try{
+              result[key]=mergeCombatInventory(base[key],localProfile[key],remote[key]);
+              continue;
+            }catch(error){
+              throw Error('Профиль '+playerId+' изменён вне сцены: '+key,{cause:error});
+            }
+          }
+          throw Error('Профиль '+playerId+' изменён вне сцены: '+key);
+        }
         result[key]=clone(localProfile[key]);
       }
     }
@@ -4528,7 +4572,11 @@
     const session=ensureSession193(),drafts=local.store.profileDrafts225;
     const incoming=clone(profiles),base={};
     for(const [id,profile] of Object.entries(profiles))base[id]=combatProfilePatch120(profile);
-    for(const [id,patch] of Object.entries(drafts?.profiles||{}))if(incoming[id])Object.assign(incoming[id],mergeCombatProfile225(drafts.base?.[id]||{},patch,base[id],id));
+    for(const [id,patch] of Object.entries(drafts?.profiles||{})){
+      if(!incoming[id])continue;
+      const merged=mergeCombatProfile225(drafts.base?.[id]||{},patch,base[id],id);
+      incoming[id]=normalizePlayerProfileV2({...incoming[id],...merged});
+    }
     local.stability.profileBase225=base;
     const importToken=token=>{
       const profile=incoming[token.playerId];
