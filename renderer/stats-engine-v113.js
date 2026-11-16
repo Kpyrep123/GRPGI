@@ -223,8 +223,8 @@
     let value=n(staticBase,0);
     breakdown.push({source:baseLabel,value:n(staticBase,0),op:'base'});
     if(replacement)breakdown.push({source:replacement.sourceName||replacement.sourceId||'Модификатор',value:0,op:'replace_stat',statRef:stat});
-    if(stat){const part=n(abilities?.[stat],0)*scale;value+=part;breakdown.push({source:PRIMARY_LABELS[stat]||stat,value:part,op:'base',statRef:stat});}
-    scoped.filter(m=>m.op==='add_stat'&&m.statRef).forEach(m=>{const part=n(abilities?.[m.statRef],0)*scale;value+=part;breakdown.push({source:`${m.sourceName}: ${PRIMARY_LABELS[m.statRef]||m.statRef}`,value:part,op:'add_stat',statRef:m.statRef});});
+    if(stat){const part=n(abilities?.[stat],0)*(target==='max_hp'&&replacement?1:scale);value+=part;breakdown.push({source:PRIMARY_LABELS[stat]||stat,value:part,op:'base',statRef:stat});}
+    scoped.filter(m=>m.op==='add_stat'&&m.statRef).forEach(m=>{const part=n(abilities?.[m.statRef],0)*(target==='max_hp'?1:scale);value+=part;breakdown.push({source:`${m.sourceName}: ${PRIMARY_LABELS[m.statRef]||m.statRef}`,value:part,op:'add_stat',statRef:m.statRef});});
     scoped.filter(m=>['add','set'].includes(m.op)).forEach(m=>{value=m.op==='set'?n(m.value,0):value+n(m.value,0);breakdown.push({source:m.sourceName||m.sourceId||'Модификатор',value:n(m.value,0),op:m.op});});
     return value;
   }
@@ -239,7 +239,7 @@
     const bs = entity.baseStats || {};
     const combat = entity.combat || {};
     return {
-      hpBase: n(bs.hpBase ?? entity.hpBase ?? (()=>{const legacy=n(stats.hpMax ?? entity.hpMax ?? entity.hp,0),end=n((entity.abilityBase||entity.abilities||{}).endurance,0);return legacy>0?Math.max(0,legacy-end):1;})(), 1),
+      hpBase: kind==='player'?4:n(bs.hpBase ?? entity.hpBase ?? (()=>{const legacy=n(stats.hpMax ?? entity.hpMax ?? entity.hp,0),end=n((entity.abilityBase||entity.abilities||{}).endurance,0);return legacy>0?Math.max(0,legacy-end):1;})(), 1),
       movement: nonNeg(bs.movement ?? entity.baseMovement ?? combat.moveRange, 6),
       vision: nonNeg(bs.vision ?? entity.baseVision ?? combat.visionRange, 6),
       armorClass: n(bs.armorClass ?? entity.baseArmorClassBonus, 0),
@@ -266,7 +266,7 @@
       abilities[stat]=applyValue(primaryBase[stat],stat,mods,{entity,...options},breakdown[stat],PRIMARY_LABELS[stat]);
     });
     const formulaContext={entity,abilities,...options};
-    breakdown.maxHp=[]; const maxHp=applyStatFormula(base.hpBase,'endurance','max_hp',mods,abilities,formulaContext,breakdown.maxHp,1,'База HP');
+    breakdown.maxHp=[]; const maxHp=applyStatFormula(base.hpBase,'endurance','max_hp',mods,abilities,formulaContext,breakdown.maxHp,kind==='player'?2:1,'База HP');
     const derived = {};
     // Armor Class is the permanent bonus added to the physical defense roll:
     // Dexterity + base AC bonus + equipped/skill/implant modifiers. Skills may
@@ -490,7 +490,7 @@
   const renderOrigin113=Configurator.renderOriginEditorV1052?.bind(Configurator);if(renderOrigin113)Configurator.renderOriginEditorV1052=function(entity,kind){let html=renderOrigin113(entity,kind);const mark=modifierEditor(entity?.modifiers,kind==='social'?'Модификаторы профессии':'Модификаторы происхождения');html=injectBeforeSave(html,'SAVE_ORIGIN',mark);html=injectBeforeSave(html,'SAVE_PROFESSION',mark);return html;};
 
   function itemSelect(items,selected=''){return `<option value="">—</option>`+items.map(item=>`<option value="${safe(item.id)}" ${String(item.id)===String(selected)?'selected':''}>${safe(item.name||item.id)}</option>`).join('');}
-  function baseFields(entity={},prefix='v113'){const b=normalizeBaseConfig(entity);return `<div class="section-title">Базовые показатели Stats Engine</div><div class="cols3"><div class="field"><label>База HP</label><input class="input" type="number" step="1" name="${prefix}_hpBase" value="${n(b.hpBase,1)}"/></div><div class="field"><label>Базовая дальность движения (гексы)</label><input class="input" type="number" min="0" step="1" name="${prefix}_movement" value="${n(b.movement,6)}"/></div><div class="field"><label>Базовый обзор (гексы)</label><input class="input" type="number" min="0" step="1" name="${prefix}_vision" value="${n(b.vision,6)}"/></div></div><div class="cols3"><div class="field"><label>Базовый бонус КБ</label><input class="input" type="number" step="1" name="${prefix}_armorClass" value="${n(b.armorClass,0)}"/></div><div class="field"><label>Базовая защита</label><input class="input" type="number" min="0" step="1" name="${prefix}_defense" value="${n(b.defense,0)}"/></div><div class="field"><label>База инициативы</label><input class="input" type="number" step="1" name="${prefix}_initiative" value="${n(b.initiative,0)}"/></div></div><div class="cols3"><div class="field"><label>Базовые ячейки инвентаря</label><input class="input" type="number" min="0" step="1" name="${prefix}_inventorySlots" value="${i(b.inventorySlots,12)}"/></div><div class="field"><label>База переносимого веса</label><input class="input" type="number" min="0" step="0.1" name="${prefix}_carryBase" value="${n(b.carryBase,12)}"/><div class="small-note">Итог: база + Сила × 2 + модификаторы.</div></div><div class="field"><label>Базовые слоты имплантов</label><input class="input" type="number" min="0" step="1" name="${prefix}_implantSlots" value="${i(b.implantSlots,0)}"/></div></div>`;}
+  function baseFields(entity={},prefix='v113'){const player=prefix==='v113p';const b=normalizeBaseConfig(entity,player?'player':'npc');return `<div class="section-title">Базовые показатели Stats Engine</div><div class="cols3"><div class="field"><label>База HP</label><input class="input" type="number" step="1" name="${prefix}_hpBase" value="${n(b.hpBase,1)}" ${player?'readonly':''}/></div><div class="field"><label>Базовая дальность движения (гексы)</label><input class="input" type="number" min="0" step="1" name="${prefix}_movement" value="${n(b.movement,6)}"/></div><div class="field"><label>Базовый обзор (гексы)</label><input class="input" type="number" min="0" step="1" name="${prefix}_vision" value="${n(b.vision,6)}"/></div></div><div class="cols3"><div class="field"><label>Базовый бонус КБ</label><input class="input" type="number" step="1" name="${prefix}_armorClass" value="${n(b.armorClass,0)}"/></div><div class="field"><label>Базовая защита</label><input class="input" type="number" min="0" step="1" name="${prefix}_defense" value="${n(b.defense,0)}"/></div><div class="field"><label>База инициативы</label><input class="input" type="number" step="1" name="${prefix}_initiative" value="${n(b.initiative,0)}"/></div></div><div class="cols3"><div class="field"><label>Базовые ячейки инвентаря</label><input class="input" type="number" min="0" step="1" name="${prefix}_inventorySlots" value="${i(b.inventorySlots,12)}"/></div><div class="field"><label>База переносимого веса</label><input class="input" type="number" min="0" step="0.1" name="${prefix}_carryBase" value="${n(b.carryBase,12)}"/><div class="small-note">Итог: база + Сила × 2 + модификаторы.</div></div><div class="field"><label>Базовые слоты имплантов</label><input class="input" type="number" min="0" step="1" name="${prefix}_implantSlots" value="${i(b.implantSlots,0)}"/></div></div>`;}
 
   const renderPlayer113=Configurator.renderPlayerEditor.bind(Configurator);Configurator.renderPlayerEditor=function(raw){const user=normalizePlayerProfileV2(raw);let html=renderPlayer113(user);
     html=html.replace(/<label>Макс\. здоровье<\/label><input class="input" type="number" name="hpMax"/, '<label>Макс. здоровье (расчёт)</label><input class="input" type="number" readonly title="Рассчитывается Stats Engine" name="hpMax"');
@@ -676,7 +676,7 @@
 
   // New entities use the new formula defaults; existing legacy entities preserve their former HP through hpBase migration.
   const createBlankBefore113=typeof createBlankEntity==='function'?createBlankEntity:null;
-  if(createBlankBefore113)createBlankEntity=function(type){const entity=createBlankBefore113(type);if(type==='players'||type==='npcs'){entity.baseStats={...(entity.baseStats||{}),hpBase:1,movement:6,vision:6,armorClass:0,defense:0,initiative:0,inventorySlots:type==='players'?12:Math.max(0,i(entity.inventorySize,12)),carryBase:12,implantSlots:Math.max(0,i(entity.implantSlotCount,0))};entity.abilityBase=normalizedBaseAbilities(entity);if(type==='players')return normalizePlayerProfileV2(entity);return normalizeNpc(entity);}return entity;};
+  if(createBlankBefore113)createBlankEntity=function(type){const entity=createBlankBefore113(type);if(type==='players'||type==='npcs'){entity.baseStats={...(entity.baseStats||{}),hpBase:type==='players'?4:1,movement:6,vision:6,armorClass:0,defense:0,initiative:0,inventorySlots:type==='players'?12:Math.max(0,i(entity.inventorySize,12)),carryBase:12,implantSlots:Math.max(0,i(entity.implantSlotCount,0))};entity.abilityBase=normalizedBaseAbilities(entity);if(type==='players')return normalizePlayerProfileV2(entity);return normalizeNpc(entity);}return entity;};
 
   // First-pass migration of NPCs in memory.
   try { Object.entries(NPCS||{}).forEach(([id,npc])=>{NPCS[id]=normalizeNpc(npc);}); Data.npcs=NPCS; } catch {}

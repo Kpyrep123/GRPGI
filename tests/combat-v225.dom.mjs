@@ -27,7 +27,7 @@ const html=fs.readFileSync(path.join(root,'renderer/index.html'),'utf8');
 w.document.write(html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi,''));
 // Every renderer script is evaluated unmodified, in index.html order, sharing
 // browser-style lexical globals. Only OS/cloud/bootstrap boundaries are mocked.
-for(const m of html.matchAll(/<script src="\.\/([^"?]+)[^"]*"/g))vm.runInContext(fs.readFileSync(path.join(root,'renderer',m[1]),'utf8').replace('// New module is DM-only;', 'window.test225={local,applyStore,collectStoreFromRuntime,luaUnitRows119,applyLuaCommands119,runInteractiveLuaHookV138,requestAttackRolls119,commitAttack105:id=>commitAttack105(id),performLuaStandardAttackV138,itemRuntimeStateV138,playerVisionSources112,droneActions225,droneShareVision225,deviceCommandReason200,checkpointCombat120,conditionEvents225,positionEvents204,refreshRuntimeSources122,centerOf,updatePlayerHp105,mergeCombatProfile225,importCombatProfiles225,runAutomaticHooks119,chooseReaction119,commitMove104:()=>commitMove104(),makeRoutePreview104,hexStepDistance109,activeSkillsForToken118,useActiveSkill118:id=>useActiveSkill118(id),fitTokenToHex107};\n// New module is DM-only;'),context,{filename:m[1]});
+for(const m of html.matchAll(/<script src="\.\/([^"?]+)[^"]*"/g))vm.runInContext(fs.readFileSync(path.join(root,'renderer',m[1]),'utf8').replace('// New module is DM-only;', 'window.test225={shotRange229,longRangeDisadvantage229,local,applyStore,collectStoreFromRuntime,luaUnitRows119,applyLuaCommands119,runInteractiveLuaHookV138,requestAttackRolls119,commitAttack105:id=>commitAttack105(id),performLuaStandardAttackV138,itemRuntimeStateV138,playerVisionSources112,droneActions225,droneShareVision225,deviceCommandReason200,checkpointCombat120,conditionEvents225,positionEvents204,refreshRuntimeSources122,centerOf,updatePlayerHp105,mergeCombatProfile225,importCombatProfiles225,runAutomaticHooks119,chooseReaction119,commitMove104:()=>commitMove104(),makeRoutePreview104,hexStepDistance109,activeSkillsForToken118,useActiveSkill118:id=>useActiveSkill118(id),fitTokenToHex107};\n// New module is DM-only;'),context,{filename:m[1]});
 const {Worker}=await import('node:worker_threads');
 w.electronAPI.runCombatLuaHook=payload=>new Promise((resolve,reject)=>{
  const worker=new Worker(path.join(root,'lua-sandbox-worker.cjs'));
@@ -49,8 +49,8 @@ try{
  w.world225={
   players:{PLAYER_TEMPLATES:{
    gm:{id:'gm',role:'gm'},
-   p:{id:'p',role:'player',displayName:'Оператор',stats:{hpCurrent:8,hpMax:10},baseStats:{hpBase:10,implantSlots:1},implantSlotCount:1,traumaV195:{schema:195,degree:0},abilityBase:{intelligence:3,will:2},equipmentSlots:{primaryWeapon:'test_rifle'},inventory:[{itemId:'implant',qty:1}],implantSlots:['implant'],installedImplantIds:['implant'],skills:['events']},
-   q:{id:'q',role:'player',displayName:'Другой игрок',stats:{hpCurrent:10,hpMax:10},baseStats:{hpBase:10}}
+   p:{id:'p',role:'player',displayName:'Оператор',stats:{hpCurrent:8,hpMax:10},baseStats:{hpBase:10,implantSlots:1},implantSlotCount:1,traumaV195:{schema:195,degree:0},abilityBase:{intelligence:3,will:2,endurance:3},equipmentSlots:{primaryWeapon:'test_rifle'},inventory:[{itemId:'implant',qty:1}],implantSlots:['implant'],installedImplantIds:['implant'],skills:['events']},
+   q:{id:'q',role:'player',displayName:'Другой игрок',stats:{hpCurrent:10,hpMax:10},baseStats:{hpBase:10},abilityBase:{endurance:3}}
   }},
   equipment:{EQUIPMENT:{test_rifle:{id:'test_rifle',name:'Тестовая винтовка',type:'weapon',weaponCategory:'light',damage:'1',range:10,rapidFireShots:3,durabilityMax:5,magazineSize:3,ammoTypeId:'test_round'},test_round:{id:'test_round',name:'Тестовые патроны',type:'ammo',modifiers:[{target:'damage_bonus',op:'add',value:4}],luaEnabled:true,luaScript:"function OnShotFired(self,p) assert(p.ammo.id=='test_round' and p.ammoSpent==1 and p.weaponSlot=='primaryWeapon' and not p.hit);local roll=RequestRoll('wear','Износ от патрона',{min=1,max=20});if roll==20 then DamageItem(p.attacker,p.weaponSlot,1) end end"},implant:{id:'implant',name:'Дополнительные команды',type:'implant',modifiers:[{target:'drone_actions',op:'add',value:2}]}}},
   skills:{SKILLS:{events:{id:'events',name:'События',activationType:'passive',luaEnabled:true,luaScript:"function BeforeRoll(self,p) self:SetData('before_'..p.rollType,self:GetData('before_'..p.rollType,0)+1) end function AfterRoll(self,p) assert(p.rollingUnit ~= nil);self:SetData('after_'..p.rollType,p.roll) end function OnKnockedDown(self,p) assert(p.condition=='prone' and p.enabled);self:SetData('down',self:GetData('down',0)+1) end function OnStandUp(self,p) self:SetData('up',self:GetData('up',0)+1) end function OnForcedMove(self,p) self:SetData('shift',self:GetData('shift',0)+1) end"}}}
@@ -66,6 +66,11 @@ try{
  run("UI.openModule('combat')");
  const token=id=>run("Combat.getRuntime().tokens").find(row=>row.id===id);
  assert.equal(token('a').hpCurrent,8,'entry imports profile HP');
+ const rangedRange={id:'range-regression',range:0.01,weaponCategory:'light'};
+ assert.equal(api.shotRange229(token('a'),rangedRange,'primaryWeapon'),Infinity);
+ assert.equal(api.longRangeDisadvantage229(token('a'),token('b'),rangedRange,'primaryWeapon'),true);
+ assert.equal(api.longRangeDisadvantage229(token('a'),token('b'),{...rangedRange,range:10000},'primaryWeapon'),false);
+ assert.equal(api.shotRange229(token('a'),{...rangedRange,weaponCategory:'melee'},'primaryWeapon'),0.01);
  assert.equal(token('a').actionUsed,true,'entry preserves turn budget');
  assert.equal(api.droneActions225(token('a')),2,'equipped implant grants actions');
  assert.equal(api.droneShareVision225(token('d')),true);
@@ -152,10 +157,28 @@ try{
  assert.equal(rules.burstPenalty(3,2,true),-3,'bracing does not reduce target-switch penalties');
  assert.equal(rules.grenadeScatter(1,6),2);
  assert.equal(rules.grenadeScatter(5,5),2);
+ for(const [distance,damage] of [[0,20],[2.5,15],[5,10],[7.5,5],[10,0],[15,0]]){
+  assert.equal(rules.attenuateEnergyDamage(20,distance,10),damage);
+ }
+ assert.equal(rules.attenuateEnergyDamage(10,8,10),2);
+ assert.equal(rules.attenuateEnergyDamage(8,2,0),8);
  const fallen={hpCurrent:2,hpMax:10,ownTurnV199:3,traumaV195:{schema:195,degree:0}};
  rules.applyDamage(fallen,5);rules.applyDamage(fallen,3);
- assert.equal(rules.stabilizationDifficulty(fallen),20);
- assert.equal(fallen.traumaV195.degree,2);
+ assert.equal(rules.stabilizationDifficulty(fallen),16);
+ assert.equal(fallen.traumaV195.degree,1);
+ assert.equal(fallen.traumaV195.remainder,0);
+ const wounded={hpCurrent:10,hpMax:10,traumaV195:{schema:195,degree:0}};
+ rules.applyDamage(wounded,1);
+ assert.equal(wounded.traumaV195.degree,0);
+ assert.equal(wounded.traumaV195.remainder,1);
+ rules.applyDamage(wounded,2);
+ rules.applyHeal(wounded,3);
+ const reloaded=JSON.parse(JSON.stringify(wounded));
+ assert.equal(reloaded.traumaV195.degree,1);
+ assert.equal(reloaded.traumaV195.remainder,1);
+ rules.applyDamage(reloaded,1);
+ assert.equal(reloaded.traumaV195.degree,2);
+ assert.equal(reloaded.traumaV195.remainder,0);
  rules.applyHeal(fallen,2);
  assert.equal(fallen.conditionsV138.dying,true,'healing alone preserves the countdown');
  fallen.ownTurnV199=7;assert.equal(rules.criticalTurn(fallen,'end'),'');
@@ -163,6 +186,15 @@ try{
  const fatal={hpCurrent:2,hpMax:10,ownTurnV199:0};rules.applyDamage(fatal,2);
  fatal.ownTurnV199=5;assert.equal(rules.criticalTurn(fatal,'start'),'');
  assert.equal(rules.criticalTurn(fatal,'end'),'dead');
+ const lateHeal={hpCurrent:2,hpMax:10,ownTurnV199:0};
+ rules.applyDamage(lateHeal,2);
+ lateHeal.ownTurnV199=5;
+ assert.equal(rules.criticalTurn(lateHeal,'start'),'');
+ rules.applyHeal(lateHeal,1);
+ assert.equal(rules.criticalTurn(lateHeal,'end'),'');
+ assert.equal(lateHeal.conditionsV138.unconscious,true);
+ lateHeal.ownTurnV199=6;
+ assert.equal(rules.criticalTurn(lateHeal,'start'),'awake');
  const ally=token('b');
  api.fitTokenToHex107(ally,run('Combat.getScene()'),{x:preview.end.x,y:preview.end.y+api.hexStepDistance109()});
  ally.hpCurrent=2;rules.applyDamage(ally,3);rules.applyHeal(ally,2);
