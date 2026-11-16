@@ -641,33 +641,37 @@
   createPlayerCombatToken=function(playerId){const player=normalizePlayerProfileV2(App.state.users[playerId]||PLAYER_TEMPLATES[playerId]||{}),s=compute(player,{kind:'player'}),hit=weaponAttack(player,player.equipmentSlots?.primaryWeapon)||weaponAttack(player,player.equipmentSlots?.secondaryWeapon);return normalizeCombatToken({id:`token_player_${player.id}_${Date.now().toString(36)}`,type:'player',playerId:player.id,ownerId:player.id,name:player.displayName||player.id,image:player.image||'',x:0,y:0,hpCurrent:player.stats.hpCurrent,hpMax:s.values.maxHp,color:'#7df9ff',weaponId:hit?.weapon?.id||'',armorClass:s.values.armorClass,defense:s.values.defense,initiative:s.values.initiativeBonus,initiativeBonus:s.values.initiativeBonus,visionRange:s.values.vision,moveRange:s.values.movement});};
   createNpcCombatToken=function(npcId){const raw=Data.getNpc(npcId)||{id:npcId,name:npcId},npc=normalizeNpc(raw),s=compute(npc,{kind:'npc'}),weaponId=npc.equipmentSlots?.primaryWeapon||npc.equipmentSlots?.secondaryWeapon||'';return normalizeCombatToken({id:`token_npc_${npc.id}_${Date.now().toString(36)}`,type:'npc',npcId:npc.id,ownerId:'',name:npc.name||npc.id,image:npc.image||'',x:0,y:0,hpCurrent:Math.min(s.values.maxHp,Math.max(0,n(npc.stats?.hpCurrent,s.values.maxHp)||s.values.maxHp)),hpMax:s.values.maxHp,color:'#ff9f5d',weaponId,combatInventoryV120:copy(npc.inventory),armorClass:s.values.armorClass,defense:s.values.defense,initiative:s.values.initiativeBonus,initiativeBonus:s.values.initiativeBonus,visionRange:s.values.vision,moveRange:s.values.movement});};
 
-  /* During scene stability mode, inventory is the one profile channel allowed to sync. */
-  const saveBeforeInventorySync113=Persistence.save.bind(Persistence);let invHashes113=new Map(),invTimers113=new Map();function inventoryPatch113(user){return inventoryPatchFields113(user);}function isCombat113(){return combatInventoryMode113();}
-  Persistence.save=async function(state){const result=await saveBeforeInventorySync113(state);if(isCombat113()&&!window.__grpgCombatCheckpointV120&&PlayerSync?.pushPlayerPatch){Object.values(state?.users||{}).forEach(raw=>{const user=normalizePlayerProfileV2(raw);if(!user.id)return;const patch=inventoryPatch113(user),hash=JSON.stringify(patch),prev=invHashes113.get(user.id);if(prev===hash)return;invHashes113.set(user.id,hash);clearTimeout(invTimers113.get(user.id));invTimers113.set(user.id,setTimeout(()=>{pushInventoryPatchSafe113(App.state?.users?.[user.id]||user,inventoryPatch113(App.state?.users?.[user.id]||user),{notice:null,rerender:false}).catch(err=>console.error('COMBAT_INVENTORY_SYNC_V113',err));},180));});}return result;};
-
-  /* Inventory-only incoming channel during combat. World/profile polling stays frozen. */
-  let inventoryPullSince113=null, inventoryPullBusy113=false, inventoryCombatWasActive113=false;
+  // The scene reconciles incoming inventory with its durable local draft.
+  let inventoryPullSince113=null, inventoryPullBusy113=false, inventorySession113=null;
   async function pullInventoryOnly113(){
-    if(inventoryPullBusy113||!isCombat113()||!Sync?.config?.enabled||!window.electronAPI?.pullPlayers)return;
+    const sync=window.GRPGSceneInventorySync;
+    if(inventoryPullBusy113||!combatInventoryMode113()||!Sync?.config?.enabled||!window.electronAPI?.pullPlayers)return;
+    const session=sync?.session();
+    if(session!==inventorySession113){inventorySession113=session;inventoryPullSince113=null;}
     inventoryPullBusy113=true;
     try{
       const res=await window.electronAPI.pullPlayers({since:inventoryPullSince113,limit:500});
-      if(!res?.ok)return;
-      const rows=Array.isArray(res.rows)?res.rows:[];
+      if(!res?.ok||!combatInventoryMode113()||sync?.session()!==session||sync?.busy())return;
       let changed=false,latest=inventoryPullSince113;
-      for(const row of rows){
-        const playerId=String(row.playerId||row.player_id||'').trim();if(!playerId||row.deletedAt||row.deleted_at)continue;
-        const remote=row.player||row.player_json||{};const localUser=App.state?.users?.[playerId]||PLAYER_TEMPLATES?.[playerId];if(!localUser)continue;
-        const keys=['inventory','equipmentSlots','implantSlots','installedImplantIds','inventoryBaseSlots','carryBase','baseImplantSlots','inventorySize','carryWeightMax','implantSlotCount'];
-        const patch={};keys.forEach(k=>{if(remote[k]!==undefined)patch[k]=copy(remote[k]);});
-        if(Object.keys(patch).length&&PlayerSync.applyRemoteRow(row)){const merged=App.state.users[playerId];if(merged)invHashes113.set(playerId,JSON.stringify(inventoryPatch113(merged)));changed=true;}
-        const stamp=row.updatedAt||row.updated_at||null;if(stamp&&(!latest||new Date(stamp).getTime()>new Date(latest).getTime()))latest=stamp;
+      for(const row of arr(res.rows)){
+        const playerId=String(row.playerId||row.player_id||'').trim();
+        if(!row.deletedAt&&!row.deleted_at&&App.state?.users?.[playerId]?.role==='player'&&PlayerSync.applyRemoteRow(row))changed=true;
+        const stamp=row.updatedAt||row.updated_at;
+        if(stamp&&(!latest||new Date(stamp)>new Date(latest)))latest=stamp;
       }
-      inventoryPullSince113=latest||inventoryPullSince113||new Date().toISOString();
-      if(changed)await App.writeLocalMirrors();
-    }catch(error){console.warn('COMBAT_INVENTORY_PULL_V113',error);}finally{inventoryPullBusy113=false;}
+      inventoryPullSince113=latest;
+      if(changed){
+        sync?.refresh();
+        await App.writeLocalMirrors();
+      }
+      await sync?.pushPending();
+    }catch(error){console.warn('COMBAT_INVENTORY_PULL_V113',error);}
+    finally{inventoryPullBusy113=false;}
   }
-  setInterval(()=>{const active=isCombat113();if(active&&!inventoryCombatWasActive113){inventoryPullSince113=null;invHashes113.clear();Object.values(App.state?.users||{}).forEach(raw=>{const u=normalizePlayerProfileV2(raw);if(u.id)invHashes113.set(u.id,JSON.stringify(inventoryPatch113(u)));});void pullInventoryOnly113();}else if(active)void pullInventoryOnly113();inventoryCombatWasActive113=active;},3000);
+  setInterval(()=>{
+    if(combatInventoryMode113())void pullInventoryOnly113();
+    else window.GRPGSceneInventorySync?.retryClosedScene();
+  },3000);
   window.GRPGCombatInventorySyncV113={pullNow:pullInventoryOnly113};
 
   // New entities use the new formula defaults; existing legacy entities preserve their former HP through hpBase migration.

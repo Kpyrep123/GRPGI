@@ -4540,7 +4540,17 @@
       return pairs.length?{...metadata,qty:pairs.length,instancesV215:pairs.map(pair=>pair.copy),positions:pairs.map(pair=>pair.position)}:null;
     }).filter(Boolean);
   }
-  function mergeCombatProfile225(base,localProfile,remote,playerId){
+  const sceneInventoryFields=['inventory','weaponMagazines','equipmentSlots','implantSlots','installedImplantIds','inventoryBaseSlots','carryBase','baseImplantSlots','inventorySize','carryWeightMax','implantSlotCount'];
+  function sceneInventoryProfile(profile){
+    return Object.fromEntries(sceneInventoryFields.filter(key=>profile[key]!==undefined).map(key=>[key,profile[key]]));
+  }
+  function recordInventoryConflict(playerId,key,base,draft,remote){
+    const history=local.store.inventoryConflicts||={};
+    const conflicts=history[playerId]||={};
+    conflicts[key]={base:clone(base),draft:clone(draft),remote:clone(remote),at:new Date().toISOString()};
+    Toast.show('Инвентарь '+playerId+': использованы данные профиля. Конфликтующее изменение сохранено в архиве сцены.','info');
+  }
+  function mergeCombatProfile225(base,localProfile,remote,playerId,resolveInventoryConflict=false){
     const equal=window.GRPGPlayerSyncCoreV135.equal,result={...remote};
     for(const key of Object.keys(localProfile)){
       if(key==='stats'){
@@ -4558,8 +4568,19 @@
               result[key]=mergeCombatInventory(base[key],localProfile[key],remote[key]);
               continue;
             }catch(error){
-              throw Error('Профиль '+playerId+' изменён вне сцены: '+key,{cause:error});
+              if(!resolveInventoryConflict)throw Error('Профиль '+playerId+' изменён вне сцены: '+key,{cause:error});
             }
+          }else if(key==='equipmentSlots'||key==='weaponMagazines'){
+            try{
+              result[key]=window.GRPGPlayerSyncCoreV135.mergePatch(base,{[key]:localProfile[key]},remote)[key];
+              continue;
+            }catch(error){
+              if(!resolveInventoryConflict)throw Error('Профиль '+playerId+' изменён вне сцены: '+key,{cause:error});
+            }
+          }
+          if(resolveInventoryConflict&&sceneInventoryFields.includes(key)){
+            recordInventoryConflict(playerId,key,base[key],localProfile[key],remote[key]);
+            continue;
           }
           throw Error('Профиль '+playerId+' изменён вне сцены: '+key);
         }
@@ -4574,7 +4595,7 @@
     for(const [id,profile] of Object.entries(profiles))base[id]=combatProfilePatch120(profile);
     for(const [id,patch] of Object.entries(drafts?.profiles||{})){
       if(!incoming[id])continue;
-      const merged=mergeCombatProfile225(drafts.base?.[id]||{},patch,base[id],id);
+      const merged=mergeCombatProfile225(drafts.base?.[id]||{},patch,base[id],id,true);
       incoming[id]=normalizePlayerProfileV2({...incoming[id],...merged});
     }
     local.stability.profileBase225=base;
@@ -4587,6 +4608,7 @@
       token.traumaV195=clone(user.traumaV195?.schema===195?Trauma195.normalize(user.traumaV195):Trauma195.ensure({hpCurrent:token.hpCurrent,hpMax:token.hpMax,injuriesV129:user.injuriesV129}));
       if(token.hpCurrent>0&&token.conditionsV138?.stabilized&&!token.critical229?.unconsciousAlready)conditionStateV138(token).unconscious=false;
       token.itemStateV138=clone(user.itemStateV138||{});
+      token.weaponMagazinesV118=clone(user.weaponMagazines||{});
     };
     for(const [id,profile] of Object.entries(incoming))App.state.users[id]=clone(profile);
     for(const token of Object.values(session?.participants||{}))importToken(token);
@@ -4595,6 +4617,82 @@
     refreshRuntimeSources122(Combat.getSceneIdForView?.());
     collectStoreFromRuntime();
   }
+  let inventoryPush;
+  const applyProfileBeforeSceneInventory=PlayerSync.applyRemoteRow.bind(PlayerSync);
+  PlayerSync.applyRemoteRow=function(row,options={}){
+    const id=String(row?.playerId||row?.player_id||'');
+    const base=local.stability.active&&local.stability.profilesReady225?local.stability.profileBase225?.[id]:null;
+    const previous=base&&App.state.users[id]?combatProfilePatch120(App.state.users[id]):null;
+    const applied=applyProfileBeforeSceneInventory(row,options);
+    if(!applied||!previous||!App.state.users[id])return applied;
+    const confirmed=normalizePlayerProfileV2({...this._confirmedV135.get(id),id});
+    const incoming=combatProfilePatch120(confirmed);
+    const sent=sceneInventoryProfile(options.sceneInventorySent||{});
+    const merged=mergeCombatProfile225(sceneInventoryProfile({...base,...sent}),
+      sceneInventoryProfile(previous),sceneInventoryProfile(incoming),id,true);
+    const current=App.state.users[id];
+    const untouched=Object.fromEntries(Object.entries(previous).filter(([key])=>!sceneInventoryFields.includes(key)));
+    App.state.users[id]=normalizePlayerProfileV2({...current,...untouched,...merged});
+    PLAYER_TEMPLATES[id]=clone(App.state.users[id]);
+    Object.assign(base,sceneInventoryProfile(incoming));
+    // A profile change to the weapon slots takes effect in the scene immediately.
+    const next=App.state.users[id];
+    const equal=window.GRPGPlayerSyncCoreV135.equal;
+    const slotsChanged=!equal(previous.equipmentSlots,next.equipmentSlots);
+    const magazinesChanged=!equal(previous.weaponMagazines,next.weaponMagazines);
+    if(slotsChanged||magazinesChanged){
+      const slots=next.equipmentSlots||{};
+      const tokens=[...Object.values(local.store.session193?.participants||{}),...list(Combat.getRuntime()?.tokens)];
+      for(const token of tokens){
+        if(token.playerId!==id)continue;
+        if(magazinesChanged)token.weaponMagazinesV118=clone(next.weaponMagazines||{});
+        if(!slotsChanged)continue;
+        const slot=['primaryWeapon','secondaryWeapon'].find(key=>slots[key]&&slots[key]!==previous.equipmentSlots?.[key]);
+        if(slot)token.weaponId=slots[slot];
+        else if(![slots.primaryWeapon,slots.secondaryWeapon].includes(token.weaponId))token.weaponId=slots.primaryWeapon||slots.secondaryWeapon||'';
+        token.burstStateV122=null;
+      }
+    }
+    return applied;
+  };
+  function refreshSceneInventory(){
+    if(!local.stability.active||!local.stability.profilesReady225)return;
+    refreshRuntimeSources122(Combat.getSceneIdForView?.());
+    queueStoreSave();
+    Combat.render?.();
+    broadcastScene104();
+  }
+  function pushSceneInventory(){
+    if(inventoryPush||!local.stability.active||!local.stability.profilesReady225||operation194||recovery194||combatExit225||
+      !Sync.config?.enabled||!PlayerSync.shouldIsolateUsersFromSnapshot())return inventoryPush;
+    const core=window.GRPGPlayerSyncCoreV135;
+    collectStoreFromRuntime();
+    const drafts=local.store.profileDrafts225;
+    const jobs=Object.entries(drafts.profiles).flatMap(([id,profile])=>{
+      const before=sceneInventoryProfile(drafts.base[id]);
+      const patch=core.diff(before,sceneInventoryProfile(profile));
+      return Object.keys(patch).length&&!PlayerSync._queueV135.pending(id)?[{id,before,patch}]:[];
+    });
+    if(!jobs.length)return;
+    inventoryPush=(async()=>{
+      const saved=await saveStoreNow();
+      if(saved?.ok===false||!local.stability.active)return;
+      const results=await Promise.allSettled(jobs.map(({id,before,patch})=>PlayerSync.pushPlayerPatch(id,patch,{
+        basePlayer:{...PlayerSync.projectedPlayerV135(id),...before},sceneInventorySync:true,rerender:false,writeLocalMirrors:false
+      })));
+      if(results.some(result=>result.status==='fulfilled'&&result.value?.row))refreshSceneInventory();
+      await App.writeLocalMirrors();
+      await saveStoreNow();
+    })().catch(error=>console.warn('SCENE_INVENTORY_SYNC',error)).finally(()=>{inventoryPush=null;});
+    return inventoryPush;
+  }
+  window.GRPGSceneInventorySync={
+    session:()=>local.stability.generation+':'+String(Sync.config?.campaignId||''),
+    busy:()=>Boolean(operation194||recovery194||combatExit225||inventoryPush),
+    refresh:refreshSceneInventory,
+    pushPending:pushSceneInventory,
+    retryClosedScene:retryClosedSceneInventory
+  };
   let combatProfileSync228=null;
   function resumeCombatSync228(){
     try{Sync?.initWorldSnapshotRealtimeBridgeV1015?.();if(Sync?.config?.enabled)Sync?.startPolling?.();}catch{}
@@ -4634,7 +4732,7 @@
       if(!Sync?.config?.enabled||String(Sync.config.campaignId||'')!==campaign)throw Error('Подключение к кампании изменилось');
       const remote=normalizePlayerProfileV2({...((row.player||row.player_json)??{}),id});
       const remotePatch=combatProfilePatch120(remote);
-      const merged=mergeCombatProfile225(drafts.base[id],drafts.profiles[id],remotePatch,id);
+      const merged=mergeCombatProfile225(drafts.base[id],drafts.profiles[id],remotePatch,id,true);
       const patch=core.diff(remotePatch,merged);
       if(Object.keys(patch).length){
         const result=await PlayerSync.pushPlayerPatch(id,patch,{basePlayer:remote,notice:null,rerender:false,writeLocalMirrors:false});
@@ -4656,11 +4754,19 @@
     const failed=results.find(result=>result.status==='rejected');
     if(failed)throw failed.reason;
   }
+  function retryClosedSceneInventory(){
+    const drafts=local.store?.profileDrafts225;
+    if(!Object.keys(drafts?.profiles||{}).length||combatEntry225||combatExit225||combatProfileSync228||
+      local.stability.active||!Sync.config?.enabled||!PlayerSync.shouldIsolateUsersFromSnapshot())return;
+    combatProfileSync228=flushCombatDrafts228(drafts)
+      .catch(error=>console.warn('SCENE_PROFILE_SYNC_RETRY',error))
+      .finally(()=>{combatProfileSync228=null;});
+  }
   function leaveCombat225(navigate){
     if(combatExit225)return combatExit225;
-    combatExit225=new Promise(resolve=>setTimeout(resolve,0)).then(()=>exitCombatStability108()).then(drafts=>{
+    combatExit225=new Promise(resolve=>setTimeout(resolve,0)).then(()=>inventoryPush).then(()=>exitCombatStability108()).then(drafts=>{
       combatProfileSync228=flushCombatDrafts228(drafts)
-        .catch(error=>Toast.show('Изменения профилей сохранены в сцене. Повторная отправка после открытия сцены. '+(error.message||error),'err'))
+        .catch(error=>Toast.show('Изменения профилей сохранены в сцене. Отправка будет повторена. '+(error.message||error),'err'))
         .finally(()=>{combatProfileSync228=null;resumeCombatSync228();});
     }).catch(error=>{resumeCombatSync228();Toast.show('Сцена закрыта. Локальная запись не завершена: '+(error.message||error),'err');})
       .finally(()=>{combatExit225=null;if(UI.activeModuleId==='combat')Combat.render?.();});

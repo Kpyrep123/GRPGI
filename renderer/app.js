@@ -2678,7 +2678,7 @@ const PlayerSync = {
         // Flush unsent combat resources with the next player write.
         // Otherwise rebuilding the optimistic profile would discard local damage/ammo.
         const local=App.state.users[playerId];
-        if(local&&(UI?.activeModuleId==='combat'||document.body.classList.contains('combat-stability-v108'))){
+        if(!options.sceneInventorySync&&local&&(UI?.activeModuleId==='combat'||document.body.classList.contains('combat-stability-v108'))){
           const baseline=normalizePlayerProfileV2(this.projectedPlayerV135(playerId));
           for(const key of ['hpCurrent','shieldCurrent','energyCurrent']){
             if(local.stats?.[key]!==undefined&&!core.equal(local.stats[key],baseline.stats?.[key])&&
@@ -2695,8 +2695,10 @@ const PlayerSync = {
     const pending=this._pendingV135.get(playerId)||[];
     pending.push(entry);this._pendingV135.set(playerId,pending);
     // Registration is synchronous, before any local disk or network wait.
-    App.state.users[playerId]=normalizePlayerProfileV2(this.projectedPlayerV135(playerId));
-    PLAYER_TEMPLATES[playerId]=deep(App.state.users[playerId]);
+    if(!options.sceneInventorySync){
+      App.state.users[playerId]=normalizePlayerProfileV2(this.projectedPlayerV135(playerId));
+      PLAYER_TEMPLATES[playerId]=deep(App.state.users[playerId]);
+    }
     return this._queueV135.run(playerId,async()=>{
       if(options.writeLocalMirrors!==false)await App.writeLocalMirrors();
       const request={...entry,baseVersion:Number(getPlayerRemoteMeta(playerId,App.state).version||0),
@@ -2717,9 +2719,9 @@ const PlayerSync = {
       }
       const rows=(this._pendingV135.get(playerId)||[]).filter(item=>item!==entry);
       if(rows.length)this._pendingV135.set(playerId,rows);else this._pendingV135.delete(playerId);
-      if(res?.ok && res.row)this.applyRemoteRow(res.row,{authoritative:true,source:'write-response'});
+      if(res?.ok && res.row)this.applyRemoteRow(res.row,{authoritative:true,source:'write-response',sceneInventorySent:options.sceneInventorySync?player:null});
       else if(res?.remote)this.applyRemoteRow(res.remote,{authoritative:true,source:'conflict-response'});
-      else if(this._confirmedV135.has(playerId)){
+      else if(!options.sceneInventorySync&&this._confirmedV135.has(playerId)){
         App.state.users[playerId]=normalizePlayerProfileV2(this.projectedPlayerV135(playerId));
         PLAYER_TEMPLATES[playerId]=deep(App.state.users[playerId]);
       }

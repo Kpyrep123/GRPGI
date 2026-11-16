@@ -289,5 +289,37 @@ try{
  const equipped=run("GRPGItemInstancesV215.instance(App.state.users.p,'test_rifle',-1,'secondaryWeapon')");
  assert.equal(equipped.id,originalCopy.id);
  assert.equal(equipped.durability,2,'entry retains scene wear on the copy moved outside the scene');
+ const staleProfile=JSON.parse(JSON.stringify(freshProfiles));
+ staleProfile.p.inventory.find(row=>row.itemId==='test_rifle').instancesV215[0].durability=3;
+ api.collectStoreFromRuntime();
+ api.importCombatProfiles225(staleProfile);
+ assert.equal(run("GRPGItemInstancesV215.instance(App.state.users.p,'test_rifle',-1,'secondaryWeapon').durability"),3);
+ assert.equal(api.local.store.inventoryConflicts.p.inventory.draft.find(row=>row.itemId==='test_rifle').instancesV215[0].durability,2);
+
+ const liveRemote=JSON.parse(run('JSON.stringify(App.state.users.p)'));
+ const remoteRifle=liveRemote.inventory.find(row=>row.itemId==='test_rifle').instancesV215[0];
+ liveRemote.equipmentSlots.primaryWeapon='test_rifle';
+ liveRemote.equipmentSlots.secondaryWeapon='';
+ remoteRifle.slot='primaryWeapon';
+ run("GRPGItemInstancesV215.instance(App.state.users.p,'test_rifle',-1,'secondaryWeapon').durability=1");
+ let version=30, pushedInventory=false;
+ w.electronAPI.pullPlayers=async()=>({ok:true,rows:[{playerId:'p',player:liveRemote,version,updatedAt:new Date().toISOString()}]});
+ w.push225=async(id,patch)=>{
+   assert.equal(id,'p');
+   if(!patch.inventory)return {ok:true};
+   pushedInventory=true;
+   Object.assign(liveRemote,JSON.parse(JSON.stringify(patch)));
+   const row={playerId:id,player:liveRemote,version:++version};
+   w.confirmedInventory225=row;
+   run("PlayerSync.applyRemoteRow(confirmedInventory225,{authoritative:true,sceneInventorySent:{inventory:confirmedInventory225.player.inventory}})");
+   return {ok:true,row};
+ };
+ await run('GRPGCombatInventorySyncV113.pullNow()');
+ const liveCopy=run("GRPGItemInstancesV215.instance(App.state.users.p,'test_rifle',-1,'primaryWeapon')");
+ assert.equal(liveCopy.durability,1);
+ assert.equal(token('a').weaponId,'test_rifle');
+ assert.equal(pushedInventory,true,'wear is sent while the scene stays open');
+ assert.equal(liveRemote.inventory.find(row=>row.itemId==='test_rifle').instancesV215[0].durability,1);
+ assert.equal(api.local.store.profileDrafts225.profiles.p?.inventory?.find(row=>row.itemId==='test_rifle').instancesV215[0].durability??1,1);
  console.log('PASS v225 real renderer: implant drone actions, party vision, Lua getters and events, deferred profiles, retry and fresh entry');
 }finally{await w.happyDOM.abort();fs.rmSync(scratch,{recursive:true,force:true});}
