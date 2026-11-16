@@ -80,6 +80,18 @@ try{
  assert.equal(merged.stats.hpCurrent,6);assert.equal(merged.stats.hpMax,12);
  assert.throws(()=>api.mergeCombatProfile225({stats:{hpCurrent:8}},{stats:{hpCurrent:6}},{stats:{hpCurrent:7}},'p'),/изменён вне сцены/);
 
+ const rifle=(copies,positions)=>({itemId:'test_rifle',qty:copies.length,positions,instancesV215:copies});
+ const first={id:'first',durability:5},second={id:'second',durability:5};
+ const firstPosition={x:1,y:2},secondPosition={x:2,y:2};
+ const beforeEquip={inventory:[rifle([first,second],[firstPosition,secondPosition])],equipmentSlots:{}};
+ const sceneWear={...beforeEquip,inventory:[rifle([first,{...second,durability:4}],[firstPosition,secondPosition])]};
+ const equippedOutside={inventory:[rifle([{...second,slot:'primaryWeapon'},first],[secondPosition,firstPosition])],equipmentSlots:{primaryWeapon:'test_rifle'}};
+ const mergedEquip=api.mergeCombatProfile225(beforeEquip,sceneWear,equippedOutside,'p');
+ assert.equal(mergedEquip.equipmentSlots.primaryWeapon,'test_rifle');
+ assert.deepEqual(JSON.parse(JSON.stringify(mergedEquip.inventory[0])),rifle([{...second,durability:4,slot:'primaryWeapon'},first],[secondPosition,firstPosition]));
+ const conflictingWear={...equippedOutside,inventory:[rifle([{...second,durability:3,slot:'primaryWeapon'},first],[secondPosition,firstPosition])]};
+ assert.throws(()=>api.mergeCombatProfile225(beforeEquip,sceneWear,conflictingWear,'p'),/изменён вне сцены: inventory/);
+
  const unitRows=api.luaUnitRows119(run('Combat.getRuntime()'),run('Combat.getScene()'));
  assert.equal(unitRows.find(row=>row.id==='a').droneActions225,2);
  assert.equal(unitRows.find(row=>row.id==='d').droneShareVision225,true);
@@ -259,9 +271,23 @@ try{
  assert.equal(token('a').hpCurrent,9,'online entry reads the server profile');
  assert.equal(token('a').actionUsed,true,'online refresh preserves spent action');
  const freshProfiles=JSON.parse(run('JSON.stringify(App.state.users)'));
+ freshProfiles.p.inventory.push(rifle([{id:'fresh-rifle',slot:'primaryWeapon',durability:5,durabilityMax:5}],[null]));
+ api.importCombatProfiles225(freshProfiles);
  token('a').hpCurrent=5;api.updatePlayerHp105(token('a'));api.collectStoreFromRuntime();
  const archive=JSON.parse(JSON.stringify(api.local.store));
  api.applyStore(archive);api.importCombatProfiles225(freshProfiles);
  assert.equal(token('a').hpCurrent,5,'persisted combat draft survives archive restore over unchanged remote profile');
+ const record=freshProfiles.p.inventory.find(row=>row.itemId==='test_rifle');
+ assert.ok(record?.instancesV215?.length,'rifle exists in the fresh profile');
+ const originalCopy=record.instancesV215[0];
+ const liveRifle=run("App.state.users.p.inventory.find(row=>row.itemId==='test_rifle')");
+ liveRifle.instancesV215[0].durability=2;
+ api.collectStoreFromRuntime();
+ freshProfiles.p.equipmentSlots={...freshProfiles.p.equipmentSlots,primaryWeapon:'',secondaryWeapon:'test_rifle'};
+ originalCopy.slot='secondaryWeapon';
+ api.importCombatProfiles225(freshProfiles);
+ const equipped=run("GRPGItemInstancesV215.instance(App.state.users.p,'test_rifle',-1,'secondaryWeapon')");
+ assert.equal(equipped.id,originalCopy.id);
+ assert.equal(equipped.durability,2,'entry retains scene wear on the copy moved outside the scene');
  console.log('PASS v225 real renderer: implant drone actions, party vision, Lua getters and events, deferred profiles, retry and fresh entry');
 }finally{await w.happyDOM.abort();fs.rmSync(scratch,{recursive:true,force:true});}
