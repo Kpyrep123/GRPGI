@@ -5847,16 +5847,16 @@ function stockFeesV213(fees){if(!fees)return 'Тарифы загрузятся 
   function applyFormulaWeb118(staticBase,defaultStat,target,mods,context={},scale=1){
     const matching=mods.filter(mod=>String(mod.target)===target&&modifierScopeWeb118(mod,context)).sort((a,b)=>Number(a.priority||0)-Number(b.priority||0));
     const replacement=matching.filter(mod=>mod.op==='replace_stat'&&mod.statRef).at(-1),stat=replacement?.statRef||defaultStat;
-    let value=Number(staticBase||0)+(stat?Number(context.abilities?.[stat]||0)*scale:0);
-    for(const mod of matching){if(mod.op==='add_stat'&&mod.statRef)value+=Number(context.abilities?.[mod.statRef]||0)*scale;else if(mod.op==='add'||!mod.op)value+=Number(mod.value||0);else if(mod.op==='set')value=Number(mod.value||0);}
+    let value=Number(staticBase||0)+(stat?Number(context.abilities?.[stat]||0)*(target==='max_hp'&&replacement?1:scale):0);
+    for(const mod of matching){if(mod.op==='add_stat'&&mod.statRef)value+=Number(context.abilities?.[mod.statRef]||0)*(target==='max_hp'?1:scale);else if(mod.op==='add'||!mod.op)value+=Number(mod.value||0);else if(mod.op==='set')value=Number(mod.value||0);}
     return value;
   }
   function derivedPlayerWeb118(player={}){
     const baseAbilities=player.abilityBase&&typeof player.abilityBase==='object'?player.abilityBase:(player.abilities||{}),mods=modifierSourcesWeb118(player),abilities={};
     Object.keys(WEB118_STATS).forEach(key=>{abilities[key]=Math.max(0,applyModifierWeb118(Number(baseAbilities[key]||0),key,mods,player,{abilities}));});
     const base=player.baseStats||{};
-    const hpBase=Number(base.hpBase??player.hpBase??((Number(player.stats?.hpMax)>0)?Math.max(0,Number(player.stats.hpMax)-Number(baseAbilities.endurance||0)):1));
-    const maxHp=Math.max(1,Math.round(applyFormulaWeb118(hpBase,'endurance','max_hp',mods,{abilities})));
+    const hpBase=4;
+    const maxHp=Math.max(1,Math.round(applyFormulaWeb118(hpBase,'endurance','max_hp',mods,{abilities},2)));
     const inventorySlots=Math.max(0,Math.trunc(applyModifierWeb118(Number(base.inventorySlots??player.inventoryBaseSlots??player.inventorySize??12), 'inventory_slots',mods,player,{abilities})));
     const carryCapacity=Math.max(0,applyFormulaWeb118(Number(base.carryBase??player.carryBase??12),'strength','carry_capacity',mods,{abilities},2));
     const implantSlots=Math.max(0,Math.trunc(applyModifierWeb118(Number(base.implantSlots??player.baseImplantSlots??player.implantSlotCount??0),'implant_slots',mods,player,{abilities})));
