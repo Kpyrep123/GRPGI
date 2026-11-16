@@ -4,7 +4,7 @@
   const num=(v,f=0)=>Number.isFinite(Number(v))?Number(v):f;
   const degree=v=>Math.max(0,Math.min(5,Math.trunc(num(v))));
   const mechanical=t=>['drone','turret'].includes(String(t?.equipmentType||t?.type||'').toLowerCase());
-  function normalize(value={}){return {schema:195,degree:degree(value.degree),migrated:value.migrated===true};}
+  function normalize(value={}){return {schema:195,degree:degree(value.degree),remainder:Math.max(0,Math.min(1,Math.trunc(num(value.remainder)))),migrated:value.migrated===true};}
   function ensure(target){
     if(!target||typeof target!=='object')return normalize();
     if(target.traumaV195?.schema===195){target.traumaV195=normalize(target.traumaV195);target.injuriesV129=[];return target.traumaV195;}
@@ -12,13 +12,17 @@
     const maximum=Math.max(1,num(target.hpMax,1)),missing=Math.max(0,maximum-Math.max(0,num(target.hpCurrent,maximum)));
     // Preserve the last known legacy degree once. Past healed damage cannot be reconstructed.
     const prior=legacy.length?Math.max(...legacy.map(row=>degree(row?.degree))):missing>0?Math.ceil(missing/maximum*5):0;
-    target.traumaV195={schema:195,degree:mechanical(target)?0:degree(prior),migrated:true};
+    target.traumaV195={schema:195,degree:mechanical(target)?0:degree(prior),remainder:0,migrated:true};
     target.injuriesV129=[];
     return target.traumaV195;
   }
   function add(target,hpLost){
     const injury=ensure(target),before=injury.degree;
-    if(!mechanical(target))injury.degree=degree(before+Math.max(0,Math.round(num(hpLost))));
+    if(!mechanical(target)){
+      const accumulated=injury.remainder+Math.max(0,Math.round(num(hpLost)));
+      injury.degree=degree(before+Math.floor(accumulated/2));
+      injury.remainder=accumulated%2;
+    }
     return {before,after:injury.degree,added:injury.degree-before};
   }
   function treat(target,amount){
