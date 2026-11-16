@@ -92,8 +92,7 @@
     target.critical229||={damage:0,fallTurn:integer(target.ownTurnV199)-(phase==='start'?1:0),unconsciousAlready:false};
     if(integer(target.ownTurnV199)-integer(target.critical229.fallTurn)+integer(target.critical229.manualIntervals)<5)return '';
     if(phase==='start'&&target.hpCurrent>0){stabilize(target);return 'awake';}
-    if(phase==='end'){
-      if(target.hpCurrent>0){stabilize(target);return 'awake';}
+    if(phase==='end'&&target.hpCurrent<=0){
       target.dead229=true;target.conditionsV138.dying=false;return 'dead';
     }
     return '';
