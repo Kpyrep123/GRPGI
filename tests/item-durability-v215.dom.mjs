@@ -385,12 +385,43 @@ modValue.dispatchEvent(new w.Event('input',{bubbles:true}));
 run('Configurator.render()');
 assert.equal(lastRow().querySelector('[data-mod-target-v113]').value,'shield_capacity');
 assert.equal(lastRow().querySelector('[data-mod-value-v113]').value,'5');
-assert(w.document.querySelector('.config-type-list [data-aberration-catalog]'));
+const catalogButton=()=>w.document.querySelector('.config-type-list [data-aberration-catalog]');
+catalogButton().click();
+const pane=()=>w.document.querySelector('.config-main [data-aberration-editor]');
+assert.ok(pane());
+assert.equal(w.document.querySelector('dialog [data-aberration-chances]'),null);
+assert.equal(catalogButton().getAttribute('aria-current'),'page');
+assert.equal(w.document.querySelector('.config-entity-list').style.display,'none');
+const rarityField=()=>pane().querySelector('[data-danger="1"][data-rarity="1"]');
+rarityField().value='23';
+rarityField().dispatchEvent(new w.Event('change',{bubbles:true}));
+run('Configurator.render()');
+assert.equal(rarityField().value,'23');
+run(`
+  window.persistCatalogBefore266=Configurator.persistAll;
+  Configurator.persistAll=async (_message,options)=>{
+    window.savedSections266=options.worldSections;
+    window.savedChances266=buildWorldSnapshot().campaigns.ABERRATION_SETTINGS.main.chances;
+    Configurator.render();
+    return {ok:true,localSaved:true};
+  };
+`);
+pane().dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));
+await pause();
+assert.deepEqual(Array.from(w.savedSections266),['campaigns']);
+assert.equal(w.savedChances266[1][1],23);
+assert.ok(pane(),'saving stays on the section');
+run('Configurator.persistAll=persistCatalogBefore266;');
+w.document.querySelector('.config-type-btn[data-type="npcs"]').click();
+assert.equal(pane(),null);
+assert.equal(w.document.querySelector('.config-entity-list').style.display,'');
+
 
 run(`
   NPCS.draft265={id:'draft265',name:'Draft',lootTable:[]};
   Configurator.selectedType='npcs';Configurator.selectedId='draft265';Configurator.render();
 `);
+w.document.querySelector('[data-config-id="draft265"]').click();
 const addLoot=w.document.querySelector('[data-add-loot-v118]');
 assert(addLoot);
 addLoot.click();

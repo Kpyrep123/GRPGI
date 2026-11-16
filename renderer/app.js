@@ -6089,7 +6089,7 @@ const Configurator = {
     let snapshotSyncRes = null;
     let playerSyncRes = null;
 
-    if (this.selectedType === 'players') {
+    if (this.selectedType === 'players' && worldSections.includes('players')) {
       mirrorPlayersIntoWorld(App.state);
       App.state.users = deep(PLAYER_TEMPLATES);
       App.state.meta.lastUpdatedAt = new Date().toISOString();
@@ -7730,7 +7730,7 @@ const UiSyncGuard = {
   isEditingCriticalForm() {
     const active = document.activeElement;
     if (!active) return false;
-    return Boolean(active.closest('#profile-edit-form, #profile-lore-form-v1103, #config-editor-form, .direct-chat-form, .messages-npc-chat-form, .npc-chat-form, .npc-chat-init-form'));
+    return Boolean(active.closest('#profile-edit-form, #profile-lore-form-v1103, #config-editor-form, [data-aberration-editor], .direct-chat-form, .messages-npc-chat-form, .npc-chat-form, .npc-chat-init-form'));
   },
   defer(reason = 'remote-sync') {
     if (!reason) reason = 'remote-sync';
