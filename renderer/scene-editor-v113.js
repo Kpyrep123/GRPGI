@@ -162,6 +162,7 @@
     next.attackRange = Math.max(0, num(token.attackRange, 0));
     next.movedThisTurn = Math.max(0, num(token.movedThisTurn, 0));
     next.actionUsed = Boolean(token.actionUsed);
+    next.loseNextAction093 = token.loseNextAction093===true;
     next.dashUsedV198 = Boolean(token.dashUsedV198);
     next.luaResources204=clone(token.luaResources204||{});next.luaState204=clone(token.luaState204||{});next.reactionDebt204=Math.max(0,num(token.reactionDebt204));next.reactionWithheld204=String(token.reactionWithheld204||'');
     next.critical229=clone(token.critical229||null);next.dead229=token.dead229===true;
@@ -564,7 +565,7 @@
     const scene=Combat.getScene();
     if(activeMap193()&&runtime.pendingTurnStart193===token.id){
       const startOrder=list(runtime.initiativeOrder).slice(),startIndex=runtime.turnIndex;
-      runtime.pendingTurnStart193='';startMoraleTurn199(token);token.dashUsedV198=false;token.movedThisTurn=0;token.actionUsed=false;token.reactionUsedV119=false;token.disengagedV122=false;token.freeDroneCommandUsedV129=false;
+      runtime.pendingTurnStart193='';token.dashUsedV198=false;token.movedThisTurn=0;token.actionUsed=false;token.reactionUsedV119=false;startMoraleTurn199(token);token.disengagedV122=false;token.freeDroneCommandUsedV129=false;
       const effects={damage:0,effects:[]};await processCriticalTurn229(token,'start');await applyDelayedHits256(token);await processTimedModifiers122(token,'start',effects);if(num(token.hpCurrent)>0&&!conditionStateV138(token).unconscious)await emit204('OnTurnStart',token,{caster:token,attacker:token,target:token,targets:[token],event:'OnTurnStart'},effects);flushLuaEffects119(effects);Combat.syncInitiative(scene.id,false);
       if(!Session193.takesTurn(token))await Combat.nextTurn({allowMissing194:true,ignoreCommand194:true,skipEnd194:true,previousId194:token.id,orderBefore194:startOrder,indexBefore194:startIndex});
     }
@@ -881,7 +882,7 @@
       let current=this.getCurrentTurnToken?.(),guard=Math.max(1,list(runtime.tokens).length+1);
       while(current&&guard-->0){
         const startOrder=list(runtime.initiativeOrder).map(String),startIndex=Math.max(0,startOrder.indexOf(String(current.id)));
-        runtime.pendingTurnStart193='';startMoraleTurn199(current);current.dashUsedV198=false;current.movedThisTurn=0;current.actionUsed=false;current.reactionUsedV119=false;current.disengagedV122=false;current.freeDroneCommandUsedV129=false;
+        runtime.pendingTurnStart193='';current.dashUsedV198=false;current.movedThisTurn=0;current.actionUsed=false;current.reactionUsedV119=false;startMoraleTurn199(current);current.disengagedV122=false;current.freeDroneCommandUsedV129=false;
         await processCriticalTurn229(current,'start');
         await applyDelayedHits256(current);
         await processTimedModifiers122(current,'start',effects);
@@ -1084,7 +1085,7 @@
   }
   function moraleEffects199(token){return window.GRPGCombatInstinctV199.effects(token?.moraleV199);}
   function checkPenalty199(token){return injuryCheckPenalty129(token)+window.GRPGCombatInstinctV199.penalty(token?.moraleV199);}
-  function startMoraleTurn199(token){token.ownTurnV199=Math.max(0,num(token.ownTurnV199))+1;const pool=resources204(token).reaction;if(num(token.reactionDebt204)>0){if(pool){const n=Math.min(pool.value,token.reactionDebt204);Lua204.spend(token.luaResources204,'reaction',n,epochContext204(token));token.reactionDebt204-=n;}else{token.reactionDebt204--;token.reactionWithheld204=Lua204.epoch('turn',epochContext204(token));}}}
+  function startMoraleTurn199(token){token.ownTurnV199=Math.max(0,num(token.ownTurnV199))+1;if(token.loseNextAction093){token.actionUsed=true;token.loseNextAction093=false;}const pool=resources204(token).reaction;if(num(token.reactionDebt204)>0){if(pool){const n=Math.min(pool.value,token.reactionDebt204);Lua204.spend(token.luaResources204,'reaction',n,epochContext204(token));token.reactionDebt204-=n;}else{token.reactionDebt204--;token.reactionWithheld204=Lua204.epoch('turn',epochContext204(token));}}}
   async function processCriticalTurn229(token,phase){
     const before=clone(conditionStateV138(token)),outcome=window.GRPGCombatRulesV119.criticalTurn(token,phase);
     if(!outcome)return;
@@ -2902,7 +2903,7 @@
       }
       if(!result.cancelled263)await emit204('OnAttackResolved',attacker,{...context,hit:result.hit,critical:result.critical},pre);if(!result.hit&&!result.cancelled263)await emit204('OnMiss',attacker,{...context,hit:false});
       refs=combatTransactionRefs120(transaction);attacker=refs.attacker;victim=refs.target;let finalDamage=result.damageApplied,hp={before:num(victim?.hpCurrent),after:num(victim?.hpCurrent),applied:0},state={damage:result.hit?result.damageApplied:0,damagePartsV138:result.hit?[{amount:result.damageApplied,absorptionSource:'all'}]:[],effects:pre.effects};
-      if(result.hit&&victim){await bonusDie258(attacker,weapon,state,damageType202(weapon,null,attacker));refs=combatTransactionRefs120(transaction);attacker=refs.attacker;victim=refs.target;if(!attacker||!victim)return false;await runAutomaticHooks119(attacker,'OnHit',{...context,attacker,target:victim,damage:state.damage},state);await chooseReaction119('OnHit',{...context,attacker,target:victim,damage:state.damage},state);refs=combatTransactionRefs120(transaction);victim=refs.target;attacker=refs.attacker;if(victim){await runAutomaticHooks119(victim,'BeforeDamage',{...context,attacker,target:victim,damage:state.damage},state);await chooseReaction119('BeforeDamage',{...context,attacker,target:victim,damage:state.damage},state);refs=combatTransactionRefs120(transaction);victim=refs.target;attacker=refs.attacker;if(!victim||!attacker)return false;finisher255(attacker,weapon,victim,state);const reduced=applyAbsorptionV138(state,incomingDefense119(victim,'melee',null,damageType202(weapon,null,attacker)),type=>incomingDefense119(victim,'melee',null,type));wearArmorFromBlast093(victim,reduced);finalDamage=reduced.applied;if(result.defenseCritical)finalDamage=Math.floor(finalDamage/2);hp=await applyWeaponHit261(victim,finalDamage,attacker,weapon,result,{damageType:damageType202(weapon,null,attacker)});updatePlayerHp105(victim);const afterContext={...context,attacker,target:victim,damage:finalDamage};await runAutomaticHooks119(victim,'OnTakeDamage',afterContext,state);await chooseReaction119('OnTakeDamage',afterContext,state);refs=combatTransactionRefs120(transaction);victim=refs.target;hp.after=num(victim?.hpCurrent,hp.after);hp.applied=Math.max(0,hp.before-hp.after);if(victim)updatePlayerHp105(victim);}}
+      if(result.hit&&victim){await bonusDie258(attacker,weapon,state,damageType202(weapon,null,attacker));refs=combatTransactionRefs120(transaction);attacker=refs.attacker;victim=refs.target;if(!attacker||!victim)return false;await runAutomaticHooks119(attacker,'OnHit',{...context,attacker,target:victim,damage:state.damage},state);await chooseReaction119('OnHit',{...context,attacker,target:victim,damage:state.damage},state);refs=combatTransactionRefs120(transaction);victim=refs.target;attacker=refs.attacker;if(victim){await runAutomaticHooks119(victim,'BeforeDamage',{...context,attacker,target:victim,damage:state.damage},state);await chooseReaction119('BeforeDamage',{...context,attacker,target:victim,damage:state.damage},state);refs=combatTransactionRefs120(transaction);victim=refs.target;attacker=refs.attacker;if(!victim||!attacker)return false;finisher255(attacker,weapon,victim,state);const reduced=applyAbsorptionV138(state,incomingDefense119(victim,'melee',null,damageType202(weapon,null,attacker)),type=>incomingDefense119(victim,'melee',null,type));finalDamage=reduced.applied;if(result.defenseCritical)finalDamage=Math.floor(finalDamage/2);await resolveBlastShock093(victim,reduced,finalDamage);wearArmorFromBlast093(victim,reduced);hp=await applyWeaponHit261(victim,finalDamage,attacker,weapon,result,{damageType:damageType202(weapon,null,attacker)});updatePlayerHp105(victim);const afterContext={...context,attacker,target:victim,damage:finalDamage};await runAutomaticHooks119(victim,'OnTakeDamage',afterContext,state);await chooseReaction119('OnTakeDamage',afterContext,state);refs=combatTransactionRefs120(transaction);victim=refs.target;hp.after=num(victim?.hpCurrent,hp.after);hp.applied=Math.max(0,hp.before-hp.after);if(victim)updatePlayerHp105(victim);}}
       if(result.hit&&victim)await secondaryHit258(attacker,weapon,victim,damageType202(weapon,null,attacker));
       if(weapon.shotSoundId247)audioApi()?.play?.(weapon.shotSoundId247);
       if(!result.cancelled263)appendCombatLog105(refs.runtime,`${attacker.name} ${result.hit?'попадает':'промахивается'} атакой по возможности по ${victim?.name||target.name}${result.hit?`: ${hp.before} → ${hp.after} HP`:''}${result.fumble?' · натуральная 1':''}.`);
@@ -3331,12 +3332,13 @@
     const total=Math.max(0,num(state.damage,0)),parts=list(state.damagePartsV138).length?list(state.damagePartsV138):[{amount:total,absorptionSource:'all'}];
     const partsTotal=parts.reduce((sum,row)=>sum+Math.max(0,num(row?.amount,0)),0);if(Math.abs(partsTotal-total)>.001){parts.length=0;parts.push({amount:total,absorptionSource:'all'});}
     const portions=new Map();
-    let absorbed=0,explosiveArmorBlocked=0;
+    let absorbed=0,explosiveArmorBlocked=0,explosiveHit=defense.damageType==='explosive';
     for(const part of parts){
       const raw=Math.max(0,num(part.amount,0));
       if(!raw)continue;
       const currentDefense=part.damageType258&&typedDefense?typedDefense(part.damageType258):defense;
       const type=currentDefense.damageType||part.damageType258||'kinetic';
+      if(type==='explosive')explosiveHit=true;
       const portion=portions.get(type)||{damage:0,delta:num(currentDefense.typedArmorDelta),immune:currentDefense.typedArmorImmune};
       portions.set(type,portion);
       if(currentDefense.typedArmorImmune){absorbed+=raw;continue;}
@@ -3362,7 +3364,7 @@
       if(portion.delta<0)absorbed+=portion.damage-remaining;
       applied+=remaining;
     }
-    return{raw:total,absorbed:Math.min(total,absorbed),applied:Math.max(0,Math.round(applied)),explosiveArmorBlocked};
+    return{raw:total,absorbed:Math.min(total,absorbed),applied:Math.max(0,Math.round(applied)),explosiveArmorBlocked,explosiveHit};
   }
   function wearArmorFromBlast093(target,reduction){
     const blocked=Math.floor(num(reduction.explosiveArmorBlocked));
@@ -3376,6 +3378,25 @@
     copy.durability-=loss;
     copy.broken=copy.durability===0;
     appendCombatLog105(Combat.getRuntime(),`${target.name}: «${armor.name||armor.id}» остановила ${blocked} взрывного урона, −${loss} прочности (${copy.durability}/${copy.durabilityMax}).`);
+  }
+  function blastShockResult093(total,damage){
+    const dc=10+Math.max(0,Math.floor(num(damage)));
+    return {dc, reaction:total<=dc, action:total<=dc/2};
+  }
+  async function resolveBlastShock093(target,reduction,damage){
+    if(!reduction.explosiveHit||target.dead229)return;
+    const entity=entityForToken(target)||{},computed=window.GRPGStatsV113?.compute?.(entity,{kind:target.npcId?'npc':'player',inCombat:true,temporaryModifiers:timedStatModifiers122(target)});
+    const will=num(computed?.abilities?.will),penalty=checkPenalty199(target),help=helpFor229(target,'check');
+    const dc=blastShockResult093(Infinity,damage).dc;
+    const body=`<p>d20 + Воля ${will} − штрафы ${penalty}${help?` + Помощь ${help.bonus}`:''}. СЛ ${dc}.${injuryDisadvantage129(target)?' Помеха: бросьте два d20 и введите меньший.':''}</p><label class="field">Результат физического броска<input class="input" name="blastWill093" type="number" required min="1" max="20" step="1"></label>`;
+    const roll=await combatModal119({title:'Ошеломление от взрыва',subtitle:target.name,body,rolls225:[{unit:target,type:'check'}],read:form=>Number(form.elements.blastWill093.value),validate:value=>Number.isInteger(value)&&value>=1&&value<=20?'':'Введите число от 1 до 20'});
+    if(roll==null)throw Error('Проверка Воли от взрыва отменена');
+    const live=tokenById119(target.id)||target;
+    consumeHelp229(live,'check',help);
+    const total=roll+will-penalty+num(help?.bonus),outcome=blastShockResult093(total,damage);
+    if(outcome.reaction&&reactionAvailable195(live))spendReaction204(live);
+    if(outcome.action)live.loseNextAction093=true;
+    appendCombatLog105(Combat.getRuntime(),`${live.name}: Воля ${total} / СЛ ${dc} · ${outcome.action?'потеря Реакции и следующего Действия':outcome.reaction?'потеря Реакции':'успех'}.`);
   }
   function weaponForSlotV138(token,slotOrId=''){
     const entry=equippedEntryV138(token,slotOrId);if(entry?.item?.type==='weapon')return{...entry};
@@ -3632,7 +3653,7 @@
       await runAutomaticHooks119(attacker,'OnHit',context({...hit,damage:effects.damage}),effects);refresh();await chooseReaction119('OnHit',context({...hit,damage:effects.damage}),effects);refresh();
       await runAutomaticHooks119(target,'BeforeDamage',context({...hit,damage:effects.damage}),effects);refresh();await chooseReaction119('BeforeDamage',context({...hit,damage:effects.damage}),effects);refresh();
       finisher255(attacker,weapon,target,effects,selected.slot);
-      const reduced=applyAbsorptionV138(effects,incomingDefense119(target,weapon.weaponCategory||'light',cover,shotDamageType),type=>incomingDefense119(target,weapon.weaponCategory||'light',cover,type));wearArmorFromBlast093(target,reduced);absorbed=reduced.absorbed;applied=result.defenseCritical?Math.floor(reduced.applied/2):reduced.applied;hp=await applyWeaponHit261(target,applied,attacker,weapon,result,{damageType:shotDamageType,rawDamage:effects.damage,absorbed});updatePlayerHp105(target);
+      const reduced=applyAbsorptionV138(effects,incomingDefense119(target,weapon.weaponCategory||'light',cover,shotDamageType),type=>incomingDefense119(target,weapon.weaponCategory||'light',cover,type));absorbed=reduced.absorbed;applied=result.defenseCritical?Math.floor(reduced.applied/2):reduced.applied;await resolveBlastShock093(target,reduced,applied);wearArmorFromBlast093(target,reduced);hp=await applyWeaponHit261(target,applied,attacker,weapon,result,{damageType:shotDamageType,rawDamage:effects.damage,absorbed});updatePlayerHp105(target);
       await runAutomaticHooks119(target,'OnTakeDamage',context({...hit,damage:applied}),effects);refresh();await chooseReaction119('OnTakeDamage',context({...hit,damage:applied}),effects);refresh();
     }
     if(result.hit){await secondaryHit258(attacker,weapon,target,shotDamageType,selected.slot);refresh();}
@@ -4141,7 +4162,8 @@
         await runAutomaticHooks119(target,'BeforeDamage',{...hitContext,damage:effectState.damage},effectState);await chooseReaction119('BeforeDamage',{...hitContext,damage:effectState.damage},effectState);
         ({attacker,target}=combatTransactionRefs120(transaction));if(!target)throw new Error('Цель больше не находится на сцене');
         if(!usedFinisher)usedFinisher=finisher255(attacker,weapon,target,effectState);
-        const finalDefense=incomingDefense119(target,weapon.weaponCategory||'light',cover,shotDamageType);absorptionV138=applyAbsorptionV138(effectState,finalDefense,type=>incomingDefense119(target,weapon.weaponCategory||'light',cover,type));wearArmorFromBlast093(target,absorptionV138);finalDamage=absorptionV138.applied;if(result.defenseCritical)finalDamage=Math.floor(finalDamage/2);
+        const finalDefense=incomingDefense119(target,weapon.weaponCategory||'light',cover,shotDamageType);absorptionV138=applyAbsorptionV138(effectState,finalDefense,type=>incomingDefense119(target,weapon.weaponCategory||'light',cover,type));finalDamage=absorptionV138.applied;if(result.defenseCritical)finalDamage=Math.floor(finalDamage/2);
+        await resolveBlastShock093(target,absorptionV138,finalDamage);wearArmorFromBlast093(target,absorptionV138);
         hpChange=await applyWeaponHit261(target,finalDamage,attacker,weapon,result,{damageType:shotDamageType,rawDamage:effectState.damage,absorbed:absorptionV138.absorbed});updatePlayerHp105(target);
         const afterContext={...hitContext,attacker,target,caster:attacker,targets:[target],damage:finalDamage};
         await runAutomaticHooks119(target,'OnTakeDamage',afterContext,effectState);await chooseReaction119('OnTakeDamage',afterContext,effectState);
@@ -4248,7 +4270,7 @@
         refs=combatTransactionRefs120(transaction);const damageTarget=list(refs.runtime.tokens).find(row=>String(row.id)===String(targetId));if(!damageTarget||!blastReachesTarget093(refs.scene,impact,damageTarget,radiusHexes))continue;
         const defenseFor=type=>incomingDefense119(damageTarget,grenade.weaponCategory||'heavy',null,type);
         const reduced=applyAbsorptionV138(state,defenseFor(incomingCategory),defenseFor),finalDamage=reduced.applied;
-        wearArmorFromBlast093(damageTarget,reduced);
+        await resolveBlastShock093(damageTarget,reduced,finalDamage);wearArmorFromBlast093(damageTarget,reduced);
         const hp=await applyHit199(damageTarget,finalDamage,grenade.name,refs.attacker,{defer:true,origin:impact,damageType:incomingCategory,rawDamage:state.damage,absorbed:reduced.absorbed});updatePlayerHp105(damageTarget);
         context={...context,attacker:refs.attacker,caster:refs.attacker,target:damageTarget,targets:[damageTarget],damage:finalDamage};
         await runAutomaticHooks119(damageTarget,'OnTakeDamage',context,state);await chooseReaction119('OnTakeDamage',context,state);
