@@ -186,6 +186,15 @@ try{
  const fatal={hpCurrent:2,hpMax:10,ownTurnV199:0};rules.applyDamage(fatal,2);
  fatal.ownTurnV199=5;assert.equal(rules.criticalTurn(fatal,'start'),'');
  assert.equal(rules.criticalTurn(fatal,'end'),'dead');
+ const lateHeal={hpCurrent:2,hpMax:10,ownTurnV199:0};
+ rules.applyDamage(lateHeal,2);
+ lateHeal.ownTurnV199=5;
+ assert.equal(rules.criticalTurn(lateHeal,'start'),'');
+ rules.applyHeal(lateHeal,1);
+ assert.equal(rules.criticalTurn(lateHeal,'end'),'');
+ assert.equal(lateHeal.conditionsV138.unconscious,true);
+ lateHeal.ownTurnV199=6;
+ assert.equal(rules.criticalTurn(lateHeal,'start'),'awake');
  const ally=token('b');
  api.fitTokenToHex107(ally,run('Combat.getScene()'),{x:preview.end.x,y:preview.end.y+api.hexStepDistance109()});
  ally.hpCurrent=2;rules.applyDamage(ally,3);rules.applyHeal(ally,2);
