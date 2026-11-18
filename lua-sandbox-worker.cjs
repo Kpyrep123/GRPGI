@@ -105,6 +105,10 @@ function Unit:IsNPC() return tostring(self.__data.kind or '') == 'npc' end
 function Unit:IsAlive() return self:GetHealth() > 0 end
 function Unit:GetHealth() return __num(self.__data.hpCurrent) end
 function Unit:GetMaxHealth() return __num(self.__data.hpMax) end
+function Unit:GetInjuryPoints() return math.max(0, math.min(10, math.floor(__num(self.__data.injuryPoints)))) end
+function Unit:HealInjuryPoints(amount) return HealInjuryPoints(self, amount) end
+function Unit:AddInjuryPoints(amount) return AddInjuryPoints(self, amount) end
+function Unit:SetInjuryPoints(amount) return SetInjuryPoints(self, amount) end
 function Unit:GetInjuryDegree() return math.max(0, math.min(5, math.floor(__num(self.__data.injuryDegree)))) end
 function Unit:GetCheckPenalty() return math.max(0, __num(self.__data.checkPenalty)) end
 function Unit:HasCheckDisadvantage() return self.__data.checkDisadvantage == true end
@@ -320,6 +324,15 @@ function HealInjury(target, amount)
   if value <= 0 or value ~= math.floor(value) then error('HealInjury: укажите положительное целое число степеней') end
   return __push({ kind = 'heal_injury', targetId = __id(target), amount = math.min(5, value) })
 end
+local function __injuryPoints(target, amount, kind)
+  if __unit(target) == nil then error('InjuryPoints: цель не найдена') end
+  local value = __num(amount)
+  if value < 0 or value ~= math.floor(value) then error('InjuryPoints: укажите неотрицательное целое число') end
+  return __push({kind=kind, targetId=__id(target), amount=math.min(10, value)})
+end
+function HealInjuryPoints(target, amount) return __injuryPoints(target, amount, 'heal_injury_points') end
+function AddInjuryPoints(target, amount) return __injuryPoints(target, amount, 'add_injury_points') end
+function SetInjuryPoints(target, amount) return __injuryPoints(target, amount, 'set_injury_points') end
 function ReduceDamage(amount) return __push({ kind = 'reduce_damage', amount = __num(amount) }) end
 function AddDamage(amount, spec)
   local row = __damageSpec(spec, 'all'); row.kind = 'add_damage'; row.amount = __num(amount); return __push(row)
