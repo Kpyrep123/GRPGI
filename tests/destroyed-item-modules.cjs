@@ -1,0 +1,31 @@
+const assert = require('node:assert/strict');
+const I = require('../renderer/item-instances-v215.js');
+const gun = {id:'gun',type:'weapon',durabilityMax:5,mounts:['optic']};
+const optic = {id:'optic',type:'modification',attachmentMount:'optic'};
+const host = {id:'destroyed-gun',durabilityMax:5,durability:0,broken:true,attachments:[
+  {mount:0,itemId:'optic',copy:{id:'my-optic',charges:2,aberration252:{effects:['test']}}}
+]};
+const spare = {id:'spare-gun',durabilityMax:5,durability:5};
+const profile = {inventory:[{itemId:'gun',qty:2,instancesV215:[host,spare]}]};
+I.changeAttachment(profile,host,0,null,null,gun);
+assert.equal(profile.inventory[0].qty,2);
+assert.equal(profile.inventory[0].instancesV215[0],host);
+assert.equal(host.attachments.length,0);
+assert.equal(host.broken,true);
+const row=profile.inventory.find(r=>r.itemId==='optic');
+assert.equal(row.qty,1);
+assert.equal(row.instancesV215[0].id,'my-optic');
+assert.equal(row.instancesV215[0].charges,2);
+assert.deepEqual(row.instancesV215[0].aberration252.effects,['test']);
+assert.throws(()=>I.changeAttachment(profile,host,0,null,null,gun),/свободно/);
+assert.equal(row.qty,1);
+assert.throws(()=>I.changeAttachment(profile,host,0,optic,'my-optic',gun),/недоступен/);
+assert.throws(()=>I.repair(host,gun,5),/нельзя ремонтировать/);
+assert.equal(I.repair(spare,gun,4).durability,4);
+const pack={id:'pack',type:'backpack',durabilityMax:0};
+assert.equal(I.updateResources({id:'my-pack'},pack).broken,false);
+const saved=JSON.parse(JSON.stringify(profile));
+I.normalize(saved,id=>id==='gun'?gun:optic);
+assert.equal(saved.inventory[0].instancesV215.find(c=>c.id===host.id).broken,true);
+assert.equal(saved.inventory.find(r=>r.itemId==='optic').instancesV215[0].id,'my-optic');
+console.log('PASS destroyed host retained, detachable modules preserve identity, no duplicate salvage, no repair, intact spare, untracked backpack, reload');

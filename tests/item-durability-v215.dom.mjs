@@ -74,10 +74,11 @@ run(`Configurator.selectedType='players';Configurator.selectedId='p';Configurato
 const button=Array.from(w.document.querySelectorAll('[data-wc-durability-save-v215]')).find(b=>b.dataset.wcDurabilitySaveV215===secondary.id);
 assert(button,'WC lists the actual copy');
 button.closest('[data-wc-durability-row-v215]').querySelector('input').value='4';button.click();await pause();
-assert.equal(copies().find(c=>c.id===secondary.id).durability,4);
-assert(!copies().find(c=>c.id===secondary.id).broken);
+assert.equal(copies().find(c=>c.id===secondary.id).durability,0);
+assert(copies().find(c=>c.id===secondary.id).broken);
 assert.equal(copies().find(c=>c.id===primary.id).durability,3);
-assert.deepEqual(JSON.parse(JSON.stringify(w.notices215.filter(n=>n[1]==='err'))),[]);
+assert(w.notices215.some(n=>n[1]==='err' && /нельзя ремонтировать/.test(n[0])));
+w.notices215.length=0;
 const before=run("test215.defense(target215,'light',null,'energy')");
 assert.equal(before.armorAbsorption,0);assert(before.baseArmorClass>1);
 assert.equal(before.energyProtectionPercent,0,'legacy flag does not absorb energy');
@@ -99,7 +100,7 @@ w.persisted215=stored;
 const normalized=run('normalizePlayerProfileV2(persisted215)');
 assert.equal(normalized.inventory.find(row=>row.itemId==='gun').instancesV215[1].id,free.id);
 assert.equal(normalized.inventory.find(row=>row.itemId==='gun').instancesV215[1].modifiers[0].value,2);
-assert.equal(normalized.inventory.find(row=>row.itemId==='gun').instancesV215.find(c=>c.id===secondary.id).durability,4);
+assert.equal(normalized.inventory.find(row=>row.itemId==='gun').instancesV215.find(c=>c.id===secondary.id).durability,0);
 assert.equal(fs.readFileSync('renderer/item-instances-v215.js','utf8'),fs.readFileSync('deploy/site/app/item-instances-v215.js','utf8'));
 assert.equal(fs.readFileSync('renderer/item-instances-v215.js','utf8'),fs.readFileSync('pocketbase/pb_hooks/item-instances-v215.js','utf8'));
 run(`
@@ -277,7 +278,7 @@ run(`
   }
   window.passives260=GRPGStatsV113.compute(profile260,{kind:'player'}).values;
 `);
-for(const [stat,value] of Object.entries({armorClass:1,defense:1,carryCapacity:12,inventorySlots:13,movement:8,vision:8,maxHp:11,droneActions:1})){
+for(const [stat,value] of Object.entries({armorClass:1,defense:1,carryCapacity:12,inventorySlots:13,movement:8,vision:8,maxHp:5,droneActions:1})){
   assert.equal(run('passives260.'+stat),value,stat);
 }
 run("profile260.equipmentSlots.armor='';profile260.implantSlots=[];profile260.installedImplantIds=[];");
@@ -288,7 +289,8 @@ run(`
   runtime215.round=8;
   EQUIPMENT.armor={id:'armor',type:'armor',durabilityMax:10};
   window.reactiveArmor261=GRPGItemInstancesV215.instance(App.state.users.p,'armor',-1,'armor');
-  GRPGItemInstancesV215.repair(reactiveArmor261,EQUIPMENT.armor,10);
+  // A fresh armor fixture for the independent aberration tests.
+  Object.assign(reactiveArmor261,{durabilityMax:10,durability:10,broken:false});
   reactiveArmor261.aberration252={effects:['armor-25-2','armor-26-1']};
   enemy215.hpCurrent=10;
   enemy215.equipmentType='drone';
@@ -478,5 +480,5 @@ console.log('PASS armor reflection once per round and fragility once per battle,
 console.log('PASS equipped armor, shield, backpack and implant aberrations contribute their own stats');
 console.log('PASS loot overlay, extra damage die, per-copy jam and reload, forced movement and ricochet');
 console.log('PASS melee aberrations: failure bonus and expiry; delayed damage survives normalization and applies once');
-console.log('PASS real renderer: legacy migration, independent weapon copies, Lua break/damage by slot and ID, DM repair, natural 20 and loss of kinetic/energy armor, slot binding and save/reload metadata');
+console.log('PASS real renderer: legacy migration, independent weapon copies, Lua break/damage by slot and ID, destroyed-item repair rejection, natural 20 and loss of kinetic/energy armor, slot binding and save/reload metadata');
 }finally{await w.happyDOM.abort();fs.rmSync(scratch,{recursive:true,force:true});}

@@ -161,7 +161,7 @@
     }
 
     if(copy?.durabilityMax||copy?.broken){
-      change('Прочность',copy.durabilityMax?`${copy.durability}${copy.broken?' · Сломан':''}`:'Сломан',0);
+      change('Прочность',copy.durabilityMax?`${copy.durability}${copy.broken?(copy.durabilityMax>0&&copy.durability===0?' · Уничтожен':' · Сломан'):''}`:'Сломан',0);
       if(copy.durabilityMax)change('Максимальная прочность',copy.durabilityMax,copy.durabilityMax-Number(item.durabilityMax??item.maxDurability??0));
     }
     const adjustedModifiers=new Map();
