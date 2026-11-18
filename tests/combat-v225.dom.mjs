@@ -235,6 +235,8 @@ try{
  token('a').actionUsed=false;
  token('a').weaponMagazinesV118={test_rifle:{loaded:2,ammoTypeId:'test_round'}};
  run("Combat.selectedObject={kind:'token',id:'a'}");
+ run("worldData.skills.SKILLS.events.luaScript += \" function OnAttackResolved(self,p) assert(p.attackTotal ~= nil and p.defenseTotal ~= nil); assert(p.attackMargin == p.attackTotal-p.defenseTotal) end\"");
+ calls.length=0;
  const fired=api.commitAttack105('b');
  await wait(()=>w.document.querySelector('[name=attackRoll]'));
  w.document.querySelector('[name=attackRoll]').value='2';
@@ -242,6 +244,10 @@ try{
  w.document.querySelector('[name=damageRoll]').value='1';confirm();
  await wait(()=>w.document.querySelector('[name=luaNumber]'));
  w.document.querySelector('[name=luaNumber]').value='20';confirm();await fired;
+ const normalMargin=calls.find(c=>c.hook==='OnAttackResolved'&&c.mode==='execute');
+ assert(normalMargin,'normal shot exposes resolved totals to skills');
+ assert.equal(normalMargin.input.params.attackMargin,normalMargin.input.params.attackTotal-normalMargin.input.params.defenseTotal);
+ calls.length=0;
  const tracer=w.document.querySelector('#combat-stage .combat-projectile');
  assert.ok(tracer,'ranged attack produces a visible projectile without Element.animate');
  assert.match(tracer.style.getPropertyValue('--shot-to-x'),/%$/);
@@ -259,8 +265,17 @@ try{
  w.document.querySelector('[name=damageRoll]').value='1';confirm();
  await wait(()=>w.document.querySelector('[name=luaNumber]'));
  w.document.querySelector('[name=luaNumber]').value='1';confirm();await scripted;
+ const scriptedMargin=calls.find(c=>c.hook==='OnAttackResolved'&&c.mode==='execute');
+ assert(scriptedMargin,'StandardAttack exposes its own totals');
+ assert.equal(scriptedMargin.input.params.attackMargin,scriptedMargin.input.params.attackTotal-scriptedMargin.input.params.defenseTotal);
  assert.equal(token('a').weaponMagazinesV118.test_rifle.loaded,0);
  assert.equal(api.itemRuntimeStateV138(token('a'),'test_rifle','primaryWeapon').durability,4);
+ run("worldData.skills.SKILLS.events.luaScript += \" function BeforeDamage(self,p) assert(p.attackTotal == nil and p.defenseTotal == nil and p.attackMargin == nil) end\"");
+ calls.length=0;
+ await api.applyLuaCommands119([{kind:'damage',casterId:'a',targetId:'a',amount:0,absorptionSource:'none'}],{attacker:token('a'),caster:token('a'),target:token('a'),attackTotal:30,defenseTotal:10,attackMargin:20},{damage:0,effects:[]});
+ const directMargin=calls.find(c=>c.hook==='BeforeDamage'&&c.mode==='execute');
+ assert(directMargin,'direct packet invokes its own damage hooks');
+ assert.equal(directMargin.input.params.attackMargin,undefined,'direct Lua packet does not inherit margin');
  const patches=[],pulls=[];
  let releasePush;
  const remote=JSON.parse(run('JSON.stringify(App.state.users)'));

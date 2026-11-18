@@ -11,6 +11,21 @@ function run(script,units){return new Promise((resolve,reject)=>{const w=new Wor
  end
 end`,units);
  assert.equal(result.ok,true,result.message);assert.deepEqual(result.result.commands.map(c=>[c.kind,c.amount]),[['heal',2],['heal_injury',1],['heal_injury',2]]);
+ const points=await run(`function OnAbilityExecuted(self, params)
+ local p=self:GetCaster()
+ if p:GetInjuryPoints() ~= 7 then error('points getter') end
+ HealInjuryPoints(p,3)
+ p:AddInjuryPoints(1)
+ p:SetInjuryPoints(0)
+ end`, [{...units[0], injuryPoints:7}]);
+ assert.equal(points.ok,true,points.message);
+ assert.deepEqual(points.result.commands.map(c=>[c.kind,c.amount]),[['heal_injury_points',3],['add_injury_points',1],['set_injury_points',0]]);
+ for(const command of ['HealInjuryPoints','AddInjuryPoints','SetInjuryPoints']) {
+  for(const value of ['-1','1.5']) {
+   const invalid=await run(`function OnAbilityExecuted(self, params) ${command}(self:GetCaster(), ${value}) end`,units);
+   assert.equal(invalid.ok,false);
+  }
+ }
  for(const value of ['0','-1','1.5']){const r=await run(`function OnAbilityExecuted(self, params) HealInjury(self:GetCaster(), ${value}) end`,units);assert.equal(r.ok,false);assert.match(r.message,/положительное целое/);}
  const missing=await run('function OnAbilityExecuted(self, params) HealInjury("missing",1) end',units);assert.equal(missing.ok,false);assert.match(missing.message,/цель не найдена/);
  console.log('PASS actual Lua worker: injury/check getters, unchanged attributes, HP heal versus injury treatment, method/global API and invalid treatment rejection');

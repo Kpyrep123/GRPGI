@@ -86,6 +86,23 @@
   function decorateHero(hero,user) {
     if (!hero || hero.querySelector('.sheet-metrics')) return;
     hero.classList.add('sheet-hero');
+    const trauma = root.GRPGCombatTraumaV195;
+    if (trauma) {
+      const injury = trauma.normalize(user.traumaV195);
+      const effect = trauma.effects(injury.degree);
+      const label = document.createElement('div');
+      label.className = 'small-note sheet-injury';
+      const levels = ['0','I','II','III','IV','V'];
+      const penalties = [
+        effect.checkPenalty ? `−${effect.checkPenalty} к проверкам` : '',
+        effect.degree === 1 ? '−1 к скорости' : effect.degree === 2 ? '−2 к скорости' : effect.degree === 3 || effect.degree === 4 ? 'половина скорости' : effect.degree === 5 ? 'скорость 1' : '',
+        effect.noReaction ? 'нет Реакции' : '',
+        effect.disadvantage ? 'Помеха к проверкам' : ''
+      ].filter(Boolean);
+      label.textContent = `Травма ${levels[effect.degree]} — ${injury.injuryPoints}/10${penalties.length ? ' · ' + penalties.join(', ') : ' · без штрафов'}`;
+      hero.append(label);
+    }
+
     hero.querySelectorAll('.info-card').forEach(card=>{if(['Последнее обновление','Локация'].includes(card.querySelector('.k')?.textContent.trim()))card.remove();});
     let header=hero.querySelector('.profile-hero');
     if (!header) {

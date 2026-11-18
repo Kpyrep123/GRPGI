@@ -178,6 +178,9 @@
 
   function repair(copy, item, value) {
     updateResources(copy, item);
+    if (copy.durabilityMax > 0 && copy.durability === 0) {
+      throw Error('Уничтоженный экземпляр нельзя ремонтировать');
+    }
     const durability = Number(value);
     if (!copy.durabilityMax || !Number.isInteger(durability) || durability < 0 || durability > copy.durabilityMax) {
       throw Error('Укажите целую прочность от 0 до ' + copy.durabilityMax);
@@ -215,7 +218,7 @@
   }
 
   function changeAttachment(profile, host, index, item, attachmentId, hostItem) {
-    if (!host || host.broken) throw Error('Экземпляр недоступен');
+    if (!host) throw Error('Экземпляр недоступен');
     const existing = installed(host,index);
     if (!item) {
       if (!existing) throw Error('Крепление уже свободно');
@@ -227,6 +230,7 @@
       host.attachments=host.attachments.filter(entry=>entry!==existing);
       return;
     }
+    if (host.broken || host.durabilityMax > 0 && host.durability === 0) throw Error('Экземпляр недоступен');
     const mount=mounts(hostItem)[index];
     if(item.type!=='modification'||!mount||mount.toLowerCase()!==String(item.attachmentMount||'').trim().toLowerCase()){
       throw Error('Модификация не подходит к креплению');

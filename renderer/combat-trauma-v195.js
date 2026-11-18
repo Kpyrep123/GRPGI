@@ -4,40 +4,51 @@
   const num=(v,f=0)=>Number.isFinite(Number(v))?Number(v):f;
   const degree=v=>Math.max(0,Math.min(5,Math.trunc(num(v))));
   const mechanical=t=>['drone','turret'].includes(String(t?.equipmentType||t?.type||'').toLowerCase());
-  function normalize(value={}){return {schema:195,degree:degree(value.degree),remainder:Math.max(0,Math.min(1,Math.trunc(num(value.remainder)))),migrated:value.migrated===true};}
-  function ensure(target){
+  const points = value => Math.max(0, Math.min(10, Math.trunc(num(value))));
+  function normalize(value={}) {
+    const injuryPoints = value.injuryPoints == null
+      ? points(degree(value.degree) * 2 + Math.max(0, Math.min(1, Math.trunc(num(value.remainder)))))
+      : points(value.injuryPoints);
+    // Degree and remainder remain derived compatibility fields for older callers.
+    return {schema:195, injuryPoints, degree:Math.floor(injuryPoints / 2), remainder:injuryPoints % 2, migrated:value.migrated===true};
+  }
+  function ensure(target) {
     if(!target||typeof target!=='object')return normalize();
-    if(target.traumaV195?.schema===195){target.traumaV195=normalize(target.traumaV195);target.injuriesV129=[];return target.traumaV195;}
-    const legacy=Array.isArray(target.injuriesV129)?target.injuriesV129:[];
-    const maximum=Math.max(1,num(target.hpMax,1)),missing=Math.max(0,maximum-Math.max(0,num(target.hpCurrent,maximum)));
-    // Preserve the last known legacy degree once. Past healed damage cannot be reconstructed.
-    const prior=legacy.length?Math.max(...legacy.map(row=>degree(row?.degree))):missing>0?Math.ceil(missing/maximum*5):0;
-    target.traumaV195={schema:195,degree:mechanical(target)?0:degree(prior),remainder:0,migrated:true};
+    if(target.traumaV195?.schema===195) {
+      target.traumaV195=normalize(target.traumaV195);
+    } else {
+      const legacy=Array.isArray(target.injuriesV129)?target.injuriesV129:[];
+      const prior=legacy.length?Math.max(...legacy.map(row=>degree(row?.degree))):0;
+      target.traumaV195=normalize({degree:mechanical(target)?0:prior,migrated:true});
+    }
     target.injuriesV129=[];
     return target.traumaV195;
   }
-  function add(target,hpLost){
-    const injury=ensure(target),before=injury.degree;
-    if(!mechanical(target)){
-      const accumulated=injury.remainder+Math.max(0,Math.round(num(hpLost)));
-      injury.degree=degree(before+Math.floor(accumulated/2));
-      injury.remainder=accumulated%2;
-    }
-    return {before,after:injury.degree,added:injury.degree-before};
+  function setPoints(target, amount) {
+    const injury=ensure(target), before=injury.degree, beforePoints=injury.injuryPoints;
+    Object.assign(injury, normalize({...injury, injuryPoints:mechanical(target)?0:amount}));
+    return {before, after:injury.degree, beforePoints, afterPoints:injury.injuryPoints};
   }
-  function treat(target,amount){
-    const injury=ensure(target),before=injury.degree;
-    injury.degree=degree(before-Math.max(0,Math.trunc(num(amount))));
-    return {before,after:injury.degree,removed:before-injury.degree};
+  function add(target, hpLost) {
+    const result=setPoints(target, ensure(target).injuryPoints + Math.max(0, Math.trunc(num(hpLost))));
+    return {...result, added:result.after-result.before};
+  }
+  function healPoints(target, amount) {
+    const result=setPoints(target, ensure(target).injuryPoints - Math.max(0, Math.trunc(num(amount))));
+    return {...result, removed:result.before-result.after};
+  }
+  function treat(target, amount) {
+    // The existing Lua HealInjury command continues to heal whole degrees.
+    return healPoints(target, Math.max(0, Math.trunc(num(amount))) * 2);
   }
   function effects(value){
     const d=typeof value==='object'?ensure(value).degree:degree(value);
-    return {degree:d,checkPenalty:d===5?5:d===4?2:d===2||d===3?1:0,disadvantage:d===5,noReaction:d===4,noHeavyWeapon:d===3};
+    return {degree:d,checkPenalty:d===5?5:d===4?2:d===2||d===3?1:0,disadvantage:d===5,noReaction:d===4,noHeavyWeapon:false};
   }
   function speed(base,value){
     const d=effects(value).degree,n=Math.max(0,num(base));
     return d===5?(n>0?1:0):d===4?Math.floor(n/2):d===3?Math.ceil(n/2):d===2?Math.max(0,n-2):d===1?Math.max(0,n-1):n;
   }
-  const api={normalize,ensure,add,treat,effects,speed,mechanical};root.GRPGCombatTraumaV195=api;
+  const api={normalize,ensure,add,treat,setPoints,healPoints,effects,speed,mechanical};root.GRPGCombatTraumaV195=api;
   if(typeof module!=='undefined')module.exports=api;
 })(typeof window!=='undefined'?window:globalThis);
