@@ -35,6 +35,8 @@
     const defenseDie=clamp(integer(options.defenseRoll,0),1,1000);
     const attackBonus=number(options.attackBonus,0),defenseBonus=number(options.defenseBonus,0);
     const attackTotal=attackDie+attackBonus,defenseTotal=defenseDie+defenseBonus;
+    const opposed=options.attackRoll!=null&&options.defenseRoll!=null&&Number.isFinite(Number(options.attackRoll))&&Number.isFinite(Number(options.defenseRoll));
+    const attackMargin=opposed?attackTotal-defenseTotal:undefined;
     const naturalTwenty=attackDie===20,fumble=attackDie===1,defenseCritical=defenseDie===20,defenseFumble=defenseDie===1;
     const hit=!fumble&&(naturalTwenty||attackTotal>=defenseTotal);
     const critical=hit&&(naturalTwenty&&defenseFumble||attackDie<=20&&attackDie>=20-integer(options.criticalRange,0));
@@ -45,7 +47,7 @@
     // is halved by the scene pipeline only after those reductions.
     const rawDamage=hit?Math.max(0,Math.round(rolledDamage+damageBonus+criticalDamage)):0;
     const reduced=reduceDamage(rawDamage,options.damageReduction||0);
-    return {hit,critical,fumble,defenseCritical,defenseFumble,attackDie,defenseDie,attackBonus,defenseBonus,attackTotal,defenseTotal,rolledDamage,damageBonus,rawDamage:reduced.raw,damageReduction:reduced.reduction,absorbed:reduced.absorbed,damageApplied:hit?reduced.applied:0};
+    return {hit,critical,fumble,defenseCritical,defenseFumble,attackDie,defenseDie,attackBonus,defenseBonus,attackTotal,defenseTotal,attackMargin,rolledDamage,damageBonus,rawDamage:reduced.raw,damageReduction:reduced.reduction,absorbed:reduced.absorbed,damageApplied:hit?reduced.applied:0};
   }
   function applyDamage(target,amount){
     if(!target||typeof target!=='object')return {before:0,after:0,applied:0};
