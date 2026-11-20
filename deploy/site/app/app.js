@@ -5830,9 +5830,11 @@ function stockFeesV213(fees){if(!fees)return 'Тарифы загрузятся 
     const equipped=(id,slot,kind)=>{
       if(!id)return;
       const item=itemWebV1067(id),copy=instances?.instance(player,id,-1,slot);
-      if(copy?.broken)return;
+      if(copy?.broken&&normalizedItemTypeV1052(item)!=='armor')return;
+      const start=rows.length;
       push(item,kind);
       rows.push(...(instances?.equippedAberrationModifiers(copy,item)||[]));
+      if(copy?.broken)rows.splice(start,rows.length-start,...rows.slice(start).filter(mod=>!['armor_class','defense','gas_protection_flat','gas_protection_percent','energy_protection_percent','shield_capacity'].includes(mod.target)));
     };
     const slots=player.equipmentSlots||{};
     ['primaryWeapon','secondaryWeapon','armor','backpack'].forEach(key=>equipped(slots[key],key,'equipment'));

@@ -93,7 +93,14 @@
   function forkMap(runtime,makeId){
     const ids=Object.fromEntries(rows(runtime.tokens).filter(t=>!t.playerId).map(t=>[t.id,makeId('token')]));
     const next=remap(copy(runtime),ids);
-    for(const token of rows(next.tokens))if(!token.playerId)token.participantId193='';
+    for(const token of rows(next.tokens))if(!token.playerId){
+      token.participantId193='';
+      if(token.npcGearV287){
+        const rekey=instance=>{instance.id=makeId('item');for(const attachment of rows(instance.attachments))rekey(attachment.copy);};
+        for(const row of rows(token.combatInventoryV120))for(const instance of rows(row.instancesV215))rekey(instance);
+        token.lootStateV118={searched:false,items:[],pendingTransfersV137:{}};
+      }
+    }
     return next;
   }
   const api={identity,state,place,create,capture,register,project,transfer,reset,order,forkMap,budgets,takesTurn};

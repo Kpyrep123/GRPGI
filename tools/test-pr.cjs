@@ -23,7 +23,10 @@ const checks = [
   ['tests/v135-player-sync-web.mjs'],
   ['tests/web-hp-v214.dom.mjs'],
   ['tests/web-deploy-ambient-v167.mjs'],
-  ['tests/item-durability-v215.dom.mjs']
+  ['tests/item-durability-v215.dom.mjs'],
+  ['tests/aberration-roll.cjs'],
+  ['tests/aberration-loot.cjs'],
+  ['tests/aberration-rebalance.dom.mjs']
 ];
 let failed = false;
 for (const check of checks) {
