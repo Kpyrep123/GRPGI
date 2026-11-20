@@ -79,6 +79,7 @@ function engine(world={}){
   }
 
 
+  const damageTypes=require((typeof __hooks==='undefined'?'./':__hooks+'/')+'damage-types-v202.js');
   const itemInstances=require((typeof __hooks==='undefined'?'./':__hooks+'/')+'item-instances-v215.js');
   const EQUIPMENT=world.equipment?.EQUIPMENT||{}, Data={getItem:id=>EQUIPMENT[id],getSkill:id=>world.skills?.SKILLS?.[id],socialOrigins:world.socialOrigins?.SOCIAL_ORIGINS,geographicOrigins:world.geographicOrigins?.GEOGRAPHIC_ORIGINS};
   const worldData=world;
@@ -161,11 +162,13 @@ function engine(world={}){
     breakdown.push({ source:'База', value:n(base,0), op:'base', text:label || 'Базовое значение' });
     const rows = mods.filter(m => m.target === target && scopeMatches(m,context)).sort((a,b)=>(a.priority-b.priority)||(modifierSpecificity(a)-modifierSpecificity(b)));
     rows.forEach(mod => {
-      if (mod.op === 'set') value = n(mod.value,0);
-      else if (mod.op === 'add') value += n(mod.value,0);
-      else if (mod.op === 'replace_stat' && mod.statRef && context?.abilities) value = n(context.abilities[mod.statRef],0);
-      else if (mod.op === 'add_stat' && mod.statRef && context?.abilities) value += n(context.abilities[mod.statRef],0);
-      else return;
+      const statOp=['replace_stat','add_stat'].includes(mod.op);
+      if(statOp&&(!mod.statRef||!context?.abilities)||!['set','add','replace_stat','add_stat'].includes(mod.op))return;
+      const amount=statOp?n(context.abilities[mod.statRef],0):n(mod.value,0);
+      const replace=['set','replace_stat'].includes(mod.op);
+      value=target==='gas_protection_percent'
+        ?damageTypes.combineGasProtection(value,amount,replace)
+        :replace?amount:value+amount;
       breakdown.push({source:mod.sourceName || mod.sourceId || 'Модификатор', value:['replace_stat','add_stat'].includes(mod.op)?n(context?.abilities?.[mod.statRef],0):n(mod.value,0), op:mod.op, statRef:mod.statRef||''});
     });
     return value;

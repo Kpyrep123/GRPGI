@@ -206,11 +206,13 @@
     breakdown.push({ source:'База', value:n(base,0), op:'base', text:label || 'Базовое значение' });
     const rows = mods.filter(m => m.target === target && scopeMatches(m,context)).sort((a,b)=>(a.priority-b.priority)||(modifierSpecificity(a)-modifierSpecificity(b)));
     rows.forEach(mod => {
-      if (mod.op === 'set') value = n(mod.value,0);
-      else if (mod.op === 'add') value += n(mod.value,0);
-      else if (mod.op === 'replace_stat' && mod.statRef && context?.abilities) value = n(context.abilities[mod.statRef],0);
-      else if (mod.op === 'add_stat' && mod.statRef && context?.abilities) value += n(context.abilities[mod.statRef],0);
-      else return;
+      const statOp=['replace_stat','add_stat'].includes(mod.op);
+      if(statOp&&(!mod.statRef||!context?.abilities)||!['set','add','replace_stat','add_stat'].includes(mod.op))return;
+      const amount=statOp?n(context.abilities[mod.statRef],0):n(mod.value,0);
+      const replace=['set','replace_stat'].includes(mod.op);
+      value=target==='gas_protection_percent'
+        ?window.GRPGDamageTypesV202.combineGasProtection(value,amount,replace)
+        :replace?amount:value+amount;
       breakdown.push({source:mod.sourceName || mod.sourceId || 'Модификатор', value:['replace_stat','add_stat'].includes(mod.op)?n(context?.abilities?.[mod.statRef],0):n(mod.value,0), op:mod.op, statRef:mod.statRef||''});
     });
     return value;
@@ -330,6 +332,10 @@
     mods.filter(m=>m.target==='weapon_hit_extra_stat'&&['add_stat','add'].includes(m.op)&&m.statRef&&scopeMatches(m,{...context,entity,...options})).forEach(m=>{bonus+=n(stats.abilities[m.statRef],0);detail.push({source:`${m.sourceName}: ${PRIMARY_LABELS[m.statRef]}`,value:n(stats.abilities[m.statRef],0),op:'add'});});
     mods.filter(m=>m.target==='attack_bonus'&&['add','set'].includes(m.op)&&scopeMatches(m,{...context,entity,...options})).sort((a,b)=>(a.priority-b.priority)||(modifierSpecificity(a)-modifierSpecificity(b))).forEach(m=>{bonus=m.op==='set'?n(m.value):bonus+n(m.value);detail.push({source:m.sourceName,value:n(m.value),op:m.op});});
     let damageBonus=0; const damageDetail=[]; mods.filter(m=>m.target==='damage_bonus'&&['add','set'].includes(m.op)&&scopeMatches(m,{...context,entity,...options})).sort((a,b)=>a.priority-b.priority).forEach(m=>{damageBonus=m.op==='set'?n(m.value):damageBonus+n(m.value);damageDetail.push({source:m.sourceName,value:n(m.value),op:m.op});});
+    if(weapon.isUnarmedV122){
+      damageBonus+=n(stats.abilities.strength,0);
+      damageDetail.push({source:'Сила: безоружная атака',value:n(stats.abilities.strength,0),op:'add'});
+    }
     if(options.firstShot!==false)for(const effect of aberrations.filter(row=>row.group==='weapon-2')){
       damageBonus+=effect.value;
       damageDetail.push({source:effect.name,value:effect.value,op:'add'});

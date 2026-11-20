@@ -45,6 +45,22 @@ try {
  App.state=makeDefaultState();App.currentUserId='gm';Sync.config={enabled:false};App.renderLive=()=>{};App.refreshAfterLocalWrite=()=>{};App.writeLocalMirrors=async()=>({ok:true});Persistence.save=async()=>({ok:true});window.notices287=[];Toast.show=(message)=>notices287.push(message);
  window.saved287=[];Configurator.persistAll=async()=>{saved287.push(buildWorldSnapshot());return{localSaved:true};};`);
  const api=w.test287,I=w.GRPGItemInstancesV215;
+ // Shared weaponAttack powers manual attacks, opportunity attacks and StandardAttack.
+ const bare={id:'__unarmed_v122',type:'weapon',name:'Безоружная атака',weaponCategory:'melee',isUnarmedV122:true,damage:'1'};
+ for(const kind of ['player','npc'])for(let strength=0;strength<=5;strength++){
+   const actor={id:'bare',abilityBase:{strength},inventory:[],modifiers:[{target:'strength',op:'add',value:1},{target:'damage_bonus',op:'add',value:2}]};
+   const attack=w.GRPGStatsV113.weaponAttack(actor,bare,{kind});
+   assert.equal(Number(attack.damage)+attack.damageBonus,1+strength+1+2);
+   assert.equal(w.GRPGStatsV113.weaponAttack(actor,{...bare,isUnarmedV122:false},{kind}).damageBonus,2);
+ }
+ const gasActor={inventory:[],modifiers:[{target:'gas_protection_flat',op:'add',value:2},{target:'gas_protection_percent',op:'add',value:50},{target:'gas_protection_percent',op:'add',value:50}]};
+ const gasStats=w.GRPGStatsV113.compute(gasActor).values;
+ assert.equal(gasStats.gasProtectionPercent,75);assert.equal(gasStats.gasProtectionFlat,2);
+ const gasDefense={damageType:'gas',gasProtectionPercent:gasStats.gasProtectionPercent,gasProtectionFlat:gasStats.gasProtectionFlat,damageReduction:100};
+ assert.equal(api.applyAbsorptionV138({damage:9},gasDefense).applied,2,'flat protection first, then 75% of remaining seven');
+ assert.equal(api.applyAbsorptionV138({damage:9,damagePartsV138:[{amount:9,absorptionSource:'none'}]},gasDefense).applied,9,'Lua ignore-protection remains intact');
+ assert.equal(api.applyAbsorptionV138({damage:9,damagePartsV138:[{amount:9,absorptionSource:'all',ignorePercent:100}]},gasDefense).applied,9);
+
  api.applyStore({rangeSchema:109,cameraSchema:109,scenes:{s:{id:'s',name:'Test',mode:'normal',width:30,height:20,assets:[],templates:[]}},runtimes:{s:{tokens:[]}},selectedSceneId:'s'});
  api.local.loaded=true;run("UI.openModule('combat')");
  let first=run("createNpcCombatToken('soldier')");first.id='first';api.ensureNpcGear287(first);

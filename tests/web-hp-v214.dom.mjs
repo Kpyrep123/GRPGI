@@ -36,5 +36,10 @@ const geared={...p,equipmentSlots:{armor:'armor'},inventory:[{itemId:'armor',qty
 const brokenStats=api.derived(geared),bareStats=api.derived({...p,inventory:[],equipmentSlots:{}});
 assert.equal(brokenStats.carryCapacity,bareStats.carryCapacity+7);
 assert.equal(brokenStats.defense,bareStats.defense);
+const gasPlayer={...p,inventory:[],equipmentSlots:{},modifiers:[{target:'gas_protection_flat',op:'add',value:2},{target:'gas_protection_flat',op:'add',value:3},{target:'gas_protection_percent',op:'add',value:50},{target:'gas_protection_percent',op:'add',value:50}]};
+assert.equal(api.derived(gasPlayer).gasProtectionPercent,75);
+assert.equal(api.derived(gasPlayer).gasProtectionFlat,5);
+gasPlayer.modifiers.push({target:'gas_protection_percent',op:'set',value:20,priority:1},{target:'gas_protection_percent',op:'add',value:50,priority:2});
+assert.equal(api.derived(gasPlayer).gasProtectionPercent,60);
 console.log('PASS v214 web HP: endurance upgrade persists base and max, repeated normalization stable, current HP unchanged, zero HP and max_hp modifier');
 }finally{await w.happyDOM.abort();}

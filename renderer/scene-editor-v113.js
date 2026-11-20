@@ -3456,7 +3456,8 @@
         const gasFlat=gasOnly?Math.max(0,num(currentDefense.gasProtectionFlat)-penetration-flat)*factor:0;
         const gasPercent=gasOnly?clamp104(num(currentDefense.gasProtectionPercent),0,100)*factor:0;
         const remaining=Math.max(0,raw-gasFlat);
-        const afterGas=remaining-Math.floor(remaining*gasPercent/100);
+        const blocked=remaining*gasPercent/100;
+        const afterGas=remaining-Math.floor(blocked+Math.min(1e-9,Number.EPSILON*Math.max(1,blocked)*8));
         absorbed+=raw-afterGas;
         portion.damage+=afterGas;
         continue;

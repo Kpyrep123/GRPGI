@@ -7,5 +7,13 @@
   function normalize(value,fallback=''){const key=String(value||'').trim().toLowerCase();return Object.prototype.hasOwnProperty.call(aliases,key)?aliases[key]:fallback;}
   function effective(item={},ammo=null){return normalize(ammo?.damageType)||normalize(item?.damageType)||(String(item?.weaponCategory).toLowerCase()==='energy'?'energy':String(item?.type).toLowerCase()==='grenade'?'explosive':'kinetic');}
   function label(value){return labels[normalize(value)]||'Не задан';}
-  const api=Object.freeze({labels,aberrationTypeIds,normalize,effective,label});root.GRPGDamageTypesV202=api;if(typeof module!=='undefined')module.exports=api;
+  // Positive sources block a share of the remaining exposure. Explicit set
+  // replaces the aggregate; signed debuffs retain their percentage-point meaning.
+  function combineGasProtection(current,amount,replace=false){
+    const bounded=value=>Math.max(0,Math.min(100,Number(value)||0));
+    const before=bounded(current),next=Number(amount)||0;
+    if(replace||next<=0)return bounded(replace?next:before+next);
+    return bounded(before+(100-before)*bounded(next)/100);
+  }
+  const api=Object.freeze({combineGasProtection,labels,aberrationTypeIds,normalize,effective,label});root.GRPGDamageTypesV202=api;if(typeof module!=='undefined')module.exports=api;
 })(typeof window!=='undefined'?window:globalThis);
