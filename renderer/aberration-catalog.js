@@ -1,4 +1,5 @@
-window.GRPGAberrationCatalog = [
+(function(root){
+const catalog = [
   {
     "id": "weapon-1",
     "category": "weapon",
@@ -41,7 +42,7 @@ window.GRPGAberrationCatalog = [
   {
     "id": "weapon-2",
     "category": "weapon",
-    "name": "Базовый урон",
+    "name": "Снижение базового урона",
     "scope": "Любое",
     "rule": "На первой попытке атаки за действие. Для очереди влияет только на первый выстрел. При промахе на следующий выстрел не переносится",
     "variants": [
@@ -59,21 +60,6 @@ window.GRPGAberrationCatalog = [
         "id": "weapon-2-3",
         "value": "−1",
         "cost": -1
-      },
-      {
-        "id": "weapon-2-4",
-        "value": "+1",
-        "cost": 1
-      },
-      {
-        "id": "weapon-2-5",
-        "value": "+2",
-        "cost": 3
-      },
-      {
-        "id": "weapon-2-6",
-        "value": "+3",
-        "cost": 7
       }
     ]
   },
@@ -140,7 +126,7 @@ window.GRPGAberrationCatalog = [
     "category": "weapon",
     "name": "Кость дополнительного урона",
     "scope": "Любое",
-    "rule": "Первое попадание за действие. Тип урона выпадает вместе с предметом. Кость бросается один раз, включая крит и суперкрит",
+    "rule": "Первое попадание за Действие. Дополнительный кинетический пакет. Кость бросается один раз без критического множителя",
     "variants": [
       {
         "id": "weapon-5-1",
@@ -160,20 +146,6 @@ window.GRPGAberrationCatalog = [
     ]
   },
   {
-    "id": "weapon-6",
-    "category": "weapon",
-    "name": "Смена типа базового урона",
-    "scope": "Любое",
-    "rule": "На всех попаданиях. Цена определяется для пары типов, если переход существенно меняет действие брони или сопротивлений",
-    "variants": [
-      {
-        "id": "weapon-6-1",
-        "value": "Заменяет тип урона на заданный",
-        "cost": 3
-      }
-    ]
-  },
-  {
     "id": "weapon-7",
     "category": "weapon",
     "name": "Масса",
@@ -182,32 +154,32 @@ window.GRPGAberrationCatalog = [
     "variants": [
       {
         "id": "weapon-7-1",
-        "value": "+30%",
+        "value": "+75%",
         "cost": -3
       },
       {
         "id": "weapon-7-2",
-        "value": "+20%",
+        "value": "+50%",
         "cost": -2
       },
       {
         "id": "weapon-7-3",
-        "value": "+10%",
+        "value": "+25%",
         "cost": -1
       },
       {
         "id": "weapon-7-4",
-        "value": "−10%",
+        "value": "−25%",
         "cost": 1
       },
       {
         "id": "weapon-7-5",
-        "value": "−20%",
+        "value": "−50%",
         "cost": 3
       },
       {
         "id": "weapon-7-6",
-        "value": "−30%",
+        "value": "−75%",
         "cost": 7
       }
     ]
@@ -217,7 +189,7 @@ window.GRPGAberrationCatalog = [
     "category": "weapon",
     "name": "Ёмкость",
     "scope": "Оружие с ёмкостью",
-    "rule": "Постоянно. +1 превращает ёмкость двустволки из 2 в 3",
+    "rule": "Постоянно, к базовой ёмкости магазина",
     "variants": [
       {
         "id": "weapon-8-1",
@@ -260,32 +232,32 @@ window.GRPGAberrationCatalog = [
     "variants": [
       {
         "id": "weapon-9-1",
-        "value": "−6",
+        "value": "−15",
         "cost": -3
       },
       {
         "id": "weapon-9-2",
-        "value": "−4",
+        "value": "−10",
         "cost": -2
       },
       {
         "id": "weapon-9-3",
-        "value": "−2",
+        "value": "−5",
         "cost": -1
       },
       {
         "id": "weapon-9-4",
-        "value": "+2",
+        "value": "+5",
         "cost": 1
       },
       {
         "id": "weapon-9-5",
-        "value": "+4",
+        "value": "+10",
         "cost": 3
       },
       {
         "id": "weapon-9-6",
-        "value": "+6 гексов",
+        "value": "+15 гексов",
         "cost": 7
       }
     ]
@@ -315,25 +287,11 @@ window.GRPGAberrationCatalog = [
     ]
   },
   {
-    "id": "weapon-11",
-    "category": "weapon",
-    "name": "Рикошет",
-    "scope": "Дальнее",
-    "rule": "После первого попадания за действие. Если есть допустимая вторая цель, атакующий выбирает её. Рикошет не запускает эффекты попадания",
-    "variants": [
-      {
-        "id": "weapon-11-1",
-        "value": "1 урона второй цели в пределах 2 гексов от первой",
-        "cost": 4
-      }
-    ]
-  },
-  {
     "id": "weapon-12",
     "category": "weapon",
     "name": "Толчок",
     "scope": "Ближнее",
-    "rule": "Первое попадание за действие. Использует правила принудительного перемещения",
+    "rule": "Первое попадание за Действие. Владелец выбирает, толкать ли цель. Использует принудительное перемещение",
     "variants": [
       {
         "id": "weapon-12-1",
@@ -358,20 +316,6 @@ window.GRPGAberrationCatalog = [
         "id": "weapon-13-1",
         "value": "+2 урона цели с HP не выше 25% от максимума",
         "cost": 3
-      }
-    ]
-  },
-  {
-    "id": "weapon-14",
-    "category": "weapon",
-    "name": "Отложенный удар",
-    "scope": "Ближнее",
-    "rule": "Первое попадание за раунд назначает урон на начало следующего хода цели. Без крита и повторного запуска эффектов попадания",
-    "variants": [
-      {
-        "id": "weapon-14-1",
-        "value": "1 × базовый урон оружия в начале следующего хода цели",
-        "cost": 6
       }
     ]
   },
@@ -562,32 +506,32 @@ window.GRPGAberrationCatalog = [
     "variants": [
       {
         "id": "armor-22-1",
-        "value": "+30%",
+        "value": "+75%",
         "cost": -3
       },
       {
         "id": "armor-22-2",
-        "value": "+20%",
+        "value": "+50%",
         "cost": -2
       },
       {
         "id": "armor-22-3",
-        "value": "+10%",
+        "value": "+25%",
         "cost": -1
       },
       {
         "id": "armor-22-4",
-        "value": "−10%",
+        "value": "−25%",
         "cost": 1
       },
       {
         "id": "armor-22-5",
-        "value": "−20%",
+        "value": "−50%",
         "cost": 3
       },
       {
         "id": "armor-22-6",
-        "value": "−30%",
+        "value": "−75%",
         "cost": 7
       }
     ]
@@ -635,28 +579,33 @@ window.GRPGAberrationCatalog = [
     "id": "armor-24",
     "category": "armor",
     "name": "Движение",
-    "scope": "",
-    "rule": "Пока броня надета. Бонус может увеличить движение сверх базового значения",
+    "scope": "Броня",
+    "rule": "Постоянно, пока броня надета. Штраф −1/−2/−3 к ходьбе освобождает бюджет. Бонусы движения сохраняются",
     "variants": [
       {
         "id": "armor-24-1",
-        "value": "−2",
-        "cost": -3
+        "value": "-1",
+        "cost": -1
       },
       {
         "id": "armor-24-2",
-        "value": "−1",
+        "value": "-2",
         "cost": -2
       },
       {
         "id": "armor-24-3",
-        "value": "+1",
+        "value": "1",
         "cost": 2
       },
       {
         "id": "armor-24-4",
-        "value": "+2 гекса",
+        "value": "2",
         "cost": 6
+      },
+      {
+        "id": "armor-24-5",
+        "value": "-3",
+        "cost": -3
       }
     ]
   },
@@ -803,32 +752,32 @@ window.GRPGAberrationCatalog = [
     "variants": [
       {
         "id": "shield-31-1",
-        "value": "+30%",
+        "value": "+75%",
         "cost": -3
       },
       {
         "id": "shield-31-2",
-        "value": "+20%",
+        "value": "+50%",
         "cost": -2
       },
       {
         "id": "shield-31-3",
-        "value": "+10%",
+        "value": "+25%",
         "cost": -1
       },
       {
         "id": "shield-31-4",
-        "value": "−10%",
+        "value": "−25%",
         "cost": 1
       },
       {
         "id": "shield-31-5",
-        "value": "−20%",
+        "value": "−50%",
         "cost": 3
       },
       {
         "id": "shield-31-6",
-        "value": "−30%",
+        "value": "−75%",
         "cost": 7
       }
     ]
@@ -1049,32 +998,32 @@ window.GRPGAberrationCatalog = [
     "variants": [
       {
         "id": "backpack-40-1",
-        "value": "+30%",
+        "value": "+75%",
         "cost": -3
       },
       {
         "id": "backpack-40-2",
-        "value": "+20%",
+        "value": "+50%",
         "cost": -2
       },
       {
         "id": "backpack-40-3",
-        "value": "+10%",
+        "value": "+25%",
         "cost": -1
       },
       {
         "id": "backpack-40-4",
-        "value": "−10%",
+        "value": "−25%",
         "cost": 1
       },
       {
         "id": "backpack-40-5",
-        "value": "−20%",
+        "value": "−50%",
         "cost": 3
       },
       {
         "id": "backpack-40-6",
-        "value": "−30%",
+        "value": "−75%",
         "cost": 7
       }
     ]
@@ -1443,5 +1392,118 @@ window.GRPGAberrationCatalog = [
         "cost": 8
       }
     ]
+  },
+  {
+    "id": "weapon-56",
+    "category": "weapon",
+    "name": "Стихийный урон",
+    "scope": "Любое",
+    "rule": "Первая попытка атаки за Действие. Тип выпадает вместе с экземпляром. При промахе бонус не переносится",
+    "variants": [
+      {
+        "id": "weapon-56-1",
+        "value": "+1",
+        "cost": 1
+      },
+      {
+        "id": "weapon-56-2",
+        "value": "+2",
+        "cost": 3
+      },
+      {
+        "id": "weapon-56-3",
+        "value": "+3",
+        "cost": 7
+      }
+    ]
+  },
+  {
+    "id": "weapon-57",
+    "category": "weapon",
+    "name": "Опутывание",
+    "scope": "Любое",
+    "rule": "Первое попадание за Действие. Отдельный d20 стрелка без модификаторов, успех 15+. До конца следующего хода цели запрещает перемещение. Освобождение Действием. Повторное попадание обновляет срок",
+    "variants": [
+      {
+        "id": "weapon-57-1",
+        "value": "1",
+        "cost": 4
+      }
+    ]
+  },
+  {
+    "id": "weapon-58",
+    "category": "weapon",
+    "name": "Замедление",
+    "scope": "Любое",
+    "rule": "Первое попадание за Действие. Скорость цели уменьшается на указанное число гексов до конца её следующего хода. Повторное замедление обновляет срок, применяется наибольшее значение",
+    "variants": [
+      {
+        "id": "weapon-58-1",
+        "value": "1",
+        "cost": 1
+      },
+      {
+        "id": "weapon-58-2",
+        "value": "2",
+        "cost": 3
+      },
+      {
+        "id": "weapon-58-3",
+        "value": "3",
+        "cost": 7
+      }
+    ]
+  },
+  {
+    "id": "weapon-59",
+    "category": "weapon",
+    "name": "Пробитие Защиты",
+    "scope": "Любое",
+    "rule": "Каждый выстрел этого оружия игнорирует указанную часть Защиты противника. Твёрдость укрытия не меняется",
+    "variants": [
+      {
+        "id": "weapon-59-1",
+        "value": "1",
+        "cost": 1
+      },
+      {
+        "id": "weapon-59-2",
+        "value": "2",
+        "cost": 3
+      },
+      {
+        "id": "weapon-59-3",
+        "value": "3",
+        "cost": 7
+      }
+    ]
+  },
+  {
+    "id": "weapon-60",
+    "category": "weapon",
+    "name": "Пробитие укрытия",
+    "scope": "Любое",
+    "rule": "Каждый выстрел этого оружия уменьшает бонус физического укрытия к Активной броне. Бонус ручного щита и Твёрдость укрытия не меняются",
+    "variants": [
+      {
+        "id": "weapon-60-1",
+        "value": "1",
+        "cost": 1
+      },
+      {
+        "id": "weapon-60-2",
+        "value": "2",
+        "cost": 3
+      },
+      {
+        "id": "weapon-60-3",
+        "value": "3",
+        "cost": 7
+      }
+    ]
   }
 ];
+root.GRPGAberrationCatalog=catalog;
+if(typeof module!=='undefined')module.exports=catalog;
+})(typeof window==='undefined'?globalThis:window);

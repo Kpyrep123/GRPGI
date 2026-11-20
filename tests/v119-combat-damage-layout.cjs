@@ -33,7 +33,7 @@ assert.equal(miss.hit,false);assert.equal(miss.damageApplied,0);
 const naturalOneByTotal=Rules.resolveManualAttack({attackRoll:1,defenseRoll:1,attackBonus:12,defenseBonus:0,damageRoll:4});
 assert.equal(naturalOneByTotal.hit,false);assert.equal(naturalOneByTotal.fumble,true);assert.equal(naturalOneByTotal.damageApplied,0);
 const critical=Rules.resolveManualAttack({attackRoll:20,defenseRoll:20,attackBonus:0,defenseBonus:99,damageRoll:3,damageReduction:1});
-assert.equal(critical.critical,true);assert.equal(critical.defenseCritical,true);assert.equal(critical.hit,true);assert.equal(critical.damageApplied,3);
+assert.equal(critical.critical,true);assert.equal(critical.defenseCritical,true);assert.equal(critical.hit,true);assert.equal(critical.damageApplied,4);
 const target={hpCurrent:12,hpMax:12};assert.deepEqual(JSON.parse(JSON.stringify(Rules.applyDamage(target,5))),{before:12,after:7,applied:5});assert.equal(Rules.applyHeal(target,2).after,9);
 
 function runWorker(payload){return new Promise((resolve,reject)=>{const worker=new Worker(path.join(root,'lua-sandbox-worker.cjs'));const timer=setTimeout(()=>{worker.terminate();reject(new Error('worker test timeout'));},3000);worker.once('message',message=>{clearTimeout(timer);worker.terminate();resolve(message);});worker.once('error',reject);worker.postMessage(payload);});}

@@ -9,7 +9,7 @@ const context = vm.createContext(w), run = text => vm.runInContext(text, context
 w.setInterval=()=>0;w.requestAnimationFrame=()=>0;
 const read = name => fs.readFileSync('deploy/site/app/' + name, 'utf8');
 w.document.write(read('index.html').replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, ''));
-for (const file of ['rich-text-scope.js','market-engine.js','player-sync-core.js','damage-types-v202.js','weapon-handling-v203.js','player-credentials-v212.js','player-auth-v212.js']) run(read(file));
+for (const file of ['item-instances-v215.js','rich-text-scope.js','market-engine.js','player-sync-core.js','damage-types-v202.js','weapon-handling-v203.js','player-credentials-v212.js','player-auth-v212.js']) run(read(file));
 const source = read('app.js').replace('  init().catch(error => {', `
   window.hp214={App,derived:derivedPlayerWeb118,normalize:normalizeInventoryPlayerWebV1067,upgrade:upgradeAbility,render:renderProfile};commitPlayerMutation=async fn=>{const p=currentPlayer();await fn(p);};
   renderCurrentScreen=()=>{};startRealtimeSync=()=>{};notify=()=>{};
@@ -31,5 +31,15 @@ for(let endurance=0;endurance<=5;endurance++){
  assert.equal(profile.stats.hpCurrent,profile.stats.hpMax);
  assert.equal(api.normalize(profile).stats.hpCurrent,profile.stats.hpCurrent);
 }
+api.App.data.items.set('armor',{id:'armor',type:'armor',durabilityMax:10,modifiers:[{target:'defense',op:'add',value:4},{target:'carry_capacity',op:'add',value:7}]});
+const geared={...p,equipmentSlots:{armor:'armor'},inventory:[{itemId:'armor',qty:1,instancesV215:[{id:'broken',slot:'armor',durability:0,durabilityMax:10,broken:true}]}]};
+const brokenStats=api.derived(geared),bareStats=api.derived({...p,inventory:[],equipmentSlots:{}});
+assert.equal(brokenStats.carryCapacity,bareStats.carryCapacity+7);
+assert.equal(brokenStats.defense,bareStats.defense);
+const gasPlayer={...p,inventory:[],equipmentSlots:{},modifiers:[{target:'gas_protection_flat',op:'add',value:2},{target:'gas_protection_flat',op:'add',value:3},{target:'gas_protection_percent',op:'add',value:50},{target:'gas_protection_percent',op:'add',value:50}]};
+assert.equal(api.derived(gasPlayer).gasProtectionPercent,75);
+assert.equal(api.derived(gasPlayer).gasProtectionFlat,5);
+gasPlayer.modifiers.push({target:'gas_protection_percent',op:'set',value:20,priority:1},{target:'gas_protection_percent',op:'add',value:50,priority:2});
+assert.equal(api.derived(gasPlayer).gasProtectionPercent,60);
 console.log('PASS v214 web HP: endurance upgrade persists base and max, repeated normalization stable, current HP unchanged, zero HP and max_hp modifier');
 }finally{await w.happyDOM.abort();}

@@ -3,10 +3,12 @@ function transfer(e){
   const b=e.requestInfo().body||{}, campaign=String(b.campaignId||''),playerId=String(b.playerId||''),operation=String(b.operationId||''),loot=b.lootTransferV137||{};
   const itemId=String(loot.itemId||''),qty=Number(loot.qty),source=String(loot.source||'');
   if(!campaign||!playerId||!itemId||!source||source.length>512||!Number.isSafeInteger(qty)||qty<1||qty>10000||!/^[-a-zA-Z0-9_]{8,120}$/.test(operation))throw new BadRequestError('Некорректная передача добычи.');
-  const rolls=loot.aberrations,copies=require(__hooks+'/item-instances-v215.js');
+  const rolls=loot.aberrations,copies=require(__hooks+'/item-instances-v215.js'),instances=require(__hooks+'/aberration-instances.js'),incoming=loot.copiesV287;
+  if(incoming!==undefined&&!instances.validCopies(incoming,qty))throw new BadRequestError('Некорректные экземпляры добычи.');
   if(rolls!==undefined&&(!Array.isArray(rolls)||rolls.length!==qty||rolls.some(roll=>!validRoll(roll,copies))))throw new BadRequestError('Некорректные аберрации добычи.');
   const identity=[playerId,itemId,qty,source];
   if(rolls!==undefined)identity.push(rolls);
+  if(incoming!==undefined)identity.push(incoming);
   const fingerprint=$security.sha256(JSON.stringify(identity));
   let result;
   $app.runInTransaction((tx)=>{
@@ -32,7 +34,8 @@ function transfer(e){
     if(rolls?.some(roll=>roll?.effects.some(id=>!copies.canRollAberration(item,id.split('-')[0])))){
       throw new BadRequestError('Аберрации не соответствуют типу предмета.');
     }
-    const check=rules.canAdd(player,itemId,qty,rolls);
+    if(incoming?.some(instance=>instance.aberration252?.effects.some(id=>!copies.canRollAberration(item,id.split('-')[0]))))throw new BadRequestError('Аберрации не соответствуют типу предмета.');
+    const check=rules.canAdd(player,itemId,qty,rolls||incoming?.map(instance=>instance.aberration252));
     if(!check.ok){result={ok:false,status:'capacity',message:check.reason,remote:record};return;}
     const migrated=rules.normalizePlayer(player);
     player.inventory=migrated.inventory;player.textInventoryItems=migrated.textInventoryItems;
@@ -46,8 +49,8 @@ function transfer(e){
       // Restore old rows that predate instance IDs before appending new copies.
       copies.normalize(player,rules.equipment);
       const offset=entry.qty;
-      copies.add(entry,qty,item,newId);
-      for(const [index,roll] of (rolls||[]).entries()){
+      if(incoming){instances.append(player,item,incoming);}else copies.add(entry,qty,item,newId);
+      for(const [index,roll] of (incoming?[]:rolls||[]).entries()){
         copies.storeAberration(entry.instancesV215[offset+index],item,roll);
       }
     }
@@ -64,14 +67,6 @@ function transfer(e){
   });
   return e.json(200,result);
 }
-function validRoll(roll,copies){
-  if(roll===null)return true;
-  const limits={common:[0,0],uncommon:[1,3],rare:[4,5],epic:[6,7],legendary:[8,8]};
-  if(!roll||!Object.prototype.hasOwnProperty.call(limits,roll.rarity))return false;
-  const [min,max]=limits[roll.rarity];
-  return Number.isInteger(roll.budget)&&roll.budget>=min&&roll.budget<=max&&Array.isArray(roll.effects)
-    &&(roll.rarity==='common'?roll.effects.length===0:roll.effects.length>=1&&roll.effects.length<=3)
-    &&roll.effects.every(id=>typeof id==='string'&&(/^weapon-(?:[12789]-[1-6]|[3]-[1-3]|[46]-[1-5]|(?:5|10)-[1-3]|12-[1-2]|(?:11|13|14|15|16|17)-1)$/.test(id)||/^weapon-5-[1-3]:(?:kinetic|energy|electric|explosive|gas)$/.test(id)||/^armor-2[56]-[12]$/.test(id)||/^armor-(?:20-[1-4]|27-1):(?:kinetic|energy|electric|explosive|gas)$/.test(id)||/^armor-28-1:(?:any|melee|ranged)$/.test(id)||copies.passiveEffect(id)))
-    &&new Set(roll.effects.map(id=>id.slice(0,id.lastIndexOf('-')))).size===roll.effects.length;
-}
+function validRoll(roll){return require(__hooks+'/aberration-instances.js').validRoll(roll);}
+
 module.exports={transfer};

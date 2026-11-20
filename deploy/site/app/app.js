@@ -5830,9 +5830,11 @@ function stockFeesV213(fees){if(!fees)return 'Тарифы загрузятся 
     const equipped=(id,slot,kind)=>{
       if(!id)return;
       const item=itemWebV1067(id),copy=instances?.instance(player,id,-1,slot);
-      if(copy?.broken)return;
+      if(copy?.broken&&normalizedItemTypeV1052(item)!=='armor')return;
+      const start=rows.length;
       push(item,kind);
       rows.push(...(instances?.equippedAberrationModifiers(copy,item)||[]));
+      if(copy?.broken)rows.splice(start,rows.length-start,...rows.slice(start).filter(mod=>!['armor_class','defense','gas_protection_flat','gas_protection_percent','energy_protection_percent','shield_capacity'].includes(mod.target)));
     };
     const slots=player.equipmentSlots||{};
     ['primaryWeapon','secondaryWeapon','armor','backpack'].forEach(key=>equipped(slots[key],key,'equipment'));
@@ -5841,6 +5843,15 @@ function stockFeesV213(fees){if(!fees)return 'Тарифы загрузятся 
   }
   function applyModifierWeb118(base,target,mods,player,context={}){
     let value=Number(base||0);const matching=mods.filter(mod=>String(mod.target)===target&&modifierScopeWeb118(mod,context)).sort((a,b)=>Number(a.priority||0)-Number(b.priority||0));
+    if(target==='gas_protection_percent'){
+      for(const mod of matching){
+        const statOp=['replace_stat','add_stat'].includes(mod.op);
+        if(statOp&&!mod.statRef||!['set','add','replace_stat','add_stat'].includes(mod.op||'add'))continue;
+        const amount=statOp?Number(context.abilities?.[mod.statRef]||0):Number(mod.value||0);
+        value=window.GRPGDamageTypesV202.combineGasProtection(value,amount,['set','replace_stat'].includes(mod.op));
+      }
+      return value;
+    }
     for(const mod of matching){if(mod.op==='set')value=Number(mod.value||0);else if(mod.op==='add'||!mod.op)value+=Number(mod.value||0);else if(mod.op==='replace_stat'&&mod.statRef)value=Number(context.abilities?.[mod.statRef]||0)*Number(context.statScale||1);else if(mod.op==='add_stat'&&mod.statRef)value+=Number(context.abilities?.[mod.statRef]||0)*Number(context.statScale||1);}
     return value;
   }
@@ -5865,7 +5876,9 @@ function stockFeesV213(fees){if(!fees)return 'Тарифы загрузятся 
     const vision=Math.max(0,applyModifierWeb118(Number(base.vision??player.baseVision??player.combat?.visionRange??6),'vision',mods,player,{abilities}));
     const movement=Math.max(0,applyModifierWeb118(Number(base.movement??player.baseMovement??player.combat?.moveRange??6),'movement',mods,player,{abilities}));
     const shieldMax=Math.max(0,Math.trunc(applyModifierWeb118(player.stats?.shieldMax,'shield_capacity',mods,player,{abilities})));
-    return{abilities,mods,hpBase,maxHp,inventorySlots,carryCapacity,implantSlots,armorClass,defense,vision,movement,shieldMax};
+    const gasProtectionFlat=Math.max(0,applyModifierWeb118(0,'gas_protection_flat',mods,player,{abilities}));
+    const gasProtectionPercent=applyModifierWeb118(0,'gas_protection_percent',mods,player,{abilities});
+    return{abilities,mods,hpBase,maxHp,inventorySlots,carryCapacity,implantSlots,armorClass,defense,vision,movement,shieldMax,gasProtectionFlat,gasProtectionPercent};
   }
   function ownedCountWeb118(player,itemId){return Math.max(0,Math.trunc(Number((player.inventory||[]).find(row=>String(row.itemId)===String(itemId))?.qty||0)));}
   normalizeInventoryPlayerWebV1067=function(player={}){

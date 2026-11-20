@@ -25,11 +25,8 @@
   }
 
   function typeBonusDamage(roll,item){
-    const types=root.GRPGDamageTypesV202;
-    if(!types||item?.type!=='weapon'||!list(roll?.effects).some(id=>/^weapon-5-[1-3]$/.test(id)))return roll;
-    const override=list(roll.effects).map(id=>/^weapon-6-([1-5])$/.exec(id)).find(Boolean);
-    const type=override?types.aberrationTypeIds[Number(override[1])-1]:types.effective(item);
-    return {...roll,effects:roll.effects.map(id=>/^weapon-5-[1-3]$/.test(id)?id+':'+type:id)};
+    if(!roll||item?.type!=='weapon')return roll;
+    return {...roll,effects:list(roll.effects).map(id=>/^weapon-5-[1-3](?::[a-z]+)?$/.test(id)?id.split(':')[0]+':kinetic':id)};
   }
 
   function updateResources(copy, item) {
@@ -249,13 +246,13 @@
     return list(copy?.attachments).reduce((sum,row)=>sum+(Number(row.hitBonus)||0),0);
   }
 
-  const massPercents = Object.freeze([30,20,10,-10,-20,-30]);
+  const massPercents = Object.freeze([75,50,25,-25,-50,-75]);
   const six = Object.freeze([-3,-2,-1,1,2,3]);
   const four = Object.freeze([-2,-1,1,2]);
   const passive = Object.freeze({
     'armor-18':['armor_class',six], 'armor-19':['defense',four],
     'armor-21':['',[-30,-20,-10,10,20,30]], 'armor-22':['',massPercents],
-    'armor-23':['carry_capacity',six], 'armor-24':['movement',four],
+    'armor-23':['carry_capacity',six], 'armor-24':['movement',[-1,-2,1,2,-3]],
     'shield-29':['shield_capacity',six], 'shield-31':['',massPercents], 'shield-32':['movement',four],
     'backpack-38':['inventory_slots',six], 'backpack-39':['carry_capacity',six],
     'backpack-40':['',massPercents], 'backpack-42':['movement',four],
@@ -291,9 +288,9 @@
 
   function equippedAberrationModifiers(copy,item) {
     const category=aberrationCategory(item);
-    if(copy?.broken)return [];
+    if(copy?.broken&&item?.type!=='armor')return [];
     return list(copy?.aberration252?.effects).map(passiveEffect)
-      .filter(effect=>effect?.target&&(effect.group.startsWith(category+'-')&&effect.target!=='shield_capacity'||canRollAberration(item,effect.group.split('-')[0])))
+      .filter(effect=>effect?.target&&(!copy?.broken||!['armor_class','defense','gas_protection_flat','gas_protection_percent','energy_protection_percent','shield_capacity'].includes(effect.target))&&(effect.group.startsWith(category+'-')&&effect.target!=='shield_capacity'||canRollAberration(item,effect.group.split('-')[0])))
       .map(({target,value})=>({target,value,op:'add',scope:'global',condition:'always',enabled:true,
         priority:0,sourceName:(item.name||item.id)+' · аберрация'}));
   }
@@ -318,7 +315,7 @@
   function inventoryRowMass(row, baseMass, quantity = row.qty) {
     const count = Math.max(0, Math.trunc(Number(quantity)||0));
     const percent = list(row.instancesV215).slice(0,count).reduce(
-      (sum,copy)=>sum+massPercent(copy?.aberration252?.effects),0
+      (sum,copy)=>sum+Math.max(-100,massPercent(copy?.aberration252?.effects)),0
     );
     return baseMass*(100*count+percent)/100;
   }

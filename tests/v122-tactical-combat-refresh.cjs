@@ -18,7 +18,7 @@ const pkg=JSON.parse(read('package.json'));
 const context={console,Math};context.window=context;context.globalThis=context;vm.createContext(context);vm.runInContext(rulesSource,context);
 const rules=context.GRPGCombatRulesV119;
 const attack20=rules.resolveManualAttack({attackRoll:20,attackBonus:-5,defenseRoll:20,defenseBonus:99,damageRoll:6,damageReduction:2});
-assert.equal(attack20.hit,true);assert.equal(attack20.rawDamage,7);assert.equal(attack20.damageApplied,5);assert.equal(attack20.defenseCritical,true);
+assert.equal(attack20.hit,true);assert.equal(attack20.rawDamage,8);assert.equal(attack20.damageApplied,6);assert.equal(attack20.defenseCritical,true);
 const defense1=rules.resolveManualAttack({attackRoll:10,defenseRoll:1,damageRoll:6});assert.equal(defense1.rawDamage,7);assert.equal(defense1.defenseFumble,true);
 const tie=rules.resolveManualAttack({attackRoll:10,attackBonus:2,defenseRoll:9,defenseBonus:3,damageRoll:1});assert.equal(tie.hit,true);
 

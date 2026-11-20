@@ -22,11 +22,12 @@
       detail=root.GRPGDamageTypesV202?.label(resolvedType);
     }
     else if(row.group==='armor-28')detail=attackKinds[type]||value;
+    else if(type&&row.group==='weapon-56')detail=value+' урона · '+(root.GRPGDamageTypesV202?.label(type)||type);
     else if(type&&row.group!=='weapon-5')detail=(row.group==='armor-20'?row.value+' · ':'')+(root.GRPGDamageTypesV202?.label(type)||type);
     if(root.GRPGItemInstancesV215?.passiveEffect(base)||row.group==='weapon-7')detail=row.value;
     const dice=row.group==='weapon-5'&&/^1d(4|6|8)\b/i.exec(value);
     return {...row,type:resolvedType,cost:saved?.cost??row.cost,
-      text:dice?'+1d'+dice[1]+' урона'+' · '+(type?(root.GRPGDamageTypesV202?.label(type)||type):'Тип по оружию'):row.name+' · '+detail,
+      text:dice?'+1d'+dice[1]+' урона'+' · '+(root.GRPGDamageTypesV202?.label('kinetic')||'Кинетический'):row.name+' · '+detail,
       value:Number(dice?.[1]??/^[-+]?\d+/.exec(value.replace('−','-'))?.[0])};
   }
 

@@ -113,11 +113,11 @@ run(`
   equippedCopy215.aberration252.effects.push('weapon-6-2','weapon-7-1');
   test215.meleeOutcome(target215,melee215,enemy215,{hit:false},3);
 `);
-assert.equal(run("test215.damageType(melee215,null,target215,'primaryWeapon')"),'energy');
+assert.equal(run("test215.damageType(melee215,null,target215,'primaryWeapon')"),'kinetic');
 assert.equal(run("test215.damageType(melee215,{damageType:'gas'},target215,'primaryWeapon')"),'gas');
 assert.equal(run("test215.damageType(melee215,null,target215,'secondaryWeapon')"),'kinetic');
-assert.equal(run("GRPGInventoryV113.weight(App.state.users.p)"),4.3);
-assert.equal(run("GRPGCombatMovementV198.weight(App.state.users.p.inventory,['gun'],id=>GRPGInventoryV113.item(id))"),4.3);
+assert.equal(run("GRPGInventoryV113.weight(App.state.users.p)"),4.75);
+assert.equal(run("GRPGCombatMovementV198.weight(App.state.users.p.inventory,['gun'],id=>GRPGInventoryV113.item(id))"),4.75);
 assert.equal(run('test215.attackFailure(target215,enemy215)?.amount'),1);
 assert.equal(run('test215.attackFailure(target215,target215)'),null);
 const requestAttack=()=>run('test215.requestAttackRolls({attacker:enemy215,target:target215,weapon:melee215,ammo:null,attackBonus:0,defenseBonus:0,damageBonus:0})');
@@ -151,14 +151,14 @@ run(`
   runtime215.tokens[1]=window.enemy215=test215.normalizeToken(enemy215);
   enemy215.equipmentType='drone';
 `);
-assert.equal(run('enemy215.aberrationDelayedHits256.length'),1);
+assert.equal(run('enemy215.aberrationDelayedHits256?.length||0'),0);
 await run('test215.applyDelayedHits(enemy215)');
 assert.equal(run('enemy215.hpCurrent'),10,'no damage before the next turn');
 run('enemy215.ownTurnV199++;');
 await run('test215.applyDelayedHits(enemy215)');
-assert.equal(run('enemy215.hpCurrent'),7,'only the base damage repeats');
+assert.equal(run('enemy215.hpCurrent'),10,'removed delayed strike does not repeat damage');
 await run('test215.applyDelayedHits(enemy215)');
-assert.equal(run('enemy215.hpCurrent'),7,'the pending hit is consumed once');
+assert.equal(run('enemy215.hpCurrent'),10,'removed effect remains inactive');
 run(`
   window.scene258={id:'aberration-test',mode:'combat',width:60,height:40,assets:[],templates:[]};
   Combat.getScene=()=>scene258;
@@ -198,14 +198,16 @@ assert.equal(dieForm.elements.namedItem('damageType'),null);
 dieForm.dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));
 await die;
 assert.equal(run('damage258.damage'),9);
-assert.equal(run('damage258.damagePartsV138[1].damageType258'),'energy');
+assert.equal(run('damage258.damagePartsV138[0].amount'),9);
 run(`
   copy258.aberration252.effects=['weapon-12-1'];
   test215.fitToken(target215,scene258,{x:10,y:10});
   test215.fitToken(enemy215,scene258,{x:11,y:10});
   window.beforePush258=test215.center(enemy215);
 `);
-await run("test215.secondaryHit(target215,melee215,enemy215,'kinetic','primaryWeapon')");
+const pushChoice=run("test215.secondaryHit(target215,melee215,enemy215,'kinetic','primaryWeapon')");
+const pushForm=await waitAttackForm();
+pushForm.dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));await pushChoice;
 assert(run('test215.center(enemy215).x>beforePush258.x'),'push displaces the target away from the attacker');
 run(`
   copy258.aberration252.effects=['weapon-11-1'];
@@ -215,12 +217,9 @@ run(`
   const origin258=test215.center(enemy215);
   test215.fitToken(ricochet258,scene258,{x:origin258.x,y:origin258.y+1});
 `);
-const ricochet=run("test215.secondaryHit(target215,ranged258,enemy215,'kinetic','primaryWeapon')");
-const ricochetForm=await waitAttackForm();
-ricochetForm.querySelector('input').checked=true;
-ricochetForm.dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));
-await ricochet;
-assert.equal(run('ricochet258.hpCurrent'),9);
+await run("test215.secondaryHit(target215,ranged258,enemy215,'kinetic','primaryWeapon')");
+assert.equal(run('ricochet258.hpCurrent'),10,'removed ricochet is inert');
+
 run(`
   scene258.mode='normal';
   enemy215.npcId='loot-npc';
@@ -368,11 +367,11 @@ run(`
   window.rule265=GRPGAberrationPresentation.copyMarkup(cardCopy);
 `);
 const fact=label=>w.facts265.find(row=>row.label===label);
-assert.equal(fact('Масса').value,'1.2');
+assert.equal(fact('Масса').value,'1.5');
 assert.equal(fact('Масса').tone,'negative');
 assert.equal(fact('Магазин').value,'2 / 5');
-assert.match(w.rule265,/<summary>[^<]*Газ<\/summary>/);
-assert.match(w.rule265,/Тип урона выпадает вместе с предметом/);
+assert.match(w.rule265,/<summary>[^<]*Кинетический<\/summary>/);
+assert.match(w.rule265,/Дополнительный кинетический пакет/);
 
 run(`Configurator.selectedType='equipment';Configurator.equipmentCategoryV1052='weapon';Configurator.selectedId='gun';Configurator.render();`);
 const add=w.document.querySelector('[data-add-modifier-v113]');
@@ -446,8 +445,8 @@ run(`
     return GRPGAberrationPresentation.model({aberration252:applied}).effects[0].text;
   });
 `);
-assert.equal(w.typedBonus269.effects[0],'weapon-5-1:gas');
-assert.deepEqual(Array.from(w.typedRows269),[4,6,8].map(sides=>'+1d'+sides+' урона · Электрический'));
+assert.equal(w.typedBonus269.effects[0],'weapon-5-1:kinetic');
+assert.deepEqual(Array.from(w.typedRows269),[4,6,8].map(sides=>'+1d'+sides+' урона · Кинетический'));
 const display=new Window({settings:{disableJavaScriptFileLoading:true}});
 try{
   display.document.body.innerHTML='<div id="player-display-root"></div>';
@@ -478,7 +477,7 @@ console.log('PASS armor cancels only the matching attack and retains immunity ac
 console.log('PASS typed armor effects, mixed damage, and one delta per damage type');
 console.log('PASS armor reflection once per round and fragility once per battle, including normalization');
 console.log('PASS equipped armor, shield, backpack and implant aberrations contribute their own stats');
-console.log('PASS loot overlay, extra damage die, per-copy jam and reload, forced movement and ricochet');
-console.log('PASS melee aberrations: failure bonus and expiry; delayed damage survives normalization and applies once');
+console.log('PASS loot overlay, extra damage die, per-copy jam and reload, optional forced movement and removed ricochet');
+console.log('PASS melee aberrations: failure bonus and expiry; removed delayed damage stays inactive');
 console.log('PASS real renderer: legacy migration, independent weapon copies, Lua break/damage by slot and ID, destroyed-item repair rejection, natural 20 and loss of kinetic/energy armor, slot binding and save/reload metadata');
 }finally{await w.happyDOM.abort();fs.rmSync(scratch,{recursive:true,force:true});}

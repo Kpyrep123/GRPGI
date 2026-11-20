@@ -36,17 +36,17 @@ body.lootTransferV137.aberrations[0]={rarity:'uncommon',budget:1,effects:['weapo
 assert.throws(()=>transfer(request),/другими данными/);
 assert.equal(data.playerJson.inventory[0].qty,2);
 body.operationId='test_conditional_effects';
-body.lootTransferV137.aberrations[0]={rarity:'rare',budget:4,effects:['weapon-6-2','weapon-7-1']};
+body.lootTransferV137.aberrations[0]={rarity:'rare',budget:4,effects:['weapon-59-1','weapon-7-1']};
 assert.equal(transfer(request).status,'committed');
 assert.deepEqual(data.playerJson.inventory[0].instancesV215[2].aberration252,body.lootTransferV137.aberrations[0]);
 assert.deepEqual(data.playerJson.inventory[0].instancesV215[1].aberration252.effects,['weapon-3-2','weapon-4-3','weapon-8-4']);
 const rules=require('../pocketbase/pb_hooks/grpgi_loot_core_v137.js').engine(world);
-assert.equal(rules.layout(data.playerJson).weight,3.3);
+assert.equal(rules.layout(data.playerJson).weight,3.75);
 const available=rules.layout(data.playerJson).user.carryWeightMax;
-world.equipment.EQUIPMENT.heavy={id:'heavy',type:'weapon',mass:available-3.3,inventoryWidth:1,inventoryHeight:1};
+world.equipment.EQUIPMENT.heavy={id:'heavy',type:'weapon',mass:available-3.75,inventoryWidth:1,inventoryHeight:1};
 assert.equal(rules.canAdd(data.playerJson,'heavy',1).ok,true);
 assert.equal(rules.canAdd(data.playerJson,'heavy',1,[{effects:['weapon-7-1']}]).ok,false);
-for(const [index,effect] of ['weapon-5-3:gas','weapon-11-1','weapon-12-2','weapon-15-1'].entries()){
+for(const [index,effect] of ['weapon-5-3:kinetic','weapon-60-1','weapon-12-2','weapon-15-1'].entries()){
   body.operationId='test_new_effect_'+index;
   body.lootTransferV137.aberrations[0]={rarity:'rare',budget:4,effects:[effect]};
   assert.equal(transfer(request).status,'committed');
@@ -87,15 +87,30 @@ body.operationId='test_armor_attack_immunity';
 body.lootTransferV137.aberrations[0].effects=['armor-28-1:ranged'];
 assert.equal(transfer(request).status,'committed');
 assert.deepEqual(data.playerJson.inventory.find(row=>row.itemId==='armor').instancesV215.at(-1).aberration252.effects,['armor-28-1:ranged']);
+// The same NPC instance is transferred with wear and modules intact, then replayed once.
+body.operationId='test_real_copy_transfer';
+data.playerJson.baseStats={carryBase:100,inventorySlots:100};
+body.lootTransferV137={itemId:'rifle',qty:1,source:'scene/npc',copiesV287:[{
+ id:'corpse-rifle',durabilityMax:5,durability:0,broken:true,
+ aberration252:{rarity:'legendary',budget:21,forged:true,effects:['weapon-1-6','weapon-59-3','weapon-60-3']},
+ attachments:[{mount:0,itemId:'optic',copy:{id:'corpse-optic',durabilityMax:0,durability:0,chargesMax:2,charges:1}}]
+}]};
+assert.equal(transfer(request).status,'committed');
+const persisted=data.playerJson.inventory.find(row=>row.itemId==='rifle').instancesV215.find(copy=>copy.id==='corpse-rifle');
+assert.equal(persisted.durability,0);assert.equal(persisted.broken,true);assert.equal(persisted.attachments[0].copy.id,'corpse-optic');
+assert.equal(transfer(request).status,'replayed');
+assert.equal(data.playerJson.inventory.flatMap(row=>row.instancesV215||[]).filter(copy=>copy.id==='corpse-rifle').length,1);
+body.lootTransferV137.copiesV287[0].durability=1;
+assert.throws(()=>transfer(request),/другими данными/);
 console.log('PASS loot persists aberrations and rejects a changed replay');
 
 require('../renderer/combat-rules-v119.js');
 const {resolveManualAttack}=global.GRPGCombatRulesV119;
 const die={attackRoll:19,defenseRoll:10,damageRoll:4};
 assert.equal(resolveManualAttack(die).rawDamage,4);
-assert.equal(resolveManualAttack({...die,criticalRange:1,criticalBonus:2}).rawDamage,7);
+assert.equal(resolveManualAttack({...die,criticalRange:1,criticalBonus:2}).rawDamage,8);
 assert.equal(resolveManualAttack({...die,criticalRange:1,defenseRoll:20}).hit,false);
 assert.equal(resolveManualAttack({...die,attackRoll:20,criticalRange:-1}).rawDamage,4);
-assert.equal(resolveManualAttack({...die,attackRoll:20,defenseRoll:1,criticalRange:-1}).rawDamage,6);
+assert.equal(resolveManualAttack({...die,attackRoll:20,defenseRoll:1,criticalRange:-1}).rawDamage,8);
 assert.equal(resolveManualAttack({...die,attackRoll:20,criticalBonus:-2}).rawDamage,4);
 console.log('PASS critical range, guaranteed natural hit and suppressed critical bonus');

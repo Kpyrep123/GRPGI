@@ -48,27 +48,35 @@
     return rarities.find((_rarity, i) => (ticket -= weights[i]) < 0) || rarities[0];
   }
 
+  const searchCache=new Map();
   function chooseEffects(variants, min, max, random) {
-    let count = 0, selected = null;
-    const used = new Set(), combination = [];
-    function visit(from, budget, negative) {
-      if (combination.length && budget >= min && budget <= max) {
-        count++;
-        if (random() < 1 / count) selected = { budget, effects: combination.map(({ id }) => id) };
-      }
-      if (combination.length === 3) return;
-      for (let i = from; i < variants.length; i++) {
-        const effect = variants[i];
-        if (used.has(effect.group) || (negative && effect.cost < 0)) continue;
-        used.add(effect.group);
-        combination.push(effect);
-        visit(i + 1, budget + effect.cost, negative || effect.cost < 0);
-        combination.pop();
-        used.delete(effect.group);
-      }
+    const groups = [...new Set(variants.map(row=>row.group))].map(group=>variants.filter(row=>row.group===group));
+    const signature=JSON.stringify([min,max,groups.map(rows=>rows.map(row=>row.cost))]);
+    let memo=searchCache.get(signature);
+    if(!memo){memo=new Map();if(searchCache.size>=32)searchCache.delete(searchCache.keys().next().value);searchCache.set(signature,memo);}
+    function ways(index, left, budget) {
+      if(left===0)return budget>=min&&budget<=max?1:0;
+      if(groups.length-index<left)return 0;
+      const key=[index,left,budget].join(':');
+      if(memo.has(key))return memo.get(key);
+      let total=ways(index+1,left,budget);
+      for(const row of groups[index])total+=ways(index+1,left-1,budget+row.cost);
+      memo.set(key,total);
+      return total;
     }
-    visit(0, 0, false);
-    return selected;
+    const counts=Array.from({length:6},(_,i)=>({count:i+1,ways:ways(0,i+1,0)})).filter(row=>row.ways>0);
+    if(!counts.length)return null;
+    // Choose a feasible count first so six-effect combinations do not dominate the pool.
+    let left=counts[Math.min(counts.length-1,Math.floor(random()*counts.length))].count;
+    let index=0,budget=0;const selected=[];
+    while(left>0&&index<groups.length){
+      const options=[{row:null,weight:ways(index+1,left,budget)},...groups[index].map(row=>({row,weight:ways(index+1,left-1,budget+row.cost)}))];
+      let ticket=random()*options.reduce((sum,option)=>sum+option.weight,0);
+      const choice=options.find(option=>(ticket-=option.weight)<0)||options.filter(option=>option.weight>0).at(-1);
+      if(choice.row){selected.push(choice.row.id);budget+=choice.row.cost;left--;}
+      index++;
+    }
+    return {budget,effects:selected};
   }
 
   function roll(danger, variants, { chances, random = Math.random } = {}) {
