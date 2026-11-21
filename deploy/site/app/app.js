@@ -6264,6 +6264,15 @@ function stockFeesV213(fees){if(!fees)return 'Тарифы загрузятся 
     }
   };
   window.GRPGHubBridgeV153 = {
+    raidRequest: async data => {
+      const player=currentPlayer(),campaign=App.config.campaignId;
+      return playerWritesV135.run(player?.id,async()=>{
+        if(currentPlayer()?.id!==player?.id||App.config.campaignId!==campaign)throw Error('Персонаж изменился');
+        const result=await pbFetch(App.config,'/api/grpgi/auth-v212/raids-v290',{method:'POST',json:data});
+        if(currentPlayer()?.id!==player?.id||App.config.campaignId!==campaign)throw Error('Персонаж изменился');
+        return result;
+      });
+    },
     playerById: id => App.data.players.get(id),
     hubRequest: async (route, data) => {
       const player = currentPlayer();

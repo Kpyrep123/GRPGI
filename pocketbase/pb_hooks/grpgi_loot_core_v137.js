@@ -79,6 +79,9 @@ function engine(world={}){
   }
 
 
+  const weaponHandling=require((typeof __hooks==='undefined'?'./':__hooks+'/')+'weapon-handling-v203.js');
+  const aberrationWeapons={effects:()=>[]};
+  const normalizeEquipmentItemV2=raw=>equipment(raw.id)||raw;
   const damageTypes=require((typeof __hooks==='undefined'?'./':__hooks+'/')+'damage-types-v202.js');
   const itemInstances=require((typeof __hooks==='undefined'?'./':__hooks+'/')+'item-instances-v215.js');
   const EQUIPMENT=world.equipment?.EQUIPMENT||{}, Data={getItem:id=>EQUIPMENT[id],getSkill:id=>world.skills?.SKILLS?.[id],socialOrigins:world.socialOrigins?.SOCIAL_ORIGINS,geographicOrigins:world.geographicOrigins?.GEOGRAPHIC_ORIGINS};
@@ -260,6 +263,45 @@ function engine(world={}){
     return { version:VERSION, abilities, values:derived, base, modifiers:mods, breakdown };
   }
 
+  function weaponAttack(entity={}, weaponOrId, options={}) {
+    const weapon = typeof weaponOrId === 'string' ? equipment(weaponOrId) : normalizeEquipmentItemV2(weaponOrId || {});
+    if (!weapon?.id && !weapon?.name) return null;
+    const stats=compute(entity,options);
+    const copies=itemInstances, slot=options.weaponSlot || ['primaryWeapon','secondaryWeapon'].find(key=>entity.equipmentSlots?.[key]===weapon.id);
+    const copy=slot?copies.instance(entity,weapon.id,-1,slot):null;
+    const mounted=copies.attachmentHitBonus(copy);
+    const mods=[...stats.modifiers,...arr(copy?.attachments).flatMap(row=>arr(row.modifiers)
+      .map(mod=>normalizeModifier(mod,{id:row.itemId,name:equipment(row.itemId)?.name||row.itemId,kind:'equipment'}))
+      .filter(mod=>mod.enabled!==false))];
+    const aberrations=aberrationWeapons?.effects(copy?.aberration252?.effects)||[];
+    const damageType=options.damageType||damageTypes.effective(weapon);
+    const context={weaponId:weapon.id,weaponCategory:weaponHandling.category(weapon),damageType};
+    let stat = weaponHandling.stat(weapon);
+    const replaces=mods.filter(m=>m.target==='weapon_hit_stat'&&m.op==='replace_stat'&&m.statRef&&scopeMatches(m,{...context,entity,...options})).sort((a,b)=>(modifierSpecificity(a)-modifierSpecificity(b))||(a.priority-b.priority));
+    if(replaces.length) stat=replaces[replaces.length-1].statRef;
+    const detail=[{source:PRIMARY_LABELS[stat]||stat,value:n(stats.abilities[stat]),op:'base'}];
+    let bonus=n(stats.abilities[stat],0)+n(weapon.hitBonus,0)+mounted;
+    for(const effect of aberrations.filter(row=>row.group==='weapon-1')){
+      bonus+=effect.value;
+      detail.push({source:effect.name,value:effect.value,op:'add'});
+    }
+    if(mounted)detail.push({source:'Установленные модификации',value:mounted,op:'add'});
+    if(n(weapon.hitBonus,0))detail.push({source:`${weapon.name}: базовый бонус`,value:n(weapon.hitBonus),op:'add'});
+    if(weapon.weaponSkillId&&arr(entity.skills).map(String).includes(String(weapon.weaponSkillId))){bonus+=n(weapon.weaponSkillBonus,0);detail.push({source:`${skillById(weapon.weaponSkillId)?.name||weapon.weaponSkillId}: оружейный навык`,value:n(weapon.weaponSkillBonus,0),op:'add'});}
+    mods.filter(m=>m.target==='weapon_hit_extra_stat'&&['add_stat','add'].includes(m.op)&&m.statRef&&scopeMatches(m,{...context,entity,...options})).forEach(m=>{bonus+=n(stats.abilities[m.statRef],0);detail.push({source:`${m.sourceName}: ${PRIMARY_LABELS[m.statRef]}`,value:n(stats.abilities[m.statRef],0),op:'add'});});
+    mods.filter(m=>m.target==='attack_bonus'&&['add','set'].includes(m.op)&&scopeMatches(m,{...context,entity,...options})).sort((a,b)=>(a.priority-b.priority)||(modifierSpecificity(a)-modifierSpecificity(b))).forEach(m=>{bonus=m.op==='set'?n(m.value):bonus+n(m.value);detail.push({source:m.sourceName,value:n(m.value),op:m.op});});
+    let damageBonus=0; const damageDetail=[]; mods.filter(m=>m.target==='damage_bonus'&&['add','set'].includes(m.op)&&scopeMatches(m,{...context,entity,...options})).sort((a,b)=>a.priority-b.priority).forEach(m=>{damageBonus=m.op==='set'?n(m.value):damageBonus+n(m.value);damageDetail.push({source:m.sourceName,value:n(m.value),op:m.op});});
+    if(weapon.isUnarmedV122){
+      damageBonus+=n(stats.abilities.strength,0);
+      damageDetail.push({source:'Сила: безоружная атака',value:n(stats.abilities.strength,0),op:'add'});
+    }
+    if(options.firstShot!==false)for(const effect of aberrations.filter(row=>row.group==='weapon-2')){
+      damageBonus+=effect.value;
+      damageDetail.push({source:effect.name,value:effect.value,op:'add'});
+    }
+    return { weapon, stat, bonus, detail, damage:String(weapon.damage||'—'), damageBonus, damageDetail, range:nonNeg(weapon.range,0) };
+  }
+
   function inventoryItem(id){return equipment(id)||{id,name:id,type:'gear',mass:0,inventoryWidth:1,inventoryHeight:1,stackable:false,textOnlyInventory:false};}
   function equippedCounts(user={}){const map=new Map(),add=id=>{id=String(id||'');if(id)map.set(id,(map.get(id)||0)+1)};['primaryWeapon','secondaryWeapon','armor','backpack'].forEach(k=>add(user.equipmentSlots?.[k]));arr(user.implantSlots).forEach(add);return map;}
   function weight(user={}){return arr(user.inventory).reduce((sum,row)=>sum+itemInstances.inventoryRowMass(row,nonNeg(inventoryItem(row.itemId).mass,0)),0);}
@@ -291,6 +333,6 @@ function engine(world={}){
   }
   function canAdd(rawUser,itemId,qty=1,rolls=[]){const user=normalizePlayerProfileV2(rawUser), item=inventoryItem(itemId);if(layout(user).overloaded)return{ok:false,reason:'Персонаж перегружен. Сначала освободите вес или место.'};const clone=copy(user);let row=clone.inventory.find(r=>r.itemId===itemId);if(!row){row={itemId,qty:0,positions:[]};clone.inventory.push(row);}row.qty+=Math.max(1,i(qty,1));const l=layout(clone),weight=l.weight+nonNeg(item.mass,0)*arr(rolls).reduce((sum,roll)=>sum+Math.max(-100,itemInstances.massPercent(roll?.effects)),0)/100;if(weight>clone.carryWeightMax+1e-9)return{ok:false,reason:`Превышен переносимый вес: ${weight.toFixed(1)} / ${clone.carryWeightMax.toFixed(1)}`};if(l.overflow.length)return{ok:false,reason:'Недостаточно ячеек инвентаря.'};return{ok:true};}
 
-  return {compute,layout,canAdd,equipment,normalizePlayer:normalizePlayerProfileV2};
+  return {compute,layout,canAdd,equipment,weaponAttack,normalizePlayer:normalizePlayerProfileV2};
 }
 module.exports={engine};
