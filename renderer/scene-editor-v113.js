@@ -2501,7 +2501,7 @@
     if(behavior==='area'||behavior==='persistent_area'){base.targets=abilityTargetsAtPoint125(point,{...meta,radius:meta.areaRadius},token);base.target=base.targets[0]||null;}
     return base;
   }
-  function renderUnbind287(){const token=selectedToken104();return token?.aberrationControl287?.rootUntil>=num(token.ownTurnV199)?`<button type="button" class="secondary" data-unbind287 ${actionSpent191(token)||!canCombatAct129(token)?'disabled':''}>ОСВОБОДИТЬСЯ · ДЕЙСТВИЕ</button>`:'';}
+  function renderUnbind287(){const token=selectedToken104();if(!token)return '';return token.aberrationControl287?.rootUntil>=num(token.ownTurnV199)?`<button type="button" class="secondary" data-unbind287 ${actionSpent191(token)||!canCombatAct129(token)?'disabled':''}>ОСВОБОДИТЬСЯ · ДЕЙСТВИЕ</button>`:'';}
   async function unbind287(){const token=selectedToken104();if(!token||actionSpent191(token)||!canCombatAct129(token)||token.aberrationControl287?.rootUntil==null)return;delete token.aberrationControl287.rootUntil;token.actionUsed=true;appendCombatLog105(Combat.getRuntime(),`${token.name}: освобождение от опутывания Действием.`);await checkpointCombat120('Освобождение от опутывания',false);Combat.render();}
   function renderForgeAction287(){
     const selected=selectedObject104();
