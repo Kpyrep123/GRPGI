@@ -27,7 +27,7 @@ const html=fs.readFileSync(path.join(root,'renderer/index.html'),'utf8');
 w.document.write(html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi,''));
 // Every renderer script is evaluated unmodified, in index.html order, sharing
 // browser-style lexical globals. Only OS/cloud/bootstrap boundaries are mocked.
-for(const m of html.matchAll(/<script src="\.\/([^"?]+)[^"]*"/g)){let source=fs.readFileSync(path.join(root,'renderer',m[1]),'utf8');if(m[1]==='scene-editor-v113.js')source=source.replace('// New module is DM-only;','window.test287={local,applyStore,collectStoreFromRuntime,ensureNpcGear287,entityForToken,itemRuntimeStateV138,incomingDefense119,weaponAberrationEffects257,attackCover287,applyAbsorptionV138,wearArmorFromBlast093,secondaryHit258,movementState198,processTimedModifiers122,searchNpc118,performLootTransferV137,deleteSelected104,issueForge287,fitTokenToHex107,normalizeCombatToken,unbind287};\n// New module is DM-only;');vm.runInContext(source,context,{filename:m[1]});}
+for(const m of html.matchAll(/<script src="\.\/([^"?]+)[^"]*"/g)){let source=fs.readFileSync(path.join(root,'renderer',m[1]),'utf8');if(m[1]==='scene-editor-v113.js')source=source.replace('// New module is DM-only;','window.test287={local,applyStore,collectStoreFromRuntime,ensureNpcGear287,entityForToken,itemRuntimeStateV138,incomingDefense119,weaponAberrationEffects257,attackCover287,applyAbsorptionV138,wearArmorFromBlast093,secondaryHit258,movementState198,processTimedModifiers122,searchNpc118,performLootTransferV137,deleteSelected104,issueForge287,fitTokenToHex107,normalizeCombatToken,unbind287,renderUnbind287};\n// New module is DM-only;');vm.runInContext(source,context,{filename:m[1]});}
 
 
 
@@ -63,6 +63,15 @@ try {
 
  api.applyStore({rangeSchema:109,cameraSchema:109,scenes:{s:{id:'s',name:'Test',mode:'normal',width:30,height:20,assets:[],templates:[]}},runtimes:{s:{tokens:[]}},selectedSceneId:'s'});
  api.local.loaded=true;run("UI.openModule('combat')");
+ assert.doesNotThrow(()=>run('Combat.selectedObject=null;Combat.render()'),'entering an empty scene must render without a selected actor');
+ assert.equal(api.renderUnbind287(),'','no actor selected means no unbind button');
+ run("Combat.selectedObject={kind:'token',id:'removed-token'}");assert.equal(api.renderUnbind287(),'','stale selection also has no unbind button');
+ assert.equal(w.document.querySelector('[data-unbind287]'),null,'empty selection has no unbind action');
+ run("Combat.getScene().assets.push(normalizeCombatAsset({id:'entry-crate',name:'Crate',x:1,y:1,w:1,h:1}));Combat.selectedObject={kind:'asset',id:'entry-crate'}");
+ assert.doesNotThrow(()=>run('Combat.render()'),'a selected map asset has no actor turn counter');
+ assert.equal(api.renderUnbind287(),'','a selected crate has no unbind action');
+ run("Combat.getScene().assets=[];Combat.selectedObject=null");
+
  let first=run("createNpcCombatToken('soldier')");first.id='first';api.ensureNpcGear287(first);
  let second=run("createNpcCombatToken('soldier')");second.id='second';api.ensureNpcGear287(second);
  const instances=t=>t.combatInventoryV120.flatMap(row=>row.instancesV215||[]);
@@ -108,6 +117,8 @@ try {
  const control=api.secondaryHit258(first,{id:'gun',name:'Carbine'},second,'kinetic','primaryWeapon');
  await wait(()=>w.document.querySelector('[name=rootRoll]'));w.document.querySelector('[name=rootRoll]').value='15';submit();await control;
  assert.equal(api.movementState198(second,run('Combat.getScene()')).speed,0);
+ run("Combat.selectedObject={kind:'token',id:'second'}");assert.match(api.renderUnbind287(),/data-unbind287/,'rooted actor retains the unbind action');
+ run("Combat.selectedObject={kind:'token',id:'first'}");assert.equal(api.renderUnbind287(),'','unrooted actor has no unbind action');
  second.ownTurnV199=(second.ownTurnV199||0)+1;await api.processTimedModifiers122(second,'end');assert.equal(second.aberrationControl287,undefined);
  // A deleted NPC cannot remain in the persistent session participant registry.
  run("Combat.selectedObject={kind:'token',id:'second'}");api.local.store.session193={...api.local.store.session193,participants:{test:JSON.parse(JSON.stringify(second))},order:['second']};
