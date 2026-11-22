@@ -16,11 +16,21 @@ function make(){const s=C.create(world,mission,[player('a'),player('b'),player('
  const f=make();f.e.unit('b').teamId='npcs';f.e.command('a',{type:'disengage'},1100);f.e.command('a',{type:'move',x:1.5,y:3.5},1200);assert.equal(f.s.pending,undefined);assert.equal(f.e.unit('b').reactionUsedV119,false);assert.equal(f.e.unit('a').actionUsed,true);
  const g=make();g.e.unit('b').teamId='npcs';g.e.command('a',{type:'move',x:1.5,y:3.5},1100);g.e.tick(g.s.pending.until+1501);assert.equal(g.e.unit('b').reactionUsedV119,false);assert.equal(g.e.unit('a').y,3.5);
 }
-// Instinct uses actual HP loss and post-hit trauma; source approach checks survive JSON.
+// Damage no longer requests Instinct. Legacy panic saves resume without replaying damage.
 {
- const {s,e}=make(),a=e.unit('a');e.damage(a,0,'gas');assert(!s.instinct293);e.damage(a,6,'gas',{attackerId:'b'});assert.equal(s.instinct293.length,1);const saved=JSON.parse(JSON.stringify(s));const restored=C.engine(saved,()=>.99,id);restored.drain(1200);assert.equal(restored.unit('a').hpCurrent,14);assert.equal(saved.instinct293.length,0);assert(!restored.unit('a').moraleV199.length);
- const q=make();q.e.unit('b').x=5.5;q.e.unit('c').x=6.5;q.e.unit('a').profile.abilityBase.will=0;q.e.damage(q.e.unit('a'),1,'gas',{attackerId:'b'});const qe=C.engine(q.s,()=>.45,id);qe.drain(1200);assert.equal(qe.unit('a').moraleV199[0].kind,'shaken');assert.throws(()=>qe.command('a',{type:'move',x:2,y:1.5},1300),/Потрясение/);assert.equal(qe.unit('a').reactionUsedV119,true);
- const z=make();z.e.unit('a').profile.abilityBase.will=0;z.e.damage(z.e.unit('a'),2,'gas',{attackerId:'b'});const ze=C.engine(z.s,()=>0,id);ze.drain(1200);assert.equal(z.s.pending.kind,'panic');const hp=ze.unit('a').hpCurrent;ze.tick(z.s.pending.until+1501);assert.equal(ze.unit('a').conditionsV138.prone,true);assert.equal(ze.unit('a').hpCurrent,hp);assert(ze.profiles().a.combatState093.morale.length);
+ const {s,e}=make(),a=e.unit('a');e.damage(a,6,'gas',{attackerId:'b'});e.drain(1200);
+ assert.equal(a.hpCurrent,14);assert.equal(a.traumaV195.injuryPoints,6);assert(!s.pending);assert(!s.instinct293);assert.equal(a.reactionUsedV119,false);
+ for(const kind of ['panic','panicPoint']){
+  const saved=JSON.parse(JSON.stringify(s)),u=saved.units.find(u=>u.id==='a');
+  u.moraleV199=[{kind:'panic',sourceId:'b'}];u.instinctPendingV199={damage:6};u.conditionsV138.panic=true;u.conditionsV138.shaken=true;u.conditionsV138.prone=true;u.loseNextAction093=true;
+  u.profile.combatState093={morale:u.moraleV199,conditions:{panic:true,shaken:true,prone:true},ownTurn:4};
+  saved.pending={id:'old',kind,actor:'a',until:1400};saved.instinct293=[{target:'a',damage:6}];saved.move292={panic:true};saved.remainingTurn=10000;
+  const restored=C.engine(saved,()=>0,id);restored.drain(1500);
+  assert(!saved.pending);assert(!saved.move292);assert(!saved.instinct293);assert.equal(u.hpCurrent,14);assert.equal(u.traumaV195.injuryPoints,6);assert.equal(u.reactionUsedV119,false);assert.equal(u.loseNextAction093,true);assert.equal(u.conditionsV138.prone,true);
+  assert(!u.moraleV199);assert(!u.instinctPendingV199);assert(!u.conditionsV138.panic);assert(!u.conditionsV138.shaken);
+  const profile=restored.profiles().a;assert(!profile.combatState093.morale);assert.equal(profile.combatState093.conditions.prone,true);
+ }
+ const q=make();q.e.unit('b').x=5.5;q.e.unit('c').x=6.5;q.e.unit('a').moraleV199=[{kind:'shaken',sourceId:'b'}];const restored=C.engine(q.s,random,id);restored.command('a',{type:'move',x:2.5,y:1.5},1300);assert.equal(restored.unit('a').x,2.5);
 }
 // Chest contents are server-owned, exact instance IDs survive transfer/reload; range is enforced.
 {
@@ -39,4 +49,4 @@ function make(){const s=C.create(world,mission,[player('a'),player('b'),player('
 {
  const w=structuredClone(world);w.npcs={NPCS:{n:{id:'n',name:'Operator',abilityBase:{intelligence:3,endurance:2},stats:{hpMax:8},inventory:[]}}};const m=structuredClone(mission);m.maps[0].tokens=[{id:'operator-template',npcId:'n',x:10,y:10},{id:'device-template',equipmentType:'drone',equipmentItemId:'drone',operatorTokenIdV129:'operator-template',x:11,y:10}];const s=C.create(w,m,[player('a')],1000,random,id),device=s.units.find(u=>u.equipmentType==='drone'),operator=s.units.find(u=>u.npcId==='n');assert.equal(device.operatorTokenIdV129,operator.id);assert.equal(device.teamId,'npcs');assert(!s.order.includes(device.id));
 }
-console.log('PASS raid tactics: typed help, opportunity/restart/timeout, disengage, instinct/morale, chest instance transfer, operator device ledger/link/recovery');
+console.log('PASS raid tactics: typed help, opportunity/restart/timeout, disengage, retired morale migration, chest instance transfer, operator device ledger/link/recovery');

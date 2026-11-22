@@ -2,7 +2,7 @@
 const fs=require('node:fs'),path=require('node:path');
 const root=path.join(__dirname,'..'),dest=path.join(root,'pocketbase/pb_hooks'),check=process.argv.includes('--check');
 function emit(name,value){const file=path.join(dest,name);if(check){if(!fs.existsSync(file)||fs.readFileSync(file,'utf8')!==value)throw Error('Regenerate raid rules: '+name);}else fs.writeFileSync(file,value);}
-for(const file of ['combat-instinct-v199.js','combat-devices-v200.js','combat-state-v291.js','combat-lua-v204.js','combat-rules-v119.js','combat-trauma-v195.js','combat-movement-v198.js','combat-vision-v225.js','weapon-handling-v203.js','aberration-roll.js'])emit(file,fs.readFileSync(path.join(root,'renderer',file),'utf8'));
+for(const file of ['combat-devices-v200.js','combat-state-v291.js','combat-lua-v204.js','combat-rules-v119.js','combat-trauma-v195.js','combat-movement-v198.js','combat-vision-v225.js','weapon-handling-v203.js','aberration-roll.js'])emit(file,fs.readFileSync(path.join(root,'renderer',file),'utf8'));
 emit('raid-core-v290.js',fs.readFileSync(path.join(root,'raid-service/raid-core.cjs'),'utf8').replace("?'../pocketbase/pb_hooks/'","?'./'"));
 emit('raid-effects-v292.js',fs.readFileSync(path.join(root,'raid-service/raid-effects-v292.cjs'),'utf8'));
 const source=fs.readFileSync(path.join(root,'renderer/scene-editor-v113.js'),'utf8');

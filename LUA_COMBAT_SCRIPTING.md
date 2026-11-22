@@ -38,7 +38,7 @@
 | `OnKnockedDown`, `OnStandUp` | Переход состояния prone. `params.unit`, `params.condition`, `params.enabled`, `params.reason` |
 | `OnForcedMove` | Сдвиг Lua или ручное перемещение ДМом. `params.oldPosition`, `params.newPosition`, `params.movementKind` |
 
-Типы бросков включают `attack`, `defense`, `damage`, `initiative`, `instinct`.
+Типы бросков включают `attack`, `defense`, `damage`, `initiative`.
 Для авторского `RequestRoll(name,label,spec)` тип задаётся через `spec.rollType`
 с базовым значением `check`. `spec.unit` задаёт бросающего, по умолчанию используется
 владелец скрипта. Обычный `RequestNumber` сохраняет поведение числового ввода.
@@ -1126,7 +1126,7 @@ Metadata getters исполняются Lua worker. `GetEventScope` различ
 
 ### Вылазки v293
 
-`combatState093.morale` переносит Потрясение/Панику через профиль. В Lua snapshot добавлены текущие `conditions.shaken/panic`, общий штраф проверок, `droneActions225`, `droneActionsMax225`, `operatorId204` и `droneShareVision225`. Обычные сигнатуры API сохранены.
+В v294 Инстинкт, Потрясение и Паника удалены; старые сохранения очищаются от этих состояний. `IsShaken()` и `IsPanicked()` сохранены для совместимости и всегда возвращают `false`; `SetCondition` игнорирует `shaken` и `panic`. В Lua snapshot доступны общий штраф проверок, `droneActions225`, `droneActionsMax225`, `operatorId204` и `droneShareVision225`. Обычные сигнатуры API сохранены.
 
 Помощь применяется к следующему совпадающему `RequestRoll`: `any` подходит любому типу, кроме `damage`; выбранный тип должен совпадать с `spec.rollType`. Возвращаемое значение включает бонус Помощи и может превысить верхнюю границу натурального броска. Значение сохраняется в inputs задания; повтор worker его не перебрасывает и не расходует Помощь снова. `RequestNumber` без типа броска не использует Помощь.
 

@@ -356,7 +356,7 @@ function RestoreMovement(unit, amount)
   if amount == nil then return __push({ kind = 'restore_movement', unitId = __id(unit), all = true }) end
   return __push({ kind = 'restore_movement', unitId = __id(unit), amount = math.max(0, __num(amount)) })
 end
-function SetCondition(unit, name, enabled) return __push({ kind = 'set_condition', unitId = __id(unit), name = tostring(name or ''), enabled = enabled ~= false }) end
+function SetCondition(unit, name, enabled) if name=='panic' or name=='shaken' then return end return __push({ kind = 'set_condition', unitId = __id(unit), name = tostring(name or ''), enabled = enabled ~= false }) end
 function SetDying(unit, enabled) return SetCondition(unit, 'dying', enabled) end
 function SetStabilized(unit, enabled) return SetCondition(unit, 'stabilized', enabled) end
 function SetProne(unit, enabled) return SetCondition(unit, 'prone', enabled) end
@@ -714,8 +714,9 @@ function Unit:GetModifier(id)
 end
 function Unit:GetModifierStacks(id) local row=self:GetModifier(id);return row and __num(row.stacks204,1) or 0 end
 function Unit:GetModifierRemaining(id) local row=self:GetModifier(id);return row and __num(row.duration204 and row.duration204.remaining or row.remainingTurns) or 0 end
-function Unit:IsShaken() return (self.__data.conditions or {}).shaken==true end
-function Unit:IsPanicked() return (self.__data.conditions or {}).panic==true end
+-- Compatibility for old cards: the self-preservation mechanic has been removed.
+function Unit:IsShaken() return false end
+function Unit:IsPanicked() return false end
 function Unit:GetConditions() return self.__data.conditions or {} end
 function Unit:CanAct() return self:IsAlive() and not self:IsUnconscious() and not self:IsStunned() and not self:IsDying() and self.__data.withdrawn204~=true end
 function Unit:GetOperator() return GetUnit(self.__data.operatorId204) end
