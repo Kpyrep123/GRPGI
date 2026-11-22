@@ -16,3 +16,5 @@ damage-types-v202.js
 aberration-catalog.js
 aberration-instances.js
 hub-rules-v221.js
+combat-state-v291.js
+combat-lua-v204.js

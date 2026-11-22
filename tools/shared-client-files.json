@@ -44,5 +44,6 @@
   "unit-size-v184.js",
   "weapon-handling-v203.js",
   "combat-trauma-v195.js",
-  "aberration-instances.js"
+  "aberration-instances.js",
+  "combat-state-v291.js"
 ]

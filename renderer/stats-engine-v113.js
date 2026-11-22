@@ -197,7 +197,7 @@
       const items=window.GRPGItemInstancesV215;
       if(id&&items)sources.push(...items.equippedAberrationModifiers(items.instance(entity,id,-1,'implant:'+index),equipment(id)));
     });
-    arr(options.temporaryModifiers || entity.temporaryModifiers).forEach(raw => { const mod=normalizeModifier(raw,{id:raw.sourceId||'temporary',name:raw.sourceName||'Временный эффект',kind:'temporary'}); if(mod) sources.push(mod); });
+    arr(options.temporaryModifiers ?? entity.temporaryModifiers ?? window.GRPGCombatStateV291?.modifiers({timedModifiersV122:entity.combatState093?.lua204?.modifiers})).forEach(raw => { const mod=normalizeModifier(raw,{id:raw.sourceId||'temporary',name:raw.sourceName||'Временный эффект',kind:'temporary'}); if(mod) sources.push(mod); });
     return sources.filter(Boolean);
   }
 

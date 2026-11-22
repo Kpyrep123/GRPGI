@@ -4,10 +4,11 @@ const fs=require('node:fs'),path=require('node:path');
 const root=path.resolve(__dirname,'..'),source=fs.readFileSync(path.join(root,'renderer/stats-engine-v113.js'),'utf8');
 function part(start,end){const a=source.indexOf(start),b=source.indexOf(end,a+start.length);if(a<0||b<0)throw Error(start);return source.slice(a,b);}
 const header=part("  const VERSION =",'  const previousNormalizeEquipment').replace(/^  const WEAPON_(?:STATS|LABELS) = .*;\n/gm,'');
-const math=part('  function synthesizeLegacyItemModifiers','  function weaponAttack').replaceAll('window.GRPGItemInstancesV215','itemInstances').replaceAll('window.GRPGDamageTypesV202','damageTypes');
+const math=part('  function synthesizeLegacyItemModifiers','  function weaponAttack').replaceAll('window.GRPGItemInstancesV215','itemInstances').replaceAll('window.GRPGDamageTypesV202','damageTypes').replaceAll('window.GRPGCombatStateV291','combatState');
 const attack=part('  function weaponAttack','  function breakdownText').replaceAll('window.GRPGItemInstancesV215','itemInstances').replaceAll('window.GRPGDamageTypesV202','damageTypes').replaceAll('window.GRPGWeaponHandlingV203','weaponHandling').replaceAll('window.GRPGAberrationWeapons','aberrationWeapons');
 const packing=part('  function inventoryItem','  function slotAccepts').replaceAll('window.GRPGItemInstancesV215','itemInstances');
 const adapters=`
+  const combatState=require((typeof __hooks==='undefined'?'./':__hooks+'/')+'combat-state-v291.js');
   const weaponHandling=require((typeof __hooks==='undefined'?'./':__hooks+'/')+'weapon-handling-v203.js');
   const aberrationWeapons={effects:()=>[]};
   const normalizeEquipmentItemV2=raw=>equipment(raw.id)||raw;

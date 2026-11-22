@@ -3093,7 +3093,7 @@
     const conditions=conditionStateV138(token);
     return {schema:1,ownTurn:Math.max(0,Math.trunc(num(token.ownTurnV199))),critical:clone(token.critical229||null),
       dying:conditions.dying,stabilized:conditions.stabilized,unconscious:conditions.unconscious,dead:token.dead229===true,
-      loseNextAction:token.loseNextAction093===true,control:clone(token.aberrationControl287||null)};
+      loseNextAction:token.loseNextAction093===true,control:clone(token.aberrationControl287||null),conditions:clone(conditions),lua204:window.GRPGCombatStateV291.captureLua(token)};
   }
   function restoreCombatState093(token,state){
     if(state?.schema!==1)return;
@@ -3105,19 +3105,21 @@
     token.loseNextAction093=state.loseNextAction===true;
     if(state.control){token.aberrationControl287=clone(state.control);for(const key of ['rootUntil','slowUntil'])if(token.aberrationControl287[key]!=null)token.aberrationControl287[key]+=token.ownTurnV199-recordedTurn;}
     else delete token.aberrationControl287;
-    const conditions=conditionStateV138(token);
-    conditions.dying=state.dying===true;
-    conditions.stabilized=state.stabilized===true;
-    conditions.unconscious=state.unconscious===true;
+    window.GRPGCombatStateV291.restoreLua(token,state.lua204);
+    const conditions=conditionStateV138(token),savedConditions=window.GRPGCombatStateV291.conditions(state);
+    Object.assign(conditions,savedConditions);
+    conditions.dying=savedConditions.dying===true;
+    conditions.stabilized=savedConditions.stabilized===true;
+    conditions.unconscious=savedConditions.unconscious===true;
     if(conditions.dying||conditions.unconscious){conditions.prone=true;token.proneV122=true;}
   }
   function updatePlayerHp105(token){
-    if(!token?.playerId||!App.state?.users?.[token.playerId])return;
+    if(!token?.playerId||!App.state?.users?.[token.playerId]||App.state.users[token.playerId].raidLock290)return;
     const user=normalizePlayerProfileV2(App.state.users[token.playerId]);
     user.traumaV195=clone(Trauma195.ensure(token));
-    user.stats={...(user.stats||{}),hpCurrent:token.hpCurrent,hpMax:Math.max(num(user.stats?.hpMax,0),num(token.hpMax,1))};
+    user.stats={...(user.stats||{}),hpCurrent:token.hpCurrent,hpMax:Math.max(1,num(token.hpMax,1))};
     const state=captureCombatState093(token);
-    if(user.combatState093||state.critical||state.dying||state.stabilized||state.unconscious||state.dead||state.loseNextAction||state.control)user.combatState093=state;
+    if(user.combatState093||state.critical||state.dying||state.stabilized||state.unconscious||state.dead||state.loseNextAction||state.control||Object.keys(state.lua204.resources).length||Object.keys(state.lua204.sourceData).length||state.lua204.modifiers.length||state.lua204.reactionDebt)user.combatState093=state;
     App.state.users[token.playerId]=user;
   }
   function combatProfilePatch120(user={}){
@@ -3638,7 +3640,7 @@
       else if(kind==='particle'||kind==='sound')state.effects.push(command);
       else if(kind==='log'&&String(command.text||'').trim())appendCombatLog105(runtime,`${context.sourceName||'Lua'}: ${String(command.text).trim()}`);
     }
-    if(statsChanged)refreshRuntimeSources122(scene?.id);Combat.syncInitiative?.(scene?.id,false);
+    if(statsChanged)refreshRuntimeSources122(scene?.id);for(const token of list(runtime?.tokens))if(token.playerId)updatePlayerHp105(token);Combat.syncInitiative?.(scene?.id,false);
     return {state,requests,numberRequests};
   }
   async function processTimedModifiers122(token,phase,state={effects:[]}){
@@ -3652,7 +3654,7 @@
       }
       const before=token.timedModifiersV122.length;
       token.timedModifiersV122=token.timedModifiersV122.map(row=>row.duration204?row:({...row,remainingTurns:Math.max(0,Math.trunc(num(row.remainingTurns,1))-1)})).filter(row=>{if(row.duration204||row.remainingTurns>0)return true;appendCombatLog105(runtime,`Эффект «${row.name||row.id}» на ${token.name} завершён.`);return false;});
-      if(token.timedModifiersV122.length!==before)refreshRuntimeSources122(Combat.getSceneIdForView?.());
+      if(token.timedModifiersV122.length!==before){refreshRuntimeSources122(Combat.getSceneIdForView?.());updatePlayerHp105(token);}
     }
     Combat.syncInitiative?.(Combat.getSceneIdForView?.(),false);return state;
   }
@@ -3740,7 +3742,7 @@
     }throw Error('Lua: превышен лимит реакций');}finally{reactionDepth204--;}
   }
   async function lifecycle204(hook,state={damage:0,effects:[]}){if(['OnBattleStart','OnSceneStart'].includes(hook))await expire204(hook,Combat.getCurrentTurnToken(),state);const actors=list(Combat.getRuntime()?.tokens).filter(row=>!withdrawn194(row));for(const [index,actor] of actors.entries())await runAutomaticHooks119(actor,hook,{unit:actor,lifecycle204:true,skipThinkers204:index>0},state);if(actors[0])await chooseReaction119(hook,{unit:actors[0]},state);flushLuaEffects119(state);}
-  async function expire204(hook,actor,state){const runtime=Combat.getRuntime(),ctx=epochContext204(actor);const expired=duration=>{if(!duration)return false;const phase=hook.endsWith('Start')?'start':'end';if(duration.scope==='manual')return false;if(duration.scope==='scene')return duration.createdScene!==ctx.sceneId;if(duration.scope==='battle')return duration.createdBattle!==ctx.battleId;if(duration.phase!==phase)return false;if(duration.scope==='turn'&&(!['OnTurnStart','OnTurnEnd'].includes(hook)||duration.unitId!==String(actor?.id)))return false;if(duration.scope==='round'&&!['OnRoundStart','OnRoundEnd'].includes(hook))return false;const stamp=hook+':'+Lua204.epoch(duration.scope,ctx);if(duration.last204===stamp)return false;duration.last204=stamp;duration.remaining--;return duration.remaining<=0;};for(const unit of list(runtime?.tokens))unit.timedModifiersV122=list(unit.timedModifiersV122).filter(row=>!expired(row.duration204));for(const thinker of [...list(runtime?.thinkersV125)])if(expired(thinker.duration204)){runtime.thinkersV125=runtime.thinkersV125.filter(row=>row.id!==thinker.id);const source=sourceForThinker125(thinker);if(source)await runInteractiveLuaHookV138(source,'OnThinkerDestroyed',{...thinkerContext125(thinker),reason204:'expired',scriptSource:source},state);}}
+  async function expire204(hook,actor,state){const runtime=Combat.getRuntime(),ctx=epochContext204(actor);const expired=duration=>{if(!duration)return false;const phase=hook.endsWith('Start')?'start':'end';if(duration.scope==='manual')return false;if(duration.scope==='scene')return duration.createdScene!==ctx.sceneId;if(duration.scope==='battle')return duration.createdBattle!==ctx.battleId;if(duration.phase!==phase)return false;if(duration.scope==='turn'&&(!['OnTurnStart','OnTurnEnd'].includes(hook)||duration.unitId!==String(actor?.id)))return false;if(duration.scope==='round'&&!['OnRoundStart','OnRoundEnd'].includes(hook))return false;const stamp=hook+':'+Lua204.epoch(duration.scope,ctx);if(duration.last204===stamp)return false;duration.last204=stamp;duration.remaining--;return duration.remaining<=0;};for(const unit of list(runtime?.tokens)){const before=list(unit.timedModifiersV122).length;unit.timedModifiersV122=list(unit.timedModifiersV122).filter(row=>!expired(row.duration204));if(unit.timedModifiersV122.length!==before){refreshRuntimeSources122(Combat.getSceneIdForView?.());updatePlayerHp105(unit);}}for(const thinker of [...list(runtime?.thinkersV125)])if(expired(thinker.duration204)){runtime.thinkersV125=runtime.thinkersV125.filter(row=>row.id!==thinker.id);const source=sourceForThinker125(thinker);if(source)await runInteractiveLuaHookV138(source,'OnThinkerDestroyed',{...thinkerContext125(thinker),reason204:'expired',scriptSource:source},state);}}
   async function emit204(hook,actor,context={},state={damage:0,effects:[]}){if(eventStack204.length>=12)throw Error('Lua: превышена глубина событий');const event={...context,unit:context.unit||actor,eventId204:context.eventId204||makeId('event'),parentEventId204:context.parentEventId204||eventStack204.at(-1)||''};eventStack204.push(event.eventId204);try{await runAutomaticHooks119(actor,hook,event,state);await chooseReaction119(hook,event,state);return state;}finally{eventStack204.pop();}}
   async function conditionEvents225(unit,before,context={},state={damage:0,effects:[]}){
     const after=clone(conditionStateV138(unit));

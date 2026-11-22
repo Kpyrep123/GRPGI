@@ -79,6 +79,7 @@ function engine(world={}){
   }
 
 
+  const combatState=require((typeof __hooks==='undefined'?'./':__hooks+'/')+'combat-state-v291.js');
   const weaponHandling=require((typeof __hooks==='undefined'?'./':__hooks+'/')+'weapon-handling-v203.js');
   const aberrationWeapons={effects:()=>[]};
   const normalizeEquipmentItemV2=raw=>equipment(raw.id)||raw;
@@ -156,7 +157,7 @@ function engine(world={}){
       const items=itemInstances;
       if(id&&items)sources.push(...items.equippedAberrationModifiers(items.instance(entity,id,-1,'implant:'+index),equipment(id)));
     });
-    arr(options.temporaryModifiers || entity.temporaryModifiers).forEach(raw => { const mod=normalizeModifier(raw,{id:raw.sourceId||'temporary',name:raw.sourceName||'Временный эффект',kind:'temporary'}); if(mod) sources.push(mod); });
+    arr(options.temporaryModifiers ?? entity.temporaryModifiers ?? combatState?.modifiers({timedModifiersV122:entity.combatState093?.lua204?.modifiers})).forEach(raw => { const mod=normalizeModifier(raw,{id:raw.sourceId||'temporary',name:raw.sourceName||'Временный эффект',kind:'temporary'}); if(mod) sources.push(mod); });
     return sources.filter(Boolean);
   }
 
