@@ -1,0 +1,15 @@
+[Unit]
+Description=GRPGI raid scheduler and Lua worker
+After=network-online.target pocketbase.service
+[Service]
+User=pocketbase
+Group=pocketbase
+WorkingDirectory=/opt/grpgi-raids
+EnvironmentFile=/etc/grpgi-raids.env
+ExecStart=/usr/bin/node /opt/grpgi-raids/raid-service/worker.cjs
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+[Install]
+WantedBy=multi-user.target

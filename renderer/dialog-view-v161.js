@@ -30,6 +30,7 @@
         catch(e){if(!closed)draw(e.message);}
         finally{pending=false;}
       };
+      if(!B.preview&&o.npcId&&window.GRPGRaidsV290){const launch=document.createElement('button');launch.type='button';launch.className='secondary';launch.textContent='Вылазки';launch.onclick=()=>window.GRPGRaidsV290.open({planetId:s.planetId,mapId:s.mapId,objectId:o.id,dialogId:d.id});host.querySelector('.conversation-replies-v161')?.append(launch);}
       host.querySelectorAll('[data-choice]').forEach(b=>b.onclick=()=>choose(b.dataset.choice));host.querySelector('[data-finish]')?.addEventListener('click',()=>choose(null));
     }
     draw();root.querySelector('[data-leave]').focus();const view={root,leave,refresh:draw};window.GRPGDialogViewV161.active=view;return view;

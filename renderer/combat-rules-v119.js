@@ -1,7 +1,7 @@
 /* GRPGI v1.0.122 — manual tabletop rolls; this module never generates random values */
 (function(root){
   'use strict';
-  if(root.GRPGCombatRulesV119)return;
+  if(root.GRPGCombatRulesV119){if(typeof module!=='undefined')module.exports=root.GRPGCombatRulesV119;return;}
 
   const number=(value,fallback=0)=>Number.isFinite(Number(value))?Number(value):fallback;
   const integer=(value,fallback=0)=>Math.trunc(number(value,fallback));
@@ -107,4 +107,5 @@
     return -Math.max(0,integer(shotIndex,1)-1-(braced?1:0))-Math.max(0,integer(targetSwitches));
   }
   root.GRPGCombatRulesV119=Object.freeze({version:'1.0.122',normalizeDamageExpression,requiresManualDamage,suggestedDamage,reduceDamage,attenuateEnergyDamage,resolveManualAttack,applyDamage,applyHeal,stabilizationDifficulty,stabilize,criticalTurn,grenadeScatter,burstPenalty});
+  if(typeof module!=='undefined')module.exports=root.GRPGCombatRulesV119;
 })(typeof window!=='undefined'?window:globalThis);

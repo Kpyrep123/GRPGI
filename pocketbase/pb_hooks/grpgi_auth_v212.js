@@ -224,6 +224,7 @@ function protectPlayer(e, creating) {
     profile = clean(profile);
     profile.id = id;
     var previousProfile = creating ? {id:id} : json(old, "playerJson");
+    if(previousProfile.raidLock290 && e.record.getString('updatedBy') !== 'raids-v290') throw new ForbiddenError('Профиль занят активной вылазкой');
     var previousInventory = Array.isArray(previousProfile.inventory) ? previousProfile.inventory : [];
     var incomingInventory = Array.isArray(profile.inventory) ? profile.inventory : [];
     var needsCopies = incomingInventory.some(function(row) {
@@ -261,6 +262,15 @@ function protectPlayer(e, creating) {
 // Retired sessions must not keep writing through older, publicly callable routes.
 function guard(e) {
   var method = String(e.request.method), path = String(e.request.url.path);
+  if (['POST','PUT','PATCH','DELETE'].indexOf(method)>=0 && path.indexOf('/api/grpgi/auth-v212/raids-v290')!==0 && path!=='/api/grpgi/character-applications/submit' && !/^\/api\/grpgi\/auth-v212\/(login|session|recovery\/)/.test(path) && e.request.header?.get('X-GRPGI-Session')) {
+    var raidActor=actor(e);
+    if(!raidActor.getBool('dm')) {
+      var raidRows=e.app.findRecordsByFilter('campaign_players','campaignId={:c} && playerId={:p}','',1,0,{c:raidActor.getString('campaignId'),p:raidActor.getString('playerId')});
+      if(raidRows[0] && json(raidRows[0],'playerJson').dead229 && path.indexOf('/api/collections/campaign_messages/')!==0 && path!=='/api/grpgi/character-applications/submit') throw new ForbiddenError('Персонаж погиб. Восстановить его может ДМ');
+      if(raidRows[0] && json(raidRows[0],'playerJson').raidLock290 && path.indexOf('/api/collections/campaign_messages/')!==0) throw new ForbiddenError('Во время вылазки профиль изменяется только её сервером');
+    }
+  }
+
   if (["POST","PUT","PATCH","DELETE"].indexOf(method) < 0) return e.next();
   // The game uses individual transactional routes, not PocketBase batch writes.
   if (path === "/api/batch" && !e.requestInfo().hasSuperuserAuth()) throw new ForbiddenError("Используйте игровые маршруты записи");

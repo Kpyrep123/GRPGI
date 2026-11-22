@@ -27,7 +27,7 @@ const html=fs.readFileSync(path.join(root,'renderer/index.html'),'utf8');
 w.document.write(html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi,''));
 // Every renderer script is evaluated unmodified, in index.html order, sharing
 // browser-style lexical globals. Only OS/cloud/bootstrap boundaries are mocked.
-for(const m of html.matchAll(/<script src="\.\/([^"?]+)[^"]*"/g))vm.runInContext(fs.readFileSync(path.join(root,'renderer',m[1]),'utf8').replace('// New module is DM-only;', 'window.test225={shotRange229,longRangeDisadvantage229,local,applyStore,collectStoreFromRuntime,luaUnitRows119,applyLuaCommands119,runInteractiveLuaHookV138,requestAttackRolls119,commitAttack105:id=>commitAttack105(id),performLuaStandardAttackV138,itemRuntimeStateV138,playerVisionSources112,droneActions225,droneShareVision225,deviceCommandReason200,checkpointCombat120,conditionEvents225,positionEvents204,refreshRuntimeSources122,centerOf,updatePlayerHp105,mergeCombatProfile225,importCombatProfiles225,runAutomaticHooks119,chooseReaction119,commitMove104:()=>commitMove104(),makeRoutePreview104,hexStepDistance109,activeSkillsForToken118,useActiveSkill118:id=>useActiveSkill118(id),fitTokenToHex107};\n// New module is DM-only;'),context,{filename:m[1]});
+for(const m of html.matchAll(/<script src="\.\/([^"?]+)[^"]*"/g))vm.runInContext(fs.readFileSync(path.join(root,'renderer',m[1]),'utf8').replace('// New module is DM-only;', 'window.test225={applyHit199,startOwnTurn199,endOwnTurn199,checkPenalty199,shotRange229,longRangeDisadvantage229,local,applyStore,collectStoreFromRuntime,luaUnitRows119,applyLuaCommands119,runInteractiveLuaHookV138,requestAttackRolls119,commitAttack105:id=>commitAttack105(id),performLuaStandardAttackV138,itemRuntimeStateV138,playerVisionSources112,droneActions225,droneShareVision225,deviceCommandReason200,checkpointCombat120,conditionEvents225,positionEvents204,refreshRuntimeSources122,centerOf,updatePlayerHp105,mergeCombatProfile225,importCombatProfiles225,runAutomaticHooks119,chooseReaction119,commitMove104:()=>commitMove104(),makeRoutePreview104,hexStepDistance109,activeSkillsForToken118,useActiveSkill118:id=>useActiveSkill118(id),fitTokenToHex107};\n// New module is DM-only;'),context,{filename:m[1]});
 const {Worker}=await import('node:worker_threads');
 w.electronAPI.runCombatLuaHook=payload=>new Promise((resolve,reject)=>{
  const worker=new Worker(path.join(root,'lua-sandbox-worker.cjs'));
@@ -368,5 +368,12 @@ try{
  assert.equal(pushedInventory,true,'wear is sent while the scene stays open');
  assert.equal(liveRemote.inventory.find(row=>row.itemId==='test_rifle').instancesV215[0].durability,1);
  assert.equal(api.local.store.profileDrafts225.profiles.p?.inventory?.find(row=>row.itemId==='test_rifle').instancesV215[0].durability??1,1);
+ // Retired morale cannot block damage, survive loading, or alter the turn ledger.
+ const legacy=token('b');legacy.hpCurrent=10;legacy.moraleV199=[{kind:'panic'}];legacy.instinctPendingV199=[{lost:2}];legacy.conditionsV138={panic:true,shaken:true};
+ await api.applyHit199(legacy,2,'migration regression',token('a'),{damageType:'gas'});
+ assert.equal(legacy.hpCurrent,8);assert(!legacy.moraleV199);assert(!legacy.instinctPendingV199);assert(!legacy.conditionsV138.panic);assert(!legacy.conditionsV138.shaken);assert(!w.document.querySelector('[name=instinctRoll199]'));
+ const turn=legacy.ownTurnV199||0;legacy.loseNextAction093=true;api.startOwnTurn199(legacy);assert.equal(legacy.ownTurnV199,turn+1);assert.equal(legacy.actionUsed,true);assert.equal(legacy.loseNextAction093,false);
+ legacy.aberrationRecoil255={until:legacy.ownTurnV199,amount:2};api.endOwnTurn199(legacy);assert.equal(legacy.aberrationRecoil255.amount,0);
+ console.log('PASS retired morale: renderer damage, cleanup, own turns and recoil expiry');
  console.log('PASS v225 real renderer: implant drone actions, party vision, Lua getters and events, deferred profiles, retry and fresh entry');
 }finally{await w.happyDOM.abort();fs.rmSync(scratch,{recursive:true,force:true});}

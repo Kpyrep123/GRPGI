@@ -4,6 +4,7 @@ const path = require('node:path');
 const root = path.join(__dirname, '..');
 const checks = [
   ['tools/sync-shared-client.cjs', '--check'],
+  ['tools/build-raid-core-v290.cjs', '--check'],
   ['tools/build-hub-rules-v221.cjs', '--check'],
   ['tests/hub-functions-v156.mjs'],
   ['tests/hub-free-v178.mjs'],
@@ -27,7 +28,13 @@ const checks = [
   ['tests/aberration-roll.cjs'],
   ['tests/core-damage-v288.cjs'],
   ['tests/aberration-loot.cjs'],
-  ['tests/aberration-rebalance.dom.mjs']
+  ['tests/aberration-rebalance.dom.mjs'],
+  ['tests/raids-v290.cjs'],
+  ['tests/raids-state-v291.cjs'],
+  ['tests/raids-effects-v292.cjs'],
+  ['tests/raids-tactics-v293.cjs'],
+  ['tests/raids-server-v290.cjs'],
+  ['tests/raids-ui-v290.dom.mjs']
 ];
 let failed = false;
 for (const check of checks) {

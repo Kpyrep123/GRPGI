@@ -72,7 +72,7 @@
     while(left>0&&index<groups.length){
       const options=[{row:null,weight:ways(index+1,left,budget)},...groups[index].map(row=>({row,weight:ways(index+1,left-1,budget+row.cost)}))];
       let ticket=random()*options.reduce((sum,option)=>sum+option.weight,0);
-      const choice=options.find(option=>(ticket-=option.weight)<0)||options.filter(option=>option.weight>0).at(-1);
+      const choice=options.find(option=>(ticket-=option.weight)<0)||options.filter(option=>option.weight>0).slice(-1)[0];
       if(choice.row){selected.push(choice.row.id);budget+=choice.row.cost;left--;}
       index++;
     }

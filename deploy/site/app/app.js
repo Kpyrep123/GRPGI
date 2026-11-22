@@ -5839,6 +5839,7 @@ function stockFeesV213(fees){if(!fees)return 'Тарифы загрузятся 
     const slots=player.equipmentSlots||{};
     ['primaryWeapon','secondaryWeapon','armor','backpack'].forEach(key=>equipped(slots[key],key,'equipment'));
     (player.implantSlots||player.installedImplantIds||[]).forEach((id,index)=>equipped(id,'implant:'+index,'implant'));
+    rows.push(...(window.GRPGCombatStateV291?.modifiers({timedModifiersV122:player.combatState093?.lua204?.modifiers})||[]));
     return rows.filter(mod=>modifierConditionWeb118(mod,player));
   }
   function applyModifierWeb118(base,target,mods,player,context={}){
@@ -6264,6 +6265,15 @@ function stockFeesV213(fees){if(!fees)return 'Тарифы загрузятся 
     }
   };
   window.GRPGHubBridgeV153 = {
+    raidRequest: async data => {
+      const player=currentPlayer(),campaign=App.config.campaignId;
+      return playerWritesV135.run(player?.id,async()=>{
+        if(currentPlayer()?.id!==player?.id||App.config.campaignId!==campaign)throw Error('Персонаж изменился');
+        const result=await pbFetch(App.config,'/api/grpgi/auth-v212/raids-v290',{method:'POST',json:data});
+        if(currentPlayer()?.id!==player?.id||App.config.campaignId!==campaign)throw Error('Персонаж изменился');
+        return result;
+      });
+    },
     playerById: id => App.data.players.get(id),
     hubRequest: async (route, data) => {
       const player = currentPlayer();
