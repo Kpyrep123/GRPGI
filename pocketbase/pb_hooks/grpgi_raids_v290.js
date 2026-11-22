@@ -43,7 +43,7 @@ function request(e){
     if(data.revision!==s.revision)throw new ApiError(409,'Состояние изменилось, обновите вылазку');
     if(type==='abort'){
       if(!actor.getBool('dm'))throw new ForbiddenError('Требуется ДМ');if(!s.units){s.lobby={leader:'',invited:[],ready:[]};s.revision++;put(app,campaign,s.week,s);response=publicState(app,campaign,s,player,now,true);return;}
-      s.phase='finished';s.success=false;s.survivors=s.units.filter(u=>u.playerId&&!u.dead229).map(u=>u.id);delete s.job;delete s.pending;s.events=[];delete s.flow;
+      s.phase='finished';s.success=false;s.survivors=s.units.filter(u=>u.playerId&&!u.dead229).map(u=>u.id);delete s.job;delete s.pending;s.events=[];delete s.flow;delete s.action292;delete s.move292;delete s.turnEnd292;
     }else if(s.phase==='lobby'){
       if(!window.open||s.week!==window.id)throw new BadRequestError('Окно новых попыток закрыто');
       entry(app,campaign,player,s.mission,data.entry||{});

@@ -18,3 +18,4 @@ aberration-instances.js
 hub-rules-v221.js
 combat-state-v291.js
 combat-lua-v204.js
+raid-effects-v292.js

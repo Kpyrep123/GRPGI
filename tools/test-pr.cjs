@@ -31,6 +31,7 @@ const checks = [
   ['tests/aberration-rebalance.dom.mjs'],
   ['tests/raids-v290.cjs'],
   ['tests/raids-state-v291.cjs'],
+  ['tests/raids-effects-v292.cjs'],
   ['tests/raids-server-v290.cjs'],
   ['tests/raids-ui-v290.dom.mjs']
 ];

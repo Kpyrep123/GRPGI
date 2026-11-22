@@ -4,6 +4,7 @@ const root=path.join(__dirname,'..'),dest=path.join(root,'pocketbase/pb_hooks'),
 function emit(name,value){const file=path.join(dest,name);if(check){if(!fs.existsSync(file)||fs.readFileSync(file,'utf8')!==value)throw Error('Regenerate raid rules: '+name);}else fs.writeFileSync(file,value);}
 for(const file of ['combat-state-v291.js','combat-lua-v204.js','combat-rules-v119.js','combat-trauma-v195.js','combat-movement-v198.js','combat-vision-v225.js','weapon-handling-v203.js','aberration-roll.js'])emit(file,fs.readFileSync(path.join(root,'renderer',file),'utf8'));
 emit('raid-core-v290.js',fs.readFileSync(path.join(root,'raid-service/raid-core.cjs'),'utf8').replace("?'../pocketbase/pb_hooks/'","?'./'"));
+emit('raid-effects-v292.js',fs.readFileSync(path.join(root,'raid-service/raid-effects-v292.cjs'),'utf8'));
 const source=fs.readFileSync(path.join(root,'renderer/scene-editor-v113.js'),'utf8');
 const part=(a,b)=>{const start=source.indexOf(a),end=source.indexOf(b,start);if(start<0||end<0)throw Error(a);return source.slice(start,end);};
 const body=part('  function itemIsPhysicalArmor119','  function damageType202')+part('  function incomingDefense119','  function ensureNpcGear287')+part('  function absorptionSourceV138','  function wearArmorFromBlast093');
