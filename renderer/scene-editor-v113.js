@@ -3093,12 +3093,13 @@
     const conditions=conditionStateV138(token);
     return {schema:1,ownTurn:Math.max(0,Math.trunc(num(token.ownTurnV199))),critical:clone(token.critical229||null),
       dying:conditions.dying,stabilized:conditions.stabilized,unconscious:conditions.unconscious,dead:token.dead229===true,
-      loseNextAction:token.loseNextAction093===true,control:clone(token.aberrationControl287||null),conditions:clone(conditions),lua204:window.GRPGCombatStateV291.captureLua(token)};
+      morale:clone(moraleEffects199(token)),loseNextAction:token.loseNextAction093===true,control:clone(token.aberrationControl287||null),conditions:clone(conditions),lua204:window.GRPGCombatStateV291.captureLua(token)};
   }
   function restoreCombatState093(token,state){
     if(state?.schema!==1)return;
     const recordedTurn=Math.max(0,Math.trunc(num(state.ownTurn)));
     token.ownTurnV199=Math.max(recordedTurn,Math.trunc(num(token.ownTurnV199)));
+    token.moraleV199=window.GRPGCombatInstinctV199.effects(state.morale).map(e=>({...e,expires:e.expires+token.ownTurnV199-recordedTurn}));
     token.critical229=clone(state.critical||null);
     if(token.critical229)token.critical229.fallTurn=num(token.critical229.fallTurn,recordedTurn)+token.ownTurnV199-recordedTurn;
     token.dead229=state.dead===true;

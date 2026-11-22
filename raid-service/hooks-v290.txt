@@ -19,3 +19,5 @@ hub-rules-v221.js
 combat-state-v291.js
 combat-lua-v204.js
 raid-effects-v292.js
+combat-instinct-v199.js
+combat-devices-v200.js
