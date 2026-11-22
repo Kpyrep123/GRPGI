@@ -32,18 +32,36 @@ function make(){const s=C.create(world,mission,[player('a'),player('b'),player('
  }
  const q=make();q.e.unit('b').x=5.5;q.e.unit('c').x=6.5;q.e.unit('a').moraleV199=[{kind:'shaken',sourceId:'b'}];const restored=C.engine(q.s,random,id);restored.command('a',{type:'move',x:2.5,y:1.5},1300);assert.equal(restored.unit('a').x,2.5);
 }
+// Continuing or ending a burst never buys another Action; the web snapshot exposes its slot.
+{
+ const {s,e}=make();e.unit('b').teamId='npcs';e.command('a',{type:'attack',target:'b',slot:'primaryWeapon'},1100);
+ assert(e.unit('a').actionUsed);assert.equal(C.view(s,'a',1100).units.find(u=>u.id==='a').burst.shot,2);
+ e.command('a',{type:'attack',target:'b',slot:'primaryWeapon'},1200);assert.equal(e.unit('a').burst.shot,3);
+ const hp=e.unit('b').hpCurrent;e.command('a',{type:'finishBurst'},1300);assert.equal(e.unit('a').burst,null);assert(e.unit('a').actionUsed);assert.equal(e.unit('b').hpCurrent,hp);
+ assert.throws(()=>e.command('a',{type:'attack',target:'b'},1400),/Действие/);assert.throws(()=>e.command('a',{type:'finishBurst'},1400),/очереди/);
+ e.unit('b').teamId=e.unit('a').teamId;e.command('a',{type:'move',x:1.5,y:2.5},1500);assert.equal(e.unit('a').y,2.5);
+}
 // Chest contents are server-owned, exact instance IDs survive transfer/reload; range is enforced.
 {
  const {s,e}=make();e.unit('a').x=1.5;e.unit('a').y=2.5;e.command('a',{type:'searchObject',objectId:'box'},1100);assert.equal(s.pending.kind,'loot');const copy=s.pending.options.find(o=>o.itemId==='sword');assert(copy);const instanceId=copy.copyId;assert.notEqual(instanceId,'unique');e.command('a',{type:'loot',pendingId:s.pending.id,values:[instanceId],quantities:{[instanceId]:1}},1200);assert(e.unit('a').profile.inventory.flatMap(r=>r.instancesV215||[]).some(c=>c.id===instanceId&&c.durability===3));e.unit('a').actionUsed=false;e.command('a',{type:'searchObject',objectId:'box'},1300);assert(!s.pending.options.some(o=>o.id===instanceId));e.command('a',{type:'loot',pendingId:s.pending.id,values:[]},1400);e.unit('a').actionUsed=false;e.unit('a').x=19;assert.throws(()=>e.command('a',{type:'searchObject',objectId:'box'},1500),/недоступен/);
 }
 // Device issuance follows the shared ledger. Operator ownership and link are checked each time.
 {
- const {s,e}=make(),a=e.unit('a'),copy=a.profile.inventory.find(r=>r.itemId==='drone').instancesV215[0];e.command('a',{type:'deployDevice',itemId:'drone',instanceId:copy.id,x:1.5,y:2.5},1100);let d=s.units.find(u=>u.operatorTokenIdV129==='a');assert(d);assert(!s.order.includes(d.id));assert.equal(a.profile.inventory.some(r=>r.itemId==='drone'),false);assert.throws(()=>e.command('a',{type:'attack',deviceId:d.id,target:'b'},1150),/команда/);a.actionUsed=false;e.command('a',{type:'commandDevice',target:d.id,kind:'simple'},1200);assert.equal(a.actionUsed,false);assert.throws(()=>e.command('a',{type:'attack',deviceId:d.id,target:'b'},1250),/Операция/);e.command('a',{type:'move',deviceId:d.id,x:1.5,y:3.5},1300);assert.equal(d.y,3.5);assert.throws(()=>e.command('a',{type:'commandDevice',target:d.id,kind:'complex'},1400),/разным/);e.command('a',{type:'move',deviceId:d.id,x:1.5,y:2.5},1500);e.command('a',{type:'returnDevice',deviceId:d.id},1600);assert(!s.units.some(u=>u.id===d.id));const returned=a.profile.inventory.find(r=>r.itemId==='drone').instancesV215[0];assert.equal(returned.id,copy.id);assert.equal(returned.droneState231.hpCurrent,6);
+ const {s,e}=make(),a=e.unit('a'),copy=a.profile.inventory.find(r=>r.itemId==='drone').instancesV215[0];e.command('a',{type:'deployDevice',itemId:'drone',instanceId:copy.id,x:1.5,y:2.5},1100);let d=s.units.find(u=>u.operatorTokenIdV129==='a');assert(d);assert.equal(C.view(s,'a',1100).units.find(u=>u.id===d.id).weapons[0].slot,'primaryWeapon');assert(!s.order.includes(d.id));assert.equal(a.profile.inventory.some(r=>r.itemId==='drone'),false);assert.throws(()=>e.command('a',{type:'attack',deviceId:d.id,target:'b'},1150),/команда/);a.actionUsed=false;e.command('a',{type:'commandDevice',target:d.id,kind:'simple'},1200);assert.equal(a.actionUsed,false);assert.throws(()=>e.command('a',{type:'attack',deviceId:d.id,target:'b'},1250),/Операция/);e.command('a',{type:'move',deviceId:d.id,x:1.5,y:3.5},1300);assert.equal(d.y,3.5);assert.throws(()=>e.command('a',{type:'commandDevice',target:d.id,kind:'complex'},1400),/разным/);e.command('a',{type:'move',deviceId:d.id,x:1.5,y:2.5},1500);e.command('a',{type:'returnDevice',deviceId:d.id},1600);assert(!s.units.some(u=>u.id===d.id));const returned=a.profile.inventory.find(r=>r.itemId==='drone').instancesV215[0];assert.equal(returned.id,copy.id);assert.equal(returned.droneState231.hpCurrent,6);
 }
 // Two complex commands cannot be bought twice for one device; no operation can follow lost link.
 {
  const {s,e}=make(),a=e.unit('a'),copy=a.profile.inventory.find(r=>r.itemId==='drone').instancesV215[0];e.command('a',{type:'deployDevice',itemId:'drone',instanceId:copy.id,x:1.5,y:2.5},1100);const d=s.units.find(u=>u.operatorTokenIdV129==='a');a.actionUsed=false;e.command('a',{type:'commandDevice',target:d.id,kind:'complex'},1200);assert(a.actionUsed);e.unit('b').teamId='npcs';e.command('a',{type:'attack',deviceId:d.id,target:'b',slot:'secondaryWeapon'},1300);assert(d.droneCommandV129.moduleUsed);assert.equal(d.droneCommandV129.completed,false);e.command('a',{type:'move',deviceId:d.id,x:1.5,y:3.5},1400);assert.throws(()=>e.command('a',{type:'attack',deviceId:d.id,target:'b'},1500),/Операция/);d.linkJammedV129=true;assert.throws(()=>e.command('a',{type:'move',deviceId:d.id,x:1.5,y:4.5},1600),/связи/);e.damage(d,99,'gas');assert.equal(d.conditionsV138.dying,undefined);assert.equal(d.traumaV195.injuryPoints,0);assert(!s.instinct293?.length);
  assert(!C.view(s,'a',1600).map.assets[0].lootStateV118.items,'contents stay private until an allowed search');
+}
+// Ending a device burst closes its operation, preserves its movement and operator costs.
+{
+ const {s,e}=make(),a=e.unit('a');s.world.equipment.EQUIPMENT.drone.rapidFireShots=3;
+ const copy=a.profile.inventory.find(r=>r.itemId==='drone').instancesV215[0];e.command('a',{type:'deployDevice',itemId:'drone',instanceId:copy.id,x:1.5,y:2.5},1100);
+ const d=s.units.find(u=>u.operatorTokenIdV129==='a');a.actionUsed=false;e.command('a',{type:'commandDevice',target:d.id,kind:'complex'},1200);
+ e.unit('b').teamId='npcs';e.command('a',{type:'attack',deviceId:d.id,target:'b'},1300);assert(d.burst);assert.equal(d.droneCommandV129.moduleUsed,false);
+ e.command('a',{type:'finishBurst',deviceId:d.id},1400);assert.equal(d.burst,null);assert(d.droneCommandV129.moduleUsed);assert(a.actionUsed);
+ assert.throws(()=>e.command('a',{type:'attack',deviceId:d.id,target:'b'},1500),/Операция/);e.command('a',{type:'move',deviceId:d.id,x:1.5,y:3.5},1600);assert.equal(d.y,3.5);
 }
 // Preplaced device operator IDs are remapped to this attempt, without independent initiative.
 {
