@@ -329,6 +329,22 @@ assert.equal(run(`
    return recipient.inventory[1].instancesV215[0].id===mod.id && !weapon.attachments.some(row=>row.copy.id!==mod.id);
  })()
 `),true);
+const scopedWrites300=[];
+w.electronAPI.saveWorldSections=async sections=>{
+ scopedWrites300.push(Object.keys(sections));
+ const world=fs.existsSync(path.join(scratch,'world.json'))?JSON.parse(fs.readFileSync(path.join(scratch,'world.json'),'utf8')):{};
+ Object.assign(world,sections);fs.writeFileSync(path.join(scratch,'world.json'),JSON.stringify(world));
+ return {ok:true,world:JSON.parse(JSON.stringify(sections))};
+};
+const diskBeforeScoped300=JSON.parse(fs.readFileSync(path.join(scratch,'world.json'),'utf8'));
+w.electronAPI.saveWorldData=async()=>{throw Error('Scoped save used full-world persistence');};
+run("Configurator.selectedType='equipment'; EQUIPMENT.attachment_test_gun.name='Scoped edit';");
+const scopedResult300=await run("Configurator.persistAll('Scoped save')");
+assert.equal(scopedResult300.ok,true);
+assert.deepEqual(scopedWrites300,[['equipment','planets']]);
+const diskAfterScoped300=JSON.parse(fs.readFileSync(path.join(scratch,'world.json'),'utf8'));
+assert.equal(diskAfterScoped300.equipment.EQUIPMENT.attachment_test_gun.name,'Scoped edit');
+for(const section of Object.keys(diskBeforeScoped300).filter(name=>!['equipment','planets'].includes(name)))assert.deepEqual(diskAfterScoped300[section],diskBeforeScoped300[section]);
 assert.equal(w.notices.some(n=>n.type==='err'),false,JSON.stringify(w.notices));
 assert.deepEqual(errors,[]);
 await w.happyDOM.abort();fs.rmSync(scratch,{recursive:true,force:true});

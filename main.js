@@ -1535,7 +1535,24 @@ async function writeWorldSection(sectionName, payload) {
   await backupWorldSectionFile(sectionName, file);
   await writeJsonAtomic(file, payload);
   if(sectionName==='equipment')await writeTradeJsonFilesV175(dataDir,payload);
-  return { file, dataDir };
+  return { file, dataDir, payload };
+}
+
+// Stage 1: persist only explicitly supplied sections, without reading the whole world.
+async function writeWorldSectionsV300(sections = {}) {
+  const names = Object.keys(sections);
+  if (!names.length || names.some(name => !WORLD_FILE_NAMES.includes(name) || !sections[name] || typeof sections[name] !== 'object' || Array.isArray(sections[name]))) {
+    throw new Error('Некорректный набор разделов мира');
+  }
+  const started = Date.now();
+  const world = {};
+  for (const name of names) {
+    const payload = stripPlayerCredentialsV212(sections[name]);
+    const written = await writeWorldSection(name, payload);
+    world[name] = written.payload;
+  }
+  debugLog('WORLD_SAVE_SECTIONS_DONE', { sections: names, elapsedMs: Date.now() - started });
+  return { world };
 }
 
 async function writeWorldData(worldPayload = {}) {
@@ -3185,6 +3202,16 @@ ipcMain.handle('world:saveSection', async (_event, sectionName, payload) => {
   }
 });
 
+ipcMain.handle('world:saveSections', async (_event, sections) => {
+  try {
+    const result = await writeWorldSectionsV300(sections);
+    notifyPlayerDisplayDataChanged('world');
+    return { ok: true, ...result };
+  } catch (error) {
+    return { ok: false, message: error.message };
+  }
+});
+
 ipcMain.handle('world:saveAll', async (_event, payload) => {
   try {
     debugLog('WORLD_SAVE_ALL_START', {
@@ -3612,7 +3639,9 @@ ipcMain.handle('sync:push', async (_event, payload) => {
     if (!config.enabled) return { ok: true, enabled: false, status: 'disabled', message: 'Синхронизация выключена', config };
     const manual = payload?.manual === true;
     const gmWrite = payload?.gmWrite === true || manual;
+    const fetchStarted = Date.now();
     const currentRemote = await fetchRemoteSnapshot(config, { includePayload: true });
+    debugLog('SYNC_REMOTE_FETCH_TIMING', { elapsedMs: Date.now() - fetchStarted });
     if (!currentRemote.exists) {
       invalidateSyncBaselineGuards('remote-snapshot-missing');
       return {
@@ -3699,10 +3728,15 @@ ipcMain.handle('sync:push', async (_event, payload) => {
       });
     }
     const snapshot = payload?.snapshot && typeof payload.snapshot === 'object' ? payload.snapshot : {};
-    const normalizedSnapshot = await normalizeSnapshotImagesForCloud(config, snapshot);
     const worldSections = gmWrite
       ? (manual && !Array.isArray(payload?.worldSections) ? [...WORLD_FILE_NAMES] : requestedWorldSectionsV140(payload))
       : [];
+    const normalizeStarted = Date.now();
+    // Unchanged catalogues already have authoritative cloud URLs. Do not walk them.
+    const scopedWorld = Object.fromEntries(worldSections.filter(name => Object.hasOwn(snapshot.world || {}, name)).map(name => [name, snapshot.world[name]]));
+    const normalizedSnapshot = await normalizeSnapshotImagesForCloud(config, { ...snapshot, world: scopedWorld });
+    const worldPatch = normalizedSnapshot.world;
+    debugLog('SYNC_NORMALIZE_SCOPED', { sections: worldSections, elapsedMs: Date.now() - normalizeStarted });
     const protectedWorld = await protectRemoteWorldV140(
       currentRemote.remote?.world || {},
       normalizedSnapshot.world || {},
@@ -3734,6 +3768,7 @@ ipcMain.handle('sync:push', async (_event, payload) => {
       createdAt: new Date().toISOString()
     };
     debugLog('SYNC_IMAGE_NORMALIZE_DONE', { campaignId: config.campaignId, heapMb: Math.round(process.memoryUsage().heapUsed / 1024 / 1024) });
+    const pushStarted = Date.now();
     const result = await pushRemoteSnapshot(config, {
       world: normalizedSnapshot.world || {},
       state: normalizedSnapshot.state || {},
@@ -3741,10 +3776,16 @@ ipcMain.handle('sync:push', async (_event, payload) => {
       updatedBy: payload?.updatedBy || config.deviceLabel || 'unknown-device',
       clientUpdatedAt: payload?.clientUpdatedAt || new Date().toISOString()
     });
+    debugLog('SYNC_REMOTE_PUSH_TIMING', { elapsedMs: Date.now() - pushStarted, ok: result?.ok });
     if (result?.ok && result?.remote) baseline.guard.revision = Number(result.remote.revision || baseline.guard.revision || 0);
     let worldPersisted = false;
-    if (result?.ok && normalizedSnapshot.world) {
+    if (result?.ok && revisionChanged) {
+      // Reauthorization merged newer remote sections: keep the local baseline in sync.
       await writeWorldData(normalizedSnapshot.world);
+      notifyPlayerDisplayDataChanged('world');
+      worldPersisted = true;
+    } else if (result?.ok && Object.keys(worldPatch).length) {
+      await writeWorldSectionsV300(worldPatch);
       notifyPlayerDisplayDataChanged('world');
       worldPersisted = true;
     }
@@ -3763,6 +3804,7 @@ ipcMain.handle('sync:push', async (_event, payload) => {
       connected: true,
       config,
       worldPersisted,
+      worldPatch: result?.ok ? (revisionChanged ? normalizedSnapshot.world : worldPatch) : null,
       normalizedUsers: normalizedSnapshot?.state?.users || null,
       baselineToken: baseline.token || String(payload?.baselineToken || ''),
       gmReauthorized,

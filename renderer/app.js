@@ -1277,7 +1277,9 @@ const Sync = {
     const syncMeta = App.state?.meta?.sync || defaultSyncMeta();
     const baseRevision = Number(syncMeta.remoteRevision || 0);
     const payload = {
-      snapshot: this.buildSnapshot(),
+      snapshot: options.preparedWorld
+        ? { world: options.preparedWorld, state: buildSharedStateSnapshot(App.state) }
+        : this.buildSnapshot(),
       baseRevision,
       baselineToken: this.baselineToken,
       updatedBy: this.config.deviceLabel || App.currentUser?.displayName || 'unknown-device',
@@ -1322,7 +1324,10 @@ const Sync = {
       return res;
     }
 
-    if (res?.worldPersisted) await App.loadWorldData();
+    if (res?.worldPatch && Object.keys(res.worldPatch).length) {
+      worldData = { ...worldData, ...res.worldPatch };
+      applyWorldData(worldData);
+    } else if (res?.worldPersisted) await App.loadWorldData();
     else if (res?.snapshot?.world && window.electronAPI?.saveWorldData) {
       // Backward compatibility with an older main process.
       const worldSave = await window.electronAPI.saveWorldData(res.snapshot.world);
@@ -6064,7 +6069,9 @@ const Configurator = {
       return {ok:false,localSaved:false,message:'Запись мира недоступна'};
     }
 
+    const buildStarted = performance.now();
     const snapshot = buildWorldSnapshot();
+    Debug.log('CONFIG_SNAPSHOT_BUILD_TIMING', { elapsedMs: Math.round(performance.now() - buildStarted) });
     Debug.log('PERSIST_ALL_SNAPSHOT', {
       selectedType: this.selectedType,
       selectedId: this.selectedId,
@@ -6078,7 +6085,13 @@ const Configurator = {
         fauna: Object.keys(snapshot.fauna?.FAUNA || {}).length
       }
     });
-    const res = await window.electronAPI.saveWorldData(snapshot);
+    const scopedSave = this.selectedType !== 'players' && Boolean(window.electronAPI.saveWorldSections);
+    const changedWorld = Object.fromEntries(worldSections.filter(name => Object.hasOwn(snapshot, name)).map(name => [name, snapshot[name]]));
+    const localStarted = performance.now();
+    const res = scopedSave
+      ? await window.electronAPI.saveWorldSections(changedWorld)
+      : await window.electronAPI.saveWorldData(snapshot);
+    Debug.log('CONFIG_LOCAL_SAVE_TIMING', { sections: worldSections, scopedSave, elapsedMs: Math.round(performance.now() - localStarted) });
     Debug.log('PERSIST_ALL_RESULT', res);
     if (!res?.ok || !res.world) {
       Toast.show(`Ошибка записи мира: ${res?.message || 'unknown'}`, 'err');
@@ -6086,8 +6099,8 @@ const Configurator = {
     }
 
     try {
-    worldData = res.world;
-    applyWorldData(res.world);
+    worldData = scopedSave ? { ...snapshot, ...res.world } : res.world;
+    applyWorldData(worldData);
     let snapshotSyncRes = null;
     let playerSyncRes = null;
 
@@ -6113,7 +6126,7 @@ const Configurator = {
     } else {
       Sync.markLocalDirty('WORLD_CONFIG_PENDING_SYNC');
       await Persistence.save(App.state);
-      snapshotSyncRes = await Sync.pushCurrentSnapshot('world-config-save', { silent: true, worldSections });
+      snapshotSyncRes = await Sync.pushCurrentSnapshot('world-config-save', { silent: true, worldSections, preparedWorld: scopedSave ? res.world : snapshot });
       App.state = await Persistence.load();
     }
 
