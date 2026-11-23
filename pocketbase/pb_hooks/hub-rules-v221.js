@@ -67,7 +67,7 @@
   }
   function destination(dialog,choice) {
     if(choice?.target==='start')return dialog.startNodeId;
-    if(choice?.target==='end')return '';
+    if(['end','raid'].includes(choice?.target))return '';
     return choice?.nextNodeId||'';
   }
   function reason(rule, player, state, context = {}) {
@@ -99,7 +99,7 @@
   function choiceReason(d,n,c,p,s,o) {
     const why = reason(c,p,s,{object:o}) || (c.once && s.completedChoices[key(d.id,n.id,c.id)] ? 'Действие уже выполнено' : '');
     if (why) return why;
-    if(c.target==='unset'||(c.target==='node'&&!c.nextNodeId)||(c.target&&!['node','start','end'].includes(c.target)))return 'This reply has no destination';
+    if(c.target==='unset'||(c.target==='node'&&!c.nextNodeId)||(c.target&&!['node','start','end','raid'].includes(c.target)))return 'This reply has no destination';
     const nextId=destination(d,c);
     if (nextId) {
       const next = d.nodes.find(x => x.id === nextId);
@@ -139,9 +139,9 @@
     state.completedNodes[key(d.id,n.id)] = true;
     if (c) state.completedChoices[key(d.id,n.id,c.id)] = true;
     const nextId=destination(d,c);
-    if (!nextId) {finishDialog(d,o,state);delete state.dialogCursors[cursorKey];}
+    if (!nextId) {if(c?.target!=='raid')finishDialog(d,o,state);if(c?.target!=='raid')delete state.dialogCursors[cursorKey];}
     else state.dialogCursors[cursorKey]=nextId;
-    return {nextNodeId:nextId, articleId:c?.articleId || n.articleId || ''};
+    return {nextNodeId:nextId,raid:c?.target==='raid', articleId:c?.articleId || n.articleId || ''};
   }
   function use(hub,o,p,s) {
     const why=access(o,p,s); if (why) throw new Error(why);
@@ -242,7 +242,7 @@
       if(n.terminal===false&&!n.choices?.length)error('Add replies or mark an ending: '+(n.name||n.id),n.id);
       const replies=new Set();for(const c of n.choices||[]){if(!c.id||replies.has(c.id))error('Duplicate or missing reply ID',n.id);replies.add(c.id);
         if(c.target==='unset')error('Reply has no destination: '+(c.text||c.id),n.id);
-        if(c.target&&!['node','start','end','unset'].includes(c.target))error('Unknown reply destination',n.id);
+        if(c.target&&!['node','start','end','raid','unset'].includes(c.target))error('Unknown reply destination',n.id);
         if(destination(d,c)&&!d.nodes.some(x=>x.id===destination(d,c)))error('Reply targets a missing node',n.id);
         if(c.target==='node'&&!c.nextNodeId)error('Choose a destination for the reply',n.id);
         if(n.once&&destination(d,c)===n.id)issues.push({level:'warning',message:'A one-time node cannot return to itself: '+(n.name||n.id),nodeId:n.id});

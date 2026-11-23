@@ -47,4 +47,16 @@ const firstJob=api.claim(event('worker',{},true)).jobs[0];assert(firstJob);asser
 api.result(event('worker',{...firstJob,payload:undefined,result:{ok:true,result:{eligible:true,commands:[{kind:'request_number',rollType:'check',name:'roll',min:1,max:20}]}}},true));const nextJob=api.claim(event('worker',{},true)).jobs[0];assert.equal(nextJob.id,firstJob.id);assert.notEqual(nextJob.lease,firstJob.lease);assert.equal(nextJob.payload.input.params.inputs.roll,11);
 const damage={ok:true,result:{eligible:true,commands:[{kind:'damage',targetId:'a',amount:1,absorptionSource:'none'}]}};api.result(event('worker',{...firstJob,result:damage},true));assert.equal(rows.get('a').get('playerJson').stats.hpCurrent,8,'stale worker result is ignored');
 rejectSave=true;assert.throws(()=>api.result(event('worker',{...nextJob,result:damage},true)),/Disk/);assert.equal(rows.get('a').get('playerJson').stats.hpCurrent,8,'a failed transaction cannot apply partial Lua damage');rejectSave=false;api.result(event('worker',{...nextJob,result:damage},true));assert.equal(rows.get('a').get('playerJson').stats.hpCurrent,7);api.result(event('worker',{...nextJob,result:damage},true));assert.equal(rows.get('a').get('playerJson').stats.hpCurrent,7);
+// The DM's saved campaign mode controls admission; client intent cannot override it.
+now=Date.parse('2026-12-14T09:00:00Z');const config=world.campaigns.RAIDS_V290.main;
+assert.equal(call('c',{windowMode:'open'}).phase,'closed');
+config.windowMode='open';config.enabled=false;assert.equal(call('c').phase,'disabled');config.enabled=true;
+state=call('c');assert.equal(state.phase,'lobby');assert.equal(state.window.mode,'open');const manualWeek=state.week;
+state=send('c','party');state=send('c','ready');
+config.windowMode='closed';assert.equal(call('c').phase,'closed');
+assert.throws(()=>call('c',{type:'start',week:manualWeek,revision:state.revision,operationId:'manual-closed-start',entry}),/Окно/);
+config.windowMode='schedule';assert.equal(call('c').phase,'closed');config.windowMode='open';api.claim(event('worker',{},true));state=call('c');state=send('c','start');assert.equal(state.phase,'running');
+config.windowMode='closed';assert.equal(call('c').phase,'running','closing admission does not interrupt a running raid');state=send('c','end');assert.equal(state.phase,'running');
+state=send('gm','abort');assert.equal(state.phase,'finished');config.windowMode='open';assert.equal(call('c').phase,'finished','reopening never resets a used weekly attempt');assert.equal(call('c').week,manualWeek);
+config.windowMode='closed';now=Date.parse('2026-12-18T17:00:00Z');assert.equal(call('c').phase,'closed','manual closure also wins during the normal window');config.windowMode='schedule';assert.equal(call('c').phase,'lobby');
 db.close();console.log('PASS raid endpoint SQLite: NPC admission, campaign-exclusive start, invitations, readiness, CAS/receipts, rollback, real profile rewards, window closing and worker auth');

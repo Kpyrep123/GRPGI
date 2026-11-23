@@ -67,4 +67,12 @@ function make(){const s=C.create(world,mission,[player('a'),player('b'),player('
 {
  const w=structuredClone(world);w.npcs={NPCS:{n:{id:'n',name:'Operator',abilityBase:{intelligence:3,endurance:2},stats:{hpMax:8},inventory:[]}}};const m=structuredClone(mission);m.maps[0].tokens=[{id:'operator-template',npcId:'n',x:10,y:10},{id:'device-template',equipmentType:'drone',equipmentItemId:'drone',operatorTokenIdV129:'operator-template',x:11,y:10}];const s=C.create(w,m,[player('a')],1000,random,id),device=s.units.find(u=>u.equipmentType==='drone'),operator=s.units.find(u=>u.npcId==='n');assert.equal(device.operatorTokenIdV129,operator.id);assert.equal(device.teamId,'npcs');assert(!s.order.includes(device.id));
 }
+// Forged reward rows sharing a catalog item remain independently selectable and get fresh IDs.
+{
+ const {s,e}=make();s.mission.reward.items=[{itemId:'sword',qty:1},{itemId:'sword',qty:2,name:'Forged Sword',copy:{id:'template',durability:3,durabilityMax:20,attachments:[],aberration252:{forged:true,rarity:'rare',budget:5,effects:[]}}}];
+ e.command('a',{type:'evacuate'},1100);for(let n=0;n<12&&s.phase==='running';n++)e.command(e.current().id,{type:'end'},1200+n);assert.equal(s.phase,'rewards');assert(s.rewardItems[1].id);const rewardId=s.rewardItems[1].id;
+ const before=s.units.flatMap(u=>u.profile.inventory.flatMap(r=>r.instancesV215||[])).map(c=>c.id);e.command(s.rewardOrder[s.rewardTurn],{type:'claimReward',rewardId,itemId:'sword'},1400);
+ const claimed=s.units.flatMap(u=>u.profile.inventory.flatMap(r=>r.instancesV215||[])).filter(c=>!before.includes(c.id));assert.equal(claimed.length,1);assert.equal(claimed[0].durability,3);assert(claimed[0].aberration252.forged);assert.notEqual(claimed[0].id,'template');assert.equal(s.rewardItems[0].qty,1);assert.equal(s.rewardItems[1].qty,1);
+ const saved=JSON.parse(JSON.stringify(s)),restored=C.engine(saved,random,id);restored.command(saved.rewardOrder[saved.rewardTurn],{type:'claimReward',rewardId},1500);assert.equal(saved.rewardItems[1].qty,0);const copies=saved.units.flatMap(u=>u.profile.inventory.flatMap(r=>r.instancesV215||[])).filter(c=>c.aberration252?.forged);assert.equal(copies.length,2);assert.notEqual(copies[0].id,copies[1].id);
+}
 console.log('PASS raid tactics: typed help, opportunity/restart/timeout, disengage, retired morale migration, chest instance transfer, operator device ledger/link/recovery');

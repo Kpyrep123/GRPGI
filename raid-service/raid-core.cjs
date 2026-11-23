@@ -21,11 +21,12 @@ const arr=x=>Array.isArray(x)?x:[];
 const num=(x,f=0)=>Number.isFinite(Number(x))?Number(x):f;
 const fail=message=>{throw Error(message);};
 const distance=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
-function week(now){
+function week(now,config={}){
   const local=new Date(now+10800000),day=(local.getUTCDay()+2)%7;
   let start=Date.UTC(local.getUTCFullYear(),local.getUTCMonth(),local.getUTCDate()-day,20)-10800000;
   if(now<start)start-=604800000;
-  return {id:new Date(start+10800000).toISOString().slice(0,10),start,end:start+216000000,open:now>=start&&now<start+216000000};
+  const mode=['open','closed'].includes(config.windowMode)?config.windowMode:'schedule',scheduled=now>=start&&now<start+216000000;
+  return {id:new Date(start+10800000).toISOString().slice(0,10),start,end:start+216000000,mode,open:mode==='open'||mode==='schedule'&&scheduled};
 }
 function inside(zone,p){return zone?.points?.length>=3&&contains(zone.points,p);}
 function contains(points,p){let yes=false;for(let i=0,j=points.length-1;i<points.length;j=i++){const a=points[j],b=points[i];if((a.y>p.y)!==(b.y>p.y)&&p.x<(b.x-a.x)*(p.y-a.y)/(b.y-a.y)+a.x)yes=!yes;}return yes;}
@@ -65,7 +66,7 @@ function validate(mission,world){
   if(!start||!arr(start.templates).some(z=>z.raidZone290==='spawn'))fail('Нужна зона высадки');
   if(!mission.maps.some(m=>arr(m.templates).some(z=>z.raidZone290==='evacuation')))fail('Нужна зона эвакуации');
   if(!Number.isSafeInteger(mission.reward?.credits)||mission.reward.credits<0||!Number.isSafeInteger(mission.reward?.skillPoints)||mission.reward.skillPoints<0)fail('Награды должны быть целыми и неотрицательными');
-  for(const row of arr(mission.reward.items))if(!world.equipment?.EQUIPMENT?.[row.itemId]||!Number.isSafeInteger(row.qty)||row.qty<1)fail('Неверная предметная награда');
+  for(const row of arr(mission.reward.items)){const def=world.equipment?.EQUIPMENT?.[row.itemId];if(!def||!Number.isSafeInteger(row.qty)||row.qty<1||row.copy&&(!I.tracked(def)||!row.copy.id||!Array.isArray(row.copy.attachments||[])))fail('Неверная предметная награда');}
   if(!arr(mission.goals).length||mission.goals.some(g=>!['eliminate','interact','reach','deliver','hold'].includes(g.type)))fail('Настройте цели из списка');
   if(new Set(mission.goals.map(g=>g.id)).size!==mission.goals.length||mission.goals.some(g=>!g.id||['__proto__','constructor','prototype'].includes(g.id)))fail('Нужны уникальные ID целей');
   for(const g of mission.goals){const m=mission.maps.find(m=>m.id===g.mapId);if(g.mapId&&!m)fail('Не найдена карта цели');if(g.type!=='eliminate'&&(!m||!arr(m.templates).some(z=>z.id===g.zoneId&&z.points?.length>=3)))fail('Нужна зона цели');if(g.type==='deliver'&&(!world.equipment?.EQUIPMENT?.[g.itemId]||!Number.isSafeInteger(g.qty)||g.qty<1))fail('Проверьте доставляемый предмет');if(g.type==='hold'&&(!Number.isSafeInteger(g.rounds)||g.rounds<1))fail('Проверьте раунды удержания');}
@@ -299,7 +300,7 @@ function engine(s,random=Math.random,id=()=>String(Date.now())+':'+random()){
     for(const u of s.units.filter(u=>u.playerId)){if(!s.survivors.includes(u.id)){u.dead229=true;u.hpCurrent=0;u.conditionsV138={...u.conditionsV138,dying:false,unconscious:true};}release(u);}
     const winners=s.success?s.survivors:[];const credits=Math.max(0,num(s.mission.reward.credits)),base=winners.length?credits/winners.length:0;
     for(const [index,key] of [...winners].sort().entries()){const p=unit(key).profile;p.credits=num(p.credits)+base;p.skillPoints=num(p.skillPoints)+num(s.mission.reward.skillPoints);}
-    s.rewardItems=s.success?clone(s.mission.reward.items||[]):[];s.phase=s.rewardItems.length&&winners.length?'rewards':'finished';s.rewardsEligible=winners;s.rewardOrder=[...winners].sort();s.rewardTurn=0;s.deadline=now+60000;delete s.pending;delete s.job;delete s.flow;s.events=[];delete s.action292;delete s.move292;delete s.turnEnd292;log(s.success?'Задание выполнено; эвакуация завершена':'Эвакуация без награды за задание');
+    s.rewardItems=s.success?clone(s.mission.reward.items||[]).map(r=>({...r,id:id()})):[];s.phase=s.rewardItems.length&&winners.length?'rewards':'finished';s.rewardsEligible=winners;s.rewardOrder=[...winners].sort();s.rewardTurn=0;s.deadline=now+60000;delete s.pending;delete s.job;delete s.flow;s.events=[];delete s.action292;delete s.move292;delete s.turnEnd292;log(s.success?'Задание выполнено; эвакуация завершена':'Эвакуация без награды за задание');
   }
   function move(u,to){const route=path(s,u,to);const cost=route.slice(1).reduce((sum,p,i)=>sum+distance(p,route[i]),0);if(cost>Math.max(0,u.budget-u.movedThisTurn)+1e-6)fail('Недостаточно перемещения');s.move292={actor:u.id,route,index:1,cancelled:false};event('OnMoveStart',undefined,{attacker:u.id,unit:u.id,movementKind204:'normal',oldPosition204:{x:u.x,y:u.y},newPosition204:to});}
   function positionEvents(u,before,kind='normal'){const after={x:u.x,y:u.y};areas.position(u,before,after);event('OnPositionChanged',undefined,{unit:u.id,attacker:u.id,target:u.id,movementKind204:kind,oldPosition204:before,newPosition204:after});}
@@ -318,7 +319,7 @@ function engine(s,random=Math.random,id=()=>String(Date.now())+':'+random()){
       if(!s.rewardsEligible.includes(actor)||s.rewardOrder[s.rewardTurn]!==actor||s.rewardsDone?.includes(actor))fail('Сейчас очередь другого участника');
       if(c.type==='leaveRewards'){s.rewardsDone ||= [];s.rewardsDone.push(actor);if(s.rewardsEligible.every(key=>s.rewardsDone.includes(key)))s.phase='finished';else advanceRewards(now);return;}
       if(c.type==='passReward'){advanceRewards(now);return;}
-      if(c.type!=='claimReward')fail('Выберите предмет награды');const row=s.rewardItems.find(r=>r.itemId===c.itemId&&r.qty>0);if(!row)fail('Предмет уже забрали');const u=unit(actor),check=stats.canAdd(u.profile,row.itemId,1);if(!check.ok)fail(check.reason);const i=item(row.itemId);if(I.tracked(i))Copies.append(u.profile,i,[Copies.create(i,null,id)]);else{let r=u.profile.inventory.find(r=>r.itemId===i.id);if(!r)u.profile.inventory.push(r={itemId:i.id,qty:0});r.qty++;}row.qty--;if(!s.rewardItems.some(r=>r.qty>0))s.phase='finished';else advanceRewards(now);return;
+      if(c.type!=='claimReward')fail('Выберите предмет награды');const row=s.rewardItems.find(r=>(c.rewardId?r.id===c.rewardId:r.itemId===c.itemId)&&r.qty>0);if(!row)fail('Предмет уже забрали');const u=unit(actor),check=stats.canAdd(u.profile,row.itemId,1,row.copy?[row.copy.aberration252]:undefined);if(!check.ok)fail(check.reason);const i=item(row.itemId);if(I.tracked(i)){const copy=row.copy?clone(row.copy):Copies.create(i,null,id);if(row.copy){const rekey=c=>{c.id=id();delete c.slot;for(const attachment of arr(c.attachments))if(attachment.copy)rekey(attachment.copy);};rekey(copy);}Copies.append(u.profile,i,[copy]);}else{let r=u.profile.inventory.find(r=>r.itemId===i.id);if(!r)u.profile.inventory.push(r={itemId:i.id,qty:0});r.qty++;}row.qty--;if(!s.rewardItems.some(r=>r.qty>0))s.phase='finished';else advanceRewards(now);return;
     }
     if(s.phase!=='running')fail('Вылазка завершена');
     if(s.pending){const p=s.pending;if(c.type!==(p.kind==='abilityPoint292'?'point':p.kind))fail('Ожидается другой тип ответа');if(p.actor!==actor||c.pendingId!==p.id)fail('Сейчас требуется выбор другого участника');if(now>p.until+1500)fail('Время выбора истекло');if(p.kind==='abilityPoint292'){const point={x:Number(c.x),y:Number(c.y)},owner=unit(p.command.deviceId||actor);if(!Number.isFinite(point.x)||!Number.isFinite(point.y)||point.x<0||point.y<0||point.x>map().width||point.y>map().height||distance(owner,point)>p.radius)fail('Точка за пределами области выбора');delete s.pending;performCommand(actor,{...p.command,...point},now,p.internal);drain(now);return;}if(p.kind==='opportunity'){if(c.sourceId){if(!p.options.some(o=>o.id===c.sourceId))fail('Недоступное оружие');opportunity(unit(actor),unit(p.target),c.sourceId,now);}}else if(p.kind==='reaction'){const source=p.entry.options.find(x=>x.id===c.sourceId);if(source){makeJob({...p.entry,source,isReaction:true},now);}}else if(p.kind==='push'&&c.accept)push(unit(actor),unit(p.target),p.distance);else if(p.kind==='loot'){

@@ -762,8 +762,10 @@ function normalizeSkillsSectionForSync(section = {}) {
 
 function normalizeCampaignsSectionForSync(section = {}) {
   const campaigns = normalizeMapListSectionForSync(section, 'CAMPAIGNS', 'CAMPAIGN_LIST', ['id', 'name', 'title']);
-  const settings = section?.ABERRATION_SETTINGS;
-  if (settings && typeof settings === 'object' && !Array.isArray(settings)) campaigns.ABERRATION_SETTINGS = settings;
+  for (const key of ['ABERRATION_SETTINGS','ABERRATION_FORGE','RAIDS_V290']) {
+    const value=section?.[key];
+    if(value&&typeof value==='object'&&!Array.isArray(value))campaigns[key]=value;
+  }
   return campaigns;
 }
 
@@ -914,6 +916,7 @@ async function normalizeSnapshotImagesForCloud(config = {}, snapshot = {}) {
     }
   }
 
+  await require('./raid-publish-media-v297.cjs')(config,clone,uploadImageSourceToBackend);
   return clone;
 }
 

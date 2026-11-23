@@ -8,6 +8,7 @@ const mission={id:'mission',name:'Mission',entry:{planetId:'planet',objectId:'np
 const player=(id,more={})=>({id,displayName:id,role:'player',abilityBase:{endurance:2,will:3,strength:2,dexterity:3},stats:{hpCurrent:8,hpMax:8},inventory:[{itemId:'gun',qty:1}],equipmentSlots:{primaryWeapon:'gun'},baseStats:{movement:7,carryBase:20},credits:0,skillPoints:0,...more});
 const fixture=(players=[player('a')],m=mission)=>{const s=C.create(world,structuredClone(m),players,1000,random,id);s.id='campaign|2026-11-20';s.week='2026-11-20';return s;};
 const friday=Date.parse('2026-11-20T17:00:00Z');assert.equal(C.week(friday).open,true);assert.equal(C.week(friday).id,'2026-11-20');assert.equal(C.week(friday-1).open,false);assert.equal(C.week(Date.parse('2026-11-23T04:59:59Z')).open,true);assert.equal(C.week(Date.parse('2026-11-23T05:00:00Z')).open,false);
+assert.equal(C.week(friday,{windowMode:'closed'}).open,false);assert.equal(C.week(friday-1,{windowMode:'open'}).open,true);assert.equal(C.week(friday-1,{windowMode:'open'}).id,C.week(friday-1).id);assert.equal(C.week(friday-1,{windowMode:'invalid'}).open,false);
 {
  const original=player('a'),s=fixture([original,player('b')]),e=C.engine(s,random,id),a=e.unit('a'),b=e.unit('b');assert.equal(e.current().id,'a');assert.equal(original.inventory[0].instancesV215,undefined);
  const before=structuredClone(s);assert.throws(()=>e.command('b',{type:'aim'},1100),/другого/);assert.deepEqual(s,before);
