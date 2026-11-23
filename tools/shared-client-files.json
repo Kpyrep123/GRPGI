@@ -45,5 +45,6 @@
   "weapon-handling-v203.js",
   "combat-trauma-v195.js",
   "aberration-instances.js",
-  "combat-state-v291.js"
+  "combat-state-v291.js",
+  "world-sync-v301.js"
 ]

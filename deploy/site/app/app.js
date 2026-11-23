@@ -977,7 +977,7 @@
   function normalizeSnapshotRow(record = {}) {
     if (!record) return null;
     return {
-      id: record.id,
+      id: record.id || record._id,
       campaign_id: record.campaign_id || record.campaignId,
       revision: Number(record.revision || 0),
       updated_at: record.updated_at || record.updated || record.updatedAt || null,
@@ -1085,7 +1085,14 @@
     return record;
   }
 
+  const worldSyncClientV301 = window.GRPGWorldSyncV301?.createClient();
   async function apiPullSnapshot(config, includePayload = true) {
+    if (worldSyncClientV301 && includePayload && App.session?.authTokenV212 && config.tableName === DEFAULTS.tableName) {
+      const key = JSON.stringify([pbBaseUrl(config), config.campaignId, App.session.authTokenV212]);
+      const request = (action, json) => pbFetch(config, '/api/grpgi/auth-v212/world-v301/' + action, { method: 'POST', json });
+      const result = await worldSyncClientV301.pull(key, request, config.campaignId);
+      if (result) return result.exists ? normalizeSnapshotRow(result.remote) : null;
+    }
     const record = await pbFirst(config, 'snapshot', pbEq('campaignId', config.campaignId));
     const row = normalizeSnapshotRow(record);
     if (row && includePayload === false) { row.world_json = null; row.state_json = null; }
@@ -3823,7 +3830,8 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
 
     if (collection === App.config.tableName || Object.prototype.hasOwnProperty.call(record, 'worldJson') || Object.prototype.hasOwnProperty.call(record, 'world_json')) {
       if (isDelete) return;
-      const snapshot = normalizeSnapshotRow(record);
+      const snapshot = Object.hasOwn(record, 'worldJson') || Object.hasOwn(record, 'world_json')
+        ? normalizeSnapshotRow(record) : await apiPullSnapshot(App.config);
       if (!snapshot) return;
       const revision = Number(snapshot.revision || 0);
       if (revision && revision < Number(App.ui.lastSnapshotRevision || 0)) return;
@@ -3887,7 +3895,7 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
     const campaignId = String(record.campaignId || record.campaign_id || '');
     if (campaignId && campaignId !== String(App.config.campaignId || '')) return;
     const transportCollection = ['create', 'update', 'delete', 'message'].includes(transportEvent.toLowerCase()) ? '' : transportEvent;
-    const collection = String(frame?.data?.collectionName || frame?.data?.collectionId || record.collectionName || record.collectionId || frame?.collectionName || transportCollection || '');
+    const collection = String(frame?.data?.collectionName || frame?.data?.collectionId || record.collectionName || record.collectionId || frame?.collectionName || transportCollection || '').split('?')[0].split('/')[0];
     const key = `${event}:${record.id || ''}:${record.updated || record.updated_at || record.clientUpdatedAt || ''}`;
     if (App.realtime.eventKeys.has(key)) return;
     App.realtime.eventKeys.add(key);
@@ -3923,7 +3931,7 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
         await pbFetch(App.config, '/api/realtime', {
           method: 'POST',
           json: { clientId, subscriptions: [
-            `${App.config.tableName}/*`, `${App.config.playerTableName}/*`, `${App.config.chatTableName}/*`, `${App.config.combatRuntimeTableName}/*`
+            window.GRPGWorldSyncV301.topic(App.config.tableName), `${App.config.playerTableName}/*`, `${App.config.chatTableName}/*`, `${App.config.combatRuntimeTableName}/*`
           ] }
         });
         const reconnect = App.realtime.hadConnection;
@@ -4024,6 +4032,7 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
     stopRealtimeSync();
     App.ui.combatFullscreen = false;
     App.session = null;
+    worldSyncClientV301?.clear();
     await storageRemove(KEYS.session);
     openBoot('login');
     renderLogin();
@@ -4033,6 +4042,7 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
   async function forgetThisDevice() {
     stopRealtimeSync();
     App.session = null;
+    worldSyncClientV301?.clear();
     App.auth = { token: '', expiresAt: 0 };
     App.config = normalizeConfig({});
     App.cache = { snapshot: null, players: [], chat: [], combatRuntime: null, fetchedAt: null };
