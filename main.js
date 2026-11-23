@@ -4,6 +4,8 @@ const { app, BrowserWindow, ipcMain, screen, shell, dialog, nativeImage } = requ
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
+const WorldSyncV301 = require('./renderer/world-sync-v301.js');
+const worldSyncClientV301 = WorldSyncV301.createClient();
 const http = require('http');
 const https = require('https');
 const { pathToFileURL, fileURLToPath } = require('url');
@@ -1933,7 +1935,7 @@ function handlePocketBaseRealtimeRecord(config = {}, eventName = '', payload = {
 
 async function pocketbaseSetRealtimeSubscriptions(config = {}, clientId = '') {
   const subscriptions = [
-    `${pocketbaseCollection(config, 'snapshot')}/*`,
+    WorldSyncV301.topic(pocketbaseCollection(config, 'snapshot')),
     `${pocketbaseCollection(config, 'players')}/*`,
     `${pocketbaseCollection(config, 'chat')}/*`,
     `${pocketbaseCollection(config, 'combat')}/*`
@@ -2077,7 +2079,8 @@ async function pocketbaseList(config = {}, collectionKey = '', options = {}) {
     page: options.page || 1,
     perPage: options.perPage || options.limit || 500,
     filter: options.filter || '',
-    sort: options.sort || ''
+    sort: options.sort || '',
+    ...(options.fields ? { fields: options.fields } : {})
   };
   const payload = await pocketbaseFetch(config, `/api/collections/${collection}/records`, { query });
   return Array.isArray(payload?.items) ? payload.items : [];
@@ -2102,8 +2105,22 @@ function normalizePocketBaseSnapshotRecord(record = {}) {
   };
 }
 
+function worldSyncRequestV301(config) {
+  const key = JSON.stringify([getPocketBaseBaseUrl(config), config.campaignId, playerSessionV212]);
+  const request = (action, json) => pocketbaseFetch(config, '/api/grpgi/auth-v212/world-v301/' + action, { method: 'POST', json });
+  return { key, request };
+}
+
 async function fetchPocketBaseSnapshot(config = {}, options = {}) {
-  const record = await pocketbaseFirst(config, 'snapshot', pocketbaseEq('campaignId', config.campaignId));
+  if (options.includePayload !== false && playerSessionV212 && pocketbaseCollection(config, 'snapshot') === DEFAULT_SYNC_TABLE) {
+    const { key, request } = worldSyncRequestV301(config);
+    const result = await worldSyncClientV301.pull(key, request, config.campaignId, { force: options.force });
+    if (result) return result;
+  }
+  const record = (await pocketbaseList(config, 'snapshot', {
+    filter: pocketbaseEq('campaignId', config.campaignId), perPage: 1,
+    ...(options.includePayload === false ? { fields: 'id,campaignId,revision,updated,updatedBy,clientUpdatedAt' } : {})
+  }))[0] || null;
   const remote = normalizePocketBaseSnapshotRecord(record);
   if (!remote) return { ok: true, exists: false, remote: null };
   if (options.includePayload === false) {
@@ -2114,6 +2131,11 @@ async function fetchPocketBaseSnapshot(config = {}, options = {}) {
 }
 
 async function pushPocketBaseSnapshot(config = {}, payload = {}) {
+  if (playerSessionV212 && pocketbaseCollection(config, 'snapshot') === DEFAULT_SYNC_TABLE) {
+    const { key, request } = worldSyncRequestV301(config);
+    const result = await worldSyncClientV301.push(key, request, config.campaignId, payload, crypto.randomUUID());
+    if (result) return result;
+  }
   const now = new Date().toISOString();
   const actor = String(payload.updatedBy || config.deviceLabel || 'unknown-device').trim() || 'unknown-device';
   const expectedRevision = Number.isFinite(Number(payload.baseRevision)) ? Number(payload.baseRevision) : 0;
@@ -3542,12 +3564,12 @@ ipcMain.handle('sync:pull', async (_event, payload) => {
     }
     const localRevision = Number(payload?.localRevision || 0);
     const force = Boolean(payload?.force);
-    const remote = await fetchRemoteSnapshot(config, { includePayload: true });
+    const remote = await fetchRemoteSnapshot(config, { includePayload: true, force });
     if (!remote.exists) {
       return { ok: true, enabled: true, connected: true, status: 'empty', message: `В ${isPocketBaseSyncConfig(config) ? 'PocketBase' : 'выделенном сервере'} ещё нет снапшота кампании`, remote: null, config };
     }
     const remoteRevision = Number(remote.remote?.revision || 0);
-    const newer = force || remoteRevision > localRevision;
+    const newer = force || remoteRevision > localRevision || remote.changed === true;
     const baselineToken = newer ? createSyncBaselineGuard(config, remoteRevision) : null;
     return {
       ok: true,
@@ -3735,7 +3757,7 @@ ipcMain.handle('sync:push', async (_event, payload) => {
     // Unchanged catalogues already have authoritative cloud URLs. Do not walk them.
     const scopedWorld = Object.fromEntries(worldSections.filter(name => Object.hasOwn(snapshot.world || {}, name)).map(name => [name, snapshot.world[name]]));
     const normalizedSnapshot = await normalizeSnapshotImagesForCloud(config, { ...snapshot, world: scopedWorld });
-    const worldPatch = normalizedSnapshot.world;
+    let worldPatch = normalizedSnapshot.world;
     debugLog('SYNC_NORMALIZE_SCOPED', { sections: worldSections, elapsedMs: Date.now() - normalizeStarted });
     const protectedWorld = await protectRemoteWorldV140(
       currentRemote.remote?.world || {},
@@ -3773,10 +3795,19 @@ ipcMain.handle('sync:push', async (_event, payload) => {
       world: normalizedSnapshot.world || {},
       state: normalizedSnapshot.state || {},
       baseRevision: Number(baseline.guard.revision || remoteRevision),
+      intentBaseRevision: Number(payload?.baseRevision || 0),
       updatedBy: payload?.updatedBy || config.deviceLabel || 'unknown-device',
       clientUpdatedAt: payload?.clientUpdatedAt || new Date().toISOString()
     });
     debugLog('SYNC_REMOTE_PUSH_TIMING', { elapsedMs: Date.now() - pushStarted, ok: result?.ok });
+    if (result?.ok && result.canonicalWorldPatch) {
+      worldPatch = result.canonicalWorldPatch;
+      normalizedSnapshot.world = { ...normalizedSnapshot.world, ...worldPatch };
+      if (result.canonicalUsers) normalizedSnapshot.state.users = result.canonicalUsers;
+    }
+    // Transport cache data stays in main; IPC returns only the affected sections below.
+    delete result.canonicalWorldPatch;
+    delete result.canonicalUsers;
     if (result?.ok && result?.remote) baseline.guard.revision = Number(result.remote.revision || baseline.guard.revision || 0);
     let worldPersisted = false;
     if (result?.ok && revisionChanged) {
@@ -4003,7 +4034,7 @@ ipcMain.handle('players:delete', async (_event, payload) => {
 });
 
 ipcMain.handle('player-auth-v212', async (_event, payload = {}) => {
-  if (payload.action === 'logout') {playerSessionV212 = '';return {ok:true};}
+  if (payload.action === 'logout') {playerSessionV212 = '';worldSyncClientV301.clear();return {ok:true};}
   const allowed = new Set(['login','session','recovery/request','recovery/requests','recovery/approve','recovery/reject','recovery/confirm']);
   if (!allowed.has(payload.action)) return {ok:false,message:'Неизвестная операция'};
   try {
@@ -4015,8 +4046,16 @@ ipcMain.handle('player-auth-v212', async (_event, payload = {}) => {
       query:payload.query || {},
       headers:{'X-GRPGI-Session':String(payload.token || '')}
     });
-    if (payload.action === 'login') playerSessionV212 = String(result.token || '');
-    if (payload.action === 'session') playerSessionV212 = String(payload.token || '');
+    if (payload.action === 'login') {
+      const token = String(result.token || '');
+      if (token !== playerSessionV212) worldSyncClientV301.clear();
+      playerSessionV212 = token;
+    }
+    if (payload.action === 'session') {
+      const token = String(payload.token || '');
+      if (token !== playerSessionV212) worldSyncClientV301.clear();
+      playerSessionV212 = token;
+    }
     return result;
   } catch (error) {
     if (['login','session'].includes(payload.action)) playerSessionV212 = '';
