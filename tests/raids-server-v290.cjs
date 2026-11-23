@@ -11,16 +11,18 @@ const rows=new Map(['a','b','c'].map(id=>[id,new Record({id,campaignId:'main',pl
 const db=new DatabaseSync(':memory:');let now=Date.parse('2026-11-20T17:00:00Z');
 function builder(query){let args={};const sql=query.replace(/\{:([a-zA-Z]+)\}/g,':$1');return{bind(a){args=a;return this;},execute(){return db.prepare(sql).run(args);},one(out){const r=db.prepare(sql).get(args);if(!r)throw Error('sql: no rows');Object.assign(out,r);},all(out){out.push(...db.prepare(sql).all(args));}};}
 const memory=new Map();
-let rejectSave=false;
-const app={store:()=>({get:key=>memory.get(key),set:(key,value)=>memory.set(key,value)}),db:()=>({newQuery:builder}),findRecordsByFilter(name,filter,sort,limit,offset,args){if(name==='campaign_snapshots')return[new Record({worldJson:world})];let result=[...rows.values()].filter(r=>r.getString('campaignId')===(args.campaign||args.c||'main'));const player=args.player||args.p;if(player)result=result.filter(r=>r.getString('playerId')===player);return result.slice(offset||0,(offset||0)+(limit||result.length));},save(){if(rejectSave)throw Error('Disk write failed');},runInTransaction(fn){const backup=[...rows].map(([k,r])=>[k,structuredClone(r.data)]);db.exec('BEGIN');try{const result=fn(app);db.exec('COMMIT');return result;}catch(e){db.exec('ROLLBACK');for(const [k,data] of backup)rows.get(k).data=data;throw e;}}};
+let rejectSave=false,transactions=0;
+const app={store:()=>({get:key=>memory.get(key),set:(key,value)=>memory.set(key,value)}),db:()=>({newQuery:builder}),findRecordsByFilter(name,filter,sort,limit,offset,args){if(name==='campaign_snapshots')return[new Record({worldJson:world})];let result=[...rows.values()].filter(r=>r.getString('campaignId')===(args.campaign||args.c||'main'));const player=args.player||args.p;if(player)result=result.filter(r=>r.getString('playerId')===player);return result.slice(offset||0,(offset||0)+(limit||result.length));},save(){if(rejectSave)throw Error('Disk write failed');},runInTransaction(fn){transactions++;const backup=[...rows].map(([k,r])=>[k,structuredClone(r.data)]);db.exec('BEGIN');try{const result=fn(app);db.exec('COMMIT');return result;}catch(e){db.exec('ROLLBACK');for(const [k,data] of backup)rows.get(k).data=data;throw e;}}};
 class ApiError extends Error {constructor(status,message){super(message);this.status=status;}}
 const context={module:{exports:{}},require(file){if(file.endsWith('/grpgi_auth_v212.js'))return{actor:e=>new Record({campaignId:'main',playerId:e.actor,dm:e.actor==='gm'})};return require(file);},__hooks:dir,Date:class extends Date{static now(){return now;}},DynamicModel:class{constructor(data){Object.assign(this,data);}},arrayOf:()=>[],toString:JSON.stringify,$os:{getenv:()=> 'worker-secret-01234567890123456789'},$security:{sha256:x=>crypto.createHash('sha256').update(x).digest('hex'),randomString:n=>crypto.randomBytes(n).toString('hex').slice(0,n),randomStringWithAlphabet:()=> '800000000000'},NotFoundError:Error,ForbiddenError:Error,BadRequestError:Error,ApiError};
 vm.runInNewContext(fs.readFileSync(path.join(dir,'grpgi_raids_v290.js'),'utf8'),context);const api=context.module.exports;
 const event=(actor,body={},worker=false)=>({actor,app,next(){},requestInfo:()=>({body}),request:{header:{get:()=>worker?'worker-secret-01234567890123456789':''}},json:(status,value)=>JSON.parse(JSON.stringify(value))});
 api.bootstrap(event('gm'));
+let beforeTransactions=transactions;api.claim(event('worker',{},true));assert.equal(transactions,beforeTransactions,'idle worker scans do not acquire the writer');memory.delete('grpgi-raid-worker-heartbeat290');
 const entry={planetId:'planet',objectId:'npc',dialogId:'d'};
 const call=(actor,data={})=>api.request(event(actor,data));
 let state=call('a');assert.equal(state.phase,'lobby');assert.equal(state.week,'2026-11-20');assert.equal(state.mission.reward.skillPoints,2);
+beforeTransactions=transactions;for(let i=0;i<5;i++)call('a');assert.equal(transactions,beforeTransactions,'lobby polling never starts a write transaction');
 let op=0;const send=(actor,type,extra={})=>{const current=call(actor,{type:'status',week:state.week});return call(actor,{type,revision:current.revision,week:current.week,operationId:'operation:'+ ++op,entry,...extra});};
 assert.throws(()=>send('a','party',{entry:{},members:['b']}),/диалог/);
 state=send('a','party',{members:['b']});assert.equal(state.lobby.invited.length,2);
@@ -29,7 +31,7 @@ assert.throws(()=>send('a','start'),/подтвердить/);
 state=send('a','ready');state=send('b','ready');assert.throws(()=>send('a','start'),/Worker/);api.claim(event('worker',{},true));
 const start={type:'start',revision:state.revision,week:state.week,entry,operationId:'start-operation'};state=call('a',start);assert.equal(state.phase,'running');assert.equal(rows.get('a').get('playerJson').raidLock290,'main|2026-11-20');
 assert.equal(call('c').phase,'unavailable');assert.equal(call('a',start).revision,state.revision,'lost start response is idempotent');assert.throws(()=>call('a',{...start,members:['c']}),/другими/);
-assert.equal(state.world,undefined);assert.equal(state.me.profile.id,'a');
+assert.equal(state.world,undefined);assert.equal(state.me.profile.id,'a');beforeTransactions=transactions;assert(call('a',{type:'status',runId:state.id,revision:state.revision}).unchanged);assert.equal(transactions,beforeTransactions,'unchanged running polls are read-only');
 const action={type:'evacuate',revision:state.revision,week:state.week,operationId:'evac-operation'};state=call('a',action);assert(state.evac);assert.equal(call('a',action).revision,state.revision);
 assert.throws(()=>call('b',{type:'end',revision:state.revision,week:state.week,operationId:'bad-turn-operation'}),/другого/);
 assert.equal(call('a').revision,state.revision,'a rejected command is rolled back');

@@ -1,18 +1,18 @@
 /* A player supplies intent only. Positions, clocks, dice and rewards come from the server. */
 (()=>{'use strict';
  const B=()=>window.GRPGHubBridgeV153,esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
- let root=null,state=null,entry={},target='',busy=false,poll=null,context='',clockOffset=0,pendingOperation=null,error='',selectedSlot='primaryWeapon',controlled='',placement=false,deployment='';
+ let root=null,state=null,entry={},target='',busy=false,poll=null,polling=false,viewEpoch=0,context='',clockOffset=0,pendingOperation=null,error='',selectedSlot='primaryWeapon',controlled='',placement=false,deployment='';
  const key=()=>`grpgi-raid-operation290:${context}`;
  const request=data=>B().raidRequest(data);
  function storeOperation(value){pendingOperation=value;try{if(value)localStorage.setItem(key(),JSON.stringify(value));else localStorage.removeItem(key());}catch{}}
- async function status(){if(busy||!root)return;try{const next=await request({type:'status',week:state?.week,runId:state?.id,revision:state?.revision,mapId:state?.map?.id});if(!root)return;if(next.unchanged){clockOffset=next.serverNow-Date.now();timer();return;}if(next.map?.unchanged)next.map=state?.map;const changed=!state||next.revision!==state.revision||next.phase!==state.phase||next.window?.mode!==state.window?.mode;state=next;clockOffset=next.serverNow-Date.now();if(changed)draw();else timer();}catch(e){error=e.message;showError();}}
+ async function status(){if(busy||polling||!root)return;polling=true;const epoch=viewEpoch;try{const next=await request({type:'status',week:state?.week,runId:state?.id,revision:state?.revision,mapId:state?.map?.id});if(!root||epoch!==viewEpoch)return;if(next.unchanged){clockOffset=next.serverNow-Date.now();timer();return;}if(next.map?.unchanged)next.map=state?.map;const changed=!state||next.revision!==state.revision||next.phase!==state.phase||next.window?.mode!==state.window?.mode;state=next;clockOffset=next.serverNow-Date.now();if(changed)draw();else timer();}catch(e){if(root&&epoch===viewEpoch){error=e.message;showError();}}finally{polling=false;}}
  async function send(type,extra={}){
   if(busy||!root)return;busy=true;error='';const payload=pendingOperation||{type,...extra,revision:state.revision,week:state.week,runId:state.id,mapId:state.map?.id,entry,operationId:crypto.randomUUID()};storeOperation(payload);draw();
   try{const next=await request(payload);if(next.map?.unchanged)next.map=state?.map;state=next;clockOffset=state.serverNow-Date.now();storeOperation(null);}catch(e){error=e.message;const code=Number(e.status||e.statusCode);if(code>=400&&code<500||/Состояние изменилось|State changed/.test(error))storeOperation(null);}
   finally{busy=false;draw();if(!pendingOperation)await status();}
  }
  function showError(){const el=root?.querySelector('[data-status]');if(el)el.textContent=error||state?.error||'';}
- function close(){root?.remove();root=null;clearInterval(poll);poll=null;}
+ function close(){viewEpoch++;root?.remove();root=null;clearInterval(poll);poll=null;}
  function rewardText(){const r=state.mission?.reward||{};return `<p>Награда за успех: <b>${esc(r.credits)} кредитов на группу</b>, <b>${esc(r.skillPoints)} очков каждому выжившему</b>.</p>${(r.items||[]).map(x=>`<p>${esc(x.name||B().item(x.itemId)?.name||x.itemId)} × ${esc(x.qty)}</p>`).join('')}`;}
  const button=(type,label,disabled=false,attrs='')=>`<button type="button" data-action="${type}" ${disabled||busy||pendingOperation?'disabled':''} ${attrs}>${label}</button>`;
  function draw(){
