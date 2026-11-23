@@ -70,10 +70,10 @@ try{
  console.log('PASS real raid authoring: WC section, shared multiselect, scene snapshot, zone metadata, rewards and campaign save');
 }finally{await w.happyDOM.abort();fs.rmSync(scratch,{recursive:true,force:true});}
 
-const cw=new Window({url:'https://grpgi.test/app/',settings:{disableJavaScriptFileLoading:true,disableCSSFileLoading:true}});const ctx=vm.createContext(cw),evalWeb=s=>vm.runInContext(s,ctx);cw.setInterval=()=>0;
-let current={id:'a'},calls=[],networkFailure=false;
+const cw=new Window({url:'https://grpgi.test/app/',settings:{disableJavaScriptFileLoading:true,disableCSSFileLoading:true}});const ctx=vm.createContext(cw),evalWeb=s=>vm.runInContext(s,ctx);let pollTick;cw.setInterval=fn=>{pollTick=fn;return 0;};
+let current={id:'a'},calls=[],networkFailure=false,holdStatus=false,releaseStatus;
 let snapshot={phase:'lobby',id:'main|2026-11-20',week:'2026-11-20',revision:0,serverNow:Date.now(),mission:{name:'Weekly',reward:{credits:5,skillPoints:2,items:[]}},lobby:{leader:'',invited:[],ready:[]},roster:[{id:'a',name:'A'},{id:'b',name:'B'}]};
-cw.GRPGHubBridgeV153={currentPlayer:()=>current,app:{config:{campaignId:'main'}},item:id=>({id,name:id}),raidRequest:async data=>{calls.push(JSON.parse(JSON.stringify(data)));if(data.type==='attack'&&networkFailure){networkFailure=false;throw Error('Network disconnected');}if(data.type!=='status')snapshot={...snapshot,revision:snapshot.revision+1};return JSON.parse(JSON.stringify(snapshot));}};
+cw.GRPGHubBridgeV153={currentPlayer:()=>current,app:{config:{campaignId:'main'}},item:id=>({id,name:id}),raidRequest:async data=>{calls.push(JSON.parse(JSON.stringify(data)));if(data.type==='status'&&holdStatus)await new Promise(resolve=>{releaseStatus=resolve;});if(data.type==='attack'&&networkFailure){networkFailure=false;throw Error('Network disconnected');}if(data.type!=='status')snapshot={...snapshot,revision:snapshot.revision+1};return JSON.parse(JSON.stringify(snapshot));}};
 try{
  evalWeb(fs.readFileSync(path.join(root,'renderer/checkbox-picker-v172.js'),'utf8'));evalWeb(fs.readFileSync(path.join(root,'deploy/site/app/raids-v290.js'),'utf8'));
  await cw.GRPGRaidsV290.open({planetId:'planet',objectId:'npc',dialogId:'dialog'});assert(cw.document.querySelector('.raid290'));const select=cw.document.querySelector('[data-party]');for(const o of select.options)o.selected=true;cw.document.querySelector('[data-action=party]').click();await pause();const party=calls.find(c=>c.type==='party');assert.deepEqual(party.members,['a','b']);assert.equal(party.entry.objectId,'npc');assert(party.operationId);
@@ -95,6 +95,8 @@ try{
  cw.document.querySelector('[data-unit=enemy]').dispatchEvent(new cw.MouseEvent('click',{bubbles:true}));assert.equal(cw.document.querySelector('[data-action=attack]').disabled,true);
  snapshot={...snapshot,phase:'closed',revision:snapshot.revision+1,window:{mode:'closed'}};cw.GRPGRaidsV290.close();await cw.GRPGRaidsV290.open();assert(cw.document.querySelector('[data-content]').textContent.includes('Доступ закрыт ДМом'));
  snapshot={...snapshot,phase:'lobby',revision:snapshot.revision+1,window:{mode:'open'}};cw.GRPGRaidsV290.close();await cw.GRPGRaidsV290.open();assert(cw.document.querySelector('[data-content]').textContent.includes('Доступ открыт ДМом'));
+ holdStatus=true;const beforePolls=calls.filter(c=>c.type==='status').length;for(let i=0;i<25;i++)pollTick();await pause();assert.equal(calls.filter(c=>c.type==='status').length,beforePolls+1,'slow polling is single-flight instead of building a player-write queue');
+ const firstRelease=releaseStatus;holdStatus=false;firstRelease();await pause();pollTick();await pause();assert.equal(calls.filter(c=>c.type==='status').length,beforePolls+2,'polling resumes after completion');
  console.log('PASS raid web UI: NPC entry, party intent, automatic server rolls, controlled actor and persistent retry operation ID');
 }finally{cw.GRPGRaidsV290?.close();await cw.happyDOM.abort();}
 
