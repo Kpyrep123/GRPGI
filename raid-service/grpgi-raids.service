@@ -1,13 +1,15 @@
 [Unit]
 Description=GRPGI raid scheduler and Lua worker
 After=network-online.target pocketbase.service
+# Dormant until deliberately re-enabled in a future release.
+ConditionPathExists=/etc/grpgi-raids.enabled
 [Service]
 User=pocketbase
 Group=pocketbase
 WorkingDirectory=/opt/grpgi-raids
 EnvironmentFile=/etc/grpgi-raids.env
 ExecStart=/usr/bin/node /opt/grpgi-raids/raid-service/worker.cjs
-Restart=always
+Restart=on-failure
 RestartSec=3
 NoNewPrivileges=true
 PrivateTmp=true

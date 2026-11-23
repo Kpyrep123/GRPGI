@@ -1,3 +1,4 @@
+grpgi_raids_disabled_v299.js
 grpgi_raids_v290.pb.js
 grpgi_raids_v290.js
 raid-core-v290.js

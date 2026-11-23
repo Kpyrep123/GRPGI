@@ -96,6 +96,7 @@
   function dialogReason(d,p,s,o) { return access(o,p,s) || reason(d,p,s,{object:o}) || (d.once && s.completedDialogs[d.id] ? 'Диалог уже завершён' : ''); }
   function nodeReason(d,n,p,s,o) { return reason(n,p,s,{object:o}) || (n.once && s.completedNodes[key(d.id,n.id)] ? 'Колонка уже завершена' : ''); }
   function choiceReason(d,n,c,p,s,o) {
+    if(c.target==='raid')return 'Ответ недоступен';
     const why = reason(c,p,s,{object:o}) || (c.once && s.completedChoices[key(d.id,n.id,c.id)] ? 'Действие уже выполнено' : '');
     if (why) return why;
     if(c.target==='unset'||(c.target==='node'&&!c.nextNodeId)||(c.target&&!['node','start','end','raid'].includes(c.target)))return 'This reply has no destination';
@@ -132,15 +133,15 @@
     const c = choiceId == null ? null : n.choices.find(x => x.id === choiceId);
     if (choiceId != null && !c) throw new Error('Ответ не найден');
     if(!c&&n.terminal===false&&!n.choices?.length)throw new Error('This node has no replies or ending');
-    if (!c && n.choices?.length) throw new Error('Выберите доступный ответ');
+    if (!c && n.choices?.some(choice=>choice.target!=='raid')) throw new Error('Выберите доступный ответ');
     if (c) { const why=choiceReason(d,n,c,player,state,o); if (why) throw new Error(why); }
     effects(n,state); if (c) effects(c,state);
     state.completedNodes[key(d.id,n.id)] = true;
     if (c) state.completedChoices[key(d.id,n.id,c.id)] = true;
     const nextId=destination(d,c);
-    if (!nextId) {if(c?.target!=='raid')finishDialog(d,o,state);if(c?.target!=='raid')delete state.dialogCursors[cursorKey];}
+    if (!nextId) {finishDialog(d,o,state);delete state.dialogCursors[cursorKey];}
     else state.dialogCursors[cursorKey]=nextId;
-    return {nextNodeId:nextId,raid:c?.target==='raid', articleId:c?.articleId || n.articleId || ''};
+    return {nextNodeId:nextId, articleId:c?.articleId || n.articleId || ''};
   }
   function use(hub,o,p,s) {
     const why=access(o,p,s); if (why) throw new Error(why);
