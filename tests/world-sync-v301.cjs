@@ -95,6 +95,25 @@ async function run(){
  const conflictCurrent=await conflictEditor.pull('c',request,'main');
  const conflict=await conflictEditor.push('c',request,'main',{world:conflictIntent.world,state:conflictIntent.state,baseRevision:conflictCurrent.remote.revision,intentBaseRevision:conflictBase.remote.revision},'operation-editor-conflict');assert.equal(conflict.status,'conflict');
  assert.equal(JSON.parse(db.prepare('SELECT worldJson FROM campaign_snapshots').get().worldJson).equipment.EQUIPMENT.gun1.name,'New server edit');
+ // Regression: a WC save must not conflict with GG's unrelated state/proof update.
+ const seedState=JSON.parse(db.prepare('SELECT stateJson FROM campaign_snapshots').get().stateJson);
+ seedState.meta={lastUpdatedAt:'baseline'};seedState.__worldWriteV140={createdAt:'baseline',reason:'state-save'};
+ db.prepare('UPDATE campaign_snapshots SET stateJson=?,revision=revision+1').run(JSON.stringify(seedState));
+ const wc=codec.createClient(),wcBase=await wc.pull('wc',request,'main'),wcIntent=json(wcBase.remote);
+ const gg=json(wcBase.remote.state);gg.meta.lastUpdatedAt='GG-new';gg.__worldWriteV140.createdAt='GG-new';gg.users.gm.credits=42;
+ db.prepare('UPDATE campaign_snapshots SET stateJson=?,revision=revision+1').run(JSON.stringify(gg));
+ const fresh=await wc.pull('wc',request,'main');
+ wcIntent.world.equipment.EQUIPMENT.gun3.name='WC after GG';wcIntent.state.meta.lastUpdatedAt='local-clock';wcIntent.state.users.gm.credits=-999;
+ wcIntent.state.__worldWriteV140={createdAt:'new-WC-proof',reason:'world-config-save'};
+ const unscoped=await wc.push('wc',request,'main',{world:wcIntent.world,state:wcIntent.state,baseRevision:fresh.remote.revision,intentBaseRevision:wcBase.remote.revision},'operation-wc-unscoped');
+ assert.equal(unscoped.status,'conflict');assert.equal(unscoped.conflict.path[0],'state','reproduced false conflict before scoping');
+ const wcSaved=await wc.push('wc',request,'main',{world:wcIntent.world,state:wcIntent.state,worldScope:['equipment'],baseRevision:fresh.remote.revision,intentBaseRevision:wcBase.remote.revision},'operation-wc-after-gg');
+ assert.equal(wcSaved.ok,true,wcSaved.message);
+ const wcSent=calls.at(-1).body;assert(wcSent.changes.every(change=>{const path=JSON.parse(change.key);return path[0]==='world'&&(!path[1]||path[1]==='equipment')||path[0]==='state'&&(path.length===1||path[1]==='__worldWriteV140');}));
+ const afterWc=JSON.parse(db.prepare('SELECT stateJson FROM campaign_snapshots').get().stateJson);
+ assert.equal(afterWc.meta.lastUpdatedAt,'GG-new');assert.equal(afterWc.users.gm.credits,42);assert.equal(afterWc.__worldWriteV140.createdAt,'new-WC-proof');
+ assert.equal(JSON.parse(db.prepare('SELECT worldJson FROM campaign_snapshots').get().worldJson).equipment.EQUIPMENT.gun3.name,'WC after GG');
+ assert(Array.isArray(conflict.conflict.path));assert(conflict.conflict.actualVersion>conflict.conflict.expectedVersion);
  // Delete/recreate resets the epoch so an old cursor cannot silently skip a new campaign.
  db.exec("DELETE FROM campaign_snapshots WHERE campaignId='main'");
  assert.equal(invoke('pull',{campaignId:'main',epoch:initial.epoch,since:initial.seq}).exists,false);

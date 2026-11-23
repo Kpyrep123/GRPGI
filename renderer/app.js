@@ -1298,7 +1298,7 @@ const Sync = {
     };
     Debug.log('SYNC_PUSH_START', { reason, baseRevision, localDirty: Boolean(syncMeta.localDirty), campaignId: this.config.campaignId || '' });
     const res = await window.electronAPI.pushSync(payload);
-    Debug.log('SYNC_PUSH_FINISH', { reason, ok: res?.ok, status: res?.status, remoteRevision: res?.remote?.revision || null, message: res?.message || null });
+    Debug.log('SYNC_PUSH_FINISH', { reason, ok: res?.ok, status: res?.status, remoteRevision: res?.remote?.revision || null, message: res?.message || null, conflict: res?.conflict || null });
 
     App.state.meta.sync.lastCheckedAt = new Date().toISOString();
     if (!res?.ok) {
@@ -1324,6 +1324,7 @@ const Sync = {
       return res;
     }
 
+    const applyResultStarted = performance.now();
     if (res?.worldPatch && Object.keys(res.worldPatch).length) {
       worldData = { ...worldData, ...res.worldPatch };
       applyWorldData(worldData);
@@ -1360,6 +1361,7 @@ const Sync = {
     this.refreshChip();
     this.render();
     await Persistence.save(App.state);
+    Debug.log('SYNC_APPLY_RESULT_TIMING', { elapsedMs: Math.round(performance.now() - applyResultStarted) });
     if (!options.silent) Toast.show(`Локальные данные отправлены в ${this.cloudName()}`, 'ok');
     return res;
   },
@@ -6004,6 +6006,7 @@ const Configurator = {
     const current = this.getSelectedEntity();
     const oldId = current?.id || this.selectedId;
     const formEl = event.currentTarget;
+    const submitStarted = performance.now();
     Debug.log('CONFIG_SUBMIT_START', { type: this.selectedType, oldId });
     try {
       await waitForPendingImageTasks(formEl);
@@ -6036,8 +6039,11 @@ const Configurator = {
       FormDrafts.clear(FormDrafts.configKey(this.selectedType, oldId || this.selectedId || 'new'));
       FormDrafts.clear(FormDrafts.configKey(this.selectedType, entity.id || 'new'));
       const options = this.selectedType === 'players' ? { playerSync: { playerId: entity.id, oldId } } : { worldSections };
-      await this.persistAll(`Сохранён раздел ${WORLD_SECTIONS[this.selectedType].label}`, options);
-      this.render();
+      const saved = await this.persistAll(`Сохранён раздел ${WORLD_SECTIONS[this.selectedType].label}`, options);
+      // persistAll already renders the active World Config. Avoid rendering its full form twice.
+      if (UI.activeModuleId !== 'config') this.render();
+      Debug.log('CONFIG_SUBMIT_TOTAL_TIMING', { elapsedMs: Math.round(performance.now() - submitStarted), localSaved: saved?.localSaved, syncOk: saved?.sync?.ok, status: saved?.sync?.status });
+      requestAnimationFrame(() => requestAnimationFrame(() => Debug.log('CONFIG_SUBMIT_PAINT_TIMING', { elapsedMs: Math.round(performance.now() - submitStarted) })));
     } catch (error) {
       Debug.error('CONFIG_SUBMIT_FAILED', {
         type: this.selectedType,
@@ -6100,7 +6106,9 @@ const Configurator = {
 
     try {
     worldData = scopedSave ? { ...snapshot, ...res.world } : res.world;
+    const applyStarted = performance.now();
     applyWorldData(worldData);
+    Debug.log('CONFIG_APPLY_WORLD_TIMING', { elapsedMs: Math.round(performance.now() - applyStarted) });
     let snapshotSyncRes = null;
     let playerSyncRes = null;
 
@@ -6125,9 +6133,13 @@ const Configurator = {
       App.refreshAfterLocalWrite();
     } else {
       Sync.markLocalDirty('WORLD_CONFIG_PENDING_SYNC');
+      const stateSaveStarted = performance.now();
       await Persistence.save(App.state);
+      Debug.log('CONFIG_STATE_SAVE_TIMING', { elapsedMs: Math.round(performance.now() - stateSaveStarted) });
       snapshotSyncRes = await Sync.pushCurrentSnapshot('world-config-save', { silent: true, worldSections, preparedWorld: scopedSave ? res.world : snapshot });
+      const reloadStarted = performance.now();
       App.state = await Persistence.load();
+      Debug.log('CONFIG_STATE_LOAD_TIMING', { elapsedMs: Math.round(performance.now() - reloadStarted) });
     }
 
     if (UI.selectedPlanetId && !isEntityVisible(Data.getPlanet(UI.selectedPlanetId))) {
@@ -6135,7 +6147,9 @@ const Configurator = {
       $('#market-trigger').style.display = 'none';
     }
 
+    const renderStarted = performance.now();
     App.renderLive();
+    Debug.log('CONFIG_RENDER_TIMING', { elapsedMs: Math.round(performance.now() - renderStarted) });
     const playerSyncFailed = playerSyncRes && !playerSyncRes.ok && playerSyncRes.status !== 'disabled';
     if (playerSyncFailed) Toast.show(`Локально сохранено, но профильная запись не обновлена в облаке: ${playerSyncRes?.message || 'unknown error'}`, 'err');
     else if (snapshotSyncRes?.ok || snapshotSyncRes?.status === 'disabled') Toast.show(`${message}${snapshotSyncRes?.cloudBackupCreated ? '. Предыдущая облачная ревизия сохранена в резервную копию' : ''}`, 'ok');

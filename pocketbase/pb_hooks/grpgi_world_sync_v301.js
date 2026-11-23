@@ -82,8 +82,10 @@ function push(e){
   const stored=new Map(rows(tx,campaign,-1).map(row=>[row.key,row])),documents=new Map([...stored].filter(([,row])=>!row.deleted).map(([key,row])=>[key,row.data])),seen=new Set();
   for(const change of body.changes){
    if(!change||typeof change.key!=='string'||change.key.length>10000||seen.has(change.key)||!Number.isSafeInteger(change.version)||change.version<0||(!change.deleted&&typeof change.data!=='string'))throw new BadRequestError('Некорректная запись мира');
+   let path;try{path=JSON.parse(change.key);}catch(error){throw new BadRequestError('Некорректный путь записи');}
+   if(!Array.isArray(path)||path.length>4||path.some(part=>typeof part!=='string'))throw new BadRequestError('Некорректный путь записи');
    seen.add(change.key);const old=stored.get(change.key);
-   if((old?.version||0)!==change.version)return {ok:false,status:'conflict',message:'Сущность уже изменена на сервере'};
+   if((old?.version||0)!==change.version)return {ok:false,status:'conflict',message:'Сущность уже изменена на сервере',conflict:{path,expectedVersion:change.version,actualVersion:old?.version||0}};
    if(change.deleted)documents.delete(change.key);else documents.set(change.key,change.data);
   }
   let data;try{data=codec.unpack(documents);}catch(error){throw new BadRequestError('Неполный набор изменений мира');}
