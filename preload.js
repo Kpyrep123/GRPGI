@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openLatestInstaller: () => ipcRenderer.invoke('updater:openInstaller'),
   loadWorldData: () => ipcRenderer.invoke('world:load'),
   saveWorldSection: (sectionName, payload) => ipcRenderer.invoke('world:saveSection', sectionName, payload),
+  saveWorldSections: sections => ipcRenderer.invoke('world:saveSections', sections),
   saveWorldData: payload => ipcRenderer.invoke('world:saveAll', payload),
   exportWorldSectionJson: (section, payload) => ipcRenderer.invoke('world:section:exportJson', { section, payload }),
   importWorldSectionJson: section => ipcRenderer.invoke('world:section:importJson', { section }),
