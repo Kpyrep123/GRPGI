@@ -206,6 +206,7 @@ function protectPlayer(e, creating) {
     return originalApp.runInTransaction(function(app) {
     e.app = app;
     var profile = json(e.record, "playerJson");
+    delete profile.raidLock290;
     var campaign = e.record.getString("campaignId"), id = e.record.getString("playerId");
     var user = credential(e.app, campaign, id);
     if (creating && user && profile.pass) throw new BadRequestError("Персонаж уже существует");
@@ -224,7 +225,6 @@ function protectPlayer(e, creating) {
     profile = clean(profile);
     profile.id = id;
     var previousProfile = creating ? {id:id} : json(old, "playerJson");
-    if(previousProfile.raidLock290 && e.record.getString('updatedBy') !== 'raids-v290') throw new ForbiddenError('Профиль занят активной вылазкой');
     var previousInventory = Array.isArray(previousProfile.inventory) ? previousProfile.inventory : [];
     var incomingInventory = Array.isArray(profile.inventory) ? profile.inventory : [];
     var needsCopies = incomingInventory.some(function(row) {
@@ -267,7 +267,6 @@ function guard(e) {
     if(!raidActor.getBool('dm')) {
       var raidRows=e.app.findRecordsByFilter('campaign_players','campaignId={:c} && playerId={:p}','',1,0,{c:raidActor.getString('campaignId'),p:raidActor.getString('playerId')});
       if(raidRows[0] && json(raidRows[0],'playerJson').dead229 && path.indexOf('/api/collections/campaign_messages/')!==0 && path!=='/api/grpgi/character-applications/submit') throw new ForbiddenError('Персонаж погиб. Восстановить его может ДМ');
-      if(raidRows[0] && json(raidRows[0],'playerJson').raidLock290 && path.indexOf('/api/collections/campaign_messages/')!==0) throw new ForbiddenError('Во время вылазки профиль изменяется только её сервером');
     }
   }
 

@@ -28,7 +28,6 @@
     ],
     "files": [
       "main.js",
-      "raid-publish-media-v297.cjs",
       "preload.js",
       "lua-sandbox-worker.cjs",
       "renderer/**/*",

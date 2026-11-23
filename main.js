@@ -916,7 +916,6 @@ async function normalizeSnapshotImagesForCloud(config = {}, snapshot = {}) {
     }
   }
 
-  await require('./raid-publish-media-v297.cjs')(config,clone,uploadImageSourceToBackend);
   return clone;
 }
 
