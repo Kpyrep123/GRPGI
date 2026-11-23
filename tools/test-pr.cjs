@@ -29,6 +29,8 @@ const checks = [
   ['tests/core-damage-v288.cjs'],
   ['tests/aberration-loot.cjs'],
   ['tests/aberration-rebalance.dom.mjs'],
+  ['tests/raids-publish-v297.cjs'],
+  ['tests/dialogues-v161.mjs'],
   ['tests/raids-v290.cjs'],
   ['tests/raids-state-v291.cjs'],
   ['tests/raids-effects-v292.cjs'],
