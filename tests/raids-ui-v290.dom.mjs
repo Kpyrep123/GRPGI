@@ -45,9 +45,11 @@ try{
  run("App.state.users.locked={id:'locked',role:'player',raidLock290:'run',stats:{hpCurrent:8,hpMax:8},inventory:[]}");assert.equal(api.canCombatAct129({id:'locked',playerId:'locked',hpCurrent:8}),false);assert.equal(api.canMechanicalMove108({id:'locked',playerId:'locked',hpCurrent:8}),false);
  const exported=w.GRPGRaidSceneExport290();assert.equal(exported[0].templates[0].raidZone290,'spawn');
  run("UI.openModule('config');Configurator.render()");const tab=w.document.querySelector('[data-raids-tab290]');assert(tab);tab.click();const form=w.document.querySelector('[data-raids-config290]');assert(form);
- form.elements.namedItem('name').value='Weekly test';form.elements.namedItem('enabled').checked=true;for(const o of form.elements.namedItem('maps').options)o.selected=o.value==='map';form.elements.namedItem('startMap').value='map';form.elements.namedItem('credits').value='5';form.elements.namedItem('skillPoints').value='2';
+ assert.equal(form.elements.namedItem('windowMode').value,'schedule');form.elements.namedItem('windowMode').value='open';form.elements.namedItem('name').value='Weekly test';form.elements.namedItem('enabled').checked=true;for(const o of form.elements.namedItem('maps').options)o.selected=o.value==='map';form.elements.namedItem('startMap').value='map';form.elements.namedItem('credits').value='5';form.elements.namedItem('skillPoints').value='2';
  form.dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));await pause();assert.equal(run('saved290.length'),1,run('notices290').join(';'));
- const config=run('saved290[0].campaigns.RAIDS_V290.main');assert.equal(config.enabled,true);assert.equal(config.missions.length,1);assert.equal(config.missions[0].maps[0].templates[1].raidZone290,'evacuation');assert.equal(config.missions[0].reward.credits,5);assert.equal(config.missions[0].reward.skillPoints,2);assert.equal(config.missions[0].entry.objectId,'npc');
+ const config=run('saved290[0].campaigns.RAIDS_V290.main');assert.equal(config.enabled,true);assert.equal(config.windowMode,'open');assert.equal(config.missions.length,1);assert.equal(config.missions[0].maps[0].templates[1].raidZone290,'evacuation');assert.equal(config.missions[0].reward.credits,5);assert.equal(config.missions[0].reward.skillPoints,2);assert.equal(config.missions[0].entry.objectId,'npc');
+ form.elements.namedItem('windowMode').value='closed';form.dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));await pause();assert.equal(run('saved290.at(-1).campaigns.RAIDS_V290.main.windowMode'),'closed');
+ form.elements.namedItem('windowMode').value='schedule';form.dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));await pause();assert.equal(run('saved290.at(-1).campaigns.RAIDS_V290.main.windowMode'),'schedule');
  console.log('PASS real raid authoring: WC section, shared multiselect, scene snapshot, zone metadata, rewards and campaign save');
 }finally{await w.happyDOM.abort();fs.rmSync(scratch,{recursive:true,force:true});}
 
@@ -74,5 +76,7 @@ try{
  cw.document.querySelector('[data-action=finishBurst]').click();await pause();assert(calls.some(c=>c.type==='finishBurst'));
  snapshot={...snapshot,revision:snapshot.revision+1,units:snapshot.units.map(u=>u.id==='a'?{...u,burst:null}:u)};cw.GRPGRaidsV290.close();await cw.GRPGRaidsV290.open();
  cw.document.querySelector('[data-unit=enemy]').dispatchEvent(new cw.MouseEvent('click',{bubbles:true}));assert.equal(cw.document.querySelector('[data-action=attack]').disabled,true);
+ snapshot={...snapshot,phase:'closed',revision:snapshot.revision+1,window:{mode:'closed'}};cw.GRPGRaidsV290.close();await cw.GRPGRaidsV290.open();assert(cw.document.querySelector('[data-content]').textContent.includes('Доступ закрыт ДМом'));
+ snapshot={...snapshot,phase:'lobby',revision:snapshot.revision+1,window:{mode:'open'}};cw.GRPGRaidsV290.close();await cw.GRPGRaidsV290.open();assert(cw.document.querySelector('[data-content]').textContent.includes('Доступ открыт ДМом'));
  console.log('PASS raid web UI: NPC entry, party intent, automatic server rolls, controlled actor and persistent retry operation ID');
 }finally{cw.GRPGRaidsV290?.close();await cw.happyDOM.abort();}

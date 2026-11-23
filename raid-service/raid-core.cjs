@@ -21,11 +21,12 @@ const arr=x=>Array.isArray(x)?x:[];
 const num=(x,f=0)=>Number.isFinite(Number(x))?Number(x):f;
 const fail=message=>{throw Error(message);};
 const distance=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
-function week(now){
+function week(now,config={}){
   const local=new Date(now+10800000),day=(local.getUTCDay()+2)%7;
   let start=Date.UTC(local.getUTCFullYear(),local.getUTCMonth(),local.getUTCDate()-day,20)-10800000;
   if(now<start)start-=604800000;
-  return {id:new Date(start+10800000).toISOString().slice(0,10),start,end:start+216000000,open:now>=start&&now<start+216000000};
+  const mode=['open','closed'].includes(config.windowMode)?config.windowMode:'schedule',scheduled=now>=start&&now<start+216000000;
+  return {id:new Date(start+10800000).toISOString().slice(0,10),start,end:start+216000000,mode,open:mode==='open'||mode==='schedule'&&scheduled};
 }
 function inside(zone,p){return zone?.points?.length>=3&&contains(zone.points,p);}
 function contains(points,p){let yes=false;for(let i=0,j=points.length-1;i<points.length;j=i++){const a=points[j],b=points[i];if((a.y>p.y)!==(b.y>p.y)&&p.x<(b.x-a.x)*(p.y-a.y)/(b.y-a.y)+a.x)yes=!yes;}return yes;}

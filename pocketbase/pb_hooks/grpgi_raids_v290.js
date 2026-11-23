@@ -22,15 +22,16 @@ function entry(app,campaign,player,mission,input){
 }
 function roster(app,campaign){const rows=[];for(let offset=0;;offset+=500){const page=app.findRecordsByFilter('campaign_players','campaignId={:campaign} && deletedAt=""','',500,offset,{campaign});rows.push(...page);if(page.length<500)break;}return rows.map(r=>json(r,'playerJson')).filter(p=>p.role!=='gm'&&!p.__deleted&&!p.dead229).map(p=>({id:p.id,name:p.displayName||p.name||p.id,locked:!!p.raidLock290}));}
 function saveProfiles(app,campaign,s){if(!s.units)return;const values=Core.engine(s,random,id).profiles();s.releasedProfiles ||= [];for(const [key,value] of Object.entries(values)){if(s.releasedProfiles.includes(key))continue;const row=profileRow(app,campaign,key),previous=json(row,'playerJson');if(JSON.stringify(previous)!==JSON.stringify(value)){row.set('playerJson',value);row.set('version',row.getInt('version')+1);row.set('updatedBy','raids-v290');row.set('clientUpdatedAt',new Date().toISOString());app.save(row);}if(!value.raidLock290)s.releasedProfiles.push(key);}}
-function publicState(app,campaign,s,player,now,dm=false){if(!s.units&&(!Core.week(now).open||s.week!==Core.week(now).id))return {phase:'closed',week:s.week,serverNow:now};if(s.units){if(!dm&&!s.members.includes(player))return {phase:'unavailable',message:'Попытка уже занята другой группой',week:s.week,serverNow:now};return {...Core.view(s,dm?s.members[0]:player,now),dm};}return{id:s.id,week:s.week,revision:s.revision,phase:s.phase,dm,mission:{id:s.mission.id,name:s.mission.name,reward:s.mission.reward,goals:s.mission.goals},lobby:s.lobby,roster:roster(app,campaign),serverNow:now,opens:s.window.start,closes:s.window.end};}
+function publicState(app,campaign,s,player,now,dm=false){const window=Core.week(now,world(app,campaign).campaigns?.RAIDS_V290?.[campaign]);if(!s.units&&(!window.open||s.week!==window.id))return {phase:'closed',week:s.week,serverNow:now,window};if(s.units){if(!dm&&!s.members.includes(player))return {phase:'unavailable',message:'Попытка уже занята другой группой',week:s.week,serverNow:now};return {...Core.view(s,dm?s.members[0]:player,now),dm};}return{id:s.id,week:s.week,revision:s.revision,phase:s.phase,dm,mission:{id:s.mission.id,name:s.mission.name,reward:s.mission.reward,goals:s.mission.goals},lobby:s.lobby,roster:roster(app,campaign),serverNow:now,opens:window.start,closes:window.end,window};}
 function request(e){
-  const actor=Auth.actor(e),campaign=actor.getString('campaignId'),player=actor.getString('playerId'),data=e.requestInfo().body||{},now=Date.now(),window=Core.week(now);let response;
+  const actor=Auth.actor(e),campaign=actor.getString('campaignId'),player=actor.getString('playerId'),data=e.requestInfo().body||{},now=Date.now();let response;
   e.app.runInTransaction(app=>{
+    const currentWorld=world(app,campaign),config=currentWorld.campaigns?.RAIDS_V290?.[campaign],window=Core.week(now,config);
     const currentProfile=json(profileRow(app,campaign,player),'playerJson');const selectedWeek=currentProfile.raidLock290?.split('|').pop()||data.week||window.id;
     let s=get(app,campaign,selectedWeek);
     if(!s){
       if(!window.open||selectedWeek!==window.id){response={phase:'closed',serverNow:now,window};return;}
-      const w=world(app,campaign),config=w.campaigns?.RAIDS_V290?.[campaign];if(!config?.enabled){response={phase:'disabled'};return;}
+      const w=currentWorld;if(!config?.enabled){response={phase:'disabled'};return;}
       const missions=(config.missions||[]).filter(m=>m.enabled!==false);if(!missions.length){response={phase:'disabled'};return;}
       const mission=missions[Math.floor(random()*missions.length)];Core.validate(mission,w);
       s={id:campaign+'|'+window.id,week:window.id,window,phase:'lobby',revision:0,mission:clone(mission),world:clone(w),lobby:{leader:'',invited:[],ready:[]},receipts:[],createdAt:now};put(app,campaign,selectedWeek,s);
