@@ -38,8 +38,8 @@
   const result=visit([]);if(used.size!==documents.size)throw Error('Orphan world documents');return result;
  }
  function topic(collection){return collection+'/*?options='+encodeURIComponent(JSON.stringify({query:{fields:'id,collectionId,collectionName,campaignId,revision,updated,updatedBy,clientUpdatedAt'}}));}
- function createClient(){
-  const entries=new Map(),queues=new Map(),unsupported=new Set(),history=new Map();
+ function createClient(options={}){
+  const entries=new Map(),queues=new Map(),unsupported=new Set(),history=new Map(),pendingWrites=new Map(),loadedPending=new Set(),inFlight=new Map();
   function serial(key,fn){const pending=(queues.get(key)||Promise.resolve()).catch(()=>{}).then(fn);queues.set(key,pending);return pending.finally(()=>{if(queues.get(key)===pending)queues.delete(key);});}
   function accept(key,response){
    if(response.exists===false){entries.delete(key);return null;}
@@ -65,14 +65,48 @@
    return accept(key,response);
   }
   async function supported(key,fn){try{return await fn();}catch(error){if(error.status===404){unsupported.add(key);entries.delete(key);return null;}throw error;}}
+  async function journal(key,value){
+   if(options.savePending)await options.savePending(key,value);
+   if(value)pendingWrites.set(key,value);else pendingWrites.delete(key);
+  }
+  async function pendingFor(key,campaignId){
+   if(!loadedPending.has(key)){
+    const value=options.loadPending?await options.loadPending(key):null;
+    if(value){
+     if(value.schema!==303||value.body?.campaignId!==campaignId||!/^[-a-zA-Z0-9_]{8,120}$/.test(value.body?.operationId||'')||!Array.isArray(value.body.changes))throw Error('Повреждён журнал ожидающей отправки');
+     pendingWrites.set(key,value);
+    }loadedPending.add(key);
+   }return pendingWrites.get(key)||null;
+  }
+  function waiting(value,error){return {ok:false,status:'pending',operationId:value.body.operationId,pendingEditVersion:value.localEditVersion,message:'Изменение сохранено локально. Ожидается подтверждение сервера.',detail:error?.message||null};}
+  async function recover(key,request,campaignId,retry=false){
+   const value=await pendingFor(key,campaignId);if(!value)return null;
+   if(value.failure){await journal(key,null);return {ok:false,...value.failure,definitive:true,operationId:value.body.operationId};}
+   try{
+    const prior=entries.get(key);
+    let response=await request('status',{campaignId,operationId:value.body.operationId,epoch:prior?.epoch||'',since:prior?.seq||0});
+    if(response.status!=='committed'){
+     if(!retry||inFlight.has(key))return waiting(value);
+     // Explicit retry repeats the exact persisted operation, never a newly built snapshot.
+     response=await request('push',value.body);
+     if(response.ok===false){await journal(key,null);return {...response,definitive:true,operationId:value.body.operationId};}
+    }
+    const serverTimings=response.timings||null;
+    const current=await pullNow(key,request,campaignId);if(!current)throw Error('Кампания ожидающей операции отсутствует');
+    await journal(key,null);
+    return {ok:true,exists:true,changed:true,remote:copy(current.remote),recovered:{operationId:value.body.operationId,localEditVersion:value.localEditVersion,worldScope:value.worldScope||null},serverTimings};
+   }catch(error){return waiting(value,error);}
+  }
   return {
    clear(){entries.clear();unsupported.clear();history.clear();},
    pull(key,request,campaignId,options={}){return serial(key,async()=>{
+    const recovery=await recover(key,request,campaignId,options.retryPending===true);if(recovery)return recovery;
     if(options.force){entries.delete(key);unsupported.delete(key);history.delete(key);}
     if(unsupported.has(key))return null;
     return supported(key,async()=>{const entry=await pullNow(key,request,campaignId);return {ok:true,exists:!!entry,changed:entry?.changed||false,remote:entry?copy(entry.remote):null};});
    });},
    push(key,request,campaignId,payload,operationId){return serial(key,async()=>{
+    const pending=await pendingFor(key,campaignId);if(pending)return waiting(pending);
     const entry=entries.get(key);if(unsupported.has(key)||!entry)return null;
     const intentRevision=payload.intentBaseRevision??payload.baseRevision;
     const baseline=(history.get(key)||[]).find(row=>row.epoch===entry.epoch&&row.revision===intentRevision)
@@ -101,14 +135,40 @@
     for(const [key,base] of baseline.rows)if(allowed(key)&&!base.deleted&&!target.has(key)&&!entry.rows.get(key)?.deleted)changes.push({key,deleted:true,version:expected(key,base,entry.rows.get(key))});
     // A missing route is the only fallback. Timeouts and conflicts must not replay through a legacy write.
     return supported(key,async()=>{
-     const response=await request('push',{campaignId,epoch:entry.epoch,since:entry.seq,baseRevision:payload.baseRevision,operationId,changes,updatedBy:payload.updatedBy,clientUpdatedAt:payload.clientUpdatedAt});
-     if(response.ok===false){const current=await pullNow(key,request,campaignId);return {...response,remote:current?{...current.remote,world:null,state:null}:null};}
-     const current=accept(key,response),sections=new Set();
+     const body={campaignId,epoch:entry.epoch,since:entry.seq,baseRevision:payload.baseRevision,operationId,changes,updatedBy:payload.updatedBy,clientUpdatedAt:payload.clientUpdatedAt};
+     const value={schema:303,body:copy(body),localEditVersion:payload.localEditVersion||0,worldScope:payload.worldScope||null};
+     await journal(key,value); // Durable before the first byte can reach the server.
+     if(options.backgroundWrites&&Array.isArray(payload.worldScope)){
+      const task=(async()=>{
+       let response,error;
+       try{response=await request('push',body);}catch(problem){error=problem;}
+       await serial(key,async()=>{
+        if(pendingWrites.get(key)?.body.operationId!==body.operationId)return;
+        const definite=error&&[400,401,403,404,409,422].includes(error.status);
+        if(response?.ok===false||definite){
+         const failure=response?.ok===false?{status:response.status||'error',message:response.message,conflict:response.conflict||null}:{status:'error',message:error.message};
+         await journal(key,{...value,failure});
+        }
+       });
+      })();
+      inFlight.set(key,task);
+      void task.catch(()=>{}).finally(()=>{inFlight.delete(key);try{options.onPendingSettled?.(key);}catch{}});
+      return waiting(value);
+     }
+     let response;
+     try{response=await request('push',body);}catch(error){
+      if([400,401,403,404,409,422].includes(error.status)){await journal(key,null);throw error;}
+      return waiting(value,error);
+     }
+     if(response.ok===false){await journal(key,null);const current=await pullNow(key,request,campaignId);return {...response,remote:current?{...current.remote,world:null,state:null}:null};}
+     let current;try{current=accept(key,response);}catch(error){return waiting(value,error);}
+     await journal(key,null);
+     const sections=new Set();
      function touch(key){const path=JSON.parse(key);if(path[0]==='world'&&path[1])sections.add(path[1]);}
      for(const row of response.changes)touch(row.key);
      for(const [key,row] of current.rows)if(!row.deleted&&row.data!==target.get(key))touch(key);
      const canonicalWorldPatch=Object.fromEntries([...sections].map(section=>[section,current.remote.world[section]??{}]));
-     return {ok:true,status:response.status||'updated',remote:{...current.remote,world:null,state:null},canonicalWorldPatch,canonicalUsers:current.remote.state.users||null};
+     return {ok:true,status:response.status||'updated',remote:{...current.remote,world:null,state:null},canonicalWorldPatch,canonicalUsers:current.remote.state.users||null,serverTimings:response.timings||null};
     });
    });}
   };

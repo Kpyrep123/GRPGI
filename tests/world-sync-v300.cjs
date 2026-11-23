@@ -55,6 +55,9 @@ async function run(){
  const reconciled=await handler(null,{...payload,cloudHistory:{lastPulledAt:'2026-11-23'}});
  assert.equal(reconciled.ok,true,reconciled.message);assert.equal(reconciled.cloudBackupCreated,true);
  assert.equal(ctx.fullPersisted.npcs,remote.world.npcs);assert.equal(reconciled.worldPatch.npcs,remote.world.npcs,'newer remote sections reach renderer and disk before advancing baseline');
+ const pushesBeforeRecovery=ctx.sent;
+ ctx.fetchRemoteSnapshot=async()=>({ok:true,exists:true,remote,recovered:{operationId:'old-op',localEditVersion:3}});
+ const recoveredBeforePush=await handler(null,payload);assert.equal(recoveredBeforePush.status,'confirmation-received');assert.equal(ctx.sent,pushesBeforeRecovery,'a late acknowledgement cannot be consumed by a new write');
  console.log('PASS scoped world sync: exact files, credential stripping, normalized return, validation, remote retention, conflict and state-only writes');
 }
 run().catch(error=>{console.error(error);process.exitCode=1;}).finally(()=>fs.rmSync(tmp,{recursive:true,force:true}));

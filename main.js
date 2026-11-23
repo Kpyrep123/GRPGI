@@ -1,11 +1,30 @@
 let playerSessionV212 = '';
+let playerIdentityV303 = '';
 const {clean: stripPlayerCredentialsV212} = require('./renderer/player-credentials-v212.js');
 const { app, BrowserWindow, ipcMain, screen, shell, dialog, nativeImage } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 const WorldSyncV301 = require('./renderer/world-sync-v301.js');
-const worldSyncClientV301 = WorldSyncV301.createClient();
+function pendingSyncFileV303(key) {
+  return path.join(app.getPath('userData'), 'sync-pending-v303', crypto.createHash('sha256').update(key).digest('hex') + '.json');
+}
+const worldSyncClientV301 = WorldSyncV301.createClient({
+  backgroundWrites: true,
+  onPendingSettled(key) {
+    const [, campaignId, owner] = JSON.parse(key);
+    if (owner === playerIdentityV303) broadcastWorldSnapshotRealtimeEvent({ eventType: 'PENDING_SETTLED', remote: { campaignId, updatedAt: new Date().toISOString() } });
+  },
+  async loadPending(key) {
+    try { return JSON.parse(await fs.promises.readFile(pendingSyncFileV303(key), 'utf8')); }
+    catch (error) { if (error.code === 'ENOENT') return null; throw error; }
+  },
+  async savePending(key, value) {
+    const file = pendingSyncFileV303(key);
+    if (value) { await fs.promises.mkdir(path.dirname(file), { recursive: true }); await writeJsonAtomic(file, value); }
+    else { try { await fs.promises.unlink(file); } catch (error) { if (error.code !== 'ENOENT') throw error; } }
+  }
+});
 const http = require('http');
 const https = require('https');
 const { pathToFileURL, fileURLToPath } = require('url');
@@ -2106,7 +2125,7 @@ function normalizePocketBaseSnapshotRecord(record = {}) {
 }
 
 function worldSyncRequestV301(config) {
-  const key = JSON.stringify([getPocketBaseBaseUrl(config), config.campaignId, playerSessionV212]);
+  const key = JSON.stringify([getPocketBaseBaseUrl(config), config.campaignId, (typeof playerIdentityV303 === 'string' && playerIdentityV303) || playerSessionV212]);
   const request = (action, json) => pocketbaseFetch(config, '/api/grpgi/auth-v212/world-v301/' + action, { method: 'POST', json });
   return { key, request };
 }
@@ -2114,7 +2133,7 @@ function worldSyncRequestV301(config) {
 async function fetchPocketBaseSnapshot(config = {}, options = {}) {
   if (options.includePayload !== false && playerSessionV212 && pocketbaseCollection(config, 'snapshot') === DEFAULT_SYNC_TABLE) {
     const { key, request } = worldSyncRequestV301(config);
-    const result = await worldSyncClientV301.pull(key, request, config.campaignId, { force: options.force });
+    const result = await worldSyncClientV301.pull(key, request, config.campaignId, { force: options.force, retryPending: options.retryPending });
     if (result) return result;
   }
   const record = (await pocketbaseList(config, 'snapshot', {
@@ -2678,18 +2697,23 @@ function broadcastWorldSnapshotRealtimeEvent(payload = {}) {
   }
 }
 
+let networkRealtimeSignatureV303 = '';
+let networkRealtimeSetupV303 = Promise.resolve();
 async function setupNetworkRealtime(config = {}) {
-  await Promise.allSettled([teardownSelfhostRealtime(), teardownPocketBaseRealtime()]);
-  if (!config?.enabled) return;
-  if (isSelfhostSyncConfig(config)) {
-    await setupSelfhostRealtime(config);
-    return;
-  }
-  if (isPocketBaseSyncConfig(config)) {
-    await setupPocketBaseRealtime(config);
-    return;
-  }
-  throw new Error('Неподдерживаемый провайдер синхронизации');
+  const pending = networkRealtimeSetupV303.catch(() => {}).then(async () => {
+    const signature = JSON.stringify([config.enabled, config.provider, config.url, config.campaignId, config.tableName, config.playerTableName, config.chatTableName, config.combatRuntimeTableName, playerSessionV212]);
+    const active = isPocketBaseSyncConfig(config) ? pocketbaseRealtime : selfhostRealtime;
+    if (signature === networkRealtimeSignatureV303 && active?.abortController && !active.abortController.signal.aborted) return;
+    await Promise.allSettled([teardownSelfhostRealtime(), teardownPocketBaseRealtime()]);
+    networkRealtimeSignatureV303 = '';
+    if (!config?.enabled) return;
+    if (isSelfhostSyncConfig(config)) await setupSelfhostRealtime(config);
+    else if (isPocketBaseSyncConfig(config)) await setupPocketBaseRealtime(config);
+    else throw new Error('Неподдерживаемый провайдер синхронизации');
+    networkRealtimeSignatureV303 = signature;
+  });
+  networkRealtimeSetupV303 = pending;
+  return pending;
 }
 
 let startupNetworkRealtimeStarted = false;
@@ -3564,10 +3588,12 @@ ipcMain.handle('sync:pull', async (_event, payload) => {
     }
     const localRevision = Number(payload?.localRevision || 0);
     const force = Boolean(payload?.force);
-    const remote = await fetchRemoteSnapshot(config, { includePayload: true, force });
+    const remote = await fetchRemoteSnapshot(config, { includePayload: true, force, retryPending: payload?.retryPending === true });
+    if (remote.ok === false) return { ...remote, enabled: true, connected: remote.definitive === true, config };
     if (!remote.exists) {
       return { ok: true, enabled: true, connected: true, status: 'empty', message: `В ${isPocketBaseSyncConfig(config) ? 'PocketBase' : 'выделенном сервере'} ещё нет снапшота кампании`, remote: null, config };
     }
+    if (remote.recovered) debugLog('SYNC_RECOVERED_OPERATION', { ...remote.recovered, serverTimings: remote.serverTimings });
     const remoteRevision = Number(remote.remote?.revision || 0);
     const newer = force || remoteRevision > localRevision || remote.changed === true;
     const baselineToken = newer ? createSyncBaselineGuard(config, remoteRevision) : null;
@@ -3579,6 +3605,7 @@ ipcMain.handle('sync:pull', async (_event, payload) => {
       newer,
       config,
       baselineToken,
+      recovered: remote.recovered || null,
       remote: remote.remote,
       payload: newer ? { world: remote.remote.world, state: remote.remote.state } : null
     };
@@ -3664,6 +3691,8 @@ ipcMain.handle('sync:push', async (_event, payload) => {
     const fetchStarted = Date.now();
     const currentRemote = await fetchRemoteSnapshot(config, { includePayload: true });
     debugLog('SYNC_REMOTE_FETCH_TIMING', { elapsedMs: Date.now() - fetchStarted });
+    if (currentRemote.ok === false) return { ...currentRemote, enabled: true, connected: currentRemote.definitive === true, config };
+    if (currentRemote.recovered) return { ok: false, status: 'confirmation-received', message: 'Предыдущая отправка подтверждена. Новые изменения сохранены локально.', recovered: currentRemote.recovered, remote: { ...currentRemote.remote, world: null, state: null }, enabled: true, connected: true, config };
     if (!currentRemote.exists) {
       invalidateSyncBaselineGuards('remote-snapshot-missing');
       return {
@@ -3799,11 +3828,12 @@ ipcMain.handle('sync:push', async (_event, payload) => {
       state: normalizedSnapshot.state || {},
       baseRevision: Number(baseline.guard.revision || remoteRevision),
       intentBaseRevision: Number(payload?.baseRevision || 0),
+      localEditVersion: Number(payload?.localEditVersion || 0),
       ...(worldOnly ? { worldScope: worldSections } : {}),
       updatedBy: payload?.updatedBy || config.deviceLabel || 'unknown-device',
       clientUpdatedAt: payload?.clientUpdatedAt || new Date().toISOString()
     });
-    debugLog('SYNC_REMOTE_PUSH_TIMING', { elapsedMs: Date.now() - pushStarted, ok: result?.ok, status: result?.status, conflict: result?.conflict || null });
+    debugLog('SYNC_REMOTE_PUSH_TIMING', { elapsedMs: Date.now() - pushStarted, ok: result?.ok, status: result?.status, conflict: result?.conflict || null, serverTimings: result?.serverTimings || null });
     if (result?.ok && result.canonicalWorldPatch) {
       worldPatch = result.canonicalWorldPatch;
       normalizedSnapshot.world = { ...normalizedSnapshot.world, ...worldPatch };
@@ -4038,7 +4068,7 @@ ipcMain.handle('players:delete', async (_event, payload) => {
 });
 
 ipcMain.handle('player-auth-v212', async (_event, payload = {}) => {
-  if (payload.action === 'logout') {playerSessionV212 = '';worldSyncClientV301.clear();return {ok:true};}
+  if (payload.action === 'logout') {playerSessionV212 = '';playerIdentityV303 = '';worldSyncClientV301.clear();return {ok:true};}
   const allowed = new Set(['login','session','recovery/request','recovery/requests','recovery/approve','recovery/reject','recovery/confirm']);
   if (!allowed.has(payload.action)) return {ok:false,message:'Неизвестная операция'};
   try {
@@ -4060,9 +4090,10 @@ ipcMain.handle('player-auth-v212', async (_event, payload = {}) => {
       if (token !== playerSessionV212) worldSyncClientV301.clear();
       playerSessionV212 = token;
     }
+    if (['login','session'].includes(payload.action)) playerIdentityV303 = String(result.playerId || '');
     return result;
   } catch (error) {
-    if (['login','session'].includes(payload.action)) playerSessionV212 = '';
+    if (['login','session'].includes(payload.action)) { playerSessionV212 = ''; playerIdentityV303 = ''; worldSyncClientV301.clear(); }
     return {ok:false,message:error.message || 'Сервер авторизации недоступен'};
   }
 });

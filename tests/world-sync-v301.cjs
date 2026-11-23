@@ -3,10 +3,10 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('nod
 const codec=require('../renderer/world-sync-v301.js'),clean=require('../renderer/player-credentials-v212.js').clean;
 const db=new DatabaseSync(':memory:');
 db.exec('CREATE TABLE campaign_snapshots(id TEXT PRIMARY KEY,campaignId TEXT UNIQUE,worldJson TEXT,stateJson TEXT,revision INTEGER,updated TEXT,updatedBy TEXT,clientUpdatedAt TEXT)');
-let writes=0,failSave=false;
+let writes=0,failSave=false,stripProof=false;
 function query(sql){let args={};const statement=()=>db.prepare(sql.replace(/\{:([a-zA-Z0-9_]+)\}/g,':$1'));return {bind(value){args=value;return this;},execute(){writes++;return statement().run(args);},all(out){out.push(...statement().all(args));},one(out){const row=statement().get(args);if(!row)throw Error('sql: no rows');Object.assign(out,row);}};}
 function record(row){return row&&{id:row.id,getString(key){const value=row[key];return typeof value==='string'?value:JSON.stringify(value??{});},getInt:key=>Number(row[key]||0),set(key,value){row[key]=value;},collection:()=>({viewRule:'view',updateRule:'update'}),row};}
-const app={db:()=>({newQuery:query}),runInTransaction(fn){db.exec('BEGIN');try{const result=fn(app);db.exec('COMMIT');return result;}catch(error){db.exec('ROLLBACK');throw error;}},findRecordsByFilter(name,filter,sort,limit,offset,args){assert.equal(name,'campaign_snapshots');const row=db.prepare('SELECT * FROM campaign_snapshots WHERE campaignId=?').get(args.campaign);return row?[record(row)]:[];},canAccessRecord(record,info){return !info.deny;},save(r){if(failSave)throw Error('injected save failure');const row=r.row;db.prepare('UPDATE campaign_snapshots SET worldJson=?,stateJson=?,revision=?,updated=?,updatedBy=?,clientUpdatedAt=? WHERE id=?').run(JSON.stringify(clean(row.worldJson)),JSON.stringify(clean(row.stateJson)),row.revision,'now',row.updatedBy,row.clientUpdatedAt,row.id);}};
+const app={db:()=>({newQuery:query}),runInTransaction(fn){db.exec('BEGIN');try{const result=fn(app);db.exec('COMMIT');return result;}catch(error){db.exec('ROLLBACK');throw error;}},findRecordsByFilter(name,filter,sort,limit,offset,args){assert.equal(name,'campaign_snapshots');const row=db.prepare('SELECT * FROM campaign_snapshots WHERE campaignId=?').get(args.campaign);return row?[record(row)]:[];},canAccessRecord(record,info){return !info.deny;},save(r){if(failSave)throw Error('injected save failure');const row=r.row,savedState=clean(row.stateJson);if(stripProof)delete savedState.__worldWriteV140;db.prepare('UPDATE campaign_snapshots SET worldJson=?,stateJson=?,revision=?,updated=?,updatedBy=?,clientUpdatedAt=? WHERE id=?').run(JSON.stringify(clean(row.worldJson)),JSON.stringify(savedState),row.revision,'now',row.updatedBy,row.clientUpdatedAt,row.id);}};
 class ApiError extends Error{constructor(status,message){super(message);this.status=status;}}
 class ForbiddenError extends ApiError{constructor(message){super(403,message);}}
 class BadRequestError extends ApiError{constructor(message){super(400,message);}}
@@ -21,7 +21,9 @@ async function run(){
  for(let i=0;i<600;i++){const item={id:'gun'+i,name:'Gun '+i,script:'-- '+ 'large script '.repeat(80),image:'https://assets.test/'+i+'.png'};world.equipment.EQUIPMENT[item.id]=item;world.equipment.EQUIPMENT_LIST.push(item);}
  const state={users:{gm:{id:'gm',role:'gm',password:'must be stripped'}},empty:[],nested:{empty:{}}};
  db.prepare('INSERT INTO campaign_snapshots VALUES (?,?,?,?,?,?,?,?)').run('snapshot','main',JSON.stringify(world),JSON.stringify(state),5,'old','gm','old');
+ db.exec("CREATE TABLE grpgi_world_receipts_v301(campaign TEXT NOT NULL,operation TEXT NOT NULL,fingerprint TEXT NOT NULL,PRIMARY KEY(campaign,operation))");
  server.bootstrap(event({}));
+ assert(db.prepare("SELECT name FROM pragma_table_info('grpgi_world_receipts_v301') WHERE name='timings'").get());
  const initial=invoke('pull',{campaignId:'main',since:0,epoch:''});
  assert(initial.reset);assert.equal(initial.remote.revision,5);assert(initial.changes.length>1200);
  const documents=new Map(initial.changes.filter(row=>!row.deleted).map(row=>[row.key,row.data]));
@@ -31,7 +33,8 @@ async function run(){
  assert.throws(()=>invoke('pull',{campaignId:'main'},null),error=>error.status===403);
  assert.throws(()=>invoke('pull',{campaignId:'main'},undefined,true),error=>error.status===403);
  const client=codec.createClient(),calls=[];
- const request=async(action,body)=>{calls.push(json({action,body}));return json(invoke(action,body));};
+ // Deterministic injected validation failures use a 400 response in this API adapter.
+ const request=async(action,body)=>{calls.push(json({action,body}));try{return json(invoke(action,body));}catch(error){error.status=error.status||400;throw error;}};
  const pulled=await client.pull('session',request,'main');assert.equal(pulled.remote.world.equipment.EQUIPMENT.gun33.name,'Gun 33');
  const next=json(pulled.remote);next.world.equipment.EQUIPMENT.gun33.name='Edited';next.world.equipment.EQUIPMENT_LIST[33].name='Edited';
  const payload={world:next.world,state:next.state,baseRevision:5,updatedBy:'device'};
@@ -114,6 +117,68 @@ async function run(){
  assert.equal(afterWc.meta.lastUpdatedAt,'GG-new');assert.equal(afterWc.users.gm.credits,42);assert.equal(afterWc.__worldWriteV140.createdAt,'new-WC-proof');
  assert.equal(JSON.parse(db.prepare('SELECT worldJson FROM campaign_snapshots').get().worldJson).equipment.EQUIPMENT.gun3.name,'WC after GG');
  assert(Array.isArray(conflict.conflict.path));assert(conflict.conflict.actualVersion>conflict.conflict.expectedVersion);
+ // Real receipt recovery: server commits, network drops the response, then the app restarts.
+ const os=require('node:os'),folder=fs.mkdtempSync(path.join(os.tmpdir(),'world-pending-303-'));
+ const pendingFile=path.join(folder,'pending.json');
+ const disk={loadPending:async()=>fs.existsSync(pendingFile)?JSON.parse(fs.readFileSync(pendingFile,'utf8')):null,savePending:async(key,value)=>{if(value){fs.writeFileSync(pendingFile+'.tmp',JSON.stringify(value));fs.renameSync(pendingFile+'.tmp',pendingFile);}else if(fs.existsSync(pendingFile))fs.unlinkSync(pendingFile);}};
+ try{
+  stripProof=true; // Match the installed legacy integrity hook's removal of the write marker.
+  const transportCalls=[];let loss='after';
+  const unreliable=async(action,body)=>{
+   transportCalls.push(json({action,body}));
+   if(action==='push'&&loss==='before'){loss='';throw Error('PocketBase timeout before processing');}
+   const result=json(invoke(action==='status'?'operationStatus':action,body));
+   if(action==='push'&&loss==='after'){loss='';throw Error('PocketBase timeout after commit');}
+   return result;
+  };
+  const firstProcess=codec.createClient(disk),firstBase=await firstProcess.pull('gm',unreliable,'main'),lostIntent=json(firstBase.remote);
+  lostIntent.world.equipment.EQUIPMENT.gun4.name='Committed before timeout';
+  const lost=await firstProcess.push('gm',unreliable,'main',{world:lostIntent.world,state:lostIntent.state,baseRevision:firstBase.remote.revision,localEditVersion:3,worldScope:['equipment']},'operation-lost-response');
+  assert.equal(lost.status,'pending');assert.equal(lost.operationId,'operation-lost-response');assert(fs.existsSync(pendingFile));
+  const pushes=transportCalls.filter(row=>row.action==='push').length;
+  const blocked=await firstProcess.push('gm',unreliable,'main',{world:{},state:{},baseRevision:0},'operation-must-not-send');assert.equal(blocked.status,'pending');
+  assert.equal(transportCalls.filter(row=>row.action==='push').length,pushes,'unknown outcome blocks new operation IDs');
+  const restarted=codec.createClient(disk),recovered=await restarted.pull('gm',unreliable,'main');
+  assert.equal(recovered.recovered.operationId,'operation-lost-response');assert.equal(recovered.recovered.localEditVersion,3);
+  assert.equal(recovered.remote.world.equipment.EQUIPMENT.gun4.name,'Committed before timeout');assert.equal(recovered.remote.state.__worldWriteV140,undefined);assert(!fs.existsSync(pendingFile));
+  assert.equal(transportCalls.filter(row=>row.action==='push').length,pushes,'confirmed write is never replayed');
+  assert.equal(typeof recovered.serverTimings.saveSnapshotMs,'number');assert.equal(typeof recovered.serverTimings.indexAfterMs,'number');
+  assert.throws(()=>invoke('operationStatus',{campaignId:'main',operationId:'operation-lost-response'},{campaignId:'other',dm:true}),error=>error.status===403);
+  assert.throws(()=>invoke('operationStatus',{campaignId:'main',operationId:'operation-lost-response'},{campaignId:'main',dm:false}),error=>error.status===403);
+  const retryIntent=json(recovered.remote);retryIntent.world.equipment.EQUIPMENT.gun5.name='Explicit retry';loss='before';
+  const unsent=await restarted.push('gm',unreliable,'main',{world:retryIntent.world,state:retryIntent.state,baseRevision:recovered.remote.revision,localEditVersion:4},'operation-unsent');assert.equal(unsent.status,'pending');
+  const originalBody=JSON.parse(fs.readFileSync(pendingFile,'utf8')).body;
+  assert.equal((await restarted.pull('gm',unreliable,'main')).status,'pending','unconfirmed never means not saved');
+  assert.equal(transportCalls.filter(row=>row.action==='push').length,pushes+1,'poll does not retry writes');
+  const secondRestart=codec.createClient(disk),retried=await secondRestart.pull('gm',unreliable,'main',{retryPending:true});assert(retried.ok);assert.equal(retried.remote.world.equipment.EQUIPMENT.gun5.name,'Explicit retry');
+  assert.deepEqual(transportCalls.filter(row=>row.action==='push').at(-1).body,originalBody,'retry sends identical body and ID after restart');
+  let sentWithoutJournal=false;
+  const brokenJournal=codec.createClient({loadPending:async()=>null,savePending:async()=>{throw Error('disk full');}});
+  await brokenJournal.pull('disk',unreliable,'main');
+  await assert.rejects(brokenJournal.push('disk',async()=>{sentWithoutJournal=true;},'main',{world:retried.remote.world,state:retried.remote.state,baseRevision:retried.remote.revision},'operation-disk-full'),/disk full/);assert.equal(sentWithoutJournal,false);
+  let releaseNetwork,settledResolve;const settled=new Promise(resolve=>{settledResolve=resolve;});
+  const backgroundRequest=async(action,body)=>action==='push'?new Promise(resolve=>{releaseNetwork=()=>resolve(json(invoke('push',body)));}):json(invoke(action==='status'?'operationStatus':action,body));
+  const background=codec.createClient({...disk,backgroundWrites:true,onPendingSettled:()=>settledResolve()});
+  const bgBase=await background.pull('bg',backgroundRequest,'main'),bgIntent=json(bgBase.remote);bgIntent.world.equipment.EQUIPMENT.gun6.name='Background write';
+  let returned=false;const queued=background.push('bg',backgroundRequest,'main',{world:bgIntent.world,state:bgIntent.state,baseRevision:bgBase.remote.revision,worldScope:['equipment'],localEditVersion:5},'operation-background').then(result=>{returned=true;return result;});
+  await new Promise(resolve=>setImmediate(resolve));
+  assert(returned,'durably queued WC save returns before the network completes');assert.equal((await queued).status,'pending');assert(fs.existsSync(pendingFile));
+  assert.equal(JSON.parse(db.prepare('SELECT worldJson FROM campaign_snapshots').get().worldJson).equipment.EQUIPMENT.gun6.name,bgBase.remote.world.equipment.EQUIPMENT.gun6.name);
+  releaseNetwork();await settled;
+  const bgConfirmed=await background.pull('bg',backgroundRequest,'main');assert.equal(bgConfirmed.recovered.operationId,'operation-background');assert.equal(bgConfirmed.remote.world.equipment.EQUIPMENT.gun6.name,'Background write');assert(!fs.existsSync(pendingFile));
+  const staleRetryClient=codec.createClient(disk),staleRetryBase=await staleRetryClient.pull('stale-retry',unreliable,'main');loss='before';
+  assert.equal((await staleRetryClient.push('stale-retry',unreliable,'main',{world:staleRetryBase.remote.world,state:staleRetryBase.remote.state,baseRevision:staleRetryBase.remote.revision},'operation-stale-retry')).status,'pending');
+  db.exec('UPDATE campaign_snapshots SET revision=revision+1');
+  const rejectedRetry=await staleRetryClient.pull('stale-retry',unreliable,'main',{retryPending:true});assert.equal(rejectedRetry.status,'conflict');assert.equal(rejectedRetry.definitive,true);assert(!fs.existsSync(pendingFile));
+  let failedSettled;const failureDone=new Promise(resolve=>{failedSettled=resolve;});
+  const rejected=codec.createClient({...disk,backgroundWrites:true,onPendingSettled:()=>failedSettled()});
+  const rejectRequest=async(action,body)=>action==='push'?{ok:false,status:'conflict',message:'Server conflict'}:json(invoke(action==='status'?'operationStatus':action,body));
+  const rejectBase=await rejected.pull('reject',rejectRequest,'main');
+  assert.equal((await rejected.push('reject',rejectRequest,'main',{world:rejectBase.remote.world,state:rejectBase.remote.state,baseRevision:rejectBase.remote.revision,worldScope:['equipment']},'operation-bg-rejected')).status,'pending');await failureDone;
+  const rejectRestored=await codec.createClient(disk).pull('reject',rejectRequest,'main');assert.equal(rejectRestored.status,'conflict');assert.equal(rejectRestored.definitive,true);assert(!fs.existsSync(pendingFile));
+  fs.writeFileSync(pendingFile,'{"schema":0}');
+  await assert.rejects(codec.createClient(disk).pull('gm',unreliable,'main'),/Повреждён/);
+ }finally{fs.rmSync(folder,{recursive:true,force:true});}
  // Delete/recreate resets the epoch so an old cursor cannot silently skip a new campaign.
  db.exec("DELETE FROM campaign_snapshots WHERE campaignId='main'");
  assert.equal(invoke('pull',{campaignId:'main',epoch:initial.epoch,since:initial.seq}).exists,false);

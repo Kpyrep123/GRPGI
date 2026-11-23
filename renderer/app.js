@@ -603,6 +603,12 @@ function defaultSyncMeta() {
     localDirty: false,
     remoteRevision: 0,
     remoteUpdatedAt: null,
+    observedRemoteRevision: 0,
+    observedRemoteUpdatedAt: null,
+    localEditVersion: 0,
+    pendingOperationId: null,
+    pendingEditVersion: null,
+    confirmedPendingOperation: null,
     lastPulledAt: null,
     lastPushedAt: null,
     lastCheckedAt: null,
@@ -1120,6 +1126,7 @@ const Sync = {
     if (!App?.state?.meta) return;
     App.state.meta.sync = { ...defaultSyncMeta(), ...(App.state.meta.sync || {}) };
     App.state.meta.sync.localDirty = true;
+    App.state.meta.sync.localEditVersion = Number(App.state.meta.sync.localEditVersion || 0) + 1;
     App.state.meta.sync.lastStatus = reason;
     App.state.meta.sync.enabled = Boolean(this.config?.enabled);
     App.state.meta.sync.configured = this.isConfiguredConfig(this.config);
@@ -1157,6 +1164,9 @@ const Sync = {
       campaignId: this.config?.campaignId || '',
       deviceLabel: this.config?.deviceLabel || '',
       localDirty: false,
+      pendingOperationId: null,
+      pendingEditVersion: null,
+      confirmedPendingOperation: null,
       remoteRevision: Number(remoteMeta?.revision || 0),
       remoteUpdatedAt: remoteMeta?.updatedAt || null,
       lastPulledAt: new Date().toISOString(),
@@ -1190,8 +1200,8 @@ const Sync = {
       App.state.meta.sync.lastStatus = this.status.message;
       App.state.meta.sync.lastError = res?.ok ? null : (res?.message || null);
       if (res?.remote) {
-        App.state.meta.sync.remoteRevision = Number(res.remote.revision || App.state.meta.sync.remoteRevision || 0);
-        App.state.meta.sync.remoteUpdatedAt = res.remote.updatedAt || App.state.meta.sync.remoteUpdatedAt || null;
+        App.state.meta.sync.observedRemoteRevision = Number(res.remote.revision || 0);
+        App.state.meta.sync.observedRemoteUpdatedAt = res.remote.updatedAt || null;
       }
     }
     this.refreshChip();
@@ -1206,29 +1216,41 @@ const Sync = {
     }
     const localSync = App.state?.meta?.sync || defaultSyncMeta();
     const localRevision = Number(localSync.remoteRevision || 0);
-    const res = await window.electronAPI.pullSync({ localRevision, force: Boolean(options.force) });
+    const res = await window.electronAPI.pullSync({ localRevision, force: Boolean(options.force), retryPending: options.retryPending === true });
     Debug.log('SYNC_PULL_RESULT', { reason, localRevision, ok: res?.ok, status: res?.status, newer: res?.newer, remoteRevision: res?.remote?.revision || null });
     if (!res?.ok) {
       if (options.force) this.baselineToken = '';
-      this.status = { enabled: true, connected: false, message: res?.message || 'SYNC_PULL_FAILED', remote: null };
+      this.status = { enabled: true, connected: res.definitive === true, message: res?.message || 'SYNC_PULL_FAILED', remote: null };
       App.state.meta.sync.lastCheckedAt = new Date().toISOString();
-      App.state.meta.sync.lastStatus = 'PULL_FAILED';
+      App.state.meta.sync.lastStatus = res.status === 'pending' ? 'AWAITING_CONFIRMATION' : res.status === 'conflict' ? 'CONFLICT' : 'PULL_FAILED';
+      if (res.definitive) { App.state.meta.sync.pendingOperationId = null; App.state.meta.sync.pendingEditVersion = null; }
+      if (res.status === 'pending') {
+        App.state.meta.sync.pendingOperationId = res.operationId;
+        App.state.meta.sync.pendingEditVersion = res.pendingEditVersion;
+      }
       App.state.meta.sync.lastError = res?.message || 'SYNC_PULL_FAILED';
       this.refreshChip();
       this.render();
-      if (!options.silent) Toast.show(`${this.cloudName()} недоступен: ${res?.message || 'unknown error'}`, 'info');
+      if (!options.silent) Toast.show(res.status === 'pending' || res.definitive ? res.message : `${this.cloudName()} недоступен: ${res?.message || 'unknown error'}`, 'info');
       return res;
     }
 
     App.state.meta.sync.lastCheckedAt = new Date().toISOString();
     App.state.meta.sync.lastError = null;
     if (res?.remote) {
-      App.state.meta.sync.remoteRevision = Number(res.remote.revision || App.state.meta.sync.remoteRevision || 0);
-      App.state.meta.sync.remoteUpdatedAt = res.remote.updatedAt || App.state.meta.sync.remoteUpdatedAt || null;
+      App.state.meta.sync.observedRemoteRevision = Number(res.remote.revision || 0);
+      App.state.meta.sync.observedRemoteUpdatedAt = res.remote.updatedAt || null;
     }
 
+    if (res.recovered) App.state.meta.sync.confirmedPendingOperation = res.recovered;
+    const confirmation = res.recovered || App.state.meta.sync.confirmedPendingOperation;
+    const ownConfirmation = Boolean(confirmation) && Number(localSync.localEditVersion || 0) === Number(confirmation.localEditVersion || 0);
+    if (res.recovered) {
+      App.state.meta.sync.pendingOperationId = null;
+      App.state.meta.sync.pendingEditVersion = null;
+    }
     if (res.status === 'newer' && res.payload) {
-      if (localSync.localDirty && !options.force) {
+      if (localSync.localDirty && !options.force && !ownConfirmation) {
         App.state.meta.sync.lastStatus = 'REMOTE_NEWER_LOCAL_DIRTY';
         this.status = { enabled: true, connected: true, message: 'CONFLICT_REMOTE_NEWER', remote: res.remote || null };
         this.refreshChip();
@@ -1237,7 +1259,7 @@ const Sync = {
         await Persistence.save(App.state);
         return { ...res, skipped: true };
       }
-      if (options.applyIfNewer === false) {
+      if (options.applyIfNewer === false && !(ownConfirmation && !UiSyncGuard.isEditingCriticalForm())) {
         App.state.meta.sync.lastStatus = 'REMOTE_NEWER_AVAILABLE';
         this.status = { enabled: true, connected: true, message: 'REMOTE_NEWER_AVAILABLE', remote: res.remote || null };
         this.refreshChip();
@@ -1246,7 +1268,11 @@ const Sync = {
         if (!options.silent) Toast.show('В облаке есть более свежий снимок мира. Он не был применён автоматически.', 'info');
         return { ...res, skipped: true };
       }
-      await this.applyRemoteSnapshot(res.payload, res.remote, options);
+      const applied = await this.applyRemoteSnapshot(res.payload, res.remote, options);
+      if (String(applied?.status || '').startsWith('deferred')) {
+        await Persistence.save(App.state);
+        return { ...res, skipped: true };
+      }
       this.baselineToken = String(res.baselineToken || '');
       this.refreshChip();
       this.render();
@@ -1281,6 +1307,7 @@ const Sync = {
         ? { world: options.preparedWorld, state: buildSharedStateSnapshot(App.state) }
         : this.buildSnapshot(),
       baseRevision,
+      localEditVersion: Number(syncMeta.localEditVersion || 0),
       baselineToken: this.baselineToken,
       updatedBy: this.config.deviceLabel || App.currentUser?.displayName || 'unknown-device',
       clientUpdatedAt: App.state?.meta?.lastUpdatedAt || new Date().toISOString(),
@@ -1305,18 +1332,27 @@ const Sync = {
       if (res?.status === 'baseline-required' || res?.status === 'baseline-stale' || res?.status === 'remote-empty-protected') {
         this.baselineToken = '';
       }
-      App.state.meta.sync.lastStatus = res?.status === 'conflict' ? 'CONFLICT' : 'PUSH_FAILED';
+      App.state.meta.sync.lastStatus = res?.status === 'pending' ? 'AWAITING_CONFIRMATION' : res?.status === 'conflict' ? 'CONFLICT' : 'PUSH_FAILED';
+      if (res.status === 'pending') {
+        App.state.meta.sync.pendingOperationId = res.operationId;
+        App.state.meta.sync.pendingEditVersion = res.pendingEditVersion;
+      }
+      if (res.recovered) {
+        App.state.meta.sync.confirmedPendingOperation = res.recovered;
+        App.state.meta.sync.pendingOperationId = null;
+        App.state.meta.sync.pendingEditVersion = null;
+      }
       App.state.meta.sync.lastError = res?.message || 'SYNC_PUSH_FAILED';
       if (res?.remote) {
-        App.state.meta.sync.remoteRevision = Number(res.remote.revision || App.state.meta.sync.remoteRevision || 0);
-        App.state.meta.sync.remoteUpdatedAt = res.remote.updatedAt || App.state.meta.sync.remoteUpdatedAt || null;
+        App.state.meta.sync.observedRemoteRevision = Number(res.remote.revision || 0);
+        App.state.meta.sync.observedRemoteUpdatedAt = res.remote.updatedAt || null;
       }
       this.status = { enabled: true, connected: Boolean(res?.connected), message: App.state.meta.sync.lastStatus, remote: res?.remote || null };
       this.refreshChip();
       this.render();
       await Persistence.save(App.state);
       if (!options.silent) {
-        const msg = res?.status === 'conflict'
+        const msg = res?.status === 'pending' ? res.message : res?.status === 'conflict'
           ? `Сохранено локально, но в ${this.cloudName()} уже есть более новая ревизия. Сначала подтяни облако.`
           : `Сохранено локально, но ${this.cloudName()} недоступен: ${res?.message || 'unknown error'}`;
         Toast.show(msg, 'info');
@@ -1348,6 +1384,8 @@ const Sync = {
       campaignId: this.config.campaignId || '',
       deviceLabel: this.config.deviceLabel || '',
       localDirty: false,
+      pendingOperationId: null,
+      pendingEditVersion: null,
       remoteRevision: Number(res.remote?.revision || baseRevision),
       remoteUpdatedAt: res.remote?.updatedAt || new Date().toISOString(),
       lastPushedAt: new Date().toISOString(),
@@ -1372,7 +1410,8 @@ const Sync = {
     let label = 'ЛОКАЛЬНЫЕ ДАННЫЕ';
     if (this.config?.enabled) {
       const cloud = this.cloudName(this.config);
-      if (syncMeta.lastStatus === 'SYNCED') label = `${cloud}: синхронизировано · ${syncMeta.remoteRevision || 0}`;
+      if (syncMeta.lastStatus === 'AWAITING_CONFIRMATION') label = `${cloud}: ожидается подтверждение`;
+      else if (syncMeta.lastStatus === 'SYNCED') label = `${cloud}: синхронизировано · ${syncMeta.remoteRevision || 0}`;
       else if (syncMeta.lastStatus === 'CONFLICT' || syncMeta.lastStatus === 'REMOTE_NEWER_LOCAL_DIRTY') label = `${cloud}: требуется проверка`;
       else if (this.status?.connected === false && this.status?.message && this.status?.message !== 'Локальный режим') label = `${cloud}: нет связи`;
       else if (syncMeta.localDirty) label = `${cloud}: есть изменения`;
@@ -1509,8 +1548,9 @@ const Sync = {
             <div class="row config-actions">
               <button type="button" id="sync-test-btn" class="secondary" ${actionsBusy ? 'disabled' : ''}>ПРОВЕРИТЬ СВЯЗЬ</button>
               <button type="button" id="sync-pull-btn" class="secondary" ${actionsBusy ? 'disabled' : ''}>ПОЛУЧИТЬ ИЗ ОБЛАКА</button>
-              ${isGm ? `<button type="button" id="sync-push-btn" class="primary" ${actionsBusy ? 'disabled' : ''}>ОТПРАВИТЬ В ОБЛАКО</button>` : ''}
+              ${isGm ? `<button type="button" id="sync-push-btn" class="primary" ${actionsBusy || syncMeta.pendingOperationId ? 'disabled' : ''}>ОТПРАВИТЬ В ОБЛАКО</button>` : ''}
             </div>
+            ${isGm && syncMeta.pendingOperationId ? `<div class="small-note">Ожидается подтверждение предыдущей операции. Повтор использует ту же отправку и не создаёт новую.</div><button type="button" class="secondary" id="sync-retry-pending-btn" ${actionsBusy ? 'disabled' : ''}>ПОВТОРИТЬ ОЖИДАЮЩУЮ ОТПРАВКУ</button>` : ''}
             ${isGm ? '<div class="small-note">Ручная отправка не загружает облачный снимок поверх локальной работы. Перед записью приложение проверяет роль ДМа и ревизию; при расхождении облачная версия автоматически сохраняется в резервную копию.</div>' : ''}
           </div>
         </div>
@@ -1542,6 +1582,10 @@ const Sync = {
       } finally {
         this.endDataTransfer();
       }
+    });
+    $('#sync-retry-pending-btn')?.addEventListener('click', async () => {
+      if (this.dataTransferDepth > 0) return;
+      await this.checkForRemoteUpdates('retry-pending', { retryPending: true, silent: false });
     });
     $('#sync-push-btn')?.addEventListener('click', async () => {
       if (this.manualPushBusy || this.dataTransferDepth > 0) return;
@@ -3061,6 +3105,7 @@ const App = {
     mirrorPlayersIntoWorld(this.state);
     this.refreshAfterLocalWrite();
     if (syncRes?.ok || syncRes?.status === 'disabled') Toast.show(`${notice}${syncRes?.cloudBackupCreated ? '. Предыдущая облачная ревизия сохранена в резервную копию' : ''}`, 'ok');
+    else if (['pending','confirmation-received'].includes(syncRes?.status)) Toast.show(syncRes.message, 'info');
     else Toast.show(`Локально сохранено, но облако не обновлено: ${syncRes?.message || 'unknown error'}`, 'err');
     return syncRes;
   },
@@ -6003,6 +6048,11 @@ const Configurator = {
   },
   async submit(event) {
     event.preventDefault();
+    if (App.state?.meta?.sync?.pendingOperationId || App.state?.meta?.sync?.confirmedPendingOperation) {
+      await Sync.checkForRemoteUpdates('config-pending-check', { silent: false, applyIfNewer: true });
+      Toast.show(App.state.meta.sync.pendingOperationId ? 'Ожидается подтверждение предыдущей отправки. Изменения формы сохранены в черновике.' : 'Предыдущая отправка подтверждена. Проверьте форму перед новым сохранением.', 'info');
+      return;
+    }
     const current = this.getSelectedEntity();
     const oldId = current?.id || this.selectedId;
     const formEl = event.currentTarget;
@@ -6153,6 +6203,7 @@ const Configurator = {
     const playerSyncFailed = playerSyncRes && !playerSyncRes.ok && playerSyncRes.status !== 'disabled';
     if (playerSyncFailed) Toast.show(`Локально сохранено, но профильная запись не обновлена в облаке: ${playerSyncRes?.message || 'unknown error'}`, 'err');
     else if (snapshotSyncRes?.ok || snapshotSyncRes?.status === 'disabled') Toast.show(`${message}${snapshotSyncRes?.cloudBackupCreated ? '. Предыдущая облачная ревизия сохранена в резервную копию' : ''}`, 'ok');
+    else if (['pending','confirmation-received'].includes(snapshotSyncRes?.status)) Toast.show(snapshotSyncRes.message, 'info');
     else Toast.show(`Локально сохранено, но облако не обновлено: ${snapshotSyncRes?.message || 'unknown error'}`, 'err');
     return {ok:!playerSyncFailed && Boolean(snapshotSyncRes?.ok || snapshotSyncRes?.status==='disabled'),localSaved:true,sync:snapshotSyncRes};
     } catch(error) {
