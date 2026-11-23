@@ -345,6 +345,14 @@ assert.deepEqual(scopedWrites300,[['equipment','planets']]);
 const diskAfterScoped300=JSON.parse(fs.readFileSync(path.join(scratch,'world.json'),'utf8'));
 assert.equal(diskAfterScoped300.equipment.EQUIPMENT.attachment_test_gun.name,'Scoped edit');
 for(const section of Object.keys(diskBeforeScoped300).filter(name=>!['equipment','planets'].includes(name)))assert.deepEqual(diskAfterScoped300[section],diskBeforeScoped300[section]);
+// A real submit in the active WC renders its form only once after persistence.
+run("Configurator.selectedType='equipment';Configurator.equipmentCategoryV1052='weapon';Configurator.selectedId='attachment_test_gun';Configurator.render()");w.currentForm=w.document.getElementById('config-editor-form');
+assert.ok(w.currentForm);
+run(`UI.activeModuleId='config';window.renders302=0;window.renderBefore302=Configurator.render;
+ Configurator.render=function(...args){window.renders302++;return window.renderBefore302.apply(this,args);};
+ App.renderLive=()=>Configurator.render();`);
+await run('Configurator.submit({preventDefault(){},currentTarget:window.currentForm})');
+assert.equal(w.renders302,1,'submit must not render the active form a second time '+JSON.stringify({notices:w.notices,errors}));
 assert.equal(w.notices.some(n=>n.type==='err'),false,JSON.stringify(w.notices));
 assert.deepEqual(errors,[]);
 await w.happyDOM.abort();fs.rmSync(scratch,{recursive:true,force:true});

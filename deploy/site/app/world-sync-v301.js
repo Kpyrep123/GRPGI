@@ -79,13 +79,26 @@
       ||(entry.remote.revision===intentRevision?{rows:entry.rows}:null);
     if(!baseline)return {ok:false,status:'conflict',message:'Локальная версия мира устарела. Получите актуальные данные.',remote:{...entry.remote,world:null,state:null}};
     const target=pack({world:payload.world||{},state:payload.state||{}}),changes=[];
+    const scope=Array.isArray(payload.worldScope)?new Set(payload.worldScope):null;
+    function allowed(key){
+     if(!scope)return true;
+     const path=JSON.parse(key);
+     return path[0]==='world'&&(!path[1]||scope.has(path[1]))
+       ||path[0]==='state'&&(path.length===1||path[1]==='__worldWriteV140');
+    }
+    function expected(key,base,current){
+     // The write proof is generated from this freshly fetched server state. It is
+     // technical metadata, never an old editor's gameplay intent.
+     return scope&&JSON.parse(key)[0]==='state'?(current?.version||0):(base?.version||0);
+    }
     // Compare intent with its original baseline, not with a newer download. Otherwise a
     // stale catalogue could silently delete another editor's unrelated additions.
     for(const [key,data] of target){
+     if(!allowed(key))continue;
      const base=baseline.rows.get(key),current=entry.rows.get(key);
-     if((!base||base.deleted||base.data!==data)&&(!current||current.deleted||current.data!==data))changes.push({key,data,version:base?.version||0});
+     if((!base||base.deleted||base.data!==data)&&(!current||current.deleted||current.data!==data))changes.push({key,data,version:expected(key,base,current)});
     }
-    for(const [key,base] of baseline.rows)if(!base.deleted&&!target.has(key)&&!entry.rows.get(key)?.deleted)changes.push({key,deleted:true,version:base.version});
+    for(const [key,base] of baseline.rows)if(allowed(key)&&!base.deleted&&!target.has(key)&&!entry.rows.get(key)?.deleted)changes.push({key,deleted:true,version:expected(key,base,entry.rows.get(key))});
     // A missing route is the only fallback. Timeouts and conflicts must not replay through a legacy write.
     return supported(key,async()=>{
      const response=await request('push',{campaignId,epoch:entry.epoch,since:entry.seq,baseRevision:payload.baseRevision,operationId,changes,updatedBy:payload.updatedBy,clientUpdatedAt:payload.clientUpdatedAt});

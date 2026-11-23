@@ -36,9 +36,13 @@ async function run(){
   writeWorldData:async world=>{ctx.fullPersisted=world;},
  });
  vm.runInContext(main.slice(main.indexOf("ipcMain.handle('sync:push'"),main.indexOf("ipcMain.handle('chat:pull'")),ctx);
- const payload={gmWrite:true,actorId:'gm',baseRevision:4,baselineToken:'valid',worldSections:['equipment'],snapshot:{world:{equipment:{EQUIPMENT:{new:{id:'new'}}},npcs:{NPCS:{wrong:{id:'wrong'}}}},state:{users:{gm:{role:'gm'}}}}};
+ remote.state.users.gm.credits=42;
+ const payload={reason:'world-config-save',gmWrite:true,actorId:'gm',baseRevision:4,baselineToken:'valid',worldSections:['equipment'],snapshot:{world:{equipment:{EQUIPMENT:{new:{id:'new'}}},npcs:{NPCS:{wrong:{id:'wrong'}}}},state:{users:{gm:{role:'gm'}}}}};
  const before=ctx.writes.length,saved=await handler(null,payload);
  assert.equal(saved.ok,true,saved.message);assert.deepEqual(ctx.normalized,['equipment']);
+ assert.deepEqual(Array.from(ctx.sent.worldScope),['equipment']);
+ assert.equal(ctx.sent.state.users.gm.credits,42,'WC must preserve server state');
+ assert.equal(saved.normalizedUsers,null,'WC cannot replace versioned local profiles with snapshot users');
  assert.equal(ctx.sent.world.npcs,remote.world.npcs,'unchanged remote catalogue retained');
  assert.deepEqual(Object.keys(saved.worldPatch),['equipment']);
  assert.deepEqual(ctx.writes.slice(before),['equipment.json']);
