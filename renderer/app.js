@@ -9279,8 +9279,8 @@ App.logout = function() {
 };
 
 const __syncApplyRemoteSnapshot_unread = Sync.applyRemoteSnapshot.bind(Sync);
-Sync.applyRemoteSnapshot = async function(snapshot) {
-  const res = await __syncApplyRemoteSnapshot_unread(snapshot);
+Sync.applyRemoteSnapshot = async function(snapshot, remoteMeta = {}, options = {}) {
+  const res = await __syncApplyRemoteSnapshot_unread(snapshot, remoteMeta, options);
   refreshUnreadIndicators();
   return res;
 };
