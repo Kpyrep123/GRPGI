@@ -12,7 +12,9 @@ function bootstrap(e){
  query(app,'CREATE TABLE IF NOT EXISTS grpgi_world_heads_v301(campaign TEXT PRIMARY KEY,epoch TEXT NOT NULL,dirty INTEGER NOT NULL DEFAULT 1,indexed INTEGER NOT NULL DEFAULT 0,seq INTEGER NOT NULL DEFAULT 0,remote TEXT NOT NULL DEFAULT \'{}\')').execute();
  query(app,'CREATE TABLE IF NOT EXISTS grpgi_world_entities_v301(campaign TEXT NOT NULL,key TEXT NOT NULL,data TEXT NOT NULL,version INTEGER NOT NULL,seq INTEGER NOT NULL,deleted INTEGER NOT NULL,PRIMARY KEY(campaign,key))').execute();
  query(app,'CREATE INDEX IF NOT EXISTS grpgi_world_changes_v301 ON grpgi_world_entities_v301(campaign,seq)').execute();
- query(app,'CREATE TABLE IF NOT EXISTS grpgi_world_receipts_v301(campaign TEXT NOT NULL,operation TEXT NOT NULL,fingerprint TEXT NOT NULL,PRIMARY KEY(campaign,operation))').execute();
+ query(app,'CREATE TABLE IF NOT EXISTS grpgi_world_receipts_v301(campaign TEXT NOT NULL,operation TEXT NOT NULL,fingerprint TEXT NOT NULL,timings TEXT NOT NULL DEFAULT \'{}\',PRIMARY KEY(campaign,operation))').execute();
+ const timingColumn=all(app,"SELECT name FROM pragma_table_info('grpgi_world_receipts_v301') WHERE name='timings'",{}, {name:''});
+ if(!timingColumn.length)query(app,"ALTER TABLE grpgi_world_receipts_v301 ADD COLUMN timings TEXT NOT NULL DEFAULT '{}' ").execute();
  const exists=all(app,"SELECT name FROM sqlite_master WHERE type='table' AND name='campaign_snapshots'",{}, {name:''});if(!exists.length)return;
  // SQL triggers cover legacy routes, stock ticks and direct SQL writes in the same transaction.
  const touch="INSERT INTO grpgi_world_heads_v301(campaign,epoch) VALUES(NEW.campaignId,lower(hex(randomblob(16)))) ON CONFLICT(campaign) DO UPDATE SET dirty=dirty+1;";
@@ -68,12 +70,25 @@ function pull(e){
  }
  throw new ApiError(503,'Мир обновляется. Повторите синхронизацию.');
 }
+function operationStatus(e){
+ const body=e.requestInfo().body||{},campaign=identity(e,body,true).campaign;
+ if(!/^[-a-zA-Z0-9_]{8,120}$/.test(String(body.operationId||'')))throw new BadRequestError('Некорректный ID операции');
+ let result;
+ e.app.runInTransaction(tx=>{
+  const receipt=all(tx,'SELECT fingerprint,timings FROM grpgi_world_receipts_v301 WHERE campaign={:campaign} AND operation={:operation}',{campaign,operation:body.operationId},{fingerprint:'',timings:''})[0];
+  result={ok:true,status:receipt?'committed':'unconfirmed',timings:receipt?JSON.parse(receipt.timings||'{}'):null};
+ });return e.json(200,result);
+}
 function push(e){
+ const started=Date.now(),timings={};
  const body=e.requestInfo().body||{},campaign=identity(e,body,true).campaign;
  if(!/^[-a-zA-Z0-9_]{8,120}$/.test(String(body.operationId||''))||!Number.isSafeInteger(body.baseRevision)||!Array.isArray(body.changes)||body.changes.length>100000||JSON.stringify(body.changes).length>16*1024*1024)throw new BadRequestError('Некорректная операция синхронизации');
  const fingerprint=$security.sha256(JSON.stringify([body.epoch,body.baseRevision,body.changes]));
+ timings.authorizeMs=Date.now()-started;const transactionStarted=Date.now();
  const result=write(e.app,campaign,tx=>{
+  timings.writerWaitMs=Date.now()-transactionStarted;let phase=Date.now();
   const h=reconcile(tx,campaign);if(!h)return {ok:false,status:'remote-empty-protected'};
+  timings.indexBeforeMs=Date.now()-phase;phase=Date.now();
   const receipt=all(tx,'SELECT fingerprint FROM grpgi_world_receipts_v301 WHERE campaign={:campaign} AND operation={:operation}',{campaign,operation:body.operationId},{fingerprint:''})[0];
   if(receipt){if(receipt.fingerprint!==fingerprint)throw new BadRequestError('Идентификатор операции уже использован');return {...envelope(tx,campaign,body.epoch,body.since),status:'replayed'};}
   const record=snapshot(tx,campaign);
@@ -90,12 +105,13 @@ function push(e){
   }
   let data;try{data=codec.unpack(documents);}catch(error){throw new BadRequestError('Неполный набор изменений мира');}
   if(!data||Object.keys(data).sort().join(',')!=='state,world'||!data.world||!data.state||Array.isArray(data.world)||Array.isArray(data.state)||typeof data.world!=='object'||typeof data.state!=='object')throw new BadRequestError('Некорректная структура кампании');
+  timings.applyMs=Date.now()-phase;
   if(body.changes.length){
    record.set('worldJson',data.world);record.set('stateJson',data.state);record.set('revision',record.getInt('revision')+1);
-   record.set('updatedBy',String(body.updatedBy||'world-sync-v301').slice(0,200));record.set('clientUpdatedAt',new Date().toISOString());tx.save(record);reconcile(tx,campaign);
+   record.set('updatedBy',String(body.updatedBy||'world-sync-v301').slice(0,200));record.set('clientUpdatedAt',new Date().toISOString());phase=Date.now();tx.save(record);timings.saveSnapshotMs=Date.now()-phase;phase=Date.now();reconcile(tx,campaign);timings.indexAfterMs=Date.now()-phase;
   }
-  query(tx,'INSERT INTO grpgi_world_receipts_v301(campaign,operation,fingerprint) VALUES({:campaign},{:operation},{:fingerprint})',{campaign,operation:body.operationId,fingerprint}).execute();
+  query(tx,'INSERT INTO grpgi_world_receipts_v301(campaign,operation,fingerprint,timings) VALUES({:campaign},{:operation},{:fingerprint},{:timings})',{campaign,operation:body.operationId,fingerprint,timings:JSON.stringify(timings)}).execute();
   return {...envelope(tx,campaign,body.epoch,body.since),status:body.changes.length?'updated':'noop'};
- });return e.json(200,result);
+ });timings.totalMs=Date.now()-started;return e.json(200,{...result,timings});
 }
-module.exports={bootstrap,pull,push};
+module.exports={bootstrap,pull,push,operationStatus};
