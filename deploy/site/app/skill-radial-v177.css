@@ -198,7 +198,6 @@
   width: 0;
   height: 0;
   transform-origin: 0 0;
-  will-change: transform;
 }
 .r177-map-lines {
   position: absolute;
@@ -248,7 +247,7 @@
   border: 0;
   background: transparent !important;
   color: #d0d1cd;
-  transform: translate(-50%, -27px);
+  transform: translate(-50%, -32.4px);
   cursor: pointer;
   transition:
     opacity 0.18s,
@@ -258,13 +257,14 @@
   text-align: center;
   text-transform: none !important;
 }
+/* Icons are 20% larger; preserve graph centres and caption positions. */
 .r177-node .r177-ring {
   position: relative;
   display: grid;
   place-items: center;
   flex: none;
-  width: 54px;
-  height: 54px;
+  width: 64.8px;
+  height: 64.8px;
   border-radius: 50%;
   border: 2px solid #6a706f;
   background: radial-gradient(circle, #253947, #0b1117 73%);
@@ -279,11 +279,11 @@
 .r177-node .r177-ring > :not(i) {
   display: grid;
   place-items: center;
-  width: 43px !important;
-  height: 43px !important;
+  width: 51.6px !important;
+  height: 51.6px !important;
   min-width: 0 !important;
-  max-width: 43px !important;
-  max-height: 43px !important;
+  max-width: 51.6px !important;
+  max-height: 51.6px !important;
   border-radius: 50% !important;
   overflow: hidden;
   flex: none !important;
@@ -359,7 +359,7 @@
   -webkit-box-orient: vertical;
   overflow: hidden;
   max-width: 92px;
-  margin-top: 8px;
+  margin-top: 2.6px;
   font-size: 11px;
   line-height: 1.25;
   font-weight: 500;
