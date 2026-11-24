@@ -11,6 +11,7 @@ const body=part('  function itemIsPhysicalArmor119','  function damageType202')+
 const prefix=`'use strict';\nmodule.exports=function(deps){
 const window={GRPGStatsV113:deps.stats,GRPGItemInstancesV215:deps.instances,GRPGDamageTypesV202:deps.types,GRPGAberrationWeapons:{effects:deps.effects}};
 const num=(x,f=0)=>Number.isFinite(Number(x))?Number(x):f,list=x=>Array.isArray(x)?x:[],clone=x=>JSON.parse(JSON.stringify(x)),clamp104=(x,a,b)=>Math.max(a,Math.min(b,num(x)));
+const equipmentBaseline311=false,equipmentIds311=(token,slot,copy)=>list(copy?.aberration252?.effects);
 const equipmentItem105=deps.item,entityForToken=u=>u.profile,timedStatModifiers122=u=>deps.temporary(u),tokenDefense105=u=>u.armorClassOverrideV120?u.armorClass:deps.stats.compute(u.profile).values.armorClass;
 const itemRuntimeStateV138=(u,item,slot)=>deps.instances.instance(u.profile,item.id,-1,slot);
 const itemBrokenV138=(u,item,slot)=>item?!!itemRuntimeStateV138(u,item,slot)?.broken:false;

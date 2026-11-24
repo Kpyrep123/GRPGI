@@ -182,14 +182,33 @@
     const slots = entity.equipmentSlots || {};
     ['primaryWeapon','secondaryWeapon','armor','backpack'].forEach(slot => {
       const item = equipment(slots[slot]);
-      const copy = window.GRPGItemInstancesV215?.instance(entity, slots[slot], -1, slot);
+      const calculated=entity.equipmentCalculationV311?.[slot];
+      const originalCopy = window.GRPGItemInstancesV215?.instance(entity, slots[slot], -1, slot);
+      const copy = window.GRPGEquipmentStatsV311?.view(originalCopy,calculated)||originalCopy;
       if (!item || copy?.broken&&item.type!=='armor') return;
       const start=sources.length;
       push(item, 'equipment', item.id, item.name);
       sources.push(...synthesizeLegacyItemModifiers(item));
       sources.push(...(window.GRPGItemInstancesV215?.equippedAberrationModifiers(copy,item)||[]));
+      if(calculated){
+        const api=window.GRPGEquipmentStatsV311;
+        sources.splice(start,sources.length-start,...sources.slice(start).filter(mod=>mod.target==='damage_bonus'||!api.consumed(mod)));
+        for(const [target,stat] of Object.entries(api.targets))if(stat!=='damageBonus'){const mod=normalizeModifier({target,value:calculated.effectiveStats[stat],op:'add'},{id:item.id,name:item.name,kind:'equipment'});if(mod)sources.push(mod);}
+      }
       if(copy?.broken)sources.splice(start,sources.length-start,...sources.slice(start).filter(mod=>!['armor_class','defense','gas_protection_flat','gas_protection_percent','energy_protection_percent','shield_capacity'].includes(mod.target)));
     });
+    if(entity.equipmentCalculationV311){
+      arr(entity.implantSlots?.length?entity.implantSlots:entity.installedImplantIds).forEach((id,index)=>{
+        const item=equipment(id);if(!item)return;
+        const calculated=entity.equipmentCalculationV311['implant:'+index],original=window.GRPGItemInstancesV215?.instance(entity,id,-1,'implant:'+index);
+        const instance=window.GRPGEquipmentStatsV311.view(original,calculated);if(instance?.broken)return;
+        const start=sources.length;push(item,'implant',id,item.name);sources.push(...synthesizeLegacyItemModifiers(item),...(window.GRPGItemInstancesV215?.equippedAberrationModifiers(instance,item)||[]));
+        if(calculated){
+          sources.splice(start,sources.length-start,...sources.slice(start).filter(mod=>mod.target==='damage_bonus'||!window.GRPGEquipmentStatsV311.consumed(mod)));
+          for(const [target,stat] of Object.entries(window.GRPGEquipmentStatsV311.targets))if(stat!=='damageBonus'){const mod=normalizeModifier({target,value:calculated.effectiveStats[stat],op:'add'},{id,name:item.name,kind:'implant'});if(mod)sources.push(mod);}
+        }
+      });
+    }else{
     uniq(entity.implantSlots?.length ? entity.implantSlots : entity.installedImplantIds).forEach(id => {
       const item = equipment(id); if (!item) return; push(item,'implant',item.id,item.name); sources.push(...synthesizeLegacyItemModifiers(item));
     });
@@ -197,6 +216,7 @@
       const items=window.GRPGItemInstancesV215;
       if(id&&items)sources.push(...items.equippedAberrationModifiers(items.instance(entity,id,-1,'implant:'+index),equipment(id)));
     });
+    }
     arr(options.temporaryModifiers ?? entity.temporaryModifiers ?? window.GRPGCombatStateV291?.modifiers({timedModifiersV122:entity.combatState093?.lua204?.modifiers})).forEach(raw => { const mod=normalizeModifier(raw,{id:raw.sourceId||'temporary',name:raw.sourceName||'Временный эффект',kind:'temporary'}); if(mod) sources.push(mod); });
     return sources.filter(Boolean);
   }
@@ -309,12 +329,13 @@
     if (!weapon?.id && !weapon?.name) return null;
     const stats=compute(entity,options);
     const copies=window.GRPGItemInstancesV215, slot=options.weaponSlot || ['primaryWeapon','secondaryWeapon'].find(key=>entity.equipmentSlots?.[key]===weapon.id);
+    const calculated=entity.equipmentCalculationV311?.[slot];
     const copy=slot?copies.instance(entity,weapon.id,-1,slot):null;
     const mounted=copies.attachmentHitBonus(copy);
     const mods=[...stats.modifiers,...arr(copy?.attachments).flatMap(row=>arr(row.modifiers)
       .map(mod=>normalizeModifier(mod,{id:row.itemId,name:equipment(row.itemId)?.name||row.itemId,kind:'equipment'}))
       .filter(mod=>mod.enabled!==false))];
-    const aberrations=window.GRPGAberrationWeapons?.effects(copy?.aberration252?.effects)||[];
+    const aberrations=calculated?.appliedAberrations||window.GRPGAberrationWeapons?.effects(copy?.aberration252?.effects)||[];
     const damageType=options.damageType||window.GRPGDamageTypesV202.effective(weapon);
     const context={weaponId:weapon.id,weaponCategory:window.GRPGWeaponHandlingV203.category(weapon),damageType};
     let stat = window.GRPGWeaponHandlingV203.stat(weapon);
@@ -331,16 +352,17 @@
     if(weapon.weaponSkillId&&arr(entity.skills).map(String).includes(String(weapon.weaponSkillId))){bonus+=n(weapon.weaponSkillBonus,0);detail.push({source:`${skillById(weapon.weaponSkillId)?.name||weapon.weaponSkillId}: оружейный навык`,value:n(weapon.weaponSkillBonus,0),op:'add'});}
     mods.filter(m=>m.target==='weapon_hit_extra_stat'&&['add_stat','add'].includes(m.op)&&m.statRef&&scopeMatches(m,{...context,entity,...options})).forEach(m=>{bonus+=n(stats.abilities[m.statRef],0);detail.push({source:`${m.sourceName}: ${PRIMARY_LABELS[m.statRef]}`,value:n(stats.abilities[m.statRef],0),op:'add'});});
     mods.filter(m=>m.target==='attack_bonus'&&['add','set'].includes(m.op)&&scopeMatches(m,{...context,entity,...options})).sort((a,b)=>(a.priority-b.priority)||(modifierSpecificity(a)-modifierSpecificity(b))).forEach(m=>{bonus=m.op==='set'?n(m.value):bonus+n(m.value);detail.push({source:m.sourceName,value:n(m.value),op:m.op});});
-    let damageBonus=0; const damageDetail=[]; mods.filter(m=>m.target==='damage_bonus'&&['add','set'].includes(m.op)&&scopeMatches(m,{...context,entity,...options})).sort((a,b)=>a.priority-b.priority).forEach(m=>{damageBonus=m.op==='set'?n(m.value):damageBonus+n(m.value);damageDetail.push({source:m.sourceName,value:n(m.value),op:m.op});});
+    let damageBonus=0; const damageDetail=[]; mods.filter(m=>!(calculated&&window.GRPGEquipmentStatsV311.consumed(m)&&(m.sourceId===weapon.id||arr(copy?.attachments).some(row=>row.itemId===m.sourceId)))&&m.target==='damage_bonus'&&['add','set'].includes(m.op)&&scopeMatches(m,{...context,entity,...options})).sort((a,b)=>a.priority-b.priority).forEach(m=>{damageBonus=m.op==='set'?n(m.value):damageBonus+n(m.value);damageDetail.push({source:m.sourceName,value:n(m.value),op:m.op});});
     if(weapon.isUnarmedV122){
       damageBonus+=n(stats.abilities.strength,0);
       damageDetail.push({source:'Сила: безоружная атака',value:n(stats.abilities.strength,0),op:'add'});
     }
-    if(options.firstShot!==false)for(const effect of aberrations.filter(row=>row.group==='weapon-2')){
+    if(calculated){damageBonus+=n(calculated.effectiveStats.damageBonus);damageDetail.push({source:weapon.name+' · параметры экземпляра',value:n(calculated.effectiveStats.damageBonus),op:'add'});}
+    if(!calculated&&options.firstShot!==false)for(const effect of aberrations.filter(row=>row.group==='weapon-2')){
       damageBonus+=effect.value;
       damageDetail.push({source:effect.name,value:effect.value,op:'add'});
     }
-    return { weapon, stat, bonus, detail, damage:String(weapon.damage||'—'), damageBonus, damageDetail, range:nonNeg(weapon.range,0) };
+    return { weapon, stat, bonus, detail, damage:String(calculated?.effectiveStats.damage ?? weapon.damage ?? '—'), damageBonus, damageDetail, range:nonNeg(weapon.range,0) };
   }
 
   function breakdownText(rows=[]) {
@@ -441,7 +463,7 @@
   window.GRPGInventoryV113={layout,weight,canAdd,slotAccepts,setSlot,postChangeValid,item:inventoryItem};
   window.GRPGInventoryV1067={...(window.GRPGInventoryV1067||{}),canAddItem:canAdd,buildLayout:layout,weight};
 
-  window.GRPGStatsV113={VERSION,PRIMARY,PRIMARY_LABELS,TARGETS,OPS,SCOPES,normalizeModifier,normalizeModifiers,compute,computePlayer:(u,o={})=>compute(u,{...o,kind:'player'}),computeNpc:(u,o={})=>compute(u,{...o,kind:'npc'}),normalizeNpc,weaponAttack,breakdownText,sourceModifiersForEntity};
+  window.GRPGStatsV113={equipmentModifierMatches311:(mod,context)=>{const normalized=normalizeModifier(mod);return normalized?scopeMatches(normalized,context):false;},VERSION,PRIMARY,PRIMARY_LABELS,TARGETS,OPS,SCOPES,normalizeModifier,normalizeModifiers,compute,computePlayer:(u,o={})=>compute(u,{...o,kind:'player'}),computeNpc:(u,o={})=>compute(u,{...o,kind:'npc'}),normalizeNpc,weaponAttack,breakdownText,sourceModifiersForEntity};
 
   /* Universal modifier editor */
   function targetOptions(selected=''){return `<option value="" ${!selected?'selected':''}>— выберите показатель —</option>`+TARGETS.map(([v,l])=>`<option value="${v}" ${v===selected?'selected':''}>${safe(l)}</option>`).join('');}

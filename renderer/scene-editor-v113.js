@@ -1137,7 +1137,7 @@
     if(!armor)return null;
     const copy=itemRuntimeStateV138(target,armor,'armor');
     if(copy.broken)return null;
-    const scope=list(copy.aberration252?.effects).find(id=>/^armor-28-1:(?:any|melee|ranged)$/.test(id))?.split(':')[1];
+    const scope=equipmentIds311(target,'armor',copy).find(id=>/^armor-28-1:(?:any|melee|ranged)$/.test(id))?.split(':')[1];
     const kind=weapon.weaponCategory==='melee'?'melee':'ranged';
     if(scope!=='any'&&scope!==kind)return null;
     const {battleId}=epochContext204(target);
@@ -1167,7 +1167,7 @@
     const armor=equipmentItem105((entity?.equipmentSlots||entity?.loadout)?.armor);
     if(!armor)return 0;
     const copy=itemRuntimeStateV138(target,armor,'armor');
-    const ids=list(copy.aberration252?.effects);
+    const ids=equipmentIds311(target,'armor',copy);
     if(copy.broken||!ids.length)return 0;
     const effects=window.GRPGAberrationWeapons?.effects(ids)||[];
     const reflect=weapon.weaponCategory==='melee'?effects.find(row=>row.group==='armor-25')?.value||0:0;
@@ -1291,7 +1291,7 @@
       const wornArmor=equipmentItem105(source.equipmentSlots.armor),wornShields=['primaryWeapon','secondaryWeapon'].map(slot=>({slot,item:equipmentItem105(source.equipmentSlots[slot])})).filter(row=>itemIsPhysicalShield122(row.item||{}));
       if(wornArmor&&!itemBrokenV138(token,wornArmor,'armor')){
         const copy=window.GRPGItemInstancesV215.instance(entity,wornArmor.id,-1,'armor');
-        const ids=list(copy?.aberration252?.effects);
+        const ids=equipmentIds311(token,'armor',copy);
         if(ids.some(id=>/^armor-(?:20|27)-/.test(id))){
           for(const effect of window.GRPGAberrationWeapons?.effects(ids)||[]){
             if(effect.type!==resolvedType)continue;
@@ -1318,7 +1318,7 @@
           wornArmorAbsorption=clamp104(num(computed?.values?.defense)-num(window.GRPGStatsV113.compute(withoutWornArmor,computeOptions)?.values?.defense),0,armorAbsorption);
         }
         // A shield in either hand participates. Multiple shields do not sum their bonuses.
-        const choices=shields.map(({slot,item})=>{const equipped=clone(withoutShield);equipped.equipmentSlots[slot]=slots[slot];const value=window.GRPGStatsV113.compute(equipped,computeOptions);return{bonus:Math.max(0,shieldBonus122(item),num(value?.values?.armorClass)-num(computed?.values?.armorClass)),absorption:Math.max(0,num(value?.values?.defense)-num(computed?.values?.defense))};}).sort((a,b)=>b.bonus-a.bonus||b.absorption-a.absorption);
+        const choices=shields.map(({slot,item})=>{const equipped=clone(withoutShield);equipped.equipmentSlots[slot]=slots[slot];const value=window.GRPGStatsV113.compute(equipped,computeOptions);return{bonus:Math.max(0,(equipmentBaseline311?null:window.GRPGEquipmentStatsV311?.get(token,slot)?.effectiveStats?.armorClass)??shieldBonus122(item),num(value?.values?.armorClass)-num(computed?.values?.armorClass)),absorption:Math.max(0,num(value?.values?.defense)-num(computed?.values?.defense))};}).sort((a,b)=>b.bonus-a.bonus||b.absorption-a.absorption);
         shieldArmorClass=choices[0]?.bonus||0;if(!token?.defenseOverrideV120)shieldAbsorption=choices[0]?.absorption||0;
         if(!token?.armorClassOverrideV120){
           const dexContribution=num(list(computed?.breakdown?.armorClass).find(row=>row.op==='base'&&row.statRef==='dexterity')?.value),heavy=!itemBrokenV138(token,wornArmor,'armor')&&itemIsHeavyArmor122(wornArmor||{})&&wornArmor?.armorAllowsDexterity!==true;
@@ -1348,6 +1348,10 @@
     token.itemStateV138={};
   }
   function entityForToken(token) {
+    const entity=entityForTokenBase311(token),rows=equipmentBaseline311?[]:window.GRPGEquipmentStatsV311?.rows(token)||[];
+    return entity&&rows.length?{...entity,equipmentCalculationV311:Object.fromEntries(rows.map(row=>[row.slot,row]))}:entity;
+  }
+  function entityForTokenBase311(token) {
     if (token?.playerId) { const p = App.state?.users?.[token.playerId] || PLAYER_TEMPLATES?.[token.playerId]; return p ? normalizePlayerProfileV2(p) : null; }
     if(token?.npcId&&!token.npcGearV287)ensureNpcGear287(token);
     if (token?.npcId){const base=Data.getNpc?.(token.npcId);return base&&token.npcGearV287?{...base,equipmentSlots:token.npcGearV287.equipmentSlots,inventory:token.combatInventoryV120||[]}:base||null;}
@@ -1617,7 +1621,8 @@
     if(!weapon?.id)return null;
     const entity=entityForToken(token);
     const key=slot||['primaryWeapon','secondaryWeapon'].find(name=>entity?.equipmentSlots?.[name]===weapon.id);
-    return key?window.GRPGItemInstancesV215.instance(entity,weapon.id,-1,key):null;
+    const copy=key?window.GRPGItemInstancesV215.instance(entity,weapon.id,-1,key):null;
+    return equipmentBaseline311?copy:window.GRPGEquipmentStatsV311.view(copy,window.GRPGEquipmentStatsV311.get(token,key));
   }
   function weaponAberrationEffects257(token,weapon,slot){
     const ids=weaponCopy258(token,weapon,slot)?.aberration252?.effects;
@@ -2919,11 +2924,12 @@
   function tokenTeam122(token={}){return String(token.teamId||token.factionId||(token.playerId?'players':token.npcId?'npcs':token.type||'units'));}
   function meleeWeapons122(token){const rows=ownedItems105(token,'weapon').filter(item=>String(item.weaponCategory||'').toLowerCase()==='melee');return rows.length?rows:[normalizeEquipmentItemV2({id:'__unarmed_v122',name:'Безоружная атака',type:'weapon',weaponCategory:'melee',damage:'1',hitBonus:0,range:1,rapidFireShots:1,isUnarmedV122:true})];}
   async function resolveOpportunityAttack122(source,target,weapon,options={}){
+    await refreshEquipment311({event:'BeforeAttackCalculation',attacker:source,target,weapon,firstShot:true,damageType:damageType202(weapon)});
     const scene=Combat.getScene(),rules=window.GRPGCombatRulesV119,transaction=beginCombatTransaction120('opportunity',scene?.id,source.id,[target.id]);if(!transaction)return num(target.hpCurrent)>0;
     try{
       let refs=combatTransactionRefs120(transaction),attacker=refs.attacker,victim=refs.target;const entity=entityForToken(attacker)||{},attack=window.GRPGStatsV113?.weaponAttack?.(entity,weapon,{kind:attacker.npcId?'npc':'player',inCombat:true,damageType:damageType202(weapon,null,attacker),temporaryModifiers:timedStatModifiers122(attacker)}),hitBonus=num(attack?.bonus??weapon.hitBonus)+postureAttack229(victim,weapon)-checkPenalty199(attacker),damageBonus=num(attack?.damageBonus),defense=incomingDefense119(victim,'melee',null,damageType202(weapon,null,attacker));defense.defenseBonus-=checkPenalty199(victim);
-      const declaredContext={attacker,target:victim,caster:attacker,targets:[victim],weapon,damageType:damageType202(weapon,null,attacker),sourceName:`Атака по возможности: ${weapon.name}`},declared={damage:0,attackBonus:hitBonus,defenseBonus:defense.defenseBonus,effects:[]};await runAutomaticHooks119(attacker,'OnAttackDeclared',declaredContext,declared);await chooseReaction119('OnAttackDeclared',declaredContext,declared);
-      const entered=await requestAttackRolls119({attacker,target:victim,weapon,attackBonus:declared.attackBonus,defenseBonus:declared.defenseBonus,damageBonus,attackDisadvantage:injuryDisadvantage129(attacker),defenseDisadvantage:injuryDisadvantage129(victim)});if(!entered)return num(victim.hpCurrent)>0;
+      const declaredContext={attacker,target:victim,caster:attacker,targets:[victim],weapon,damageType:damageType202(weapon,null,attacker),sourceName:`Атака по возможности: ${weapon.name}`,firstShot:true},declared={damage:0,attackBonus:hitBonus,defenseBonus:defense.defenseBonus,effects:[]};await runAutomaticHooks119(attacker,'OnAttackDeclared',declaredContext,declared);await chooseReaction119('OnAttackDeclared',declaredContext,declared);
+      const entered=await requestAttackRolls119({attacker,target:victim,weapon:{...weapon,damage:attack?.damage??weapon.damage},attackBonus:declared.attackBonus,defenseBonus:declared.defenseBonus,damageBonus,attackDisadvantage:injuryDisadvantage129(attacker),defenseDisadvantage:injuryDisadvantage129(victim)});if(!entered)return num(victim.hpCurrent)>0;
       attacker.reactionUsedV119=true;if(entered.attackRoll===1)await applyWeaponFumble196(attacker,weapon);
       const context={...declaredContext,attackRoll:entered.attackRoll,defenseRoll:entered.defenseRoll},pre={damage:0,attackBonus:declared.attackBonus,defenseBonus:declared.defenseBonus,effects:declared.effects};
       await runAutomaticHooks119(attacker,'BeforeAttackStart',{...context,attackBonus:pre.attackBonus,defenseBonus:pre.defenseBonus},pre);await chooseReaction119('BeforeAttackStart',{...context,attackBonus:pre.attackBonus,defenseBonus:pre.defenseBonus},pre);
@@ -3341,11 +3347,40 @@
     const body=`<p style="white-space:pre-wrap">${html(request.text||'')}</p>${confirm?'':`<label class="field">${html(request.label||'Выбор')}<select class="select" name="answer204" ${multiple?'multiple':''}>${options.map(row=>`<option value="${html(row.id)}">${html(row.label)}</option>`).join('')}</select></label>`}<div data-lua-modal-error-v119></div>`;
     return combatModal119({title:request.title||'Решение ДМа',subtitle:context.sourceName||'',body,confirm:confirm?'ПОДТВЕРДИТЬ':'ВЫБРАТЬ',decline:'ОТМЕНИТЬ',read:form=>confirm?true:multiple?Array.from(form.elements.answer204.selectedOptions).map(row=>row.value):form.elements.answer204.value,validate:value=>multiple&&(value.length<num(request.min)||value.length>num(request.max,options.length))?'Проверьте количество выбранных вариантов.':''});
   }
+  let equipmentBaseline311=false,equipmentSignature311='';
+  const equipmentHooks311=['ModifyEquipmentBaseStat','ModifyEquipmentEffectiveStat','BeforeAberrationApply'];
+  function equipmentPlan311(token,slot,item,context={}){
+    const entity=entityForTokenBase311(token)||{},copy=itemRuntimeStateV138(token,item,slot);
+    return window.GRPGEquipmentStatsV311.plan(item,copy,slot,token.id,{...context,entity,inCombat:true,firstShot:context.attacker?.id===token.id&&typeof context.firstShot==='boolean'?context.firstShot:!token.burstStateV122||num(token.burstStateV122.nextShot,1)===1,weaponId:context.weapon?.id||item.id,weaponCategory:context.weapon?.weaponCategory||item.weaponCategory,incomingWeaponCategory:context.weapon?.weaponCategory,incomingDamageType:context.damageType,damageType:context.damageType});
+  }
+  async function refreshEquipment311(context={}){
+    if(!window.GRPGEquipmentStatsV311)return;
+    const tokens=list(Combat.getRuntime()?.tokens);
+    const sources=await prepareSources228(tokens.flatMap(token=>scriptSourcesForToken119(token).filter(source=>source.mode==='automatic')));
+    const selected=sources.filter(source=>equipmentHooks311.some(hook=>handlesHook228(source,hook)));
+    if(!selected.length){equipmentSignature311='';for(const token of tokens)window.GRPGEquipmentStatsV311.set(token,[]);return;}
+    let input;equipmentBaseline311=true;
+    try{input=luaInput119(selected[0],{...context,event:'EquipmentCalculation'});}finally{equipmentBaseline311=false;}
+    input.params.eventId204='';input.params.parentEventId204='';
+    input.equipmentItems311=tokens.filter(token=>selected.some(source=>source.ownerToken.id===token.id)).flatMap(token=>equippedEntriesV138(token).map(({slot,item})=>equipmentPlan311(token,slot,item,context)));
+    const equipmentSources=selected.map(source=>({script:source.script,source:{id:source.id,name:source.name,kind:source.kind,ownerId:String(source.ownerToken.id),tags:list(source.raw?.tags),state204:clone(source.ownerToken?.luaState204?.[source.kind+':'+source.id]||{})}}));
+    const signature=JSON.stringify({input,equipmentSources});
+    if(signature===equipmentSignature311&&input.equipmentItems311.every(row=>window.GRPGEquipmentStatsV311.get(tokens.find(token=>String(token.id)===row.unitId),row.slot)))return;
+    const result=await window.electronAPI?.runCombatLuaHook?.({mode:'equipment',input,equipmentSources});
+    if(!result?.ok)throw Error('Расчёт снаряжения Lua: '+(result?.message||'worker недоступен'));
+    // Commit atomically, after all hooks have succeeded. WeakMap data is never serialized.
+    for(const token of tokens)window.GRPGEquipmentStatsV311.set(token,list(result.equipment).filter(row=>row.unitId===String(token.id)));
+    equipmentSignature311=signature;
+  }
+  function equipmentIds311(token,slot,copy){
+    const row=equipmentBaseline311?null:window.GRPGEquipmentStatsV311?.get(token,slot);
+    return row?list(row.appliedAberrations).map(effect=>effect.id):list(copy?.aberration252?.effects);
+  }
   function luaUnitRows119(runtime,scene){
     const rows=list(runtime?.tokens).map(token=>{
       const entity=entityForToken(token)||{},computed=window.GRPGStatsV113?.compute?.(entity,{kind:token.npcId?'npc':'player',inCombat:true,temporaryModifiers:timedStatModifiers122(token)})||{},defense= incomingDefense119(token,'light'),stats={...(computed.abilities||{}),...(computed.values||{}),hpCurrent:num(token.hpCurrent),hpMax:num(token.hpMax),max_hp:num(token.hpMax),armorClass:defense.defenseBonus,armor_class:defense.defenseBonus,baseArmorClass:defense.baseArmorClass,shieldArmorClass:defense.shieldArmorClass,absorption:defense.damageReduction,baseAbsorption:defense.baseAbsorption,armorAbsorption:defense.armorAbsorption,shieldAbsorption:defense.shieldAbsorption,coverAbsorption:defense.coverAbsorption,initiative_bonus:initiativeBonus195(token),defense:defense.damageReduction};
       const inventory=list(tokenInventoryOwner120(token).rows).map(entry=>{const item=equipmentItem105(entry?.itemId)||{},state=itemRuntimeStateV138(token,item,item.id);return{id:String(entry?.itemId||''),instanceId:String(state.id||''),itemId:String(entry?.itemId||''),name:String(item.name||entry?.itemId||''),type:String(item.type||'gear'),qty:Math.max(0,Math.trunc(num(entry?.qty,0))),tags:list(item.tags).map(String),durability:state.durability,durabilityMax:state.durabilityMax,broken:state.broken,charges:state.charges,chargesMax:state.chargesMax};}).filter(row=>row.id&&row.qty>0);
-      const equipped=equippedEntriesV138(token).map(({slot,item})=>{const state=itemRuntimeStateV138(token,item,slot),magazine=String(item.type)==='weapon'?magazineState118(token,item):{loaded:0,size:0,ammoTypeId:''};return{id:String(item.id),instanceId:String(state.id||''),rarity:String(state.rarity||item.rarity||''),itemId:String(item.id),name:String(item.name||item.id),type:String(item.type||'gear'),slot:String(slot),tags:list(item.tags).map(String),ammo:magazine.loaded,magazineSize:magazine.size,ammoTypeId:magazine.ammoTypeId,durability:state.durability,durabilityMax:state.durabilityMax,broken:state.broken,charges:state.charges,chargesMax:state.chargesMax};});
+      const equipped=equippedEntriesV138(token).map(({slot,item})=>{const state=itemRuntimeStateV138(token,item,slot),magazine=String(item.type)==='weapon'?magazineState118(token,item):{loaded:0,size:0,ammoTypeId:''};const calculated=(!equipmentBaseline311&&window.GRPGEquipmentStatsV311.get(token,slot))||window.GRPGEquipmentStatsV311.native(equipmentPlan311(token,slot,item));return{baseStats:calculated.baseStats,effectiveStats:calculated.effectiveStats,aberrations:calculated.aberrations,appliedAberrations:calculated.appliedAberrations,attachments:calculated.attachments,modifiers:clone(list(item.modifiers)),id:String(item.id),instanceId:String(state.id||''),rarity:String(state.rarity||item.rarity||''),itemId:String(item.id),name:String(item.name||item.id),type:String(item.type||'gear'),slot:String(slot),tags:list(item.tags).map(String),ammo:magazine.loaded,magazineSize:magazine.size,ammoTypeId:magazine.ammoTypeId,durability:state.durability,durabilityMax:state.durabilityMax,broken:state.broken,charges:state.charges,chargesMax:state.chargesMax};});
       const itemIds=unique([...inventory.map(row=>row.itemId),...equipped.map(row=>row.itemId)]);
       const trained=unique([...list(entity.trainedSkills),...list(entity.trained),...Object.entries(entity.skillTraining||{}).filter(([,value])=>value===true||num(value)>0).map(([id])=>id),...Object.entries(entity.skillLevels||{}).filter(([,value])=>num(value)>0).map(([id])=>id)]);
       const movement=movementState198(token,scene),movementTotal=movement.budget,movementSpent=Math.max(0,num(token.movedThisTurn));
@@ -3650,6 +3685,7 @@
 
   let dispatchDepth204=0,reactionDepth204=0;const eventStack204=[];
   async function runAutomaticHooks119(owner,hook,context={},state={damage:num(context.damage),effects:[]}){
+    await refreshEquipment311({...context,event:hook});
     if(dispatchDepth204>=12)throw Error('Lua: превышена глубина событий');dispatchDepth204++;
     context.eventId204 ||=makeId('event');context={...context,unit:context.unit||owner};
     try{
@@ -3731,11 +3767,12 @@
     const distance=window.GRPGUnitSizeV184.distance(attacker,target),range=shotRange229(attacker,weapon,selected.slot),cover=attackCover287(attacker,weapon,coverBetween120(scene,centerOf(attacker),centerOf(target),weapon.weaponCategory!=='melee'),selected.slot);if(distance>Math.floor(range+1e-6))throw new Error(`StandardAttack: цель вне дальности (${hexLabel109(distance)} / ${hexLabel109(range)})`);if(cover.blocksAttack||sightSegmentBlocked105(scene,centerOf(attacker),centerOf(target),[attacker.id,target.id]))throw new Error('StandardAttack: линия огня перекрыта');
     const shotCost=ammoPerShot118(weapon),validateMagazine=()=>{const value=magazineState118(attacker,weapon,selected.slot);if(value.size>0&&value.loaded<shotCost)throw new Error(`StandardAttack: магазин пуст (${value.loaded} / ${value.size})`);return value;};validateMagazine();
     const ammo=loadedAmmo238(attacker,weapon,selected.slot),shotDamageType=damageType202(weapon,ammo,attacker,selected.slot);
+    await refreshEquipment311({...parentContext,event:'BeforeAttackCalculation',attacker,target,weapon,ammo,weaponSlot:selected.slot,damageType:shotDamageType,firstShot:true});
     const entity=entityForToken(attacker)||{},attack=window.GRPGStatsV113?.weaponAttack?.(entity,weapon,{kind:attacker.npcId?'npc':'player',inCombat:true,weaponSlot:selected.slot,damageType:shotDamageType,temporaryModifiers:shotModifiers238(attacker,ammo)})||{},damageBonus=num(attack.damageBonus),baseHit=isControlledDevice200(attacker)?operatorIntelligence129(operatorForDrone129(attacker))+num(weapon.hitBonus)-checkPenalty199(operatorForDrone129(attacker)||attacker):num(attack.bonus??weapon.hitBonus)-checkPenalty199(attacker)+postureAttack229(target,weapon),defense=incomingDefense119(target,weapon.weaponCategory||'light',cover,shotDamageType);defense.defenseBonus+=postureDefense229(attacker,target,weapon)-checkPenalty199(target);
     const resolvedAttack={};
-    const context=extra=>({...resolvedAttack,attacker,target,caster:attacker,targets:[target],weapon,ammo,weaponSlot:selected.slot,damageType:shotDamageType,sourceName:`StandardAttack: ${weapon.name||weapon.id}`,...extra});
+    const context=extra=>({...resolvedAttack,attacker,target,caster:attacker,targets:[target],weapon,ammo,weaponSlot:selected.slot,damageType:shotDamageType,firstShot:true,sourceName:`StandardAttack: ${weapon.name||weapon.id}`,...extra});
     const declared={damage:0,attackBonus:baseHit,defenseBonus:defense.defenseBonus,effects:[],standardAttackDepthV138:depth+1};await runAutomaticHooks119(attacker,'OnAttackDeclared',context(),declared);refresh();await chooseReaction119('OnAttackDeclared',context(),declared);refresh();validateWeapon();validateMagazine();assertShotAmmo238(attacker,weapon,ammo,selected.slot);const settledDefense=incomingDefense119(target,weapon.weaponCategory||'light',cover,shotDamageType);settledDefense.defenseBonus+=postureDefense229(attacker,target,weapon)-checkPenalty199(target);declared.defenseBonus+=settledDefense.defenseBonus-defense.defenseBonus;
-    const entered=await requestAttackRolls119({attacker,target,weapon,ammo,weaponSlot:selected.slot,attackBonus:declared.attackBonus,defenseBonus:declared.defenseBonus,damageBonus,attackDisadvantage:longRangeDisadvantage229(attacker,target,weapon,selected.slot)||(cover.concealment&&!ignoresConcealment122(attacker))||injuryDisadvantage129(isControlledDevice200(attacker)?operatorForDrone129(attacker)||attacker:attacker)||weaponDisadvantage229(attacker,weapon),defenseDisadvantage:injuryDisadvantage129(target)});if(!entered)throw new Error('StandardAttack: атака отменена');
+    const entered=await requestAttackRolls119({attacker,target,weapon:{...weapon,damage:attack.damage??weapon.damage},ammo,weaponSlot:selected.slot,attackBonus:declared.attackBonus,defenseBonus:declared.defenseBonus,damageBonus,attackDisadvantage:longRangeDisadvantage229(attacker,target,weapon,selected.slot)||(cover.concealment&&!ignoresConcealment122(attacker))||injuryDisadvantage129(isControlledDevice200(attacker)?operatorForDrone129(attacker)||attacker:attacker)||weaponDisadvantage229(attacker,weapon),defenseDisadvantage:injuryDisadvantage129(target)});if(!entered)throw new Error('StandardAttack: атака отменена');
     refresh();validateWeapon();assertShotAmmo238(attacker,weapon,ammo,selected.slot);const magazine=validateMagazine();if(command.consumeAction!==false)attacker.actionUsed=true;
     if(magazine.size>0){magazine.loaded-=shotCost;writeMagazineState118(attacker,weapon,magazine,selected.slot);}
     if(entered.attackRoll===1)await applyWeaponFumble196(attacker,weapon);
@@ -4225,6 +4262,7 @@
     if(initialMagazine.size>0&&initialMagazine.loaded<shotCost){Toast.show(`Магазин пуст: ${initialMagazine.loaded} / ${initialMagazine.size}. Требуется перезарядка.`,'info');return;}
     const transaction=beginCombatTransaction120('attack',scene.id,selectedAttacker.id,[selectedTarget.id]);if(!transaction)return;
     try{
+      await refreshEquipment311({event:'BeforeAttackCalculation',weapon:selectedWeapon,attacker:selectedAttacker,target:selectedTarget,firstShot:shotIndex===1,damageType:damageType202(selectedWeapon,loadedAmmo238(selectedAttacker,selectedWeapon),selectedAttacker)});
       let {attacker,target}=combatTransactionRefs120(transaction),weapon=weaponForToken105(attacker);
       let magazine=magazineState118(attacker,weapon);
       const ammo=loadedAmmo238(attacker,weapon);
@@ -4238,7 +4276,7 @@
       const hitBonus = (operator?operatorIntelligence129(operator)+num(weapon.hitBonus):num(attack?.bonus??weapon.hitBonus,0))-checkPenalty199(operator||attacker)+burstPenalty+postureAttack229(target,weapon);
       const damageBonus=num(attack?.damageBonus,0),damageExpression=String(attack?.damage||weapon.damage||'1d6');
       let cover=initialCover,defense=incomingDefense119(target,weapon.weaponCategory||'light',cover,attackDamageType202(attacker,weapon));defense.defenseBonus+=postureDefense229(attacker,target,weapon)-checkPenalty199(target);const attackDisadvantage=longRangeDisadvantage229(attacker,target,weapon)||(cover.concealment&&!ignoresConcealment122(attacker))||injuryDisadvantage129(operator||attacker),defenseDisadvantage=injuryDisadvantage129(target);
-      const declaredContext={attacker,target,caster:attacker,targets:[target],weapon,ammo,damageType:damageType202(weapon,ammo,attacker),sourceName:weapon.name||'Атака'},declaredState={damage:0,attackBonus:hitBonus,defenseBonus:defense.defenseBonus,effects:[]};
+      const declaredContext={attacker,target,caster:attacker,targets:[target],weapon,ammo,damageType:damageType202(weapon,ammo,attacker),sourceName:weapon.name||'Атака',firstShot:shotIndex===1},declaredState={damage:0,attackBonus:hitBonus,defenseBonus:defense.defenseBonus,effects:[]};
       await runAutomaticHooks119(attacker,'OnAttackDeclared',declaredContext,declaredState);await chooseReaction119('OnAttackDeclared',declaredContext,declaredState);
       ({attacker,target}=combatTransactionRefs120(transaction));weapon=weaponForToken105(attacker);if(!target||!weapon)throw new Error('Атака изменилась во время реакции на объявление');magazine=magazineState118(attacker,weapon);assertShotAmmo238(attacker,weapon,ammo);if(magazine.size>0&&magazine.loaded<shotCost)throw new Error('После объявления атаки оружие всё ещё не заряжено');
       if(String(weapon.id)!==String(selectedWeapon.id))throw Error('Выбранное оружие изменилось во время реакции');

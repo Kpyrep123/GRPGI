@@ -2,6 +2,7 @@
 module.exports=function(deps){
 const window={GRPGStatsV113:deps.stats,GRPGItemInstancesV215:deps.instances,GRPGDamageTypesV202:deps.types,GRPGAberrationWeapons:{effects:deps.effects}};
 const num=(x,f=0)=>Number.isFinite(Number(x))?Number(x):f,list=x=>Array.isArray(x)?x:[],clone=x=>JSON.parse(JSON.stringify(x)),clamp104=(x,a,b)=>Math.max(a,Math.min(b,num(x)));
+const equipmentBaseline311=false,equipmentIds311=(token,slot,copy)=>list(copy?.aberration252?.effects);
 const equipmentItem105=deps.item,entityForToken=u=>u.profile,timedStatModifiers122=u=>deps.temporary(u),tokenDefense105=u=>u.armorClassOverrideV120?u.armorClass:deps.stats.compute(u.profile).values.armorClass;
 const itemRuntimeStateV138=(u,item,slot)=>deps.instances.instance(u.profile,item.id,-1,slot);
 const itemBrokenV138=(u,item,slot)=>item?!!itemRuntimeStateV138(u,item,slot)?.broken:false;
@@ -27,7 +28,7 @@ const itemBrokenV138=(u,item,slot)=>item?!!itemRuntimeStateV138(u,item,slot)?.br
       const wornArmor=equipmentItem105(source.equipmentSlots.armor),wornShields=['primaryWeapon','secondaryWeapon'].map(slot=>({slot,item:equipmentItem105(source.equipmentSlots[slot])})).filter(row=>itemIsPhysicalShield122(row.item||{}));
       if(wornArmor&&!itemBrokenV138(token,wornArmor,'armor')){
         const copy=window.GRPGItemInstancesV215.instance(entity,wornArmor.id,-1,'armor');
-        const ids=list(copy?.aberration252?.effects);
+        const ids=equipmentIds311(token,'armor',copy);
         if(ids.some(id=>/^armor-(?:20|27)-/.test(id))){
           for(const effect of window.GRPGAberrationWeapons?.effects(ids)||[]){
             if(effect.type!==resolvedType)continue;
@@ -54,7 +55,7 @@ const itemBrokenV138=(u,item,slot)=>item?!!itemRuntimeStateV138(u,item,slot)?.br
           wornArmorAbsorption=clamp104(num(computed?.values?.defense)-num(window.GRPGStatsV113.compute(withoutWornArmor,computeOptions)?.values?.defense),0,armorAbsorption);
         }
         // A shield in either hand participates. Multiple shields do not sum their bonuses.
-        const choices=shields.map(({slot,item})=>{const equipped=clone(withoutShield);equipped.equipmentSlots[slot]=slots[slot];const value=window.GRPGStatsV113.compute(equipped,computeOptions);return{bonus:Math.max(0,shieldBonus122(item),num(value?.values?.armorClass)-num(computed?.values?.armorClass)),absorption:Math.max(0,num(value?.values?.defense)-num(computed?.values?.defense))};}).sort((a,b)=>b.bonus-a.bonus||b.absorption-a.absorption);
+        const choices=shields.map(({slot,item})=>{const equipped=clone(withoutShield);equipped.equipmentSlots[slot]=slots[slot];const value=window.GRPGStatsV113.compute(equipped,computeOptions);return{bonus:Math.max(0,(equipmentBaseline311?null:window.GRPGEquipmentStatsV311?.get(token,slot)?.effectiveStats?.armorClass)??shieldBonus122(item),num(value?.values?.armorClass)-num(computed?.values?.armorClass)),absorption:Math.max(0,num(value?.values?.defense)-num(computed?.values?.defense))};}).sort((a,b)=>b.bonus-a.bonus||b.absorption-a.absorption);
         shieldArmorClass=choices[0]?.bonus||0;if(!token?.defenseOverrideV120)shieldAbsorption=choices[0]?.absorption||0;
         if(!token?.armorClassOverrideV120){
           const dexContribution=num(list(computed?.breakdown?.armorClass).find(row=>row.op==='base'&&row.statRef==='dexterity')?.value),heavy=!itemBrokenV138(token,wornArmor,'armor')&&itemIsHeavyArmor122(wornArmor||{})&&wornArmor?.armorAllowsDexterity!==true;

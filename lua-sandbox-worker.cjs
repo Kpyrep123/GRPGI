@@ -2,6 +2,7 @@ const { parentPort } = require('worker_threads');
 const { LuaFactory } = require('wasmoon');
 
 const SUPPORTED_HOOKS = Object.freeze([
+  'ModifyEquipmentBaseStat','ModifyEquipmentEffectiveStat','BeforeAberrationApply',
   'BeforeRoll','AfterRoll','OnKnockedDown','OnStandUp','OnForcedMove',
   'OnActionDeclared','OnActionFinished','BeforeAttackRoll','AfterAttackRoll','OnAttackResolved','OnMiss','OnDamageApplied','OnHealApplied','OnMoveStart','OnMoveStep','OnMoveEnd','OnPositionChanged','OnUnitEnter','OnUnitLeave','OnConditionChanged','OnModifierChanged','OnRoundStart','OnRoundEnd','OnBattleStart','OnSceneStart','GetCostMode','GetEventScope',
   'OnAttackDeclared',
@@ -210,6 +211,22 @@ function Unit:GetEquippedItemData(slot)
     if tostring(row.itemId or row.id or '') == slot or (row.instanceId and tostring(row.instanceId) == slot) then return row end
   end
   return nil
+end
+-- Equipment getters return item contributions, without character/temporary bonuses.
+local function equipmentStat311(unit, slot, stat, field)
+  local item = unit:GetEquippedItemData(slot)
+  if not item or not item.slot then return nil end
+  return (item[field] or {})[tostring(stat or '')]
+end
+function Unit:GetEquipmentBaseStat(slot, stat) return equipmentStat311(self, slot, stat, 'baseStats') end
+function Unit:GetEquipmentEffectiveStat(slot, stat) return equipmentStat311(self, slot, stat, 'effectiveStats') end
+function Unit:GetEquipmentAberrations(slot)
+  local item = self:GetEquippedItemData(slot)
+  return item and item.aberrations or {}
+end
+function Unit:GetEquipmentModifications(slot)
+  local item = self:GetEquippedItemData(slot)
+  return item and item.attachments or {}
 end
 function Unit:HasReaction() return self.__data.reactionAvailable == true end
 function Unit:IsReactionAvailable() return self:HasReaction() end
@@ -782,6 +799,7 @@ function Unit:GetHealth()
 end
 local __pushBefore204=__push
 __push=function(row)
+  if __equipmentCalculating311 then error('Equipment hooks: команды и запросы ДМа запрещены') end
   if __readOnly204 and row.kind~='query_geometry204' then error('Условия Can... не могут изменять бой или запрашивать решение ДМа') end
   if row.data204 then row.data204=__plain204(row.data204) end
   if row.duration204 then row.duration204=__plain204(row.duration204) end
@@ -828,10 +846,90 @@ math.random = nil
 math.randomseed = nil
 `;
 
+const EQUIPMENT_RESOLVER311 = String.raw`
+local function clone(value)
+  if type(value) ~= 'table' then return value end
+  local result = {}; for key, item in pairs(value) do result[key] = clone(item) end; return result
+end
+local function valid(value)
+  return type(value) == 'number' and value == value and value ~= math.huge and value ~= -math.huge
+end
+local function intercept(hook, item, fields, initial)
+  local value = initial
+  for _, entry in ipairs(__equipmentScripts311) do
+    if tostring(entry.source.ownerId) == tostring(item.unitId) then
+      local fn = rawget(entry.env, hook)
+      if type(fn) == 'function' then
+        local p = {}
+        for key, value in pairs(__SCRIPT_PARAMS) do p[key] = value end
+        for key, value in pairs(fields) do p[key] = clone(value) end
+        p.unit = nil
+        for _, unit in ipairs(GetUnits()) do if unit:GetId() == tostring(item.unitId) then p.unit = unit; break end end
+        p.caster = p.unit; p.slot = item.slot; p.itemId = item.itemId; p.instanceId = item.instanceId
+        p.equipment = clone(item); p.originalValue = initial; p.value = value
+        p.event = __SCRIPT_PARAMS.event
+        local source = setmetatable({__data = entry.source}, getmetatable(__SCRIPT_SOURCE))
+        local can = rawget(entry.env, 'Can' .. hook)
+        if type(can) ~= 'function' or can(source, p) ~= false then
+          local nextValue = fn(source, p)
+          if nextValue ~= nil then value = nextValue end
+          if hook == 'BeforeAberrationApply' then
+            if value ~= false and not valid(value) then error('BeforeAberrationApply: ожидается число, false или nil') end
+          elseif fields.stat == 'damage' then
+            if not valid(value) and not (type(value) == 'string' and #value > 0 and #value <= 128) then error(hook .. ': ожидается число или формула до 128 символов') end
+          elseif type(initial) == 'number' then
+            if not valid(value) then error(hook .. ': ожидается конечное число') end
+          elseif type(value) ~= 'string' or #value > 128 then error(hook .. ': ожидается формула до 128 символов') end
+        end
+      end
+    end
+  end
+  return value
+end
+__equipmentResult311 = {}
+for _, raw in ipairs(__equipmentItems311 or {}) do
+  local item = clone(raw)
+  local stats = clone(item.baseStats)
+  for _, stat in ipairs(item.statOrder) do
+    stats[stat] = intercept('ModifyEquipmentBaseStat', item, {stat=stat, stage='base'}, stats[stat])
+  end
+  item.modifiedBaseStats = clone(stats)
+  item.appliedAberrations = {}
+  for _, enhancement in ipairs(item.enhancements) do
+    local value = enhancement.value
+    if enhancement.kind == 'aberration' then
+      value = intercept('BeforeAberrationApply', item, {effectId=enhancement.id, effect=clone(enhancement.effect), stat=enhancement.stat, stage='aberration'}, value)
+      if value ~= false then
+        if not enhancement.stat and value ~= enhancement.value then error('Числовое изменение этой аберрации не поддерживается; верните false для отключения') end
+        local applied = clone(enhancement.effect); applied.id = enhancement.id; applied.value = value
+        item.appliedAberrations[#item.appliedAberrations + 1] = applied
+      end
+    end
+    if value ~= false and enhancement.stat and enhancement.applies ~= false then
+      local key = enhancement.stat
+      stats[key] = enhancement.op == 'set' and value or stats[key] + value
+    end
+  end
+  -- A fixed damage expression can absorb numeric item bonuses. Dice expressions stay separate.
+  if type(stats.damage) == 'number' then stats.damage = stats.damage + stats.damageBonus; stats.damageBonus = 0 end
+  for _, stat in ipairs(item.statOrder) do
+    item.effectiveStats = clone(stats)
+    stats[stat] = intercept('ModifyEquipmentEffectiveStat', item, {stat=stat, stage='effective'}, stats[stat])
+  end
+  if item.broken then
+    stats.armorClass = 0; stats.absorption = 0
+    if item.itemType ~= 'armor' then stats.damage = 0; stats.damageBonus = 0 end
+  end
+  item.effectiveStats = stats
+  item.enhancements = nil; item.statOrder = nil
+  __equipmentResult311[#__equipmentResult311 + 1] = item
+end
+`;
+
 async function run(payload = {}) {
   const script = String(payload.script || '');
   const hook = String(payload.hook || '');
-  const mode = ['validate', 'check', 'execute', 'metadata'].includes(payload.mode) ? payload.mode : 'execute';
+  const mode = ['validate', 'check', 'execute', 'metadata', 'equipment'].includes(payload.mode) ? payload.mode : 'execute';
   if (script.length > 80000) throw new Error('Lua-скрипт превышает лимит 80 000 символов');
   if (hook && !SUPPORTED_HOOKS.includes(hook)) throw new Error(`Неподдерживаемый hook: ${hook}`);
 
@@ -840,6 +938,26 @@ async function run(payload = {}) {
   try {
     const prelude = PRELUDE.replace('__INPUT_PLACEHOLDER__', toLuaLiteral(payload.input || {}));
     await lua.doString(prelude);
+    if (mode === 'equipment') {
+      const sources = payload.equipmentSources || [];
+      if (!Array.isArray(sources) || sources.length > 128) throw Error('Equipment: лимит источников 128');
+      await lua.doString('__equipmentCalculating311 = true; __equipmentScripts311 = {}; __equipmentItems311 = '+toLuaLiteral(payload.input?.equipmentItems311 || []));
+      for (const source of sources) {
+        if (String(source.script || '').length > 80000) throw Error('Equipment: скрипт превышает лимит');
+        // Each source has its own globals; scripts cannot overwrite another source's hooks.
+        await lua.doString(`do
+          local env = setmetatable({}, {__index = _G}); env._G = env
+          local function script() local _ENV = env
+          ${String(source.script || '')}
+          end
+          script()
+          __equipmentScripts311[#__equipmentScripts311 + 1] = {env = env, source = ${toLuaLiteral(source.source || {})}}
+        end`);
+      }
+      await lua.doString(EQUIPMENT_RESOLVER311);
+      const items = lua.global.get('__equipmentResult311');
+      return {ok:true, equipment: Array.isArray(items) ? items : []};
+    }
     await lua.doString(script || '-- empty');
     lua.global.set('__hookName', hook);
     lua.global.set('__mode', mode);
