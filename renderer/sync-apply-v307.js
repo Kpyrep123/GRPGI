@@ -4,7 +4,10 @@
   const apply = Sync.applyRemoteSnapshot.bind(Sync);
   let checks = Promise.resolve(), applications = Promise.resolve(), baseline = null;
   const pendingChecks = new Map();
-  const context = () => JSON.stringify([Sync.provider(), Sync.config?.url, Sync.config?.serverUrl, Sync.config?.campaignId, App.currentUserId]);
+  // World comparisons belong to the remote campaign, not the UI login state.
+  // In-flight work still belongs to the exact session that requested it.
+  const worldContext = () => JSON.stringify([Sync.provider(), Sync.config?.url, Sync.config?.serverUrl, Sync.config?.campaignId, Sync.config?.tableName]);
+  const context = () => JSON.stringify([worldContext(), App.currentUserId]);
   const signature = world => new Map(Object.entries(world || {}).map(([key, value]) => [key, JSON.stringify(value)]));
   const equal = (a, b) => a.size === b.size && [...a].every(([key, value]) => b.get(key) === value);
 
@@ -19,7 +22,7 @@
   };
 
   Sync.applyRemoteSnapshot = function(payload, remoteMeta = {}, options = {}) {
-    const requestedContext = context();
+    const requestedContext = context(), requestedWorldContext = worldContext();
     const task = applications.catch(() => {}).then(async () => {
       if (context() !== requestedContext) return { ok: true, status: 'deferred-context-changed' };
       const sync = App.state?.meta?.sync || {};
@@ -31,9 +34,10 @@
       if (!payload?.world || !payload?.state) return { ok: false, message: 'Remote payload пустой' };
       const started = performance.now(), signatures = signature(payload.world), state = JSON.stringify(payload.state);
       const stamp = JSON.stringify([remoteMeta._id, remoteMeta.revision, remoteMeta.updatedAt]);
-      const known = baseline?.context === requestedContext;
+      const recordId = String(remoteMeta._id || '');
+      const known = baseline?.worldContext === requestedWorldContext && baseline.recordId === recordId;
       if (!options.force && known && Number(remoteMeta.revision || 0) < Number(sync.remoteRevision || 0)) return { ok: true, status: 'deferred-stale-snapshot' };
-      if (!options.force && !sync.localDirty && known && baseline.stamp === stamp && baseline.state === state && equal(baseline.signatures, signatures)) {
+      if (!options.force && !sync.localDirty && known && baseline.context === requestedContext && baseline.stamp === stamp && baseline.state === state && equal(baseline.signatures, signatures)) {
         Debug.log('SYNC_APPLY_REMOTE_DEDUPED', { revision: remoteMeta.revision });
         return { ok: true, status: 'already-applied' };
       }
@@ -51,7 +55,7 @@
       }
       const result = await apply(payload, remoteMeta, { ...options, ...(patch ? { worldPatchV307: patch } : {}), deferRenderV307: true });
       if (result?.ok && !String(result.status || '').startsWith('deferred')) {
-        baseline = { context: requestedContext, signatures, state, stamp };
+        baseline = { context: requestedContext, worldContext: requestedWorldContext, recordId, signatures, state, stamp };
         rerenderActiveModuleV086();
         Debug.log('SYNC_APPLY_REMOTE_TIMING', { revision: remoteMeta.revision, mode: patch ? 'sections' : 'full', sections: patch ? Object.keys(patch) : Object.keys(payload.world), elapsedMs: Math.round(performance.now() - started) });
       }

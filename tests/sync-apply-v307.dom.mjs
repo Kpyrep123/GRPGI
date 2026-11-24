@@ -44,22 +44,22 @@ w.electronAPI.loadState=async()=>{counts.stateReads++;return fs.existsSync(state
 w.electronAPI.saveState=async state=>{fs.writeFileSync(stateFile,JSON.stringify(state));return{ok:true};};
 w.electronAPI.debugLog=async(label,payload)=>logs.push({label,payload});
 run(`
- App.state=makeDefaultState();App.currentUserId='gm';UI.activeModuleId='sync';
+ App.state=makeDefaultState();App.currentUserId=null;UI.activeModuleId='sync';
  Sync.render=()=>{};Sync.refreshChip=()=>{};Sync.beginDataTransfer=()=>{};Sync.endDataTransfer=()=>{};
  Sync.config={enabled:true,provider:'pocketbase',campaignId:'main',url:'https://sync.test'};Sync.loadConfig=async function(){return this.config;};
  PlayerSync.shouldIsolateUsersFromSnapshot=()=>false;Toast.show=()=>{};
  window.render307=0;window.renderBefore307=rerenderActiveModuleV086;
  rerenderActiveModuleV086=(...args)=>{window.render307++;return window.renderBefore307(...args);};
 `);
-let revision=10,world={players:{PLAYER_TEMPLATES:{gm:{id:'gm',role:'gm'}}},equipment:{EQUIPMENT:{test:{id:'test',type:'gear',name:'Initial'}}},npcs:{NPCS:{}},planets:{PLANETS:{}}};
+let recordId='original',revision=10,world={players:{PLAYER_TEMPLATES:{gm:{id:'gm',role:'gm'}}},equipment:{EQUIPMENT:{test:{id:'test',type:'gear',name:'Initial'}}},npcs:{NPCS:{}},planets:{PLANETS:{}}};
 const state={users:{gm:{id:'gm',role:'gm',credits:0,inventory:[]}},meta:{sync:{remoteRevision:0}}};
-const response=()=>({ok:true,status:'newer',newer:true,baselineToken:'baseline-'+revision,remote:{campaignId:'main',revision,updatedAt:'time-'+revision},payload:{world:structuredClone(world),state:structuredClone(state)}});
+const response=()=>({ok:true,status:'newer',newer:true,baselineToken:'baseline-'+revision,remote:{_id:recordId,campaignId:'main',revision,updatedAt:'time-'+revision},payload:{world:structuredClone(world),state:structuredClone(state)}});
 w.electronAPI.pullSync=async()=>response();
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 try{
  await run("Sync.checkForRemoteUpdates('manual-pull',{force:true,silent:true})");
  assert.equal(counts.full,1);assert.equal(counts.worldReads,0,'write response replaces redundant world reload');assert.equal(counts.stateReads,0,'no state save/load/normalize round trip');assert.equal(w.render307,1);
- run("App.state.directChats={'gm::p':[{id:'chat-local',text:'Keep chat'}]};App.state.users.gm.credits=42;App.state.users.gm.inventory=[{itemId:'local-item',qty:1}];PlayerSync.shouldIsolateUsersFromSnapshot=()=>true;");
+ run("App.currentUserId='gm';App.state.directChats={'gm::p':[{id:'chat-local',text:'Keep chat'}]};App.state.users.gm.credits=42;App.state.users.gm.inventory=[{itemId:'local-item',qty:1}];PlayerSync.shouldIsolateUsersFromSnapshot=()=>true;");
  revision=11;world.equipment.EQUIPMENT.test.name='Changed';
  let release,pulls=0;w.electronAPI.pullSync=async()=>{pulls++;return new Promise(resolve=>{release=()=>resolve(response());});};
  const first=run("Sync.checkForRemoteUpdates('poll',{silent:true})"),duplicate=run("Sync.checkForRemoteUpdates('realtime',{silent:true})");
@@ -104,9 +104,18 @@ try{
  // Removing a whole section clears its local file through the same scoped API.
  revision=18;delete world.npcs;await run("Sync.checkForRemoteUpdates('poll',{silent:true})");assert.deepEqual(counts.patch.at(-1),['npcs']);assert.deepEqual(JSON.parse(fs.readFileSync(path.join(scratch,'world.json'),'utf8')).npcs,{});
  w.stale307={world:structuredClone(world),state:structuredClone(state)};
- assert.equal((await run("Sync.applyRemoteSnapshot(stale307,{revision:16,updatedAt:'old'})")).status,'deferred-stale-snapshot');assert.equal(run('App.state.meta.sync.remoteRevision'),18);
+ assert.equal((await run("Sync.applyRemoteSnapshot(stale307,{_id:'original',revision:16,updatedAt:'old'})")).status,'deferred-stale-snapshot');assert.equal(run('App.state.meta.sync.remoteRevision'),18);
  const stateBefore=JSON.parse(fs.readFileSync(stateFile,'utf8'));assert.equal(stateBefore.meta.sync.remoteRevision,18);
+ // A new server/campaign is not allowed to reuse the old world's comparison base.
+ run("Sync.config={...Sync.config,url:'https://another-server.test'};");revision=1;world.equipment.EQUIPMENT.test.name='Other server';w.electronAPI.pullSync=async()=>response();
+ await run("Sync.checkForRemoteUpdates('poll',{silent:true})");assert.equal(counts.full,3);assert.equal(run('App.state.meta.sync.remoteRevision'),1);assert.equal(run('EQUIPMENT.test.name'),'Other server');
+ // Deleting/recreating a snapshot also requires a full base, even at a lower revision.
+ recordId='replacement';revision=0;await run("Sync.checkForRemoteUpdates('poll',{silent:true})");assert.equal(counts.full,4);
+ // Session protection is distinct from world reuse: an application queued before
+ // logout/login must still be deferred rather than run under another user.
+ w.queued308=response();const queued=run('Sync.applyRemoteSnapshot(queued308.payload,queued308.remote)');run("App.currentUserId='someone-else';");
+ assert.equal((await queued).status,'deferred-context-changed');assert.equal(counts.full,4);
  assert(logs.some(row=>row.label==='SYNC_APPLY_REMOTE_DEDUPED'));assert(logs.some(row=>row.label==='SYNC_APPLY_REMOTE_TIMING'&&row.payload.mode==='sections'));
- console.log('PASS full renderer apply: concurrent checks, serialized/deduped apply, exact section IO, one final render, no reread, chat/inventory preservation, same-revision SQL, rollback/retry, canonical result and edits during pull');
+ console.log('PASS full renderer apply: guest-to-GM comparison base, changed server/record, queued session guard, concurrent checks, serialized/deduped apply, exact section IO, one final render, no reread, chat/inventory preservation, same-revision SQL, rollback/retry, canonical result and edits during pull');
 }finally{await w.happyDOM.abort();fs.rmSync(scratch,{recursive:true,force:true});}
 process.exit(0);
