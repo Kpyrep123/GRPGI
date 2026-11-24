@@ -1146,11 +1146,21 @@ const Sync = {
       return { ok: false, message: 'Remote payload пустой' };
     }
     Debug.log('SYNC_APPLY_REMOTE_START', { revision: remoteMeta?.revision || 0, updatedAt: remoteMeta?.updatedAt || null, force: Boolean(options.force) });
-    const worldSave = await window.electronAPI?.saveWorldData?.(payload.world);
+    const patch = options.worldPatchV307;
+    const scoped = patch && typeof patch === 'object' && window.electronAPI?.saveWorldSections;
+    const worldSave = scoped
+      ? (Object.keys(patch).length ? await window.electronAPI.saveWorldSections(patch) : { ok: true, world: {} })
+      : await window.electronAPI?.saveWorldData?.(payload.world);
     if (!worldSave?.ok) {
       throw new Error(`Не удалось сохранить world snapshot: ${worldSave?.message || 'unknown error'}`);
     }
-    await App.loadWorldData();
+    // Both write APIs return the normalized data that was actually persisted.
+    // Avoid loading/normalizing every JSON file again after the write.
+    if (worldSave.world && (!scoped || Object.keys(patch).length)) {
+      applyWorldData(scoped ? { ...worldData, ...worldSave.world } : worldSave.world);
+      App.worldLoaded = true;
+      if (worldSave.dataDir) App.worldDataDir = worldSave.dataDir;
+    } else if (!worldSave.world) await App.loadWorldData();
     const normalizedState = Persistence.normalize(payload.state);
     if (PlayerSync.shouldIsolateUsersFromSnapshot()) {
       normalizedState.users = deep(App.state?.users || normalizedState.users || {});
@@ -1176,13 +1186,19 @@ const Sync = {
     };
     normalizedState.meta.syncMode = this.config?.enabled ? `${this.cloudName(this.config).toUpperCase()}_MIRROR` : 'LOCAL_FILE_CACHE';
     await Persistence.save(normalizedState);
-    App.state = await Persistence.load();
+    // Row-level profile updates can arrive while the state file is being written.
+    // Keep their latest in-memory version; the chat-preservation wrapper persists it.
+    if (PlayerSync.shouldIsolateUsersFromSnapshot()) {
+      normalizedState.users = deep(App.state?.users || normalizedState.users || {});
+      normalizedState.meta.playerSync = normalizePlayerSyncMeta(App.state?.meta?.playerSync || normalizedState.meta.playerSync || {});
+    }
+    App.state = window.GRPGPlayerCredentialsV212.clean(normalizedState);
     mirrorPlayersIntoWorld(App.state);
     App.fillLoginSelect();
-    App.renderLive();
+    if (!options.deferRenderV307) App.renderLive();
     this.status = { enabled: true, connected: true, message: 'REMOTE_APPLIED', remote: remoteMeta };
     this.refreshChip();
-    this.render();
+    if (!options.deferRenderV307) this.render();
     Debug.log('SYNC_APPLY_REMOTE_DONE', { revision: remoteMeta?.revision || 0, updatedAt: remoteMeta?.updatedAt || null });
     return { ok: true };
   },
@@ -1244,13 +1260,16 @@ const Sync = {
 
     if (res.recovered) App.state.meta.sync.confirmedPendingOperation = res.recovered;
     const confirmation = res.recovered || App.state.meta.sync.confirmedPendingOperation;
-    const ownConfirmation = Boolean(confirmation) && Number(localSync.localEditVersion || 0) === Number(confirmation.localEditVersion || 0);
+    // A form can be saved while pullSync is awaiting the network. Re-read the
+    // current generation instead of treating an older receipt as the latest edit.
+    const latestSync = App.state.meta.sync;
+    const ownConfirmation = Boolean(confirmation) && Number(latestSync.localEditVersion || 0) === Number(confirmation.localEditVersion || 0);
     if (res.recovered) {
       App.state.meta.sync.pendingOperationId = null;
       App.state.meta.sync.pendingEditVersion = null;
     }
     if (res.status === 'newer' && res.payload) {
-      if (localSync.localDirty && !options.force && !ownConfirmation) {
+      if (latestSync.localDirty && !options.force && !ownConfirmation) {
         App.state.meta.sync.lastStatus = 'REMOTE_NEWER_LOCAL_DIRTY';
         this.status = { enabled: true, connected: true, message: 'CONFLICT_REMOTE_NEWER', remote: res.remote || null };
         this.refreshChip();
@@ -1268,7 +1287,7 @@ const Sync = {
         if (!options.silent) Toast.show('В облаке есть более свежий снимок мира. Он не был применён автоматически.', 'info');
         return { ...res, skipped: true };
       }
-      const applied = await this.applyRemoteSnapshot(res.payload, res.remote, options);
+      const applied = await this.applyRemoteSnapshot(res.payload, res.remote, { ...options, ...(ownConfirmation ? { confirmedEditVersionV307: Number(confirmation.localEditVersion || 0), confirmationWorldScopeV307: confirmation.worldScope } : {}) });
       if (String(applied?.status || '').startsWith('deferred')) {
         await Persistence.save(App.state);
         return { ...res, skipped: true };
@@ -9417,7 +9436,7 @@ Persistence.save = async function(state) {
 
 const __syncApplyRemoteSnapshot_readMerge = Sync.applyRemoteSnapshot.bind(Sync);
 Sync.applyRemoteSnapshot = async function(snapshot, remoteMeta = {}, options = {}) {
-  const mergedSnapshot = deep(snapshot || {});
+  const mergedSnapshot = { ...(snapshot || {}), state: deep(snapshot?.state || {}) };
   mergedSnapshot.state = mergedSnapshot.state || {};
   const localReadMarkers = deep(loadReadMarkersCache());
   mergedSnapshot.state.readMarkers = localReadMarkers;
@@ -10353,7 +10372,7 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
   const markers = ensureReadMarkers();
   markers.messages = localMessageReads;
   persistReadMarkersHard('sync-apply-preserve-chat');
-  if (UI.activeModuleId === 'messages') MessagesUI.render();
+  if (!options.deferRenderV307 && UI.activeModuleId === 'messages') MessagesUI.render();
   return res;
 };
 
@@ -14258,7 +14277,7 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
   const combatAfter = cloneCombatRuntimeSnapshotV084(App.state);
   const mergedCombatRuntime = mergeCombatRuntimeSnapshotsV22(combatBefore, combatAfter);
   restoreCombatRuntimeSnapshotV084(mergedCombatRuntime, App.state);
-  if (UI.activeModuleId === 'combat') {
+  if (!options.deferRenderV307 && UI.activeModuleId === 'combat') {
     try { Combat.render(); } catch {}
   }
   return res;
@@ -14266,7 +14285,7 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
 
 /* v0.8.6 patch: local-only dice animation, preserve combat runtime across snapshot apply, restore UI state */
 function stripCombatFromRemoteSnapshotV086(payload = {}) {
-  const next = deep(payload || {});
+  const next = { ...(payload || {}), state: deep(payload?.state || {}) };
   if (next?.state?.toolState && typeof next.state.toolState === 'object' && next.state.toolState[COMBAT_STATE_KEY]) {
     delete next.state.toolState[COMBAT_STATE_KEY];
   }
@@ -14443,7 +14462,7 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
       try { __combatApplyRemoteRuntimeRow_v086.call(Combat, row, { force: true, render: false }); } catch {}
     }
     restoreUiStateV086(localUiState);
-    rerenderActiveModuleV086(localUiState);
+    if (!options.deferRenderV307) rerenderActiveModuleV086(localUiState);
     return res;
   } finally {
     Sync._applyingRemoteSnapshot = false;
