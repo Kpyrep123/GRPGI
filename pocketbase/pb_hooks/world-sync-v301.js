@@ -117,13 +117,16 @@
     function allowed(key){
      if(!scope)return true;
      const path=JSON.parse(key);
+     // Character catalogues also have linked snapshot users; clocks/chat remain outside scope.
      return path[0]==='world'&&(!path[1]||scope.has(path[1]))
-       ||path[0]==='state'&&(path.length===1||path[1]==='__worldWriteV140');
+       ||path[0]==='state'&&(path.length===1||path[1]==='__worldWriteV140'||scope.has('players')&&path[1]==='users');
     }
     function expected(key,base,current){
      // The write proof is generated from this freshly fetched server state. It is
      // technical metadata, never an old editor's gameplay intent.
-     return scope&&JSON.parse(key)[0]==='state'?(current?.version||0):(base?.version||0);
+     // Linked users are actual edits and retain their original CAS versions.
+     const path=JSON.parse(key);
+     return scope&&path[0]==='state'&&(path.length===1||path[1]==='__worldWriteV140')?(current?.version||0):(base?.version||0);
     }
     // Compare intent with its original baseline, not with a newer download. Otherwise a
     // stale catalogue could silently delete another editor's unrelated additions.

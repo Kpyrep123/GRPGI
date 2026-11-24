@@ -3786,9 +3786,16 @@ ipcMain.handle('sync:push', async (_event, payload) => {
     // Unchanged catalogues already have authoritative cloud URLs. Do not walk them.
     const scopedWorld = Object.fromEntries(worldSections.filter(name => Object.hasOwn(snapshot.world || {}, name)).map(name => [name, snapshot.world[name]]));
     const worldOnly = gmWrite && !manual && payload?.reason === 'world-config-save' && !worldSections.includes('players');
-    const normalizedSnapshot = await normalizeSnapshotImagesForCloud(config, { ...snapshot, world: scopedWorld, ...(worldOnly ? { state: {} } : {}) });
-    // A catalogue edit has no authority to publish local clocks, chat or gameplay state.
-    if (worldOnly) normalizedSnapshot.state = JSON.parse(JSON.stringify(currentRemote.remote?.state || {}));
+    const playerWorldEdit = gmWrite && !manual && payload?.reason === 'world-config-player-save';
+    const scopedWrite = worldOnly || playerWorldEdit;
+    const editState = playerWorldEdit ? { users: snapshot.state?.users || {} } : {};
+    const normalizedSnapshot = await normalizeSnapshotImagesForCloud(config, { ...snapshot, world: scopedWorld, ...(scopedWrite ? { state: editState } : {}) });
+    // Character edits also update linked snapshot users, but have no authority
+    // to publish local clocks, chat or other unrelated gameplay state.
+    if (scopedWrite) normalizedSnapshot.state = {
+      ...JSON.parse(JSON.stringify(currentRemote.remote?.state || {})),
+      ...(playerWorldEdit ? { users: normalizedSnapshot.state.users } : {})
+    };
     let worldPatch = normalizedSnapshot.world;
     debugLog('SYNC_NORMALIZE_SCOPED', { sections: worldSections, elapsedMs: Date.now() - normalizeStarted });
     const protectedWorld = await protectRemoteWorldV140(
@@ -3829,7 +3836,7 @@ ipcMain.handle('sync:push', async (_event, payload) => {
       baseRevision: Number(baseline.guard.revision || remoteRevision),
       intentBaseRevision: Number(payload?.baseRevision || 0),
       localEditVersion: Number(payload?.localEditVersion || 0),
-      ...(worldOnly ? { worldScope: worldSections } : {}),
+      ...(scopedWrite ? { worldScope: worldSections } : {}),
       updatedBy: payload?.updatedBy || config.deviceLabel || 'unknown-device',
       clientUpdatedAt: payload?.clientUpdatedAt || new Date().toISOString()
     });
@@ -3870,7 +3877,7 @@ ipcMain.handle('sync:push', async (_event, payload) => {
       config,
       worldPersisted,
       worldPatch: result?.ok ? (revisionChanged ? normalizedSnapshot.world : worldPatch) : null,
-      normalizedUsers: worldOnly ? null : normalizedSnapshot?.state?.users || null,
+      normalizedUsers: scopedWrite ? null : normalizedSnapshot?.state?.users || null,
       baselineToken: baseline.token || String(payload?.baselineToken || ''),
       gmReauthorized,
       cloudBackupCreated: Boolean(backupFile),

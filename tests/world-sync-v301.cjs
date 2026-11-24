@@ -182,6 +182,34 @@ async function run(){
   fs.writeFileSync(pendingFile,'{"schema":0}');
   await assert.rejects(codec.createClient(disk).pull('gm',unreliable,'main'),/Повреждён/);
  }finally{fs.rmSync(folder,{recursive:true,force:true});}
+ // Player World Config must send linked users without sending stale clocks/chat.
+ const playerSeed=db.prepare('SELECT worldJson,stateJson FROM campaign_snapshots').get(),playerWorld=JSON.parse(playerSeed.worldJson),playerState=JSON.parse(playerSeed.stateJson);
+ playerWorld.players={PLAYER_TEMPLATES:{gm:{id:'gm',role:'gm',name:'GM'},p:{id:'p',role:'player',name:'Player'}}};
+ playerState.users={...playerState.users,gm:{...playerState.users.gm,name:'GM'},p:{id:'p',role:'player',name:'Player'}};
+ db.prepare('UPDATE campaign_snapshots SET worldJson=?,stateJson=?,revision=revision+1').run(JSON.stringify(playerWorld),JSON.stringify(playerState));
+ const pa=codec.createClient(),pb=codec.createClient(),pc=codec.createClient();
+ const paBase=await pa.pull('pa',request,'main'),pbBase=await pb.pull('pb',request,'main'),pcBase=await pc.pull('pc',request,'main');
+ const paIntent=json(paBase.remote),pbIntent=json(pbBase.remote),pcIntent=json(pcBase.remote);
+ paIntent.world.players.PLAYER_TEMPLATES.gm.name=paIntent.state.users.gm.name='GM edited';
+ pbIntent.world.players.PLAYER_TEMPLATES.p.name=pbIntent.state.users.p.name='Player edited';
+ pcIntent.world.players.PLAYER_TEMPLATES.gm.name=pcIntent.state.users.gm.name='Stale GM edit';
+ const runtimeState=JSON.parse(db.prepare('SELECT stateJson FROM campaign_snapshots').get().stateJson);runtimeState.meta.lastUpdatedAt='runtime-new';runtimeState.messages={server:'preserve'};
+ db.prepare('UPDATE campaign_snapshots SET stateJson=?,revision=revision+1').run(JSON.stringify(runtimeState));
+ const paFresh=await pa.pull('pa',request,'main');
+ const paSaved=await pa.push('pa',request,'main',{world:paIntent.world,state:paIntent.state,worldScope:['players'],baseRevision:paFresh.remote.revision,intentBaseRevision:paBase.remote.revision},'operation-player-a');assert(paSaved.ok,paSaved.message);
+ const paChanges=calls.at(-1).body.changes;assert(paChanges.some(change=>JSON.parse(change.key)[0]==='state'&&JSON.parse(change.key)[1]==='users'));
+ assert(!paChanges.some(change=>{const p=JSON.parse(change.key);return p[0]==='state'&&['meta','messages'].includes(p[1]);}));
+ const pbFresh=await pb.pull('pb',request,'main');
+ const pbSaved=await pb.push('pb',request,'main',{world:pbIntent.world,state:pbIntent.state,worldScope:['players'],baseRevision:pbFresh.remote.revision,intentBaseRevision:pbBase.remote.revision},'operation-player-b');assert(pbSaved.ok,pbSaved.message);
+ const afterPlayers=JSON.parse(db.prepare('SELECT stateJson FROM campaign_snapshots').get().stateJson);
+ assert.equal(afterPlayers.meta.lastUpdatedAt,'runtime-new');assert.equal(afterPlayers.messages.server,'preserve');assert.equal(afterPlayers.users.gm.name,'GM edited');assert.equal(afterPlayers.users.p.name,'Player edited');
+ // Preserve real CAS for linked state.users, not the technical marker's fresh version.
+ const stateOnlyIntent=json(pcBase.remote);stateOnlyIntent.state.users.gm.name='Stale linked user';
+ const pcFresh=await pc.pull('pc',request,'main');
+ const pcRejected=await pc.push('pc',request,'main',{world:stateOnlyIntent.world,state:stateOnlyIntent.state,worldScope:['players'],baseRevision:pcFresh.remote.revision,intentBaseRevision:pcBase.remote.revision},'operation-player-conflict');
+ assert.equal(pcRejected.status,'conflict');assert.equal(pcRejected.conflict.path[0],'state');assert.equal(pcRejected.conflict.path[1],'users');
+ const pcWorldRejected=await pc.push('pc',request,'main',{world:pcIntent.world,state:pcIntent.state,worldScope:['players'],baseRevision:pcFresh.remote.revision,intentBaseRevision:pcBase.remote.revision},'operation-player-world-conflict');assert.equal(pcWorldRejected.status,'conflict');
+ const finalPlayerState=JSON.parse(db.prepare('SELECT stateJson FROM campaign_snapshots').get().stateJson);assert.equal(finalPlayerState.users.gm.name,'GM edited');
  // The persisted result, including changes in unrelated sections by legacy hooks,
  // remains authoritative. No submitted-change-only indexing is allowed.
  const hookClient=codec.createClient(),hookBase=await hookClient.pull('hook',request,'main'),hookIntent=json(hookBase.remote);
