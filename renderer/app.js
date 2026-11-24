@@ -1278,7 +1278,7 @@ const Sync = {
         await Persistence.save(App.state);
         return { ...res, skipped: true };
       }
-      if (options.applyIfNewer === false && !(ownConfirmation && !UiSyncGuard.isEditingCriticalForm())) {
+      if (options.applyIfNewer === false && !(ownConfirmation && (!UiSyncGuard.isEditingCriticalForm() || Configurator.hasCapturedSubmitV309(options)))) {
         App.state.meta.sync.lastStatus = 'REMOTE_NEWER_AVAILABLE';
         this.status = { enabled: true, connected: true, message: 'REMOTE_NEWER_AVAILABLE', remote: res.remote || null };
         this.refreshChip();
@@ -6065,22 +6065,36 @@ const Configurator = {
     }
     return null;
   },
+  submitContextV309() {
+    return JSON.stringify([Sync.provider(), Sync.config?.url, Sync.config?.serverUrl, Sync.config?.campaignId, App.currentUserId]);
+  },
+  hasCapturedSubmitV309(options = {}) {
+    const capture = options.configSubmitV309;
+    return Boolean(capture && capture === this._activeSubmitV309 && capture.context === this.submitContextV309()
+      && capture.type === this.selectedType && capture.selectedId === this.selectedId);
+  },
   async submit(event) {
     event.preventDefault();
-    if (App.state?.meta?.sync?.pendingOperationId || App.state?.meta?.sync?.confirmedPendingOperation) {
-      await Sync.checkForRemoteUpdates('config-pending-check', { silent: false, applyIfNewer: true });
-      Toast.show(App.state.meta.sync.pendingOperationId ? 'Ожидается подтверждение предыдущей отправки. Изменения формы сохранены в черновике.' : 'Предыдущая отправка подтверждена. Проверьте форму перед новым сохранением.', 'info');
-      return;
-    }
     const current = this.getSelectedEntity();
     const oldId = current?.id || this.selectedId;
     const formEl = event.currentTarget;
+    const draftKey = FormDrafts.configKey(this.selectedType, oldId || 'new');
+    try { FormDrafts.retainV309(draftKey, formEl); }
+    catch (error) { Toast.show('Не удалось сохранить черновик: ' + error.message, 'err'); return; }
+    if (this._activeSubmitV309) {
+      Toast.show('Другая запись ещё сохраняется. Этот черновик сохранён; повторите сохранение после завершения.', 'info');
+      return;
+    }
+    const capture = { type: this.selectedType, selectedId: this.selectedId, context: this.submitContextV309(), base: current ? deep(current) : null };
+    this._activeSubmitV309 = capture;
     const submitStarted = performance.now();
     Debug.log('CONFIG_SUBMIT_START', { type: this.selectedType, oldId });
     try {
       await waitForPendingImageTasks(formEl);
+      FormDrafts.retainV309(draftKey, formEl);
+      capture.draftSignature = JSON.stringify(FormDrafts.store[draftKey]);
       const formData = new FormData(formEl);
-      const entity = this.collectEntity(this.selectedType, formEl, formData);
+      let entity = this.collectEntity(capture.type, formEl, formData);
       Debug.log('CONFIG_ENTITY_COLLECTED', {
         type: this.selectedType,
         oldId,
@@ -6100,17 +6114,65 @@ const Configurator = {
         Toast.show('Профиль ведущего должен оставаться ролью gm', 'err');
         return;
       }
+      if (App.state?.meta?.sync?.pendingOperationId || App.state?.meta?.sync?.confirmedPendingOperation) {
+        Toast.show('Правка сохранена в черновике и будет отправлена после подтверждения предыдущей записи.', 'info');
+        const deadline = Date.now() + 30000;
+        do {
+          const result = await Sync.checkForRemoteUpdates('config-pending-check', { silent: true, applyIfNewer: true, configSubmitV309: capture });
+          if (!this.hasCapturedSubmitV309({ configSubmitV309: capture })) return;
+          if (result?.status !== 'pending') {
+            if (!result?.ok || result.skipped) {
+              Toast.show('Предыдущая запись пока не применена. Текущая правка сохранена в черновике.', 'info');
+              return;
+            }
+            break;
+          }
+          if (Date.now() >= deadline) {
+            Toast.show('Сервер пока не подтвердил предыдущую запись. Текущая правка сохранена в черновике.', 'info');
+            return;
+          }
+          await new Promise(resolve => setTimeout(resolve, 1500));
+          if (!this.hasCapturedSubmitV309({ configSubmitV309: capture })) return;
+        } while (true);
+        if (JSON.stringify(FormDrafts.store[draftKey]) !== capture.draftSignature) {
+          FormDrafts.retainV309(draftKey);
+          Toast.show('Во время ожидания форма изменена. Новый черновик сохранён; нажмите «Сохранить» для его отправки.', 'info');
+          return;
+        }
+        const fresh = this.getSelectedEntity();
+        if (!fresh || !capture.base) throw new Error('Сущность изменилась или удалена на сервере. Черновик сохранён.');
+        const merged = deep(fresh), equal = window.GRPGPlayerSyncCoreV135.equal;
+        for (const key of new Set([...Object.keys(capture.base), ...Object.keys(entity)])) {
+          if (equal(capture.base[key], entity[key])) continue;
+          if (!equal(capture.base[key], fresh[key]) && !equal(entity[key], fresh[key])) {
+            throw new Error('На сервере изменено то же поле: ' + key + '. Черновик сохранён.');
+          }
+          if (Object.hasOwn(entity, key) && entity[key] !== undefined) merged[key] = deep(entity[key]);
+          else delete merged[key];
+        }
+        entity = merged;
+      }
+      if (!this.hasCapturedSubmitV309({ configSubmitV309: capture })) return;
       const worldSections = entity.id === oldId
         ? [this.selectedType]
         : this.worldSectionsForEntityChange(this.selectedType, oldId);
       this.replaceEntity(this.selectedType, oldId, entity);
       Debug.log('CONFIG_ENTITY_REPLACED', { type: this.selectedType, oldId, newId: entity.id });
-      FormDrafts.clear(FormDrafts.configKey(this.selectedType, oldId || this.selectedId || 'new'));
-      FormDrafts.clear(FormDrafts.configKey(this.selectedType, entity.id || 'new'));
       const options = this.selectedType === 'players' ? { playerSync: { playerId: entity.id, oldId } } : { worldSections };
-      const saved = await this.persistAll(`Сохранён раздел ${WORLD_SECTIONS[this.selectedType].label}`, options);
-      // persistAll already renders the active World Config. Avoid rendering its full form twice.
-      if (UI.activeModuleId !== 'config') this.render();
+      const saved = await this.persistAll(`Сохранён раздел ${WORLD_SECTIONS[this.selectedType].label}`, { ...options, deferRenderV309: true });
+      const newerDraft = JSON.stringify(FormDrafts.store[draftKey]) !== capture.draftSignature;
+      if (newerDraft) FormDrafts.retainV309(draftKey);
+      if (saved?.localSaved && !newerDraft && capture.context === this.submitContextV309()) {
+        FormDrafts.clear(draftKey);
+        FormDrafts.clear(FormDrafts.configKey(capture.type, entity.id || 'new'));
+      }
+      // Release the submitted skill DOM only after persistence; otherwise its
+      // focus-retention wrapper can keep stale, unedited server fields in the form.
+      if (saved?.localSaved && !newerDraft && capture.context === this.submitContextV309()) {
+        const visible = $('#config-editor-form');
+        if (this.selectedType === capture.type && [capture.selectedId, entity.id].includes(this.selectedId) && visible) visible.dataset.owner185 = '';
+      }
+      this.render();
       Debug.log('CONFIG_SUBMIT_TOTAL_TIMING', { elapsedMs: Math.round(performance.now() - submitStarted), localSaved: saved?.localSaved, syncOk: saved?.sync?.ok, status: saved?.sync?.status });
       requestAnimationFrame(() => requestAnimationFrame(() => Debug.log('CONFIG_SUBMIT_PAINT_TIMING', { elapsedMs: Math.round(performance.now() - submitStarted) })));
     } catch (error) {
@@ -6121,6 +6183,8 @@ const Configurator = {
         stack: error?.stack || null
       });
       Toast.show(`Save failed: ${error.message}`, 'err');
+    } finally {
+      if (this._activeSubmitV309 === capture) this._activeSubmitV309 = null;
     }
   },
   buildPayload(type) {
@@ -6217,7 +6281,7 @@ const Configurator = {
     }
 
     const renderStarted = performance.now();
-    App.renderLive();
+    if (!options.deferRenderV309) App.renderLive();
     Debug.log('CONFIG_RENDER_TIMING', { elapsedMs: Math.round(performance.now() - renderStarted) });
     const playerSyncFailed = playerSyncRes && !playerSyncRes.ok && playerSyncRes.status !== 'disabled';
     if (playerSyncFailed) Toast.show(`Локально сохранено, но профильная запись не обновлена в облаке: ${playerSyncRes?.message || 'unknown error'}`, 'err');
@@ -7754,8 +7818,25 @@ const FormDrafts = {
   configKey(type, entityId = '') {
     return `config:${String(type || 'unknown')}:${String(entityId || 'new')}`;
   },
+  durableKeyV309(key) {
+    return 'config-form-draft-v309:' + JSON.stringify([Sync.provider(), Sync.config?.url, Sync.config?.serverUrl, Sync.config?.campaignId, App.currentUserId, key]);
+  },
+  retainV309(key, form) {
+    if (form) this.remember(key, form);
+    this._durableScopesV309 = this._durableScopesV309 || {};
+    const scope = this.durableKeyV309(key);
+    localStorage.setItem(scope, JSON.stringify(window.GRPGPlayerCredentialsV212.clean(this.store[key])));
+    this._durableScopesV309[key] = scope;
+  },
   bind(form, key) {
     if (!form || !key) return;
+    this._durableScopesV309 = this._durableScopesV309 || {};
+    const scope = this.durableKeyV309(key);
+    if (this._durableScopesV309[key] && this._durableScopesV309[key] !== scope) delete this.store[key];
+    if (!this.store[key]) {
+      try { this.store[key] = JSON.parse(localStorage.getItem(scope) || 'null'); } catch {}
+    }
+    this._durableScopesV309[key] = scope;
     if (form.dataset.draftBoundKey === key) {
       this.apply(key, form);
       return;
@@ -7821,6 +7902,8 @@ const FormDrafts = {
   clear(key) {
     if (!key) return;
     delete this.store[key];
+    localStorage.removeItem(this.durableKeyV309(key));
+    if (this._durableScopesV309) delete this._durableScopesV309[key];
   }
 };
 
@@ -10683,7 +10766,7 @@ ChatSync.refreshUiAfterIncoming = async function(reason = 'chat-sync') {
 const __syncCheckForRemoteUpdates_v056 = Sync.checkForRemoteUpdates.bind(Sync);
 Sync.checkForRemoteUpdates = async function(reason = 'manual-check', options = {}) {
   const nextOptions = { ...(options || {}) };
-  if ((reason === 'poll' || nextOptions.silent) && UiSyncGuard.shouldDeferRerender()) {
+  if ((reason === 'poll' || nextOptions.silent) && UiSyncGuard.shouldDeferRerender() && !Configurator.hasCapturedSubmitV309(nextOptions)) {
     nextOptions.applyIfNewer = false;
   }
   const res = await __syncCheckForRemoteUpdates_v056(reason, nextOptions);
