@@ -22,6 +22,7 @@ const checks = [
   ['tests/world-sync-v301.dom.mjs'],
   ['tests/sync-revisions-v303.dom.mjs'],
   ['tests/sync-apply-v304.dom.mjs'],
+  ['tests/sync-apply-v307.dom.mjs'],
   ['tests/sync-realtime-v303.cjs'],
   ['tests/market-risk-v222.cjs'],
   ['tests/stock-orders-v213.dom.mjs'],
