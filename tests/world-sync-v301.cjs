@@ -3,10 +3,10 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('nod
 const codec=require('../renderer/world-sync-v301.js'),clean=require('../renderer/player-credentials-v212.js').clean;
 const db=new DatabaseSync(':memory:');
 db.exec('CREATE TABLE campaign_snapshots(id TEXT PRIMARY KEY,campaignId TEXT UNIQUE,worldJson TEXT,stateJson TEXT,revision INTEGER,updated TEXT,updatedBy TEXT,clientUpdatedAt TEXT)');
-let writes=0,failSave=false,stripProof=false;
+let writes=0,failSave=false,stripProof=false,serverEdit=null;
 function query(sql){let args={};const statement=()=>db.prepare(sql.replace(/\{:([a-zA-Z0-9_]+)\}/g,':$1'));return {bind(value){args=value;return this;},execute(){writes++;return statement().run(args);},all(out){out.push(...statement().all(args));},one(out){const row=statement().get(args);if(!row)throw Error('sql: no rows');Object.assign(out,row);}};}
 function record(row){return row&&{id:row.id,getString(key){const value=row[key];return typeof value==='string'?value:JSON.stringify(value??{});},getInt:key=>Number(row[key]||0),set(key,value){row[key]=value;},collection:()=>({viewRule:'view',updateRule:'update'}),row};}
-const app={db:()=>({newQuery:query}),runInTransaction(fn){db.exec('BEGIN');try{const result=fn(app);db.exec('COMMIT');return result;}catch(error){db.exec('ROLLBACK');throw error;}},findRecordsByFilter(name,filter,sort,limit,offset,args){assert.equal(name,'campaign_snapshots');const row=db.prepare('SELECT * FROM campaign_snapshots WHERE campaignId=?').get(args.campaign);return row?[record(row)]:[];},canAccessRecord(record,info){return !info.deny;},save(r){if(failSave)throw Error('injected save failure');const row=r.row,savedState=clean(row.stateJson);if(stripProof)delete savedState.__worldWriteV140;db.prepare('UPDATE campaign_snapshots SET worldJson=?,stateJson=?,revision=?,updated=?,updatedBy=?,clientUpdatedAt=? WHERE id=?').run(JSON.stringify(clean(row.worldJson)),JSON.stringify(savedState),row.revision,'now',row.updatedBy,row.clientUpdatedAt,row.id);}};
+const app={db:()=>({newQuery:query}),runInTransaction(fn){db.exec('BEGIN');try{const result=fn(app);db.exec('COMMIT');return result;}catch(error){db.exec('ROLLBACK');throw error;}},findRecordsByFilter(name,filter,sort,limit,offset,args){assert.equal(name,'campaign_snapshots');const row=db.prepare('SELECT * FROM campaign_snapshots WHERE campaignId=?').get(args.campaign);return row?[record(row)]:[];},canAccessRecord(record,info){return !info.deny;},save(r){if(failSave)throw Error('injected save failure');const row=r.row,savedState=clean(row.stateJson),savedWorld=clean(row.worldJson);if(serverEdit)serverEdit(savedWorld,savedState);if(stripProof)delete savedState.__worldWriteV140;db.prepare('UPDATE campaign_snapshots SET worldJson=?,stateJson=?,revision=?,updated=?,updatedBy=?,clientUpdatedAt=? WHERE id=?').run(JSON.stringify(savedWorld),JSON.stringify(savedState),row.revision,'now',row.updatedBy,row.clientUpdatedAt,row.id);}};
 class ApiError extends Error{constructor(status,message){super(message);this.status=status;}}
 class ForbiddenError extends ApiError{constructor(message){super(403,message);}}
 class BadRequestError extends ApiError{constructor(message){super(400,message);}}
@@ -39,6 +39,7 @@ async function run(){
  const next=json(pulled.remote);next.world.equipment.EQUIPMENT.gun33.name='Edited';next.world.equipment.EQUIPMENT_LIST[33].name='Edited';
  const payload={world:next.world,state:next.state,baseRevision:5,updatedBy:'device'};
  const saved=await client.push('session',request,'main',payload,'operation-first');assert(saved.ok);assert.equal(saved.remote.revision,6);
+ assert(saved.serverTimings.indexAfter.reusedSections>0);assert(saved.serverTimings.indexAfter.packedSections<=3);assert.equal(saved.serverTimings.indexAfter.writtenDocuments,2);
  const sent=calls.at(-1).body;assert.equal(sent.changes.length,2,'one entity and its legacy list alias, not whole catalogue');
  assert(JSON.stringify(sent).length<JSON.stringify({world,state}).length/100,'wire payload stays small');
  const stored=json(db.prepare('SELECT worldJson FROM campaign_snapshots').get());assert.equal(JSON.parse(stored.worldJson).equipment.EQUIPMENT.gun33.name,'Edited');
@@ -54,6 +55,7 @@ async function run(){
  const delta=invoke('pull',{campaignId:'main',epoch:initial.epoch,since:initial.seq});assert(delta.changes.some(row=>row.deleted),'deletion tombstones survive offline gaps');
  assert.equal(invoke('pull',{campaignId:'main',epoch:'wrong',since:999999}).reset,true);
  const indexBefore=db.prepare('SELECT * FROM grpgi_world_heads_v301').get();const snapshotBefore=db.prepare('SELECT * FROM campaign_snapshots').get();
+ const sectionsBefore=db.prepare('SELECT * FROM grpgi_world_sections_v305 ORDER BY key').all();
  const modified=json(changed.remote);modified.world.equipment.EQUIPMENT.gun8.name='Never saved';failSave=true;
  await assert.rejects(client.push('session',request,'main',{...payload,world:modified.world,state:modified.state,baseRevision:6},'operation-failure'),/injected/);failSave=false;
  assert.deepEqual(db.prepare('SELECT * FROM campaign_snapshots').get(),snapshotBefore);assert.deepEqual(db.prepare('SELECT * FROM grpgi_world_heads_v301').get(),indexBefore);
@@ -65,6 +67,7 @@ async function run(){
  await assert.rejects(client.push('session',request,'main',{...payload,world:modified.world,state:modified.state,baseRevision:6},'operation-after-save'),/receipt failure/);
  assert.deepEqual(db.prepare('SELECT * FROM campaign_snapshots').get(),snapshotBefore,'snapshot rolls back after save');
  assert.deepEqual(db.prepare('SELECT * FROM grpgi_world_heads_v301').get(),indexBefore,'index and sequence roll back after save');
+ assert.deepEqual(db.prepare('SELECT * FROM grpgi_world_sections_v305 ORDER BY key').all(),sectionsBefore,'section fingerprints roll back with snapshot/index/receipt');
  db.exec('DROP TRIGGER fail_world_receipt');
  // Exercise the actual Electron transport functions against the same SQLite-backed routes.
  const main=fs.readFileSync(path.join(__dirname,'../main.js'),'utf8'),network=[];
@@ -179,9 +182,24 @@ async function run(){
   fs.writeFileSync(pendingFile,'{"schema":0}');
   await assert.rejects(codec.createClient(disk).pull('gm',unreliable,'main'),/Повреждён/);
  }finally{fs.rmSync(folder,{recursive:true,force:true});}
+ // The persisted result, including changes in unrelated sections by legacy hooks,
+ // remains authoritative. No submitted-change-only indexing is allowed.
+ const hookClient=codec.createClient(),hookBase=await hookClient.pull('hook',request,'main'),hookIntent=json(hookBase.remote);
+ hookIntent.world.equipment.EQUIPMENT.gun33.name='Attempt blocked by server hook';
+ serverEdit=(world,state)=>{world.equipment.EQUIPMENT.gun33.name='Server canonical';world.npcs.NPCS.hook_npc={id:'hook_npc',name:'Added by legacy hook'};state.serverFlag=true;};
+ const hookSaved=await hookClient.push('hook',request,'main',{world:hookIntent.world,state:hookIntent.state,baseRevision:hookBase.remote.revision},'operation-server-hook');serverEdit=null;
+ assert(hookSaved.ok);const hookResult=await hookClient.pull('hook',request,'main');assert.equal(hookResult.remote.world.equipment.EQUIPMENT.gun33.name,'Server canonical');
+ assert.equal(hookResult.remote.world.npcs.NPCS.hook_npc.name,'Added by legacy hook');assert.equal(hookResult.remote.state.serverFlag,true);
+ const canonicalRecord=db.prepare('SELECT worldJson,stateJson FROM campaign_snapshots').get();
+ const indexed=codec.unpack(new Map(db.prepare('SELECT key,data FROM grpgi_world_entities_v301 WHERE deleted=0').all().map(row=>[row.key,row.data])));
+ assert.deepEqual(indexed,clean({world:JSON.parse(canonicalRecord.worldJson),state:JSON.parse(canonicalRecord.stateJson)}));
+ const stableIndex=db.prepare('SELECT key,data,version,seq,deleted FROM grpgi_world_entities_v301 ORDER BY key').all();
+ server.bootstrap(event({}));invoke('pull',{campaignId:'main',since:0});
+ assert.deepEqual(db.prepare('SELECT key,data,version,seq,deleted FROM grpgi_world_entities_v301 ORDER BY key').all(),stableIndex,'startup rebuild changes neither versions nor cursor');
  // Delete/recreate resets the epoch so an old cursor cannot silently skip a new campaign.
  db.exec("DELETE FROM campaign_snapshots WHERE campaignId='main'");
  assert.equal(invoke('pull',{campaignId:'main',epoch:initial.epoch,since:initial.seq}).exists,false);
+ assert.equal(db.prepare('SELECT COUNT(*) AS n FROM grpgi_world_sections_v305').get().n,0,'delete clears section cache');
  db.prepare('INSERT INTO campaign_snapshots VALUES (?,?,?,?,?,?,?,?)').run('replacement','main','{}','{}',1,'new','gm','new');
  const replacement=invoke('pull',{campaignId:'main',epoch:initial.epoch,since:initial.seq});assert(replacement.reset);assert.notEqual(replacement.epoch,initial.epoch);
  const offline=codec.createClient();let attempts=0;

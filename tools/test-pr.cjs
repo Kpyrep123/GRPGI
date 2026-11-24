@@ -18,6 +18,7 @@ const checks = [
   ['tests/v140-world-integrity.cjs'],
   ['tests/world-sync-v300.cjs'],
   ['tests/world-sync-v301.cjs'],
+  ['tests/world-index-v305.cjs'],
   ['tests/world-sync-v301.dom.mjs'],
   ['tests/sync-revisions-v303.dom.mjs'],
   ['tests/sync-apply-v304.dom.mjs'],

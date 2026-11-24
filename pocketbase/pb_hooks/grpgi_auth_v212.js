@@ -312,8 +312,20 @@ function guard(e) {
   return e.next();
 }
 function protectSnapshot(e) {
+  var started = Date.now();
   ["worldJson","stateJson"].forEach(function(field) { e.record.set(field, clean(json(e.record, field))); });
-  e.next();
+  var cleaned = Date.now(), failed = true;
+  try { e.next(); failed = false; }
+  finally {
+    var finished = Date.now();
+    // No payloads, credentials or error text. The downstream time includes all
+    // later hooks and the database operation; it is not pure SQLite write time.
+    try { if (finished - started >= 100) console.log('[GRPGI snapshot timing v305] ' + JSON.stringify({
+      campaignId: e.record.getString('campaignId'), revision: e.record.getInt('revision'),
+      authCleanMs: cleaned - started, downstreamMs: finished - cleaned,
+      totalMs: finished - started, failed: failed
+    })); } catch (ignored) { /* Diagnostics must not change save/failure semantics. */ }
+  }
 }
 module.exports = {actor:actor, grantCredits:grantCredits,clean:clean, credential:credential, createCredential:createCredential, login:login, session:session,
   request:request, requests:requests, approve:approve, reject:reject, confirm:confirm,
