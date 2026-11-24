@@ -12,7 +12,7 @@
   const equal = (a, b) => a.size === b.size && [...a].every(([key, value]) => b.get(key) === value);
 
   Sync.checkForRemoteUpdates = function(reason = 'manual-check', options = {}) {
-    const key = JSON.stringify([context(), !!options.force, !!options.retryPending, options.applyIfNewer !== false, !!options.silent]);
+    const key = JSON.stringify([context(), !!options.force, !!options.retryPending, options.applyIfNewer !== false, !!options.silent, !!options.configSubmitV309]);
     if (pendingChecks.has(key)) return pendingChecks.get(key);
     const task = checks.catch(() => {}).then(() => check(reason, options));
     checks = task;
@@ -27,7 +27,7 @@
       if (context() !== requestedContext) return { ok: true, status: 'deferred-context-changed' };
       const sync = App.state?.meta?.sync || {};
       const confirmed = Number.isFinite(options.confirmedEditVersionV307) && options.confirmedEditVersionV307 === Number(sync.localEditVersion || 0);
-      if (!options.force && (sync.localDirty && !confirmed || UiSyncGuard.isEditingCriticalForm())) {
+      if (!options.force && (sync.localDirty && !confirmed || UiSyncGuard.isEditingCriticalForm() && !Configurator.hasCapturedSubmitV309(options))) {
         UiSyncGuard.defer('snapshot-apply-v307');
         return { ok: true, status: 'deferred-local-edit' };
       }
