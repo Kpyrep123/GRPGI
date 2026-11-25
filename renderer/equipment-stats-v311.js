@@ -16,7 +16,7 @@
     const matches = mod => api.equipmentModifierMatches311(mod, context);
     const own = list(item.modifiers).filter(consumed).filter(matches).sort((a,b)=>number(a.priority)-number(b.priority));
     const damage = String(item.damage ?? '').trim();
-    const baseStats = {armorClass:0, absorption:0, damage:damage !== '' && Number.isFinite(Number(damage)) ? Number(damage) : damage, damageBonus:0};
+    const baseStats = {armorClass:0, absorption:0, shieldBlock:number(item.shieldBlock), damage:damage !== '' && Number.isFinite(Number(damage)) ? Number(damage) : damage, damageBonus:0};
     own.forEach(mod=>apply(baseStats,mod));
     if (!list(item.modifiers).some(mod=>mod.target==='armor_class') && item.type==='armor') baseStats.armorClass = number(item.armorClass)>=5 ? number(item.armorClass)-10 : number(item.armorClass);
     if (!list(item.modifiers).some(mod=>mod.target==='defense')) baseStats.absorption = number(item.damageReduction ?? item.defense);
@@ -31,13 +31,13 @@
     const attachments=clone(list(copy?.attachments));
     const enhancements=[...effects];
     for(const attachment of attachments)for(const mod of list(attachment.modifiers).filter(consumed).filter(matches).sort((a,b)=>number(a.priority)-number(b.priority)))enhancements.push({id:attachment.itemId,kind:'modification',stat:targets[mod.target],op:mod.op||'add',value:number(mod.value)});
-    return {unitId:String(unitId),slot:String(slot),itemId:String(item.id),itemType:String(item.type),instanceId:String(copy?.id||''),broken:copy?.broken===true,baseStats,effectiveStats:{...baseStats},aberrations:effects.map(row=>row.effect),attachments,enhancements,statOrder:['armorClass','absorption', ...(damage!==''?['damage','damageBonus']:[])]};
+    return {unitId:String(unitId),slot:String(slot),itemId:String(item.id),itemType:String(item.type),instanceId:String(copy?.id||''),broken:copy?.broken===true,baseStats,effectiveStats:{...baseStats},aberrations:effects.map(row=>row.effect),attachments,enhancements,statOrder:['armorClass','absorption',...(item.type==='shield'?['shieldBlock']:[]), ...(damage!==''?['damage','damageBonus']:[])]};
   }
   function native(plan) {
     const result=clone(plan),stats={...result.baseStats};
     for(const row of result.enhancements)if(row.stat&&row.applies!==false)stats[row.stat]=row.op==='set'?row.value:stats[row.stat]+row.value;
     if(typeof stats.damage==='number'){stats.damage+=stats.damageBonus;stats.damageBonus=0;}
-    if(result.broken){stats.armorClass=0;stats.absorption=0;if(result.itemType!=='armor'){stats.damage=0;stats.damageBonus=0;}}
+    if(result.broken){stats.armorClass=0;stats.absorption=0;stats.shieldBlock=0;if(result.itemType!=='armor'){stats.damage=0;stats.damageBonus=0;}}
     result.effectiveStats=stats;result.appliedAberrations=clone(result.aberrations);
     return result;
   }

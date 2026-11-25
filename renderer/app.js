@@ -21275,7 +21275,7 @@ function legacyRegionMapsV181() {
       </div>
       <div class="item-specific-v1052 ${isShield ? '' : 'hidden'}" data-for-item="shield">
         <div class="small-note">Щит занимает слот основного оружия. Его бонус не складывается с укрытием.</div>
-        <div class="cols2"><div class="field"><label>Бонус щита к КБ</label><input class="input" type="number" min="0" step="1" name="shieldCoverBonusV122" value="${Number(item.shieldCoverBonus || 0)}" /></div><div class="field"><label>Предел Ловкости</label><input class="input" type="number" min="0" step="1" name="shieldDexterityCapV122" value="${item.shieldDexterityCap ?? ''}" placeholder="без ограничения" /></div></div>
+        <div class="cols2"><div class="field"><label>Блокируемый урон щита</label><input class="input" type="number" min="0" step="1" name="shieldBlockV312" value="${Number(item.shieldBlock || 0)}" /></div><div class="field"><label>Бонус щита к КБ</label><input class="input" type="number" min="0" step="1" name="shieldCoverBonusV122" value="${Number(item.shieldCoverBonus || 0)}" /></div><div class="field"><label>Предел Ловкости</label><input class="input" type="number" min="0" step="1" name="shieldDexterityCapV122" value="${item.shieldDexterityCap ?? ''}" placeholder="без ограничения" /></div></div>
         <div class="field"><label>Бонус изученного навыка</label><input class="input" type="number" step="1" name="weaponSkillBonusV122" value="${Number(item.weaponSkillBonus || 0)}" /></div>
         ${requirementInputsV1052(item)}
       </div>
@@ -21445,6 +21445,7 @@ function legacyRegionMapsV181() {
         stockMinPrice: itemType === 'stock' ? Math.max(0.01, Number(formData.get('stockMinPrice') || 100)) : 0,
         stockMaxPrice: itemType === 'stock' ? Math.max(0.01, Number(formData.get('stockMinPrice') || 100)) : 0,
         stockVolatility: itemType === 'stock' ? clamp(Number(formData.get('stockVolatility') || 1), 0.05, 3) : 0,
+        shieldBlock: itemType==='shield'?Math.max(0,Number(formData.get('shieldBlockV312')||0)):0,
         shieldCoverBonus: itemType === 'shield' ? Math.max(0, Number(formData.get('shieldCoverBonusV122') || 0)) : 0,
         shieldDexterityCap: itemType === 'shield' && String(formData.get('shieldDexterityCapV122') || '').trim() !== '' ? Math.max(0, Number(formData.get('shieldDexterityCapV122'))) : null,
         requirements: Object.fromEntries(ABILITIES_V1052.map(row => [row.key, ['weapon','shield','armor','implant'].includes(itemType) ? Number(formData.get(`req_${row.key}`) || 0) : 0]))

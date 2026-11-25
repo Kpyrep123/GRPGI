@@ -2,6 +2,7 @@ const { parentPort } = require('worker_threads');
 const { LuaFactory } = require('wasmoon');
 
 const SUPPORTED_HOOKS = Object.freeze([
+  'ModifyCalculatedStat','BeforeMoveStep','AfterArmor','AfterShieldBlock','OnRollFinalized','OnPreparedAction','OnDeviceCommandFinished',
   'ModifyEquipmentBaseStat','ModifyEquipmentEffectiveStat','BeforeAberrationApply',
   'BeforeRoll','AfterRoll','OnKnockedDown','OnStandUp','OnForcedMove',
   'OnActionDeclared','OnActionFinished','BeforeAttackRoll','AfterAttackRoll','OnAttackResolved','OnMiss','OnDamageApplied','OnHealApplied','OnMoveStart','OnMoveStep','OnMoveEnd','OnPositionChanged','OnUnitEnter','OnUnitLeave','OnConditionChanged','OnModifierChanged','OnRoundStart','OnRoundEnd','OnBattleStart','OnSceneStart','GetCostMode','GetEventScope',
@@ -390,9 +391,59 @@ function WearItem(unit, slot, amount) return DamageItem(unit, slot, amount) end
 function BreakItem(unit, slot) return __push({ kind = 'break_item', unitId = __id(unit), slot = tostring(slot or '') }) end
 function StandardAttack(attacker, target, spec)
   spec = type(spec) == 'table' and spec or {}
-  return __push({ kind = 'standard_attack', attackerId = __id(attacker), targetId = __id(target), slot = tostring(spec.slot or spec.weaponSlot or ''), weaponId = tostring(spec.weaponId or ''), consumeAction = spec.consumeAction ~= false })
+  local targets={};for _,unit in ipairs(spec.targets or {}) do targets[#targets+1]=__id(unit) end
+  return __push({ targetIds312=targets,kind = 'standard_attack', attackerId = __id(attacker), targetId = __id(target), slot = tostring(spec.slot or spec.weaponSlot or ''), weaponId = tostring(spec.weaponId or ''), consumeAction = spec.consumeAction ~= false, mode312 = spec.mode == 'weapon' and 'weapon' or 'single', source312 = tostring(spec.source or '') })
 end
 function AddCredits(unit, amount, operationId) return __push({ kind = 'add_credits', unitId = __id(unit), amount = math.floor(__num(amount)), operationId = tostring(operationId or '') }) end
+
+-- v312: commands are plans; only the renderer mutates the live runtime.
+function AddRollBonus(amount) return __push({kind='roll_bonus312',amount=__num(amount)}) end
+local __rerollRequested312=false
+function RequestReroll(reason)
+ local roll=(__SCRIPT_PARAMS or {}).rollContext;if not roll then error('RequestReroll разрешён только в событии броска') end
+ if __rerollRequested312 or roll.rerolled or roll.rerollPending or roll.finalized then return false end
+ __rerollRequested312=true;__push({kind='reroll312',reason=tostring(reason or 'Обязательный физический переброс')});return true
+end
+function ModifyPhysicalCover(amount) return __push({kind='cover312',amount=__num(amount)}) end
+function IgnorePhysicalCover() return __push({kind='cover312',ignore=true}) end
+function BlockShield(unit,slot,amount)
+  return __push({kind='shield_block312',unitId=__id(unit),slot=tostring(slot or 'secondaryWeapon'),amount=amount~=nil and math.max(0,__num(amount)) or nil})
+end
+function MoveRoute(unit,point,spec)
+  spec=type(spec)=='table' and spec or {};if type(point)~='table' then error('MoveRoute ожидает Vector') end
+  return __push({kind='route312',unitId=__id(unit),x=__num(point.x),y=__num(point.y),budget=spec.budget~=nil and math.max(0,__num(spec.budget)) or nil,additional=spec.additional==true})
+end
+function StopMovement(reason) return __push({kind='stop_route312',reason=tostring(reason or '')}) end
+function Grapple(holder,target) return __push({kind='grapple312',unitId=__id(holder),targetId=__id(target)}) end
+function ReleaseGrapple(unit) return __push({kind='release_grapple312',unitId=__id(unit)}) end
+function ApplyCombatRestriction(unit,spec)
+  spec=type(spec)=='table' and spec or {}
+  if not ({no_reactions=true,no_movement=true,next_attack_disadvantage=true})[spec.kind] then error('Неизвестное ограничение') end
+  return __push({kind='restriction312',unitId=__id(unit),effectKind=spec.kind,id=tostring(spec.id or ''),duration312=spec.duration or {scope='turn',count=1,phase='start',unitId=__id(unit)},uses=spec.kind=='next_attack_disadvantage' and 1 or -1})
+end
+function PrepareAction(unit,spec)
+  spec=type(spec)=='table' and spec or {};local action=tostring(spec.action or 'attack')
+  if not ({attack=true,move=true,script=true})[action] then error('Неизвестная заготовка') end
+  return __push({kind='prepare312',unitId=__id(unit),id=tostring(spec.id or ''),trigger=tostring(spec.trigger or 'OnAttackDeclared'),triggerUnitId=__id(spec.triggerUnit),action=action,targetId=__id(spec.target),slot=tostring(spec.slot or ''),position=spec.position,mode=spec.mode=='weapon' and 'weapon' or 'single',budget=spec.budget,duration312=spec.duration or {scope='turn',count=1,phase='start',unitId=__id(unit)}})
+end
+function Disarm(unit,slot) return __push({kind='disarm312',unitId=__id(unit),slot=tostring(slot or 'primaryWeapon')}) end
+function DefineSensor(drone,spec)
+ spec=type(spec)=='table' and spec or {};return __push({kind='sensor_define312',unitId=__id(drone),id=tostring(spec.id or 'visual'),range=math.max(0,__num(spec.range)),revealsHidden=spec.revealsHidden==true,ignoreConcealment=spec.ignoreConcealment==true})
+end
+function ShareSensorDetection(drone,target,ally,spec)
+  spec=type(spec)=='table' and spec or {}
+  return __push({kind='sensor_share312',unitId=__id(drone),targetId=__id(target),allyId=__id(ally),sensor=tostring(spec.sensor or 'visual'),shots=math.max(1,math.floor(__num(spec.shots,1))),duration312=spec.duration or {scope='turn',count=1,phase='start',unitId=__id(ally)}})
+end
+function CommandDevice(operator,device,spec)
+  spec=type(spec)=='table' and spec or {}
+  return __push({kind='device312',unitId=__id(operator),deviceId=__id(device),operation=tostring(spec.operation or 'attack'),targetId=__id(spec.target),slot=tostring(spec.slot or ''),position=spec.position,mode312=spec.mode=='weapon' and 'weapon' or 'single'})
+end
+
+function Unit:GetSensorDetection(target,sensor) return ((self.__data.detections312 or {})[tostring(sensor or 'visual')] or {})[__id(target)] end
+function Unit:GetPreparedActions() return (self.__data.combat312 or {}).prepared or {} end
+function Unit:GetGrapple() return (self.__data.combat312 or {}).grapple end
+function Unit:GetOwnTurn() return __num(self.__data.ownTurn312) end
+function Unit:GetShieldBlock(slot) return __num(self:GetEquipmentEffectiveStat(slot,'shieldBlock') or (self:GetEquippedItemData(slot) or {}).shieldBlock) end
 
 MODIFIER_PROPERTY_STRENGTH_BONUS = 'strength'
 MODIFIER_PROPERTY_DEXTERITY_BONUS = 'dexterity'
@@ -555,7 +606,7 @@ function RequestNumber(name, label, spec)
   local key = tostring(name or spec.key or 'value')
   local inputs = (__input.params or {}).inputs or {}
   if inputs[key] ~= nil then return __num(inputs[key]) end
-  __push({ kind = 'request_number', rollType = spec.rollType, unitId = spec.unit and __id(spec.unit) or nil, name = key, key = key, label = tostring(label or name or 'Значение'), min = spec.min and __num(spec.min) or nil, max = spec.max and __num(spec.max) or nil, default = spec.default and __num(spec.default) or nil, required = spec.required ~= false })
+  __push({ kind = 'request_number', rollType = spec.rollType, attribute=spec.attribute,purpose=spec.purpose,bonus=spec.bonus,dc=spec.dc, unitId = spec.unit and __id(spec.unit) or nil, name = key, key = key, label = tostring(label or name or 'Значение'), min = spec.min and __num(spec.min) or nil, max = spec.max and __num(spec.max) or nil, default = spec.default and __num(spec.default) or nil, required = spec.required ~= false })
   return spec.default and __num(spec.default) or 0
 end
 function RequestRoll(name, label, spec)
@@ -577,6 +628,8 @@ print = function(...) local rows = {}; for index = 1, select('#', ...) do rows[#
 local rawParams = __input.params or {}
 local params = {
   event = tostring(rawParams.event or ''),
+  activeUnit = __unit(rawParams.activeUnitId312), ownTurn = __num(rawParams.ownTurn312),
+  rollContext = rawParams.rollContext312 or nil, weaponAction = rawParams.action312 or nil, shot = rawParams.shot312 or nil, cover = rawParams.cover312 or nil, damageStage = rawParams.damageStage312 or nil, explosion = rawParams.explosion312 or nil, deviceCommand = rawParams.deviceCommand312 or nil, preparedAction = rawParams.prepared312 or nil, route = rawParams.route312 or nil,
   attacker = __unit(rawParams.attackerId),
   target = __unit(rawParams.targetId),
   caster = __unit(rawParams.casterId or (__input.source or {}).ownerId),
@@ -757,11 +810,14 @@ local function __answer204(kind,key,spec)
   local row=__plain204(spec or {});row.kind=kind;row.key=key;__push(row);return nil
 end
 function RequestChoice(key,spec) return __answer204('request_choice204',key,spec) end
+function RequestCheck(key,spec)
+ spec=type(spec)=='table' and spec or {};local row={};for k,v in pairs(spec) do if k~='unit' and k~='opponent' then row[k]=v end end;row.unitId=__id(spec.unit or __source:GetCaster());row.opponentId=__id(spec.opponent);return __answer204('request_check204',key,row)
+end
 function RequestConfirm(key,spec) return __answer204('request_confirm204',key,spec) end
 function RequestChecklist(key,spec) return __answer204('request_checklist204',key,spec) end
 function RequestPoint(key,spec) local answer=__answer204('request_point204',key,spec);return type(answer)=='table' and Vector(answer.x,answer.y) or nil end
 function ShowReminder(key,text) return __answer204('request_confirm204',key,{title='Напоминание',text=tostring(text or ''),reminder=true}) end
-function CancelEvent(reason) if not ({BeforeRoll=true,AfterRoll=true,OnActionDeclared=true,OnAttackDeclared=true,BeforeAttackRoll=true,AfterAttackRoll=true,BeforeAttackStart=true,BeforeDamage=true,OnMoveStart=true})[tostring((__input.params or {}).event)] then error('CancelEvent разрешён только до применения результата') end;return __push({kind='cancel_event204',reason=tostring(reason or 'Событие отменено скриптом')}) end
+function CancelEvent(reason) if not ({BeforeRoll=true,AfterRoll=true,OnActionDeclared=true,OnAttackDeclared=true,BeforeAttackRoll=true,AfterAttackRoll=true,BeforeAttackStart=true,BeforeDamage=true,OnMoveStart=true,BeforeMoveStep=true,AfterArmor=true,AfterShieldBlock=true})[tostring((__input.params or {}).event)] then error('CancelEvent разрешён только до применения результата') end;return __push({kind='cancel_event204',reason=tostring(reason or 'Событие отменено скриптом')}) end
 params.eventId=tostring(rawParams.eventId204 or '')
 params.parentEventId=tostring(rawParams.parentEventId204 or '')
 params.unit=__unit(rawParams.unitId204)
@@ -804,6 +860,13 @@ __push=function(row)
   if row.data204 then row.data204=__plain204(row.data204) end
   if row.duration204 then row.duration204=__plain204(row.duration204) end
   if row.events204 then row.events204=__plain204(row.events204) end
+  local source = __input.source or {}
+  local p = __input.params or {}
+  local owner = __unit(source.ownerId)
+  if p.eventId204 and p.eventId204 ~= '' and owner then
+    local key=p.eventId204..':'..tostring(source.kind or '')..':'..tostring(source.id or '')..':'..tostring(p.event or '')..':'..tostring((p.rollContext312 or {}).id or '')..':'..tostring(#__commands)
+    if (((owner.__data.combat312 or {}).receipts or {})[key]) then return __pushBefore204(row) end
+  end
   local u=__unit(row.unitId or row.targetId)
   local strict=(__input.source or {}).costMode204=='scripted'
   if u then
@@ -872,6 +935,7 @@ local function intercept(hook, item, fields, initial)
         local can = rawget(entry.env, 'Can' .. hook)
         if type(can) ~= 'function' or can(source, p) ~= false then
           local nextValue = fn(source, p)
+          if hook=='ModifyCalculatedStat' and type(nextValue)=='table' then if nextValue.value~=nil then nextValue=nextValue.value else nextValue=value+(nextValue.add or 0) end end
           if nextValue ~= nil then value = nextValue end
           if hook == 'BeforeAberrationApply' then
             if value ~= false and not valid(value) then error('BeforeAberrationApply: ожидается число, false или nil') end
@@ -885,6 +949,20 @@ local function intercept(hook, item, fields, initial)
     end
   end
   return value
+end
+__statResults312 = {}
+for _, raw in ipairs(__statItems312 or {}) do
+  local item=clone(raw)
+  local fields={stat=item.stat,stage='before_injury',injuryDegree=item.injuryDegree,restrictions=item.restrictions,equipmentContributions=item.equipmentContributions,uninjuredValue=item.value}
+  local before=intercept('ModifyCalculatedStat',item,fields,item.value)
+  local degree=item.injuryDegree or 0
+  local injured=before
+  if degree==1 then injured=math.max(0,before-1) elseif degree==2 then injured=math.max(0,before-2) elseif degree==3 then injured=math.ceil(before/2) elseif degree==4 then injured=math.floor(before/2) elseif degree>=5 then injured=before>0 and 1 or 0 end
+  fields.stage='after_injury';fields.uninjuredValue=before;fields.injuredValue=injured
+  local after=intercept('ModifyCalculatedStat',item,fields,injured)
+  fields.stage='after_numeric'
+  local final=intercept('ModifyCalculatedStat',item,fields,after)
+  __statResults312[#__statResults312+1]={unitId=item.unitId,stat=item.stat,beforeInjury=math.max(0,before),afterInjury=math.max(0,after),final=math.max(0,final)}
 end
 __equipmentResult311 = {}
 for _, raw in ipairs(__equipmentItems311 or {}) do
@@ -917,7 +995,7 @@ for _, raw in ipairs(__equipmentItems311 or {}) do
     stats[stat] = intercept('ModifyEquipmentEffectiveStat', item, {stat=stat, stage='effective'}, stats[stat])
   end
   if item.broken then
-    stats.armorClass = 0; stats.absorption = 0
+    stats.armorClass = 0; stats.absorption = 0; stats.shieldBlock = 0
     if item.itemType ~= 'armor' then stats.damage = 0; stats.damageBonus = 0 end
   end
   item.effectiveStats = stats
@@ -941,7 +1019,7 @@ async function run(payload = {}) {
     if (mode === 'equipment') {
       const sources = payload.equipmentSources || [];
       if (!Array.isArray(sources) || sources.length > 128) throw Error('Equipment: лимит источников 128');
-      await lua.doString('__equipmentCalculating311 = true; __equipmentScripts311 = {}; __equipmentItems311 = '+toLuaLiteral(payload.input?.equipmentItems311 || []));
+      await lua.doString('__equipmentCalculating311 = true; __equipmentScripts311 = {}; __equipmentItems311 = '+toLuaLiteral(payload.input?.equipmentItems311 || [])+'; __statItems312 = '+toLuaLiteral(payload.input?.statItems312 || []));
       for (const source of sources) {
         if (String(source.script || '').length > 80000) throw Error('Equipment: скрипт превышает лимит');
         // Each source has its own globals; scripts cannot overwrite another source's hooks.
@@ -956,7 +1034,8 @@ async function run(payload = {}) {
       }
       await lua.doString(EQUIPMENT_RESOLVER311);
       const items = lua.global.get('__equipmentResult311');
-      return {ok:true, equipment: Array.isArray(items) ? items : []};
+      const stats=lua.global.get('__statResults312');
+      return {ok:true, equipment: Array.isArray(items) ? items : [], calculatedStats:Array.isArray(stats)?stats:[]};
     }
     await lua.doString(script || '-- empty');
     lua.global.set('__hookName', hook);
