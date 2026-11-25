@@ -37,6 +37,7 @@
       "POCKETBASE_SETUP.md",
       "SELFHOST_SYNC_SETUP.md",
       "LUA_COMBAT_SCRIPTING.md",
+      "LUA_COMBAT_SKILL_COVERAGE.md",
       "COMBAT_RULES_AND_AMMUNITION_1.0.122.md"
     ],
     "win": {

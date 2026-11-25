@@ -78,6 +78,7 @@ const itemBrokenV138=(u,item,slot)=>item?!!itemRuntimeStateV138(u,item,slot)?.br
     const total=Math.max(0,num(state.damage,0)),parts=list(state.damagePartsV138).length?list(state.damagePartsV138):[{amount:total,absorptionSource:'all'}];
     const partsTotal=parts.reduce((sum,row)=>sum+Math.max(0,num(row?.amount,0)),0);if(Math.abs(partsTotal-total)>.001){parts.length=0;parts.push({amount:total,absorptionSource:'all'});}
     const portions=new Map();
+    const sources312={base:0,armor:0,shield:0,cover:0,gas:0,energy:0};
     let absorbed=0,explosiveArmorBlocked=0,explosiveHit=defense.damageType==='explosive';
     for(const part of parts){
       const raw=Math.max(0,num(part.amount,0));
@@ -106,7 +107,7 @@ const itemBrokenV138=(u,item,slot)=>item?!!itemRuntimeStateV138(u,item,slot)?.br
         const remaining=Math.max(0,raw-gasFlat);
         const blocked=remaining*gasPercent/100;
         const afterGas=remaining-Math.floor(blocked+Math.min(1e-9,Number.EPSILON*Math.max(1,blocked)*8));
-        absorbed+=raw-afterGas;
+        absorbed+=raw-afterGas;sources312.gas+=raw-afterGas;
         portion.damage+=afterGas;
         continue;
       }
@@ -117,6 +118,7 @@ const itemBrokenV138=(u,item,slot)=>item?!!itemRuntimeStateV138(u,item,slot)?.br
         taken+=Math.floor((raw-taken)*protection/100);
       }
       absorbed+=taken;
+      if(source!=='none'){if(source!=='all')sources312[source]=num(sources312[source])+taken;else{let left=taken;for(const key of ['cover','base','armor','shield']){const amount=Math.min(left,Math.max(0,num(currentDefense[key+'Absorption'])));sources312[key]+=amount;left-=amount;}if(left>0)sources312.energy+=left;}}
       if(type==='explosive'&&(source==='all'||source==='armor')&&currentDefense.wornArmorAbsorption>0){
         const withoutArmor=Math.max(0,base-currentDefense.wornArmorAbsorption-penetration-flat)*(1-percent/100);
         explosiveArmorBlocked+=Math.max(0,taken-Math.min(raw,Math.round(withoutArmor)));
@@ -130,7 +132,7 @@ const itemBrokenV138=(u,item,slot)=>item?!!itemRuntimeStateV138(u,item,slot)?.br
       if(portion.delta<0)absorbed+=portion.damage-remaining;
       applied+=remaining;
     }
-    return{raw:total,absorbed:Math.min(total,absorbed),applied:Math.max(0,Math.round(applied)),explosiveArmorBlocked,explosiveHit};
+    return{sources312,raw:total,absorbed:Math.min(total,absorbed),applied:Math.max(0,Math.round(applied)),explosiveArmorBlocked,explosiveHit};
   }
 
 return {defense:incomingDefense119,absorb:applyAbsorptionV138};

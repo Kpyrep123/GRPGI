@@ -131,6 +131,7 @@
     next.heavyArmor=next.armorWeightClass==='heavy'||raw.heavyArmor===true;
     next.armorAllowsDexterity=raw.armorAllowsDexterity===true;
     next.energyProtection=typeof raw.energyProtection==='boolean'?raw.energyProtection:raw.protectsAgainstEnergy===true||arr(raw.tags).some(tag=>['энергозащита','энергетическая защита','energy protection'].includes(String(tag||'').trim().toLowerCase()));
+    next.shieldBlock=nonNeg(raw.shieldBlock??next.shieldBlock,0);
     next.shieldCoverBonus=nonNeg(raw.shieldCoverBonus??next.shieldCoverBonus,0);
     next.shieldDexterityCap=String(raw.shieldDexterityCap??next.shieldDexterityCap??'').trim()===''?null:nonNeg(raw.shieldDexterityCap??next.shieldDexterityCap,0);
     next.damageReduction = nonNeg(raw.damageReduction ?? raw.defense ?? next.damageReduction, 0);

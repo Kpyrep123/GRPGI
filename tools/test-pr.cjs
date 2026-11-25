@@ -15,6 +15,7 @@ const checks = [
   ['tests/combat-devices-v200.cjs'],
   ['tests/combat-v225.dom.mjs'],
   ['tests/equipment-hooks-v311.dom.mjs'],
+  ['tests/combat-runtime-v312.dom.mjs'],
   ['tests/combat-hud-v226.dom.mjs'],
   ['tests/v140-world-integrity.cjs'],
   ['tests/world-sync-v300.cjs'],
