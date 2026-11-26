@@ -37,11 +37,11 @@ function touch(a,s){q(a,'INSERT INTO grpgi_planning_clock_v316(storage,logical,r
 function save(a,s){s.updated=Date.now();q(a,'INSERT INTO grpgi_planning_sessions_v316 VALUES({:id},{:storage},{:logical},{:status},{:start},{:deadline},{:data},{:updated}) ON CONFLICT(id) DO UPDATE SET status=excluded.status,start_ms=excluded.start_ms,deadline=excluded.deadline,data=excluded.data,updated=excluded.updated',{...s,start:s.start?Date.parse(s.start):0,deadline:s.confirmUntil?Date.parse(s.confirmUntil):0,data:JSON.stringify(s)}).execute();touch(a,s);}
 function putReg(a,s,player,status){q(a,'INSERT INTO grpgi_planning_regs_v316 VALUES({:id},{:player},{:status},{:version}) ON CONFLICT(session,player) DO UPDATE SET status=excluded.status,version=excluded.version',{id:s.id,player,status,version:s.version}).execute();}
 function people(a,s){return Array.from(new Set([...s.invited,...regs(a,s.id).filter(r=>['confirmed','reserved'].includes(r.status)).map(r=>r.player),...votes(a,s.id).filter(v=>v.interested||v.answered).map(v=>v.player)]));}
-const headings={poll:'Началось голосование по датам',approved:'Выбрана новая дата игры',rescheduled:'Дата игры изменена',opened:'Открылась запись на игру',cancelled:'Игра отменена'};
-function notice(a,s,kind,targets,ownerId){social.event(a,s.storage,'session:'+s.id+':'+s.version+':'+kind,{type:'session',sessionId:s.id,version:s.version,logicalCampaign:s.logical,kind,targets:Array.from(new Set(targets)),ownerId,heading:headings[kind],message:kind==='rescheduled'||kind==='approved'?'Откройте встречу и подтвердите участие.':'Откройте раздел игровых встреч.'},false);}
+const headings={poll:'Началось голосование по датам',approved:'Выбрана новая дата игры',rescheduled:'Дата игры изменена',opened:'Открылась запись на игру',cancelled:'Игра отменена',dates:'Изменились варианты дат игры',edited:'Настройки встречи изменены',closed:'Запись на игру закрыта',completed:'Игровая встреча завершена'};
+function notice(a,s,kind,targets,ownerId){social.event(a,s.storage,'session:'+s.id+':'+s.version+':'+s.editVersion+':'+kind,{type:'session',sessionId:s.id,version:s.version,editVersion:s.editVersion,logicalCampaign:s.logical,kind,targets:Array.from(new Set(targets)),ownerId,heading:headings[kind],message:kind==='rescheduled'||kind==='approved'?'Откройте встречу и подтвердите участие.':'Откройте раздел игровых встреч.'},false);}
 function advance(a,s,now){
  if(s.status==='priority'&&Date.parse(s.confirmUntil)<=now){q(a,"UPDATE grpgi_planning_regs_v316 SET status='expired' WHERE session={:id} AND status='reserved'",s).execute();s.status='open';s.editVersion++;save(a,s);if(Date.parse(s.start)>now)notice(a,s,'opened',people(a,s));}
- if(['priority','open'].includes(s.status)&&Date.parse(s.start)<=now){s.status='closed';s.editVersion++;save(a,s);}
+ if(['priority','open'].includes(s.status)&&Date.parse(s.start)<=now){s.status='closed';s.editVersion++;save(a,s);notice(a,s,'closed',people(a,s));}
 }
 function tick(a){const due=all(a,"SELECT id FROM grpgi_planning_sessions_v316 WHERE (status='priority' AND deadline<={:now}) OR (status IN ('priority','open') AND start_ms<={:now}) LIMIT 100",{now:Date.now()},{id:''});for(const row of due)a.runInTransaction(tx=>{q(tx,'UPDATE grpgi_planning_sessions_v316 SET updated=updated WHERE id={:id}',row).execute();advance(tx,load(tx,row.id),Date.now());});}
 function epoch(value,label){const n=Date.parse(value);if(!Number.isFinite(n))problem('Укажите '+label);return new Date(n).toISOString();}
@@ -83,9 +83,9 @@ function change(ctx,b){const {a,storage,logical,actor}=ctx,now=Date.now();let s;
   putReg(a,s,actor,'confirmed');touch(a,s);return s;
  }
  if(b.action==='edit'){
-  if(['cancelled','closed','completed'].includes(s.status))problem('Встреча закрыта');const limit=cap(b.capacity);let roster=s.invited;
+  if(['cancelled','closed','completed'].includes(s.status))problem('Встреча закрыта');const before=JSON.stringify([s.capacity,s.options,s.invited,s.voteUntil]),oldVersion=s.version;const limit=cap(b.capacity);let roster=s.invited;
   if(s.status==='poll'){roster=s.continuation?invites(ctx,b.invited||[]):[];const opts=options(b.options);if(JSON.stringify(opts)!==JSON.stringify(s.options)){s.options=opts;s.version++;q(a,"UPDATE grpgi_planning_votes_v316 SET answered=0,dates='[]',version={:version} WHERE session={:id}",s).execute();}s.voteUntil=voteDeadline(b.voteUntil,opts);}
-  const occupied=regs(a,s.id).filter(r=>['confirmed','reserved'].includes(r.status)).length;if(limit<Math.max(occupied,s.status==='poll'?roster.length:0))problem('Лимит меньше подтверждений и резервов');s.invited=roster;s.capacity=limit;s.editVersion++;save(a,s);return s;
+  const occupied=regs(a,s.id).filter(r=>['confirmed','reserved'].includes(r.status)).length;if(limit<Math.max(occupied,s.status==='poll'?roster.length:0))problem('Лимит меньше подтверждений и резервов');s.invited=roster;s.capacity=limit;if(before===JSON.stringify([s.capacity,s.options,s.invited,s.voteUntil]))return s;s.editVersion++;save(a,s);notice(a,s,s.version!==oldVersion?'dates':'edited',s.status==='poll'?(s.continuation?s.invited:available(ctx,s).map(p=>p.id)):people(a,s),actor);return s;
  }
  if(b.action==='approve'){
   if(s.status!=='poll')problem('Дата уже выбрана');const option=s.options.find(o=>o.id===b.optionId);if(!option||Date.parse(option.at)<=now)problem('Выберите будущую дату');s.start=option.at;s.confirmUntil=s.continuation?deadline(b.confirmUntil,s.start):'';s.status=s.continuation?'priority':'open';
@@ -98,7 +98,7 @@ function change(ctx,b){const {a,storage,logical,actor}=ctx,now=Date.now();let s;
   q(a,"UPDATE grpgi_planning_votes_v316 SET answered=0,dates='[]',version={:version} WHERE session={:id}",s).execute();for(const player of occupants)putReg(a,s,player,'reserved');save(a,s);notice(a,s,'rescheduled',targets,actor);return s;
  }
  if(b.action==='cancel'||b.action==='complete'){
-  if(['cancelled','completed'].includes(s.status))return s;const targets=people(a,s);s.status=b.action==='cancel'?'cancelled':'completed';s.editVersion++;save(a,s);if(b.action==='cancel')notice(a,s,'cancelled',targets,actor);return s;
+  if(['cancelled','completed'].includes(s.status))return s;const targets=people(a,s);s.status=b.action==='cancel'?'cancelled':'completed';s.editVersion++;save(a,s);notice(a,s,b.action==='cancel'?'cancelled':'completed',targets,actor);return s;
  }
  problem('Неизвестное действие');
 }
@@ -124,5 +124,8 @@ function state(e){const u=auth.actor(e),storage=u.getString('campaignId'),logica
  result={ok:true,revision,serverNow:Date.now(),dm:ctx.dm,playerId:ctx.actor,players:ctx.players.map(p=>({id:p.id,name:p.displayName||p.name||p.id})),tasks:Object.values(ctx.tasks).filter(t=>policy.visible(t,ctx.viewer,logical)).map(t=>({id:t.id,title:t.title||t.name||t.id,summary:String(t.summary||t.subtitle||'').slice(0,300),image:/^https?:\/\//.test(t.image||'')?t.image:'',status:t.status||'open'})),sessions:sessions.filter(s=>canView(ctx,s)).map(s=>{const eligible=new Set(available(ctx,s).map(p=>p.id)),allVotes=votes(a,s.id).filter(v=>eligible.has(v.player)&&v.version===s.version),mine=allVotes.find(v=>v.player===ctx.actor);return {...s,roster:regs(a,s.id),interest:allVotes.filter(v=>v.interested).map(v=>v.player),availability:s.options.map(o=>({id:o.id,players:allVotes.filter(v=>v.answered&&JSON.parse(v.dates).includes(o.id)).map(v=>v.player)})),myVote:mine?{interested:!!mine.interested,answered:!!mine.answered,dates:JSON.parse(mine.dates)}:{interested:false,answered:false,dates:[]},canVote:!s.continuation||s.invited.includes(ctx.actor)};})};
  });return e.json(200,result);
 }
-function canReceive(a,event,user,storage,logical){try{const s=load(a,event.sessionId);return s.storage===storage&&s.logical===logical&&s.version===event.version&&policy.visible(taskMap(a,storage)[s.taskId],user,logical)&&(event.kind==='cancelled'?s.status==='cancelled':event.kind==='poll'?s.status==='poll':['priority','open'].includes(s.status));}catch{return false;}}
+function canReceive(a,event,user,storage,logical){try{
+ const s=load(a,event.sessionId),allowed={cancelled:['cancelled'],completed:['completed'],closed:['closed'],poll:['poll'],dates:['poll'],edited:['poll','priority','open'],approved:['priority','open'],rescheduled:['priority','open'],opened:['open']};
+ return s.storage===storage&&s.logical===logical&&s.version===event.version&&(event.editVersion==null||s.editVersion===event.editVersion)&&policy.visible(taskMap(a,storage)[s.taskId],user,logical)&&!!allowed[event.kind]?.includes(s.status);
+}catch{return false;}}
 module.exports={bootstrap,state,mutate,tick,canReceive};

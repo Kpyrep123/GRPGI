@@ -13,7 +13,7 @@ function visible(p, user, campaign) {
 function recipient(event,user,campaign){
  if(!user||user.__deleted||['pending','rejected'].includes(user.approvalStatus))return false;
  if(event.ownerId===user.id)return false;
- if(event.type==='news'||event.type==='task')return visible(event.post||{},user,campaign);
+ if(event.type==='news'||event.type==='task')return visible(event.post||{},user,campaign)&&(!event.accessBefore||!visible(event.accessBefore,user,campaign));
  if(event.type==='session')return event.logicalCampaign===campaign&&Array.isArray(event.targets)&&event.targets.includes(user.id);
  if(event.type==='test')return event.target===user.id;
  if(event.senderType==='player'&&event.senderId===user.id)return false;
