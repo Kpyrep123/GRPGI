@@ -32,6 +32,7 @@ const checks = [
   ['tests/web-stock-draft-v214.dom.mjs'],
   ['tests/web-interface-v313.dom.mjs'],
   ['tests/galagram-v159.cjs'],
+  ['tests/galagram-unread-v314.dom.mjs'],
   ['tests/task-destinations-v216.dom.mjs'],
   ['tests/v135-player-sync-web.mjs'],
   ['tests/web-hp-v214.dom.mjs'],
