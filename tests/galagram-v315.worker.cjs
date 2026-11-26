@@ -13,6 +13,7 @@ function runtime(){const handlers={};const db={createObjectStore(){},close(){},t
  windows=[{id:'window',visibilityState:'visible',url:'https://test/app/',focus:async()=>focused++,postMessage:m=>opened.push(m)}];
  await handler('message',{source:{id:'window'},data:{type:'view',account:{player:'p',campaign:'main'},view:{screen:'news'}}});
  await push({...p,id:'two'});assert.equal(shown.length,1,'foreground feed suppresses redundant system notice');
+ await handler('message',{source:{id:'window'},data:{type:'view',account:{player:'p',campaign:'main'},view:{screen:'tasks'}}});await push({...p,id:'task-one',type:'task',taskId:'new-task'});assert.equal(shown.length,1,'visible task board suppresses redundant task notification');
  windows=[];await push({...p,id:'two'});assert.equal(shown.length,1,'suppressed receipt also deduplicates retries');
  await handler('notificationclick',{notification:{data:p,close(){}}});assert.match(opened[0],/^https:\/\/test\/app\/\?galagram=/);
  await handler('message',{data:{type:'binding',account:{player:'other',campaign:'main'}}});await push({...p,id:'three'});assert.equal(shown.length,1);const count=opened.length;await handler('notificationclick',{notification:{data:p,close(){}}});assert.equal(opened.length,count,'old account notification cannot reopen another account');

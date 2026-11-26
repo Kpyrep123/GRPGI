@@ -8,7 +8,7 @@ self.addEventListener('push',event=>{pushQueue=pushQueue.catch(()=>{}).then(asyn
  const p=event.data?.json();if(!p)return;const account=await binding();if(!account||account.player!==p.player||account.campaign!==p.campaign)return;
  const seenKey='seen:'+p.campaign+':'+p.player;const seen=await binding(undefined,seenKey)||[];if(seen.includes(p.id))return;
  const windows=await self.clients.matchAll({type:'window'});
- const visible=windows.some(c=>{const v=views.get(c.id);return c.visibilityState==='visible'&&v?.account?.player===p.player&&v.account.campaign===p.campaign&&(p.type==='news'?v.view.screen==='news':p.type==='message'&&(p.kind==='campaign'?v.view.kind==='campaign':v.view.target===(p.kind==='direct'?(p.otherId||p.senderId):(p.npcId||p.senderId))));});
+ const visible=windows.some(c=>{const v=views.get(c.id);return c.visibilityState==='visible'&&v?.account?.player===p.player&&v.account.campaign===p.campaign&&(p.type==='task'?v.view.screen==='tasks':p.type==='news'?v.view.screen==='news':p.type==='message'&&(p.kind==='campaign'?v.view.kind==='campaign':v.view.target===(p.kind==='direct'?(p.otherId||p.senderId):(p.npcId||p.senderId))));});
  if(visible){await binding([...seen,p.id].slice(-512),seenKey);return;}
  const tag=String(p.tag||p.id||'galagram').slice(0,180);
  await self.registration.showNotification(String(p.title||'GalaGram'),{body:String(p.body||''),tag,data:p});

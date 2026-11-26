@@ -33,15 +33,17 @@ try{
  run(read('deploy/site/app/notifications-v315.js'));await settle();assert.equal(requests,0,'never ask permission on load');
  w.document.querySelector('[data-enable]').click();assert.equal(requests,1,'permission is requested directly in click');await settle();assert.equal(registered,1);assert(calls.some(c=>c.route==='subscribe'));assert(messages.some(m=>m.type==='binding'&&m.account.player==='p'));
  const options=w.document.querySelector('[name=messages]');options.checked=false;options.dispatchEvent(new w.Event('change'));await settle();assert.equal(calls.filter(c=>c.route==='subscribe').at(-1).data.messages,false);
+ const taskOption=w.document.querySelector('[name=tasks]');assert(taskOption);taskOption.checked=false;taskOption.dispatchEvent(new w.Event('change'));await settle();assert.equal(calls.filter(c=>c.route==='subscribe').at(-1).data.tasks,false);
  await w.GRPGNotificationsV315.refresh();assert.equal(requests,1,'returning subscribed users are not prompted again');
  w.document.querySelector('[data-test]').click();await settle();assert(calls.some(c=>c.route==='test'));
  who='other';await w.GRPGNotificationsV315.refresh();assert(unsubscribed>0,'changing character detaches old device subscription');
  assert(messages.some(m=>m.type==='binding'&&m.account===null));
  const source=read('deploy/site/app/app.js');
- w.App={ui:{},config:{campaignId:'main'},session:{userId:'p'}};w.renderCurrentScreen=()=>{};let opened='';w.openWebChatMasterV1068=id=>opened=id;w.buildThreads=()=>[{key:'gm__p',type:'direct',otherId:'gm'},{key:'npc__p',type:'npc',npcId:'npc'},{key:'campaign:main',type:'campaign'}];w.requestAnimationFrame=fn=>fn();w.notify=()=>{};
+ w.App={ui:{},config:{campaignId:'main'},session:{userId:'p'}};w.renderCurrentScreen=()=>{};let taskOpened='';w.openTaskReader=id=>taskOpened=id;let opened='';w.openWebChatMasterV1068=id=>opened=id;w.buildThreads=()=>[{key:'gm__p',type:'direct',otherId:'gm'},{key:'npc__p',type:'npc',npcId:'npc'},{key:'campaign:main',type:'campaign'}];w.requestAnimationFrame=fn=>fn();w.notify=()=>{};
  run(source.slice(source.indexOf('  window.GRPGNotificationBridgeV315 = {'),source.indexOf('  window.GRPGNewsBridgeV159 = {')));
  w.GRPGNotificationBridgeV315.open({type:'message',kind:'direct',senderId:'npc',npcId:'npc',otherId:'gm'});assert.equal(opened,'gm__p','NPC impersonation opens the correct direct conversation');
  w.GRPGNotificationBridgeV315.open({type:'message',kind:'campaign'});assert.equal(opened,'campaign:main');
+ w.GRPGNotificationBridgeV315.open({type:'task',taskId:'new-task'});assert.equal(w.App.ui.screen,'tasks');assert.equal(taskOpened,'new-task');
  w.GRPGNotificationBridgeV315.open({type:'test'});assert.equal(w.App.ui.screen,'profile');
  console.log('PASS v315 DOM: server-release gate, draft isolation, game dates/unread styling, audio play/pause/seek/volume, resize/cancel, explicit consent, preferences, renewal, test push and account switching');
 }finally{await w.happyDOM.abort();}

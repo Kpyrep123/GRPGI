@@ -6312,6 +6312,7 @@ function stockFeesV213(fees){if(!fees)return 'Тарифы загрузятся 
     call:(route,data)=>pbFetch(App.config,'/api/grpgi/auth-v212/galagram-v315/'+route,{method:data?'POST':'GET',...(data?{json:data}:{}),headers:{'X-GRPGI-Session':App.session?.authTokenV212||''},query:{logicalCampaign:logicalCampaignIdV1062()}}),
     changed:()=>{if(App.ui.screen==='news')window.GRPGNewsWebV159?.show();updateChatUnreadIndicatorsV1065();},
     open:p=>{
+      if(p.type==='task'){App.ui.screen='tasks';renderCurrentScreen();requestAnimationFrame(()=>openTaskReader(String(p.taskId||p.key?.replace(/^task:/,'')||'')));return;}
       if(p.type==='test'){App.ui.screen='profile';renderCurrentScreen();return;}
       if(p.type==='news'){App.ui.screen='news';renderCurrentScreen();requestAnimationFrame(()=>document.querySelector('[data-news-key="'+CSS.escape(p.key)+'"]')?.scrollIntoView({block:'center'}));return;}
       const thread=buildThreads().find(t=>p.kind==='campaign'?t.type==='campaign':p.kind==='direct'?t.type==='direct'&&t.otherId===(p.otherId||p.senderId):p.kind==='npc'&&t.type==='npc'&&(t.key===p.threadKey||t.npcId===p.npcId));

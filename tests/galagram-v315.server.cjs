@@ -14,7 +14,7 @@ vm.createContext(ctx);vm.runInContext(fs.readFileSync('pocketbase/pb_hooks/grpgi
 const event=(body={},token='session',worker=true)=>({app,token,requestInfo:()=>({body}),request:{header:{get:()=>worker?'a'.repeat(40):'wrong'}},json:(_,v)=>v});
 const makeProfile=id=>db.prepare('INSERT INTO campaign_players VALUES(?,?,?,?,?)').run(id,'main',id,JSON.stringify({id,role:'player'}),'');
 makeProfile('p');makeProfile('q');
-db.prepare('INSERT INTO campaign_snapshots VALUES(?,?,?,?)').run('s','main',JSON.stringify({news:{NEWS_LIST:[{id:'old',title:'Old'}]}}),'{}');
+db.prepare('INSERT INTO campaign_snapshots VALUES(?,?,?,?)').run('s','main',JSON.stringify({news:{NEWS_LIST:[{id:'old',title:'Old'}]},tasks:{TASK_LIST:[{id:'old-task',status:'open'}]}}),'{}');
 api.bootstrap({app,next(){}});api.scan(app);
 const sub={endpoint:'https://fcm.googleapis.com/fcm/send/test',keys:{p256dh:'A'.repeat(87),auth:'B'.repeat(22)}};
 assert(policy.validSubscription(sub));assert(!policy.validSubscription({...sub,endpoint:'https://127.0.0.1/admin'}));assert(!policy.validSubscription({...sub,endpoint:'https://fcm.googleapis.com@127.0.0.1/x'}));
@@ -47,4 +47,12 @@ db.prepare('INSERT INTO campaign_messages(id,campaignId,messageId,kind,senderId,
 const group=api.claim(event()).jobs;assert.equal(group.length,1);assert.equal(group[0].payload.kind,'campaign');assert.equal(group[0].payload.campaign,'story');
 api.ack(event({id:group[0].id,lease:group[0].lease,ok:true}));
 setNews([{id:'logical',visibility:{playerIds:['p'],campaignIds:['story']}}]);const logical=api.claim(event()).jobs;assert.equal(logical.length,1);assert.equal(logical[0].payload.campaign,'story');
+const task={id:'new-task',name:'New task',status:'open',visibility:{playerIds:['p'],campaignIds:['story']}};
+const setTasks=rows=>db.prepare("UPDATE campaign_snapshots SET worldJson=? WHERE id='s'").run(JSON.stringify({tasks:{TASK_LIST:rows}}));
+setTasks([task]);let taskJobs=api.claim(event()).jobs;assert.equal(taskJobs.length,1);assert.equal(taskJobs[0].payload.type,'task');assert.equal(taskJobs[0].payload.taskId,'new-task');assert.match(taskJobs[0].payload.title,/задание/);
+api.ack(event({id:taskJobs[0].id,lease:taskJobs[0].lease,ok:true}));task.name='Edited task';setTasks([task]);assert.equal(api.claim(event()).jobs.length,0,'task edits do not resend');
+api.subscribe(event({subscription:sub,logicalCampaign:'story',tasks:false}));setTasks([{...task,id:'muted-task'}]);assert.equal(api.claim(event()).jobs.length,0,'task category can be muted independently');
+api.subscribe(event({subscription:sub,logicalCampaign:'story',tasks:true}));setTasks([{...task,id:'finished-task',status:'completed'},{...task,id:'hidden-task',visibility:{playerIds:['q']}}]);assert.equal(api.claim(event()).jobs.length,0,'completed and hidden tasks never alert');
+setTasks([{...task,id:'withdraw-task'}]);api.scan(app);setTasks([]);assert.equal(api.claim(event()).jobs.length,0,'withdrawn task is checked again before delivery');
+assert(policy.enabled({},'task'));assert(!policy.enabled({tasks:false},'task'));assert(policy.enabled({tasks:false,messages:false,news:false},'test'));
 db.close();console.log('PASS v315 server SQLite: hooks/triggers, silent baseline, publication due/draft/visibility, auth, push subscriptions, real outbox/leases/retries/ack, no edit duplicates, withdrawal and expired endpoints');
