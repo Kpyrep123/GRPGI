@@ -1,0 +1,19 @@
+[Unit]
+Description=GRPGI scheduled publications and Web Push
+After=network-online.target pocketbase.service
+Wants=network-online.target
+[Service]
+Type=simple
+User=pocketbase
+Group=pocketbase
+WorkingDirectory=/opt/grpgi-notifications
+EnvironmentFile=/etc/grpgi-notifications.env
+ExecStart=/usr/bin/node /opt/grpgi-notifications/worker.cjs
+Restart=on-failure
+RestartSec=10
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+[Install]
+WantedBy=multi-user.target

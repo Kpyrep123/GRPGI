@@ -2271,19 +2271,48 @@ window.addEventListener('load', () => {
       const stem = `${context.section}_${context.entityId}_${file.name}`;
       Toast.show('Изображение загружается в облако…', 'info');
       try {
+        const imageWidthV315=await window.GRPGRichMediaV315.chooseImageSize();if(imageWidthV315===null)return;
         const nativePath = !isDdsFileV51(file) ? window.electronAPI.getPathForFile?.(file) : '';
         const result = nativePath && window.electronAPI.saveWorldImageFile
           ? await window.electronAPI.saveWorldImageFile({ filePath: nativePath, preferredStem: stem, ...context })
           : await window.electronAPI.saveWorldImage({ dataUrl: await readImageFileAsRenderableDataUrlV51(file), preferredStem: stem, ...context });
         if (!result?.ok) throw new Error(result?.message || 'Файл не загружен');
         if (!result.cloudUrl) throw new Error(result.warning || 'Облачное хранилище не вернуло публичную ссылку. Локальный путь не вставлен.');
-        insertIntoEditorV1086(snapshot, `<img class="rich-inline-image-v1086" src="${attributeV1086(result.cloudUrl)}" alt="${attributeV1086(file.name.replace(/\.[^.]+$/, ''))}" loading="lazy" decoding="async" />`);
+        insertIntoEditorV1086(snapshot, `<img class="rich-inline-image-v1086" style="width:${imageWidthV315?imageWidthV315+'px':'100%'};max-width:100%;height:auto" src="${attributeV1086(result.cloudUrl)}" alt="${attributeV1086(file.name.replace(/\.[^.]+$/, ''))}" loading="lazy" decoding="async" />`);
         Toast.show('Изображение загружено и вставлено', 'ok');
       } catch (error) {
         Toast.show(error?.message || String(error), 'err');
       }
     }, { once: true });
     fileInput.click();
+  }
+
+  async function insertAudioV315(snapshot) {
+    if (!Sync?.config?.enabled) throw new Error('Включите облачную синхронизацию для загрузки аудио.');
+    const input=document.createElement('input');input.type='file';input.accept='audio/mpeg,audio/mp4,audio/ogg,audio/wav,audio/webm,.mp3,.m4a,.ogg,.wav,.webm';
+    input.onchange=async()=>{const file=input.files?.[0];if(!file)return;
+      try{if(file.size>32*1024*1024)throw new Error('Максимальный размер аудио — 32 МБ');
+        const filePath=window.electronAPI.getPathForFile?.(file);
+        const dataUrl=filePath?null:await new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=()=>reject(Error('Не удалось прочитать аудио'));r.readAsDataURL(file);});
+        Toast.show('Аудиофайл загружается…','info');
+        const result=await window.electronAPI.saveWorldAudio({dataUrl,filePath,name:file.name,...richEditorContextV1086(snapshot.target)});
+        if(!result?.ok||!result.cloudUrl)throw new Error(result?.warning||result?.message||'Не удалось загрузить аудио в облако');
+        insertIntoEditorV1086(snapshot,`<audio controls preload="metadata" data-grpg-audio-v315 data-title="${attributeV1086(file.name)}" src="${attributeV1086(result.cloudUrl)}"></audio>`);
+      }catch(error){Toast.show(error.message,'err');}
+    };input.click();
+  }
+
+  async function resizeImageV315(snapshot) {
+    if(snapshot.kind!=='control')throw new Error('Выделите тег изображения в HTML-поле.');
+    const source=snapshot.target.value;
+    const matches=Array.from(source.matchAll(/<img\b[^>]*>/gi));
+    const found=matches.find(m=>m.index<=snapshot.start&&m.index+m[0].length>=snapshot.end);
+    if(!found)throw new Error('Поместите курсор внутрь тега <img> или выделите его целиком.');
+    const width=await window.GRPGRichMediaV315.chooseImageSize();if(width===null)return;
+    const template=document.createElement('template');template.innerHTML=found[0];const img=template.content.querySelector('img');
+    img.removeAttribute('width');img.removeAttribute('height');img.style.width=width?width+'px':'100%';img.style.maxWidth='100%';img.style.height='auto';
+    if(snapshot.target.value!==source)throw new Error('Текст изменился. Повторите изменение размера.');
+    insertIntoEditorV1086({...snapshot,start:found.index,end:found.index+found[0].length},img.outerHTML);
   }
 
   async function pastePlainTextV1086(snapshot) {
@@ -2299,6 +2328,8 @@ window.addEventListener('load', () => {
   function editorMenuV1086(snapshot, x, y) {
     showMenuV1086(x, y, [
       { icon: '▧', label: 'Изображение с компьютера', action: () => insertLocalImageV1086(snapshot) },
+      { icon: '↔', label: 'Размер изображения', action: () => resizeImageV315(snapshot) },
+      { icon: '♫', label: 'Аудиофайл с компьютера', action: () => insertAudioV315(snapshot) },
       { icon: 'A', label: 'Ссылка на статью', action: () => insertArticleLinkV1086(snapshot) },
       { icon: 'P', label: 'Ссылка на персонажа', action: () => insertCharacterLinkV1086(snapshot) },
       { separator: true },
@@ -7052,7 +7083,7 @@ const __renderRichText = (value, fallback = '', options = {}) => {
   template.content.querySelectorAll('style, script, link[rel~="stylesheet"], link[as="style"]').forEach(node => node.remove());
   return `<div class="rich-text grpgi-rich-scope-v1081">${template.innerHTML}</div>`;
 };
-const __htmlHint = '<div class="small-note">ПКМ в поле открывает вставку изображения с компьютера, ссылки на статью или ссылки на персонажа. HTML-разметку также можно вводить вручную.</div>';
+const __htmlHint = '<div class="small-note">ПКМ в поле открывает вставку аудио, изображения и изменение его размера, ссылки на статью или ссылки на персонажа. HTML-разметку также можно вводить вручную.</div>';
 
 function __resolveLocalArticleLink(value = '') {
   const raw = String(value || '').trim();
@@ -7143,7 +7174,7 @@ const __createBlankEntity = createBlankEntity;
 createBlankEntity = function(type) {
   const stamp = Date.now().toString().slice(-6);
   if (type === 'news') {
-    return { id: `news_${stamp}`, name: 'Новая новость', title: 'Новая новость', subtitle: '', body: '', image: '', publishedAt: new Date().toISOString(), visibility: { playerIds: [] } };
+    return { id: `news_${stamp}`, name: 'Новая новость', title: 'Новая новость', subtitle: '', body: '', image: '', publishedAt: window.GRPGNewsV159.loreDate(), visibility: { playerIds: [] } };
   }
   if (type === 'tasks') {
     return { id: `task_${stamp}`, name: 'Новое задание', title: 'Новое задание', subtitle: '', summary: '', body: '', reward: '', status: 'open', destinationPlanetId: '', image: '', relatedArticleIds: [], visibility: { playerIds: [] } };
@@ -7567,7 +7598,7 @@ Configurator.collectEntity = function(type, formEl, formData = new FormData(form
       title,
       subtitle: String(formData.get('subtitle') || '').trim(),
       body: String(formData.get('body') || '').trim(),
-      publishedAt: String(formData.get('publishedAt') || new Date().toISOString()).trim(),
+      publishedAt: String(formData.get('publishedAt') || window.GRPGNewsV159.loreDate()).trim(),
       image,
       visibility: { playerIds: getCheckedValues(formEl, 'visibilityPlayerIds') }
     };

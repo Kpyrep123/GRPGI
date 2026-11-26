@@ -1,0 +1,55 @@
+'use strict';
+const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),crypto=require('node:crypto'),os=require('node:os'),path=require('node:path');
+const {DatabaseSync}=require('node:sqlite'),policy=require('../pocketbase/pb_hooks/galagram-v315.js');
+const dir=fs.mkdtempSync(path.join(os.tmpdir(),'grpg-planning-')),file=path.join(dir,'state.db'),db=new DatabaseSync(file);db.exec('PRAGMA journal_mode=WAL');
+db.exec("CREATE TABLE campaign_snapshots(id TEXT PRIMARY KEY,campaignId TEXT,worldJson TEXT,stateJson TEXT);CREATE TABLE campaign_players(id TEXT PRIMARY KEY,campaignId TEXT,playerId TEXT,playerJson TEXT,deletedAt TEXT DEFAULT '');CREATE TABLE campaign_messages(id TEXT PRIMARY KEY,campaignId TEXT,messageId TEXT,kind TEXT,senderId TEXT,senderType TEXT,recipientPlayerId TEXT,npcId TEXT,deletedAt TEXT DEFAULT '');");
+const record=row=>({id:row.id,getString:k=>String(row[k]??''),getBool:k=>!!row[k],get:k=>row[k]});
+function adapter(conn){const a={db:()=>({newQuery(sql){sql=sql.replace(/\{:(\w+)\}/g,'@$1');let args={};const prepare=()=>{const s=conn.prepare(sql);s.setAllowUnknownNamedParameters(true);return s;};return {bind(x){args=Object.fromEntries(Object.entries(x).filter(([k])=>sql.includes('@'+k)));return this;},execute:()=>prepare().run(args),all:out=>out.push(...prepare().all(args)),one:out=>Object.assign(out,prepare().get(args))};}}),findFirstRecordByFilter(table,filter,args){const sql=filter.replace(/\{:(\w+)\}/g,'@$1').replace(/&&/g,'AND'),r=conn.prepare(`SELECT * FROM ${table} WHERE ${sql}`).get(args);if(!r)throw Error('Missing');return record(r);},findCollectionByNameOrId(){return {fields:{getByName:()=>({mimeTypes:[],maxSize:0})}};},save(){},runInTransaction(fn){conn.exec('BEGIN IMMEDIATE');try{const v=fn(a);conn.exec('COMMIT');return v;}catch(e){conn.exec('ROLLBACK');throw e;}}};return a;}
+const app=adapter(db),modules={};let now=Date.now();
+const ctx={module:{exports:{}},__hooks:'.',require:p=>p.endsWith('/galagram-v315.js')?policy:p.endsWith('/grpgi_auth_v212.js')?{actor:e=>record({campaignId:'main',playerId:e.user,dm:e.user==='gm'})}:modules[p.split('/').at(-1)],DynamicModel:class{constructor(x){Object.assign(this,x);}},arrayOf:()=>[],$os:{getenv:k=>k==='GRPGI_PUSH_WORKER_TOKEN'?'a'.repeat(40):'public-key'},$security:{randomString:n=>crypto.randomBytes(n).toString('hex').slice(0,n),sha256:s=>crypto.createHash('sha256').update(s).digest('hex')},BadRequestError:Error,console,Date:class extends Date{static now(){return now;}}};vm.createContext(ctx);
+for(const file of ['grpgi_galagram_v315.js','grpgi_planning_v316.js']){ctx.module={exports:{}};vm.runInContext('(function(){'+fs.readFileSync('pocketbase/pb_hooks/'+file,'utf8')+'})()',ctx);modules[file]=ctx.module.exports;}
+const social=modules['grpgi_galagram_v315.js'],api=modules['grpgi_planning_v316.js'];
+const ev=(user,body={},query={},a=app)=>({app:a,user,requestInfo:()=>({body,query}),request:{header:{get:()=> 'a'.repeat(40)}},json:(_,v)=>JSON.parse(JSON.stringify(v))});
+let world={tasks:{TASK_LIST:[{id:'task',title:'Test mission',status:'open',visibility:{playerIds:['p','q','r'],campaignIds:['story']}}]}};
+db.prepare('INSERT INTO campaign_snapshots VALUES(?,?,?,?)').run('world','main',JSON.stringify(world),'{}');
+for(const id of ['gm','p','q','r','outside'])db.prepare('INSERT INTO campaign_players VALUES(?,?,?,?,?)').run(id,'main',id,JSON.stringify({id,name:id,role:id==='gm'?'gm':'player',campaignIds:id==='outside'?[]:['story']}),'');
+social.bootstrap({app,next(){}});api.bootstrap({app,next(){}});
+const state=(user='gm',since)=>api.state(ev(user,{}, {logicalCampaign:'story',since}));
+const action=(user,body={},operation=crypto.randomUUID(),a=app)=>api.mutate(ev(user,{logicalCampaign:'story',operation,...body},{},a));
+const at=offset=>new Date(now+offset).toISOString(),opts=()=>[{id:'a',at:at(86400000)},{id:'b',at:at(172800000)}];
+const create=(extra={},operation)=>action('gm',{action:'create',taskId:'task',capacity:1,options:opts(),...extra},operation);
+const get=(id,user='gm')=>state(user).sessions.find(s=>s.id===id);
+const command=(user,s,actionName,extra={},operation,a)=>action(user,{action:actionName,sessionId:s.id,version:s.version,editVersion:s.editVersion,...extra},operation,a);
+try{
+ const sub={endpoint:'https://fcm.googleapis.com/fcm/send/test',keys:{p256dh:'A'.repeat(87),auth:'B'.repeat(22)}};social.subscribe(ev('p',{subscription:sub,logicalCampaign:'story'}));
+ const op=crypto.randomUUID(),created=create({},op);assert(created.ok);assert.deepEqual(create({},op),created);assert.equal(state().sessions.length,1,'retry create is idempotent');assert.equal(create({capacity:2},op).code,'conflict');
+ let s=get(created.id);assert.equal(s.options.length,2);
+ // Exercise the real world-v301 packed task catalogue fast path, without parsing the full snapshot.
+ db.exec('CREATE TABLE grpgi_world_heads_v301(campaign TEXT,dirty INTEGER,indexed INTEGER);CREATE TABLE grpgi_world_entities_v301(campaign TEXT,key TEXT,data TEXT,deleted INTEGER)');db.exec("INSERT INTO grpgi_world_heads_v301 VALUES('main',1,1)");
+ for(const [key,value] of require('../pocketbase/pb_hooks/world-sync-v301.js').pack({world,state:{}}))db.prepare('INSERT INTO grpgi_world_entities_v301 VALUES(?,?,?,0)').run('main',key,value);
+ assert.equal(state().tasks[0].title,'Test mission');db.exec('UPDATE grpgi_world_heads_v301 SET dirty=2');assert.equal(command('p',s,'edit',{capacity:2,options:opts()}).code,'forbidden');
+ assert.throws(()=>state('outside'),/Кампания/);assert.equal(action('outside',{action:'join',sessionId:s.id,version:1}).code,'forbidden');
+ assert(command('p',s,'vote',{dates:['a','b']}).ok);assert.equal(get(s.id,'p').myVote.dates.length,2);assert(command('q',s,'vote',{dates:[]}).ok);assert.equal(get(s.id,'q').myVote.answered,true);assert.equal(get(s.id).roster.length,0,'votes never register');assert(command('p',s,'interest',{interested:true}).ok);
+ const revision=state('p').revision;assert(state('p',revision).unchanged);
+ world.tasks.TASK_LIST[0].summary='changed';db.prepare('UPDATE campaign_snapshots SET worldJson=?').run(JSON.stringify(world));assert(!state('p',revision).unchanged,'metadata change invalidates cursor');
+ assert(command('gm',s,'edit',{capacity:1,options:[{id:'new',at:at(259200000)}]}).ok);const old=s;s=get(s.id);assert.equal(s.version,2);assert.equal(s.interest.length,1,'date edits retain interest');assert.equal(s.myVote?.answered,false);assert.equal(command('p',old,'vote',{dates:['a']}).code,'stale');
+ assert(command('gm',s,'approve',{optionId:'new'}).ok);s=get(s.id);assert.equal(s.status,'open');const joinOp=crypto.randomUUID();assert(command('p',s,'join',{},joinOp).ok);assert(command('p',s,'join',{},joinOp).ok);assert.equal(get(s.id).roster.length,1);assert.equal(command('q',s,'join').code,'full');
+ assert(command('gm',s,'edit',{capacity:1}).ok);s=get(s.id);assert(command('gm',s,'reschedule',{start:at(345600000),confirmUntil:at(60000)}).ok);const rescheduled=get(s.id);assert.equal(rescheduled.status,'priority');assert.equal(rescheduled.roster[0].status,'reserved');assert.equal(command('p',s,'join').code,'stale');assert.equal(command('q',rescheduled,'join').code,'priority');assert(command('p',rescheduled,'join').ok);assert.equal(get(s.id).roster.length,1,'own reserve becomes confirmation');
+ // The actual v315 outbox rechecks the current schedule version, then sends the new one.
+ const jobs=social.claim(ev('gm')).jobs;assert.equal(jobs.length,1);assert.equal(jobs[0].payload.type,'session');assert.equal(jobs[0].payload.version,rescheduled.version);assert.equal(jobs[0].payload.sessionId,s.id);social.ack(ev('gm',{id:jobs[0].id,lease:jobs[0].lease,ok:true}));
+ assert(command('gm',get(s.id),'complete').ok);
+ const continuation=create({continuation:true,parentId:s.id,invited:['p'],capacity:2});assert(continuation.ok);let c=get(continuation.id);assert.equal(c.number,2);assert.equal(command('q',c,'vote',{dates:['a']}).code,'forbidden');assert(command('p',c,'vote',{dates:['a','b']}).ok);assert(command('gm',c,'approve',{optionId:'a',confirmUntil:at(60000)}).ok);c=get(c.id);assert.equal(c.status,'priority');assert.equal(c.roster[0].status,'reserved');
+ assert.equal(command('gm',c,'edit',{capacity:0}).code,'invalid');assert.equal(command('q',c,'join').code,'priority');now+=61000;api.tick(app);c=get(c.id);assert.equal(c.status,'open');assert.equal(c.roster[0].status,'expired');assert(command('q',c,'join').ok);assert(command('r',c,'join').ok);c=get(c.id);assert.equal(command('gm',c,'edit',{capacity:1}).code,'invalid');
+ assert(command('q',c,'decline').ok);assert.equal(get(c.id).roster.filter(r=>r.status==='confirmed').length,1);
+ assert(command('gm',c,'cancel').ok);assert.equal(command('q',get(c.id),'join').code,'invalid');assert(api.canReceive(app,{sessionId:c.id,version:c.version,kind:'cancelled'},{id:'p',role:'player'},'main','story'));assert(!api.canReceive(app,{sessionId:c.id,version:c.version-1,kind:'cancelled'},{id:'p'},'main','story'));
+ // Real separate SQLite connections compete while the first last-seat write is uncommitted.
+ let race=get(create().id);assert(command('gm',race,'approve',{optionId:'a'}).ok);race=get(race.id);
+ const secondDB=new DatabaseSync(file);secondDB.exec('PRAGMA busy_timeout=1');const second=adapter(secondDB),outer={...app,runInTransaction:fn=>fn(app)};
+ db.exec('BEGIN IMMEDIATE');assert(command('p',race,'join',{},undefined,outer).ok);assert.throws(()=>command('q',race,'join',{},undefined,second),/locked/);db.exec('COMMIT');assert.equal(command('q',race,'join',{},undefined,second).code,'full');assert.equal(get(race.id).roster.filter(r=>r.status==='confirmed').length,1);secondDB.close();
+ // Reopen the same database and production modules retain seats and receipts.
+ const reopened=new DatabaseSync(file),fresh=adapter(reopened);const replay=api.state(ev('p',{}, {logicalCampaign:'story'},fresh));assert.equal(replay.sessions.find(x=>x.id===race.id).roster.length,1);reopened.close();
+ world.tasks.TASK_LIST[0].visibility.playerIds=['q'];db.prepare('UPDATE campaign_snapshots SET worldJson=?').run(JSON.stringify(world));assert.equal(state('p').sessions.length,0);assert.equal(command('p',race,'decline').code,'forbidden');
+ assert(policy.enabled({},'session'));assert(!policy.enabled({sessions:false},'session'));assert(!policy.recipient({type:'session',logicalCampaign:'story',targets:['p']},{id:'p'},'other'));
+ assert.equal(db.prepare('SELECT worldJson FROM campaign_snapshots').get().worldJson,JSON.stringify(world),'votes, enrollment, retries and deadlines never rewrite the campaign snapshot');
+ console.log('PASS v316 production planning + v315 outbox: multi-date voting, no slots from votes, scope/visibility, receipt retries, stale versions, reserves/expiry, reschedule, capacity CAS, actual SQLite lock contention, reload and push version checks');
+}finally{db.close();fs.rmSync(dir,{recursive:true,force:true});}

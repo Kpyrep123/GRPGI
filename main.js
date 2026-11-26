@@ -511,6 +511,7 @@ function extensionFromDataUrl(dataUrl) {
 
 function extensionFromContentType(contentType = '') {
   const value = String(contentType || '').toLowerCase();
+  const audio={'audio/mpeg':'mp3','audio/mp4':'m4a','audio/ogg':'ogg','audio/wav':'wav','audio/x-wav':'wav','audio/webm':'webm'};if(audio[value])return audio[value];
   if (value.includes('png')) return 'png';
   if (value.includes('jpeg') || value.includes('jpg')) return 'jpg';
   if (value.includes('webp')) return 'webp';
@@ -521,6 +522,7 @@ function extensionFromContentType(contentType = '') {
 
 function contentTypeFromExtension(ext = '') {
   const value = String(ext || '').toLowerCase();
+  const audio={mp3:'audio/mpeg',m4a:'audio/mp4',ogg:'audio/ogg',wav:'audio/wav',webm:'audio/webm'};if(audio[value])return audio[value];
   if (value === 'png') return 'image/png';
   if (value === 'jpg' || value === 'jpeg') return 'image/jpeg';
   if (value === 'webp') return 'image/webp';
@@ -3495,6 +3497,21 @@ ipcMain.handle('app:backupWorldData', async () => {
   }
 });
 
+ipcMain.handle('world:saveAudio', async (_event,payload={})=>{
+  try{
+    if(payload.filePath){const source=path.resolve(String(payload.filePath));if(!/\.(mp3|m4a|ogg|wav|webm)$/i.test(source))throw new Error('Неподдерживаемый формат аудио');const stat=await fs.promises.stat(source);if(!stat.isFile()||stat.size>32*1024*1024)throw new Error('Максимальный размер аудио — 32 МБ');const config=await loadSyncConfig();if(!config.enabled)throw new Error('Включите облачную синхронизацию');const uploaded=await uploadImageSourceToPocketBase(config,pathToFileURL(source).href,{section:payload.section||'news',entityId:payload.entityId||'audio',preferredStem:payload.name||'audio'});return {ok:true,cloudUrl:uploaded.publicUrl||uploaded.url};}
+    const match=String(payload.dataUrl||'').match(/^data:(audio\/(?:mpeg|mp4|ogg|wav|x-wav|webm));base64,([A-Za-z0-9+/=\r\n]+)$/);
+    if(!match)throw new Error('Поддерживаются MP3, M4A, OGG, WAV и WebM');
+    if(match[2].length>45*1024*1024)throw new Error('Максимальный размер аудио — 32 МБ');
+    const bytes=Buffer.from(match[2],'base64');if(bytes.length>32*1024*1024)throw new Error('Максимальный размер аудио — 32 МБ');
+    const dir=writableWorldAssetsDir();await fs.promises.mkdir(dir,{recursive:true});
+    const file=path.join(dir,Date.now()+'_'+sanitizeFileStem(payload.name||'audio')+'.'+extensionFromContentType(match[1]));
+    await fs.promises.writeFile(file,bytes);const config=await loadSyncConfig();if(!config.enabled)throw new Error('Включите облачную синхронизацию');
+    const uploaded=await uploadImageSourceToPocketBase(config,pathToFileURL(file).href,{section:payload.section||'news',entityId:payload.entityId||'audio',preferredStem:payload.name||'audio'});
+    return {ok:true,cloudUrl:uploaded.publicUrl||uploaded.url};
+  }catch(error){return {ok:false,message:error.message};}
+});
+
 ipcMain.handle('world:saveImage', async (_event, payload) => {
   try {
     const dataUrl = payload?.dataUrl || '';
@@ -4076,7 +4093,7 @@ ipcMain.handle('players:delete', async (_event, payload) => {
 
 ipcMain.handle('player-auth-v212', async (_event, payload = {}) => {
   if (payload.action === 'logout') {playerSessionV212 = '';playerIdentityV303 = '';worldSyncClientV301.clear();return {ok:true};}
-  const allowed = new Set(['login','session','recovery/request','recovery/requests','recovery/approve','recovery/reject','recovery/confirm']);
+  const allowed = new Set(['login','session','recovery/request','recovery/requests','recovery/approve','recovery/reject','recovery/confirm','galagram-v315/state','planning-v316/state','planning-v316/mutate']);
   if (!allowed.has(payload.action)) return {ok:false,message:'Неизвестная операция'};
   try {
     const config = await loadSyncConfig();

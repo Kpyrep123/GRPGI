@@ -262,7 +262,7 @@
       const token = interactiveToken();
       rememberInteractivePayload(token, sourceHtml);
       const classes = ['grpgi-rich-scope-v1081', 'grpgi-rich-interactive-v1083', String(wrapperClass || '').trim()].filter(Boolean).join(' ');
-      return `<div class="${escapeAttribute(classes)}" data-grpgi-rich-scope="${escapeAttribute(token)}"><iframe class="grpgi-rich-interactive-frame-v1083" data-grpgi-rich-frame-v1083="${escapeAttribute(token)}" src="./article-sandbox.html?v=1.0.86" sandbox="allow-scripts" scrolling="no" loading="eager" referrerpolicy="no-referrer" title="Интерактивная статья"></iframe></div>`;
+      return `<div class="${escapeAttribute(classes)}" data-grpgi-rich-scope="${escapeAttribute(token)}"><iframe class="grpgi-rich-interactive-frame-v1083" data-grpgi-rich-frame-v1083="${escapeAttribute(token)}" src="./article-sandbox.html?v=315" sandbox="allow-scripts" scrolling="no" loading="eager" referrerpolicy="no-referrer" title="Интерактивная статья"></iframe></div>`;
     }
 
     scopeSequence += 1;

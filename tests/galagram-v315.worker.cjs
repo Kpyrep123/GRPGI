@@ -1,0 +1,22 @@
+'use strict';
+const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
+const stores=new Map();let handler,shown=[],windows=[],opened=[],focused=0;
+function runtime(){const handlers={};const db={createObjectStore(){},close(){},transaction(){const tx={objectStore:()=>({get(key){const r={};setImmediate(()=>{r.result=stores.get(key);r.onsuccess?.();tx.oncomplete?.();});return r;},put(value,key){const r={};setImmediate(()=>{stores.set(key,value);r.onsuccess?.();tx.oncomplete?.();});return r;}})};return tx;}};
+ const context={indexedDB:{open(){const r={result:db};setImmediate(()=>{r.onupgradeneeded?.();r.onsuccess?.();});return r;}},URL,Map,console,self:{registration:{scope:'https://test/app/',async showNotification(title,options){shown.push({title,...options});}},clients:{async matchAll(){return windows;},async openWindow(url){opened.push(url);}},addEventListener:(type,fn)=>handlers[type]=fn}};
+ vm.createContext(context);vm.runInContext(fs.readFileSync('deploy/site/app/galagram-sw-v315.js','utf8'),context);
+ return async(type,data)=>{let promise;handlers[type]({...data,waitUntil:p=>promise=p});await promise;};}
+(async()=>{handler=runtime();const p={id:'one',player:'p',campaign:'main',type:'news',title:'News',key:'world:one'};
+ const push=payload=>handler('push',{data:{json:()=>payload}});
+ await push(p);assert.equal(shown.length,0,'no account binding, no notification');
+ await handler('message',{data:{type:'binding',account:{player:'p',campaign:'main'}}});await Promise.all([push(p),push(p)]);assert.equal(shown.length,1);
+ handler=runtime();await push(p);assert.equal(shown.length,1,'receipt survives service worker restart');
+ windows=[{id:'window',visibilityState:'visible',url:'https://test/app/',focus:async()=>focused++,postMessage:m=>opened.push(m)}];
+ await handler('message',{source:{id:'window'},data:{type:'view',account:{player:'p',campaign:'main'},view:{screen:'news'}}});
+ await push({...p,id:'two'});assert.equal(shown.length,1,'foreground feed suppresses redundant system notice');
+ await handler('message',{source:{id:'window'},data:{type:'view',account:{player:'p',campaign:'main'},view:{screen:'tasks'}}});await push({...p,id:'task-one',type:'task',taskId:'new-task'});assert.equal(shown.length,1,'visible task board suppresses redundant task notification');
+ await handler('message',{source:{id:'window'},data:{type:'view',account:{player:'p',campaign:'main'},view:{screen:'tasks',sessionId:'game'}}});await push({...p,id:'session-visible',type:'session',sessionId:'game'});assert.equal(shown.length,1,'visible meeting suppresses its notice');await handler('message',{source:{id:'window'},data:{type:'view',account:{player:'p',campaign:'main'},view:{screen:'profile'}}});await push({...p,id:'session-hidden',type:'session',sessionId:'game'});assert.equal(shown.length,2,'different screen still receives meeting push');shown.pop();
+ windows=[];await push({...p,id:'two'});assert.equal(shown.length,1,'suppressed receipt also deduplicates retries');
+ await handler('notificationclick',{notification:{data:p,close(){}}});assert.match(opened[0],/^https:\/\/test\/app\/\?galagram=/);
+ await handler('message',{data:{type:'binding',account:{player:'other',campaign:'main'}}});await push({...p,id:'three'});assert.equal(shown.length,1);const count=opened.length;await handler('notificationclick',{notification:{data:p,close(){}}});assert.equal(opened.length,count,'old account notification cannot reopen another account');
+ console.log('PASS v315 service worker: durable identity, push display, replay/restart deduplication, foreground suppression, safe deep link and logout/account isolation');
+})().catch(e=>{console.error(e);process.exitCode=1;});
