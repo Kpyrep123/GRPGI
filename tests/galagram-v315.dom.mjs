@@ -34,6 +34,7 @@ try{
  w.document.querySelector('[data-enable]').click();assert.equal(requests,1,'permission is requested directly in click');await settle();assert.equal(registered,1);assert(calls.some(c=>c.route==='subscribe'));assert(messages.some(m=>m.type==='binding'&&m.account.player==='p'));
  const options=w.document.querySelector('[name=messages]');options.checked=false;options.dispatchEvent(new w.Event('change'));await settle();assert.equal(calls.filter(c=>c.route==='subscribe').at(-1).data.messages,false);
  const taskOption=w.document.querySelector('[name=tasks]');assert(taskOption);taskOption.checked=false;taskOption.dispatchEvent(new w.Event('change'));await settle();assert.equal(calls.filter(c=>c.route==='subscribe').at(-1).data.tasks,false);
+ const sessionOption=w.document.querySelector('[name=sessions]');assert(sessionOption);sessionOption.checked=false;sessionOption.dispatchEvent(new w.Event('change'));await settle();assert.equal(calls.filter(c=>c.route==='subscribe').at(-1).data.sessions,false);
  await w.GRPGNotificationsV315.refresh();assert.equal(requests,1,'returning subscribed users are not prompted again');
  w.document.querySelector('[data-test]').click();await settle();assert(calls.some(c=>c.route==='test'));
  who='other';await w.GRPGNotificationsV315.refresh();assert(unsubscribed>0,'changing character detaches old device subscription');
@@ -45,5 +46,6 @@ try{
  w.GRPGNotificationBridgeV315.open({type:'message',kind:'campaign'});assert.equal(opened,'campaign:main');
  w.GRPGNotificationBridgeV315.open({type:'task',taskId:'new-task'});assert.equal(w.App.ui.screen,'tasks');assert.equal(taskOpened,'new-task');
  w.GRPGNotificationBridgeV315.open({type:'test'});assert.equal(w.App.ui.screen,'profile');
+ const section=w.document.createElement('section');section.className='game-planning-v316';section.innerHTML='<select data-session><option value=game selected>Game</option></select>';w.document.body.append(section);assert.equal(w.GRPGNotificationBridgeV315.view().sessionId,undefined,'hidden planning screen cannot suppress notifications');w.App.ui.screen='tasks';assert.equal(w.GRPGNotificationBridgeV315.view().sessionId,'game');let meeting='';w.GRPGGamePlanningWebV316={openSession:id=>meeting=id};w.GRPGNotificationBridgeV315.open({type:'session',sessionId:'game'});assert.equal(meeting,'game');
  console.log('PASS v315 DOM: server-release gate, draft isolation, game dates/unread styling, audio play/pause/seek/volume, resize/cancel, explicit consent, preferences, renewal, test push and account switching');
 }finally{await w.happyDOM.abort();}

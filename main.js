@@ -4093,7 +4093,7 @@ ipcMain.handle('players:delete', async (_event, payload) => {
 
 ipcMain.handle('player-auth-v212', async (_event, payload = {}) => {
   if (payload.action === 'logout') {playerSessionV212 = '';playerIdentityV303 = '';worldSyncClientV301.clear();return {ok:true};}
-  const allowed = new Set(['login','session','recovery/request','recovery/requests','recovery/approve','recovery/reject','recovery/confirm','galagram-v315/state']);
+  const allowed = new Set(['login','session','recovery/request','recovery/requests','recovery/approve','recovery/reject','recovery/confirm','galagram-v315/state','planning-v316/state','planning-v316/mutate']);
   if (!allowed.has(payload.action)) return {ok:false,message:'Неизвестная операция'};
   try {
     const config = await loadSyncConfig();

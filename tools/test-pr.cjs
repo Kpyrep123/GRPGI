@@ -33,6 +33,8 @@ const checks = [
   ['tests/web-interface-v313.dom.mjs'],
   ['tests/galagram-v159.cjs'],
   ['tests/galagram-v315.server.cjs'],
+  ['tests/planning-v316.server.cjs'],
+  ['tests/planning-v316.dom.mjs'],
   ['tests/galagram-v315.dom.mjs'],
   ['tests/galagram-v315.worker.cjs'],
   ['tests/galagram-v315.audio.cjs'],

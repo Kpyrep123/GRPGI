@@ -4,7 +4,7 @@ const B=window.GRPGNotificationBridgeV315;if(!B)return;
 let identity='',state=null,inflight=null,registration=null;
 const publication=window.GRPGGalagramPublicationV315||={released:new Set()};
 const key=()=> 'grpg.push.v315:'+B.identity();
-const prefs=()=>{try{return {news:true,messages:true,tasks:true,...JSON.parse(localStorage.getItem(key())||'{}')};}catch{return {news:true,messages:true,tasks:true};}};
+const prefs=()=>{try{return {news:true,messages:true,tasks:true,sessions:true,...JSON.parse(localStorage.getItem(key())||'{}')};}catch{return {news:true,messages:true,tasks:true,sessions:true};}};
 async function reg(){registration ||= await navigator.serviceWorker.register('./galagram-sw-v315.js',{scope:'./',updateViaCache:'none'});await navigator.serviceWorker.ready;return registration;}
 async function bind(){const r=await reg();(r.active||r.waiting)?.postMessage({type:'binding',account:B.account()});}
 async function disable(){
@@ -37,12 +37,12 @@ function mount(){
  reportView();
  const root=document.querySelector('#screen-profile.active');if(!root||!B.identity()||root.querySelector('[data-notifications-v315]'))return;
  const box=document.createElement('section');box.dataset.notificationsV315='';box.className='profile-card';
- box.innerHTML='<h3>Уведомления GalaGram</h3><p>Разрешение запрашивается только после нажатия «Включить». Настройки действуют для этого браузера.</p><label><input type="checkbox" name="news"> Новые публикации</label> <label><input type="checkbox" name="messages"> Новые сообщения</label> <label><input type="checkbox" name="tasks"> Новые задания</label><div class="button-row"><button class="primary" data-enable>Включить на этом устройстве</button><button class="secondary" data-disable>Отключить</button><button class="secondary" data-test>Проверить уведомление</button></div><p role="status"></p>';
- const options=prefs();for(const k of ['news','messages','tasks'])box.querySelector('[name='+k+']').checked=options[k];
+ box.innerHTML='<h3>Уведомления GalaGram</h3><p>Разрешение запрашивается только после нажатия «Включить». Настройки действуют для этого браузера.</p><label><input type="checkbox" name="news"> Новые публикации</label> <label><input type="checkbox" name="messages"> Новые сообщения</label> <label><input type="checkbox" name="tasks"> Новые задания</label> <label><input type="checkbox" name="sessions"> Игровые встречи</label><div class="button-row"><button class="primary" data-enable>Включить на этом устройстве</button><button class="secondary" data-disable>Отключить</button><button class="secondary" data-test>Проверить уведомление</button></div><p role="status"></p>';
+ const options=prefs();for(const k of ['news','messages','tasks','sessions'])box.querySelector('[name='+k+']').checked=options[k];
  const status=box.querySelector('[role=status]');const supported='Notification'in window&&'serviceWorker'in navigator&&'PushManager'in window&&window.isSecureContext;
  status.textContent=!supported?'Этот браузер не поддерживает Web Push. На iPhone/iPad откройте сайт с домашнего экрана.':Notification.permission==='denied'?'Уведомления заблокированы. Измените разрешение в настройках браузера.':state?.error||'';
  box.querySelector('[data-enable]').disabled=!supported||Notification.permission==='denied';box.querySelector('[data-test]').disabled=!supported;
- const save=()=>{const p={news:box.querySelector('[name=news]').checked,messages:box.querySelector('[name=messages]').checked,tasks:box.querySelector('[name=tasks]').checked};localStorage.setItem(key(),JSON.stringify(p));return p;};
+ const save=()=>{const p={news:box.querySelector('[name=news]').checked,messages:box.querySelector('[name=messages]').checked,tasks:box.querySelector('[name=tasks]').checked,sessions:box.querySelector('[name=sessions]').checked};localStorage.setItem(key(),JSON.stringify(p));return p;};
  const busy=async task=>{box.querySelectorAll('button').forEach(b=>b.disabled=true);try{await task();}catch(e){status.textContent=e.message;}finally{box.querySelectorAll('button').forEach(b=>b.disabled=false);box.querySelector('[data-enable]').disabled=!supported||Notification.permission==='denied';box.querySelector('[data-test]').disabled=!supported;}};
  box.querySelector('[data-enable]').onclick=()=>{
   // Must request permission directly in the click gesture, before asynchronous work.

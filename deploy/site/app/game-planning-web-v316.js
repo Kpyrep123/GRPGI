@@ -1,0 +1,1 @@
+(function(){'use strict';if(window.GRPGGamePlanningWebV316||!window.GRPGGamePlanningBridgeV316)return;window.GRPGGamePlanningWebV316=window.GRPGGamePlanningV316.create(window.GRPGGamePlanningBridgeV316);window.GRPGGamePlanningWebV316.mount();})();
