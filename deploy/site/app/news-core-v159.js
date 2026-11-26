@@ -4,7 +4,7 @@ const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 const image=s=>/^(https?:\/\/|data:image\/(png|jpeg|webp|gif);base64,|file:\/\/)/i.test(String(s||''))?String(s):'';
 function loreDate(value=new Date().toISOString()){const text=String(value||'');return /^\d{4}-\d{2}-\d{2}(?:T.*)?$/.test(text)?text.replace(/^\d{4}/,'3616'):new Date().toISOString().replace(/^\d{4}/,'3616');}
 function feed(world,players,campaign,visible){
- const rows=world.filter(visible).map(p=>({...p,feedKey:'world:'+p.id}));
+ const rows=world.filter(p=>visible(p)&&p.publicationMode!=='draft'&&(p.publicationMode!=='scheduled'||(!root.GRPGNotificationBridgeV315||root.GRPGGalagramPublicationV315?.identity===root.GRPGNotificationBridgeV315.identity())&&root.GRPGGalagramPublicationV315?.released?.has('world:'+p.id+'@'+p.publishAt))).map(p=>({...p,publishedAt:String(p.publishedAt||p.createdAt||'').replace(/^(?:19|20)\d{2}/,'3616'),feedKey:'world:'+p.id}));
  for(const owner of players)for(const [id,p] of Object.entries(owner.newsPosts||{})){
   if(!p||p.campaignId!==campaign||p.deleted||!visible(p))continue;
   rows.push({...p,id,authorType:'player',bodyFormat:'plain',publishedAt:loreDate(p.publishedAt||p.createdAt),ownerId:owner.id,authorName:owner.displayName||owner.name||owner.id,authorImage:owner.image,feedKey:'player:'+owner.id+':'+id});

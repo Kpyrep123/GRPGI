@@ -24,6 +24,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   exportWorldSectionJson: (section, payload) => ipcRenderer.invoke('world:section:exportJson', { section, payload }),
   importWorldSectionJson: section => ipcRenderer.invoke('world:section:importJson', { section }),
   resetWorldData: () => ipcRenderer.invoke('world:reset'),
+  saveWorldAudio: payload => ipcRenderer.invoke('world:saveAudio', payload),
   saveWorldImage: payload => ipcRenderer.invoke('world:saveImage', payload),
   saveWorldImageFile: payload => ipcRenderer.invoke('world:saveImageFile', payload),
   getPathForFile: file => webUtils.getPathForFile(file),

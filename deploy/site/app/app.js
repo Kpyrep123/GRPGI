@@ -3717,6 +3717,7 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
       else $('#screen-hub-v153').textContent = 'Хаб загружается…';
     }
     window.GRPGWebUIV313?.syncNavigation();
+    window.GRPGNotificationsV315?.mount();
   }
 
   function openArticleById(articleId, options = {}) {
@@ -4030,6 +4031,7 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
   }
 
   async function logout() {
+    await window.GRPGNotificationsV315?.disable().catch(()=>{});
     stopRealtimeSync();
     App.ui.combatFullscreen = false;
     App.session = null;
@@ -4041,6 +4043,7 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
   }
 
   async function forgetThisDevice() {
+    await window.GRPGNotificationsV315?.disable().catch(()=>{});
     stopRealtimeSync();
     App.session = null;
     worldSyncClientV301?.clear();
@@ -5115,6 +5118,7 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
     }
 
     const newsTotal = unreadNewsCountV314();
+    window.GRPGNotificationsV315?.reportView();
     setUnreadBadgeTextV1065($('#social-unread'), total);
     const newsBadge = $('#social-news-unread-v314');
     setUnreadBadgeTextV1065(newsBadge, newsTotal);
@@ -6300,8 +6304,25 @@ function stockFeesV213(fees){if(!fees)return 'Тарифы загрузятся 
     layout:buildInventoryLayoutWebV1067,accepts:slotAcceptsWebV1067,
     commit:(mutator,notice)=>commitPlayerMutation(mutator,notice),thumb:item=>renderEntityThumb(item,'hero'),related:item=>renderRelatedSectionWebV1100('article',item.relatedArticleIds,'Связанные статьи'),aberrationOverrides:aberrationOverridesWeb264
   });
+  window.GRPGNotificationBridgeV315 = {
+    identity:()=>App.session?.authTokenV212&&!isGuestSession()?JSON.stringify([App.config.url,logicalCampaignIdV1062(),App.session.userId]):'',
+    view:()=>{const t=App.ui.screen==='chat'&&App.ui.chatMasterOpenV1068?buildThreads().find(t=>t.key===App.ui.selectedThreadKey):null;return {screen:App.ui.screen,kind:t?.type,target:t?.entity?.id};},
+    account:()=>({player:App.session?.userId,campaign:logicalCampaignIdV1062()}),
+    matches:p=>p.player===App.session?.userId&&p.campaign===logicalCampaignIdV1062(),
+    call:(route,data)=>pbFetch(App.config,'/api/grpgi/auth-v212/galagram-v315/'+route,{method:data?'POST':'GET',...(data?{json:data}:{}),headers:{'X-GRPGI-Session':App.session?.authTokenV212||''},query:{logicalCampaign:logicalCampaignIdV1062()}}),
+    changed:()=>{if(App.ui.screen==='news')window.GRPGNewsWebV159?.show();updateChatUnreadIndicatorsV1065();},
+    open:p=>{
+      if(p.type==='test'){App.ui.screen='profile';renderCurrentScreen();return;}
+      if(p.type==='news'){App.ui.screen='news';renderCurrentScreen();requestAnimationFrame(()=>document.querySelector('[data-news-key="'+CSS.escape(p.key)+'"]')?.scrollIntoView({block:'center'}));return;}
+      const thread=buildThreads().find(t=>p.kind==='campaign'?t.type==='campaign':p.kind==='direct'?t.type==='direct'&&t.otherId===(p.otherId||p.senderId):p.kind==='npc'&&t.type==='npc'&&(t.key===p.threadKey||t.npcId===p.npcId));
+      if(!thread){notify('Переписка недоступна текущему персонажу','warn');return;}
+      App.ui.screen='chat';App.ui.selectedThreadKey=thread.key;renderCurrentScreen();requestAnimationFrame(()=>openWebChatMasterV1068(thread.key));
+    }
+  };
   window.GRPGNewsBridgeV159 = {
+    dateLabel:formatDate,
     onRead:markNewsReadV314,
+    isUnread:p=>p.ownerId!==App.session?.userId&&!newsReadIdsV314().has(p.feedKey),
     root:()=>document.getElementById('screen-news'),current:currentPlayer,campaign:()=>String(App.session?.campaignId||App.config?.campaignId||'main'),
     world:()=>App.data.newsList||[],players:()=>Array.from(App.data.players.values()),visible:p=>visibleForPlayer(p,currentPlayer()?.id),npc:id=>App.data.npcs.get(id),rich:s=>normalizeRichHtml(s),
     date:()=>App.data.campaigns.get(App.session?.campaignId||App.config?.campaignId)?.marketDate||new Date().toISOString(),notify:s=>notify(s,'err'),
