@@ -4354,6 +4354,8 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
 
     document.addEventListener('visibilitychange', () => {
       if (!document.hidden && App.session?.userId) {
+        if (App.ui.boot === 'app' && App.ui.screen === 'news') window.GRPGNewsWebV159?.show();
+        updateChatUnreadIndicatorsV1065({ markSelected: App.ui.screen === 'chat' });
         if (!App.realtime.connected) startRealtime();
         resyncAfterRealtimeGap('visibility-resume');
       }
@@ -5051,12 +5053,44 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
   }
 
   function markThreadReadV1065(threadKey) {
+    if (document.hidden) return;
     const key = String(threadKey || '');
     if (!key) return;
     const state = ensureChatReadStateV1065();
     const latest = messagesForThread(key).reduce((max, row) => Math.max(max, messageStampV1065(row)), 0);
     state.threads[key] = Math.max(Number(state.threads[key] || 0), latest || Date.now());
     writeChatReadStateV1065(state);
+  }
+
+  // Read IDs are isolated by server, campaign and reader, and follow remember-login storage.
+  function newsReadContextV314() {
+    return JSON.stringify([App.config?.url || DEFAULTS.url, logicalCampaignIdV1062() || 'main', App.session?.userId || 'guest']);
+  }
+
+  function newsReadIdsV314() {
+    const bucket = loadMobileReadMarkers().galagramNewsV314;
+    const ids = bucket?.[newsReadContextV314()];
+    return new Set(Array.isArray(ids) ? ids.map(String) : []);
+  }
+
+  function unreadNewsCountV314() {
+    if (!App.session?.userId || isGuestSession()) return 0;
+    const rows = window.GRPGNewsV159?.feed(App.data.newsList || [], Array.from(App.data.players.values()),
+      logicalCampaignIdV1062(), entry => visibleForPlayer(entry, currentPlayer()?.id)) || [];
+    const seen = newsReadIdsV314();
+    return rows.filter(entry => entry.ownerId !== App.session.userId && !seen.has(entry.feedKey)).length;
+  }
+
+  function markNewsReadV314(rows) {
+    if (App.ui.boot !== 'app' || App.ui.screen !== 'news' || document.hidden || !App.session?.userId || isGuestSession()) return;
+    const ids = newsReadIdsV314();
+    const before = ids.size;
+    rows.forEach(entry => ids.add(String(entry.feedKey)));
+    if (ids.size === before) return;
+    const markers = loadMobileReadMarkers();
+    markers.galagramNewsV314 = {...markers.galagramNewsV314, [newsReadContextV314()]: Array.from(ids)};
+    saveMobileReadMarkers(markers);
+    updateChatUnreadIndicatorsV1065();
   }
 
   function setUnreadBadgeTextV1065(node, count) {
@@ -5080,7 +5114,11 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
       total += count;
     }
 
+    const newsTotal = unreadNewsCountV314();
     setUnreadBadgeTextV1065($('#social-unread'), total);
+    const newsBadge = $('#social-news-unread-v314');
+    setUnreadBadgeTextV1065(newsBadge, newsTotal);
+    newsBadge?.setAttribute('aria-label', `Непрочитанных новостей: ${newsTotal}`);
     const navButton = document.querySelector('.nav-btn[data-screen="news"]');
     if (navButton) {
       let badge = navButton.querySelector('.chat-nav-unread-v1065');
@@ -5089,8 +5127,9 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
         badge.className = 'chat-nav-unread-v1065';
         navButton.appendChild(badge);
       }
-      setUnreadBadgeTextV1065(badge, total);
-      navButton.classList.toggle('has-unread-v1065', total > 0);
+      setUnreadBadgeTextV1065(badge, total + newsTotal);
+      badge.setAttribute('aria-label', `Непрочитанных сообщений: ${total}. Новостей: ${newsTotal}`);
+      navButton.classList.toggle('has-unread-v1065', total + newsTotal > 0);
     }
 
     document.querySelectorAll('#screen-chat [data-action="select-thread"][data-thread-key]').forEach(button => {
@@ -5145,7 +5184,7 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
   const __renderAffectedScreensV1065 = renderAffectedScreens;
   renderAffectedScreens = function(changed = {}) {
     const result = __renderAffectedScreensV1065(changed);
-    if (changed.chat) requestAnimationFrame(() => updateChatUnreadIndicatorsV1065({ markSelected: App.ui.screen === 'chat' }));
+    if (changed.chat || changed.players || changed.snapshot) requestAnimationFrame(() => updateChatUnreadIndicatorsV1065({ markSelected: App.ui.screen === 'chat' }));
     return result;
   };
 
@@ -6262,6 +6301,7 @@ function stockFeesV213(fees){if(!fees)return 'Тарифы загрузятся 
     commit:(mutator,notice)=>commitPlayerMutation(mutator,notice),thumb:item=>renderEntityThumb(item,'hero'),related:item=>renderRelatedSectionWebV1100('article',item.relatedArticleIds,'Связанные статьи'),aberrationOverrides:aberrationOverridesWeb264
   });
   window.GRPGNewsBridgeV159 = {
+    onRead:markNewsReadV314,
     root:()=>document.getElementById('screen-news'),current:currentPlayer,campaign:()=>String(App.session?.campaignId||App.config?.campaignId||'main'),
     world:()=>App.data.newsList||[],players:()=>Array.from(App.data.players.values()),visible:p=>visibleForPlayer(p,currentPlayer()?.id),npc:id=>App.data.npcs.get(id),rich:s=>normalizeRichHtml(s),
     date:()=>App.data.campaigns.get(App.session?.campaignId||App.config?.campaignId)?.marketDate||new Date().toISOString(),notify:s=>notify(s,'err'),
