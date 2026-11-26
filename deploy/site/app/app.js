@@ -3716,6 +3716,7 @@ function drawWebEraSystemMarkerV1050(ctx, p, r, palette, active = false, markerC
       if (window.GRPGHubV153) window.GRPGHubV153.show();
       else $('#screen-hub-v153').textContent = 'Хаб загружается…';
     }
+    window.GRPGWebUIV313?.syncNavigation();
   }
 
   function openArticleById(articleId, options = {}) {

@@ -1,0 +1,125 @@
+/* Web presentation layer. Loaded after shared components; desktop is unchanged. */
+html[data-client="web"] {
+  --web-header-v313: calc(92px + env(safe-area-inset-top));
+  --web-dock-v313: 88px;
+  color-scheme: dark;
+  scroll-padding-top: var(--web-header-v313);
+}
+html[data-client="web"][data-era-theme="technological"] {
+  --text: #e8e0cf;
+  --muted: #b5aa94;
+  --accent: #d1ac70;
+}
+html[data-client="web"] body { line-height: 1.45; }
+.web-skip-link-v313 {
+  position: fixed; left: 16px; top: -100px; z-index: 11000;
+  padding: 12px 18px; background: var(--panel); border: 2px solid var(--accent);
+}
+.web-skip-link-v313:focus { top: 12px; }
+html[data-client="web"] :is(button,a,input,select,textarea,[tabindex]):focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 3px;
+}
+html[data-client="web"] .app-shell { padding-top: var(--web-header-v313); }
+html[data-client="web"] .topbar.title-bar {
+  top: calc(12px + env(safe-area-inset-top));
+  min-height: 72px; padding: 12px 20px; border-radius: 8px;
+  backdrop-filter: none;
+}
+html[data-client="web"] .title-main { min-width: 0; gap: 3px; }
+html[data-client="web"] .topbar h1 { font-size: 19px; letter-spacing: .05em; }
+html[data-client="web"] .topbar-sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 70vw; }
+html[data-client="web"] .screens.desktop-module-shell {
+  width: min(1480px, calc(100% - 40px)); min-width: 0;
+  padding: 12px 0 calc(var(--web-dock-v313) + env(safe-area-inset-bottom));
+}
+html[data-client="web"] .screen.active { animation: none; }
+html[data-client="web"] .section-head { gap: 12px; flex-wrap: wrap; }
+html[data-client="web"] .section-title { letter-spacing: .035em; line-height: 1.3; }
+html[data-client="web"] .bottom-nav.desktop-dock {
+  grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: minmax(64px,1fr);
+  width: min(800px, calc(100% - 24px)); gap: 4px; padding: 6px;
+  border-radius: 10px; overflow-x: auto; overscroll-behavior-x: contain;
+  scrollbar-width: thin; backdrop-filter: none;
+}
+html[data-client="web"] .bottom-nav .nav-btn {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 5px; min-height: 60px; padding: 8px 6px; border: 1px solid transparent;
+  border-radius: 6px; background: transparent; color: var(--muted);
+  font-size: 10px; letter-spacing: .025em; white-space: nowrap;
+}
+html[data-client="web"] .bottom-nav .nav-btn.active {
+  color: var(--text); border-color: var(--line-strong);
+  background: linear-gradient(180deg,color-mix(in srgb,var(--accent) 20%,transparent),color-mix(in srgb,var(--accent) 6%,transparent));
+  box-shadow: inset 0 -2px var(--accent);
+}
+.web-nav-icon-v313 { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+html[data-client="web"] :is(.primary,.secondary,.chip-btn,.nav-btn,.link-btn) {
+  cursor: pointer; touch-action: manipulation;
+  transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease;
+}
+html[data-client="web"] button:disabled { cursor: default; }
+html[data-client="web"] :is(.input,.textarea,select.input) { padding: 12px 14px; }
+html[data-client="web"] :is(.article-body,.rich-text) { line-height: 1.65; }
+html[data-client="web"] :is(.entity-card,.article-card,.thread-card,.info-card,.compact-card) { border-radius: 8px; }
+html[data-client="web"] :is(.card,.profile-card,.entity-card,.info-card,.compact-card) { backdrop-filter: none; }
+html[data-client="web"] .profile-tabs-web {
+  padding: 6px; gap: 6px; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--panel);
+}
+html[data-client="web"] .profile-tabs-web .chip-btn { min-height: 44px; flex: 1; }
+html[data-client="web"] .character-sheet-v142 .profile-hero { gap: 20px; }
+html[data-client="web"] .sheet-credits { border-color: var(--line-strong); }
+html[data-client="web"] .sheet-metric { border-color: var(--line-strong); }
+html[data-client="web"] .boot-card.desktop-login-card {
+  width: min(540px,100%); padding: clamp(22px,4vw,40px); border-radius: 12px;
+}
+html[data-client="web"] .boot-card h1 { font-size: clamp(26px,4vw,34px); letter-spacing: .02em; }
+html[data-client="web"] .boot-card .button-row > button { min-height: 44px; }
+html[data-client="web"] .boot-card .button-row > .primary { width: 100%; }
+html[data-client="web"] .consent-line { font-size: 13px; color: var(--muted); }
+html[data-client="web"] .chat-compose { bottom: calc(var(--web-dock-v313) + env(safe-area-inset-bottom)); }
+html[data-client="web"] .task-reader[open] { animation: web-reader-v313 160ms ease-out; }
+@keyframes web-reader-v313 { from { opacity: .4; } to { opacity: 1; } }
+@media (min-width: 1100px) {
+  html[data-client="web"] .app-shell { padding-left: 116px; }
+  html[data-client="web"] .topbar.title-bar { left: 136px; }
+  html[data-client="web"] .screens.desktop-module-shell { padding-bottom: 32px; }
+  /* Overrides the older theme's viewport anchoring declarations. */
+  html[data-client="web"][data-era-theme] .bottom-nav.desktop-dock {
+    left: 16px !important; top: 12px !important; bottom: 16px !important;
+    transform: none !important; width: 100px;
+    display: flex; flex-direction: column; gap: 8px; padding: 10px 6px;
+    overflow-x: hidden; overflow-y: auto;
+  }
+  html[data-client="web"] .bottom-nav .nav-btn { min-height: 72px; flex: 0 0 auto; width: 100%; }
+  html[data-client="web"] .bottom-nav .nav-btn.active { box-shadow: inset 2px 0 var(--accent); }
+  html[data-client="web"] .chat-compose { bottom: 16px; }
+  html[data-client="web"] .archive-sidebar { max-height: calc(100dvh - 120px); }
+}
+@media (max-width: 1099px) {
+  html[data-client="web"][data-era-theme] .bottom-nav.desktop-dock {
+    bottom: 0 !important; width: 100%; border-radius: 0; border-width: 1px 0 0;
+    padding-bottom: calc(6px + env(safe-area-inset-bottom));
+  }
+  html[data-client="web"] .web-ambient-toggle-v166 { bottom: calc(90px + env(safe-area-inset-bottom)); }
+}
+@media (max-width: 600px) {
+  html[data-client="web"] { --web-header-v313: calc(96px + env(safe-area-inset-top)); }
+  html[data-client="web"] .topbar.title-bar { top: calc(8px + env(safe-area-inset-top)); left: 10px; right: 10px; padding: 12px 14px; }
+  html[data-client="web"] .topbar-sub { max-width: calc(100vw - 52px); font-size: 11px; }
+  html[data-client="web"] .screens.desktop-module-shell { width: calc(100% - 24px); }
+  html[data-client="web"] .bottom-nav.desktop-dock { grid-auto-columns: minmax(56px,1fr); }
+  html[data-client="web"] .bottom-nav .nav-btn span { font-size: 9px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+  html[data-client="web"] .hero-overlay { padding: 20px; }
+  html[data-client="web"] .hero-title { font-size: 32px; letter-spacing: -.02em; }
+  html[data-client="web"] :is(.primary,.secondary,.chip-btn,.link-btn) { min-height: 44px; }
+  html[data-client="web"] :is(input.input,select.input,textarea) { font-size: 16px; }
+}
+@media (hover: hover) {
+  html[data-client="web"] .bottom-nav .nav-btn:hover { color: var(--text); background-color: color-mix(in srgb,var(--accent) 12%,transparent); }
+}
+@media (prefers-reduced-motion: reduce) {
+  html[data-client="web"] *, html[data-client="web"] *::before, html[data-client="web"] *::after {
+    animation: none !important; transition: none !important; scroll-behavior: auto !important;
+  }
+}
