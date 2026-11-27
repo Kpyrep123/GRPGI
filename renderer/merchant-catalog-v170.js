@@ -42,7 +42,8 @@ function destinationEntries(planets,equipment,scope){const {planet,target}=resol
 function destinations(planets,npcs={}){
  const out=[];
  for(const p of values(planets)){
-  if(String(p.locationType||'planet').toLowerCase()!=='hub'){out.push({kind:'planet',planetId:p.id,name:`${p.name||p.id} · Терминал`,legacy:p.market||[]});continue;}
+  out.push({kind:'planet',planetId:p.id,name:`${p.name||p.id} · Терминал`,legacy:p.market||[]});
+  if(String(p.locationType||p.placeType||'planet').toLowerCase()!=='hub')continue;
   for(const m of p.hub?.maps||[])for(const o of m.objects||[]){if(!trader(o)||o.type==='spawn')continue;
    const npc=typeof npcs.get==='function'?npcs.get(o.npcId):npcs[o.npcId];
    out.push({kind:'hub',planetId:p.id,mapId:m.id,objectId:o.id,npcId:o.npcId||'',name:`${p.name||p.id} / ${m.name||m.id} / ${o.name||npc?.name||o.id}${npc?.name&&npc.name!==o.name?' ('+npc.name+')':''}`,legacy:legacy(o)});

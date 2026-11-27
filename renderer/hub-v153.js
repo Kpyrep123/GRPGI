@@ -254,7 +254,7 @@
         return result;
       },
       canAdd:(p,id,n)=>window.GRPGInventoryV1067.canAddItem(p,id,n),
-      notify:(m,t)=>Toast.show(m,t),openStocks:()=>UI.openModule('market'),
+      notify:(m,t)=>Toast.show(m,t),openMarket:()=>{UI.selectedPlanetId=currentPlanet()?.id||'';UI.openModule('market');},
       openArticle:id=>{UI.closeModule();UI.openModule('wiki',{preserveWikiState:true});Wiki.showEntity('article',id,true);},
       commit:async(mutator,notice,expectedId)=>{
         const user=App.currentUser;if(!user||user.id!==expectedId)throw new Error('Персонаж изменился');
@@ -272,7 +272,7 @@
       if (UI.activeModuleId === 'hub-v153') playerRuntime.leave();
       return closeModule(...args);
     };
-    const oldOpen=UI.openModule.bind(UI);UI.openModule=function(id,options={}){const result=oldOpen(id,options);if(id==='hub-v153')playerRuntime.show();if(id==='market'&&isHub(currentPlanet()))requestAnimationFrame(()=>{const goods=document.querySelector('#market-items [data-market-tab-v1074="goods"],#market-items [data-market-tab-v1073="goods"]'),stocks=document.querySelector('#market-items [data-market-tab-v1074="stocks"],#market-items [data-market-tab-v1073="stocks"]');if(goods)goods.style.display='none';if(stocks&&!stocks.classList.contains('active'))stocks.click();});return result;};
+    const oldOpen=UI.openModule.bind(UI);UI.openModule=function(id,options={}){const result=oldOpen(id,options);if(id==='hub-v153')playerRuntime.show();return result;};
     document.getElementById('open-hub-v153')?.addEventListener('click',()=>UI.openModule('hub-v153'));
     const refresh=()=>document.getElementById('open-hub-v153')?.classList.toggle('hidden',!isHub(currentPlanet()));refresh();setInterval(refresh,3000);
     window.GRPGHubV153={asHub,isHub,visible,allowed:(o,p,s)=>{const reason=C.access(o,p,s);return[!reason,reason];},render:()=>playerRuntime.show(),version:VERSION};
