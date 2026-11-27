@@ -596,6 +596,7 @@ async function handleStockExchange(req, res, url, campaignId, action = '') {
 }
 
 async function stockWorkerTick() {
+  return; // Exchange disabled: do not process old orders or accrue fees.
   if (stockWorkerBusy) return;
   stockWorkerBusy = true;
   try {
@@ -658,6 +659,7 @@ async function serveAsset(req, res, url) {
 
 async function router(req, res) {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+  if(/^\/api\/(?:grpgi\/)?stock-exchange(?:-v\d+)?(?:\/|$)/.test(url.pathname))return sendJson(res,410,{ok:false,status:'disabled',message:'Биржа отключена'});
   if (req.method === 'OPTIONS') return sendJson(res, 200, { ok: true });
   if (!isAuthorized(req, url)) return sendError(res, 401, 'Unauthorized');
   if (url.pathname === '/health' || url.pathname === '/api/health') return sendJson(res, 200, { ok: true, status: 'ok', dataDir: DATA_DIR, realtime: 'sse' });
@@ -708,5 +710,4 @@ server.listen(PORT, HOST, () => {
   console.log(`[sync-server] auth: ${SYNC_TOKEN ? 'token required' : 'disabled'}`);
 });
 
-const stockWorker = setInterval(stockWorkerTick, 1000);
-stockWorker.unref();
+// Stock worker disabled. Ordinary campaign synchronization remains active.

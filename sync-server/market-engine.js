@@ -74,6 +74,8 @@ function marketClaims(state = {}) {
   return source && typeof source === 'object' && !Array.isArray(source) ? source : {};
 }
 
+function stockDisabledItemV318(item={}){return ['stock','stocks','share','shares'].includes(String(item.type||item.category||'').toLowerCase())||String(item.id||'').startsWith('stock_')||/^акции(?:\s|$)/i.test(String(item.name||''))||(Array.isArray(item.tags)?item.tags:[]).some(t=>['акции','stock','stocks','share','shares'].includes(String(t).toLowerCase()));}
+
 function buildRotation({ campaignId = 'main', planet = {}, equipment = {}, state = {}, now = new Date() } = {}) {
   const day = rotationKey(now);
   const claims = marketClaims(state);
@@ -81,7 +83,7 @@ function buildRotation({ campaignId = 'main', planet = {}, equipment = {}, state
   for (const raw of MerchantCatalog.entries(planet,equipment)) {
     const itemId = String(raw?.itemId || '').trim();
     const item = equipment[itemId];
-    if (!itemId || !item) continue;
+    if (!itemId || !item || stockDisabledItemV318(item)) continue;
     const config = normalizeEntry(raw, item);
     if (!config.enabled) continue;
     const baseSeed = `${campaignId}|${planet.id}|${day}|${itemId}`;
@@ -230,6 +232,7 @@ function pruneClaims(claims = {}, currentDay = rotationKey()) {
 function executeTransaction({ campaignId = 'main', world = {}, state = {}, player = {}, action = 'preview', planetId = '', itemId = '', unitIndex = -1, targetPosition = null, now = new Date() } = {}) {
   const planets = world?.planets?.PLANETS || {};
   const equipment = world?.equipment?.EQUIPMENT || {};
+  if(stockDisabledItemV318(equipment[String(itemId)]||{}))throw Error('Биржа отключена');
   const planet = planets[String(planetId || '')];
   if (!planet) throw new Error('Планета рынка не найдена');
   if (String(player.currentPlanetId || '') !== String(planet.id || '')) throw new Error('Торговый терминал доступен только на текущей планете персонажа');

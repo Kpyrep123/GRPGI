@@ -1,4 +1,6 @@
 'use strict';
+console.log('GRPGI stock exchange is disabled (v318).');
+process.exit(0);
 const base=String(process.env.POCKETBASE_URL||'http://127.0.0.1:8090').replace(/\/+$/,'');
 const token=String(process.env.GRPGI_STOCK_WORKER_TOKEN||'');
 const interval=Math.max(250,Number(process.env.STOCK_TICK_MS||1000));

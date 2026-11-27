@@ -76,6 +76,12 @@ try {
   assert(w.document.querySelector('#nav-hub-v153').classList.contains('hidden'));
   assert.equal(w.document.querySelector('.web-skip-link-v313').hash, '#web-main-v313');
   assert.equal(w.document.querySelector('#web-main-v313').tabIndex, -1);
+  App.data.items.set('stock_retired',{id:'stock_retired',type:'stock',name:'Retired share'});
+  App.data.planets.get('home').stockMarketEnabled=true;App.data.planets.get('home').locationType='hub';
+  const portfolio318={positions:{stock_retired:{knownQty:2,costBasis:246}},shortPositions:{},ledger:[{id:'keep'}]};App.data.players.get('p').stockPortfolio=JSON.parse(JSON.stringify(portfolio318));
+  App.ui.screen='market';renderCurrentScreen();assert.equal(w.document.querySelectorAll('#screen-market [data-web-market-tab-v1073="stocks"],#screen-market .stock-orders-v148').length,0);
+  assert.equal(JSON.stringify(App.data.players.get('p').stockPortfolio),JSON.stringify(portfolio318));
+  const fake=w.document.createElement('button');fake.dataset.webMarketTabV1073='stocks';w.document.getElementById('screen-market').append(fake);fake.click();assert.equal(w.document.querySelectorAll('#screen-market .stock-orders-v148').length,0,'old stock navigation cannot open the exchange');
   console.log('PASS web v313: actual app navigation/render, current section, single initialization, no animation on realtime redraw, preserved draft/focus, reduced motion, GalaGram mapping');
 } finally {
   await w.happyDOM.abort();

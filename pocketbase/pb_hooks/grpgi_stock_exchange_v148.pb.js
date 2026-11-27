@@ -1,5 +1,2 @@
-routerAdd('GET','/api/grpgi/stock-exchange-v148',function(e){return require(__hooks+'/grpgi_stock_exchange_v148.js').get(e);});
-routerAdd('POST','/api/grpgi/stock-exchange-v148/order',function(e){return require(__hooks+'/grpgi_stock_exchange_v148.js').order(e);});
-routerAdd('POST','/api/grpgi/stock-exchange-v148/cancel',function(e){return require(__hooks+'/grpgi_stock_exchange_v148.js').cancel(e);});
-routerAdd('POST','/api/grpgi/stock-exchange-v148/impulse',function(e){return require(__hooks+'/grpgi_stock_exchange_v148.js').manualImpulse(e);});
-routerAdd('POST','/api/grpgi/stock-exchange-v148/tick',function(e){return require(__hooks+'/grpgi_stock_exchange_v148.js').tickAll(e);});
+// All legacy exchange endpoints are closed without opening or updating the database.
+for(const suffix of ['', '/order','/cancel','/impulse','/tick','/portfolio','/mode','/stream'])for(const method of ['GET','POST','PUT','PATCH','DELETE'])routerAdd(method,'/api/grpgi/stock-exchange-v148'+suffix,e=>require(__hooks+'/grpgi_stocks_disabled_v318.js').deny(e));
