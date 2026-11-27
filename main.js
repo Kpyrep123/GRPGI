@@ -3980,6 +3980,7 @@ ipcMain.handle('hub-request-v221', async (_event, {route, data} = {}) => {
 });
 
 ipcMain.handle('stock-exchange:get', async (_event, payload = {}) => {
+  return {ok:false,status:'disabled',message:'Биржа отключена'};
   try {
     const config = await loadSyncConfig();
     if (!config.enabled) return { ok: false, status: 'unavailable', message: 'Для биржи требуется сервер синхронизации' };
@@ -3989,6 +3990,7 @@ ipcMain.handle('stock-exchange:get', async (_event, payload = {}) => {
 });
 
 ipcMain.handle('stock-exchange:order', async (_event, payload = {}) => {
+  return {ok:false,status:'disabled',message:'Биржа отключена'};
   try {
     const config = await loadSyncConfig();
     if (!config.enabled) return { ok: false, status: 'unavailable', message: 'Для биржи требуется сервер синхронизации' };
@@ -3998,6 +4000,7 @@ ipcMain.handle('stock-exchange:order', async (_event, payload = {}) => {
 });
 
 ipcMain.handle('stock-exchange:cancel', async (_event, payload = {}) => {
+  return {ok:false,status:'disabled',message:'Биржа отключена'};
   try {
     const config = await loadSyncConfig();
     if (!config.enabled) return { ok: false, status: 'unavailable', message: 'Для биржи требуется сервер синхронизации' };
@@ -4007,6 +4010,7 @@ ipcMain.handle('stock-exchange:cancel', async (_event, payload = {}) => {
 });
 
 ipcMain.handle('stock-exchange:portfolio', async (_event, payload = {}) => {
+  return {ok:false,status:'disabled',message:'Биржа отключена'};
   try {
     const config = await loadSyncConfig();
     if (!config.enabled || !isPocketBaseSyncConfig(config)) return {ok:false,message:'Для управления акциями требуется PocketBase и сервис биржи'};
@@ -4015,6 +4019,7 @@ ipcMain.handle('stock-exchange:portfolio', async (_event, payload = {}) => {
 });
 
 ipcMain.handle('stock-exchange:mode', async (_event, payload = {}) => {
+  return {ok:false,status:'disabled',message:'Биржа отключена'};
   try {
     const config = await loadSyncConfig();
     if (!config.enabled || !isPocketBaseSyncConfig(config)) return {ok:false,message:'Для смены режима требуется сервис биржи'};
@@ -4023,6 +4028,7 @@ ipcMain.handle('stock-exchange:mode', async (_event, payload = {}) => {
 });
 
 ipcMain.handle('stock-exchange:impulse', async (_event, payload = {}) => {
+  return {ok:false,status:'disabled',message:'Биржа отключена'};
   try {
     const config = await loadSyncConfig();
     if (!config.enabled) return { ok: false, status: 'unavailable', message: 'Для биржи требуется сервер синхронизации' };

@@ -28,8 +28,8 @@ const checks = [
   ['tests/config-sequential-save-v309.dom.mjs'],
   ['tests/sync-realtime-v303.cjs'],
   ['tests/market-risk-v222.cjs'],
-  ['tests/stock-orders-v213.dom.mjs'],
-  ['tests/web-stock-draft-v214.dom.mjs'],
+  // Stock order UI is retired; verify that every runtime entry is closed instead.
+  ['tests/stocks-disabled-v318.cjs'],
   ['tests/web-interface-v313.dom.mjs'],
   ['tests/galagram-v159.cjs'],
   ['tests/galagram-v315.server.cjs'],

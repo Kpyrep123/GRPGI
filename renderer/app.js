@@ -2531,6 +2531,7 @@ window.GRPGInstallGlobalStockExchangeV1074 = function(){
   }
 
   function renderV1074() {
+    tab='goods';
     const planet=Data.getPlanet(UI.selectedPlanetId),rawUser=App.currentUser;if(!planet||!rawUser||!isEntityVisible(planet))return;const user=normalizePlayerProfileV2(rawUser);Object.assign(rawUser,user);const access=getMarketAccessState(user,planet.id),rotation=rotationV1074(planet),offers=rotation.offers.filter(row=>stockItemV1074(Data.getItem(row.itemId))===(tab==='stocks'));
     if(selected){const item=Data.getItem(selected.itemId);if(!item||stockItemV1074(item)!==(tab==='stocks'))selected=null;}
     $('#market-title').textContent=`ТОРГОВЫЙ ТЕРМИНАЛ · ${planet.name.toUpperCase()}`;$('#market-subtitle').textContent=`Игровой день рынка: ${formatLoreDateV1075(rotation.rotationKey, { includeTime:false })}`;$('#market-balance').textContent=formatCredits(user.credits);$('#market-planet').textContent=planet.name;
@@ -2541,7 +2542,7 @@ window.GRPGInstallGlobalStockExchangeV1074 = function(){
     const categoryPicker=tab==='goods'?`<div class="market-categories-v144" role="group" aria-label="Категории товаров"><button class="secondary ${goodsCategoryV144==='all'?'active':''}" type="button" aria-pressed="${goodsCategoryV144==='all'}" data-market-category-v144="all">Все <span>${offers.length}</span></button>${categories.map(row=>`<button class="secondary ${goodsCategoryV144===row.label?'active':''}" type="button" aria-pressed="${goodsCategoryV144===row.label}" data-market-category-v144="${esc(row.label)}">${esc(row.label)} <span>${row.count}</span></button>`).join('')}</div>`:'';
     const root=$('#market-items');const stockMode=tab==='stocks',tradeAllowed=access.canBuy&&(!stockMode||rotation.stockMarketEnabled);
     root.classList.toggle('highlight-compatible-equipment',window.GRPGMarketCategoriesV144.highlight);
-    root.innerHTML=`<div class="market-terminal-v1071 ${tradeAllowed?'':'locked'}"><div class="market-tabs-v1073"><button class="secondary ${!stockMode?'active':''}" type="button" data-market-tab-v1074="goods">ТОВАРЫ</button><button class="secondary ${stockMode?'active':''}" type="button" data-market-tab-v1074="stocks">АКЦИИ</button></div><div class="market-access-banner-v1071 ${tradeAllowed?'ok':'err'}">${!access.canBuy?`<b>Торговля заблокирована.</b> ${esc(access.reason)}`:stockMode&&!rotation.stockMarketEnabled?'<b>На этой планете нет фондового рынка.</b> Портфель доступен для просмотра, торговые операции отключены.':stockMode?`Глобальная биржа открыта. Все акции доступны по единым ценам. Игровой день: <b>${esc(formatLoreDateV1075(rotation.rotationKey, { includeTime:false }))}</b>.`:`Торговля товарами доступна на планете <b>${esc(planet.name)}</b>. Продажа — 70% текущей цены.`}</div><div class="market-dual-grid-v1071 ${stockMode?'stock-layout-v1074':''}"><section class="market-pane-v1071 market-stock-pane-v1071" data-market-stock-drop-v1074><div class="market-pane-head-v1071"><div><span class="mono accent">${stockMode?'БИРЖА':'ТОВАРЫ'}</span><b>${stockMode?'Биржевые котировки':'Товары'}</b></div><span>${filteredOffers.length} поз.</span></div>${categoryPicker}${stockMode?'':window.GRPGMarketCategoriesV144.compatibilityToggle()}<div class="${stockMode?'stock-quotes-grid-v1074':'market-shop-grid-v1071'}">${filteredOffers.map(offerTileV1074).join('')||`<div class="small-note">${stockMode?'Фондовый рынок недоступен.':'В текущей ротации нет товаров.'}</div>`}</div></section><section class="market-pane-v1071">${stockMode?portfolioMarkupV1074(user,rotation):`<div class="market-pane-head-v1071"><div><span class="mono accent">ИНВЕНТАРЬ</span><b>Инвентарь</b></div><span>${formatCredits(user.credits)}</span></div>${goodsInventoryMarkupV1074(user,rotation.allOffers)}`}</section></div>${selectionMarkupV1074(user,planet,rotation)}</div>`;
+    root.innerHTML=`<div class="market-terminal-v1071 ${tradeAllowed?'':'locked'}"><div class="market-tabs-v1073"><button class="secondary ${!stockMode?'active':''}" type="button" data-market-tab-v1074="goods">ТОВАРЫ</button></div><div class="market-access-banner-v1071 ${tradeAllowed?'ok':'err'}">${!access.canBuy?`<b>Торговля заблокирована.</b> ${esc(access.reason)}`:stockMode&&!rotation.stockMarketEnabled?'<b>На этой планете нет фондового рынка.</b> Портфель доступен для просмотра, торговые операции отключены.':stockMode?`Глобальная биржа открыта. Все акции доступны по единым ценам. Игровой день: <b>${esc(formatLoreDateV1075(rotation.rotationKey, { includeTime:false }))}</b>.`:`Торговля товарами доступна на планете <b>${esc(planet.name)}</b>. Продажа — 70% текущей цены.`}</div><div class="market-dual-grid-v1071 ${stockMode?'stock-layout-v1074':''}"><section class="market-pane-v1071 market-stock-pane-v1071" data-market-stock-drop-v1074><div class="market-pane-head-v1071"><div><span class="mono accent">${stockMode?'БИРЖА':'ТОВАРЫ'}</span><b>${stockMode?'Биржевые котировки':'Товары'}</b></div><span>${filteredOffers.length} поз.</span></div>${categoryPicker}${stockMode?'':window.GRPGMarketCategoriesV144.compatibilityToggle()}<div class="${stockMode?'stock-quotes-grid-v1074':'market-shop-grid-v1071'}">${filteredOffers.map(offerTileV1074).join('')||`<div class="small-note">${stockMode?'Фондовый рынок недоступен.':'В текущей ротации нет товаров.'}</div>`}</div></section><section class="market-pane-v1071">${stockMode?portfolioMarkupV1074(user,rotation):`<div class="market-pane-head-v1071"><div><span class="mono accent">ИНВЕНТАРЬ</span><b>Инвентарь</b></div><span>${formatCredits(user.credits)}</span></div>${goodsInventoryMarkupV1074(user,rotation.allOffers)}`}</section></div>${selectionMarkupV1074(user,planet,rotation)}</div>`;
   }
   UI.renderMarket=renderV1074;
 
@@ -2566,6 +2567,7 @@ window.GRPGInstallGlobalStockExchangeV1074 = function(){
     await App.saveState(`${action==='buy'?'Куплено':'Продано'}: ${item?.name||itemId}${amount>1?` × ${amount}`:''}`);return{ok:true,quantity:amount,total};
   }
   async function transactV1074(payload) {
+    if(window.GRPGMarketEngineV1071.isStock(Data.getItem(payload.itemId)||{}))throw Error('Биржа отключена');
     const user=App.currentUser,planet=Data.getPlanet(UI.selectedPlanetId),access=getMarketAccessState(user,planet?.id);
     if(!access.canBuy)throw new Error(access.reason);
     if(!Sync?.config?.enabled)return localTransactionV1074(payload);
@@ -2604,7 +2606,7 @@ window.GRPGInstallGlobalStockExchangeV1074 = function(){
   }
 
   document.addEventListener('click',event=>{
-    const tabButton=event.target?.closest?.('[data-market-tab-v1074]');if(tabButton&&tabButton.closest('#market-items')){tab=tabButton.dataset.marketTabV1074==='stocks'?'stocks':'goods';selected=null;renderV1074();return;}
+    const tabButton=event.target?.closest?.('[data-market-tab-v1074]');if(tabButton&&tabButton.closest('#market-items')){tab='goods';selected=null;renderV1074();return;}
     const category=event.target?.closest?.('[data-market-category-v144]');if(category&&category.closest('#market-items')){goodsCategoryV144=category.dataset.marketCategoryV144;selected=null;renderV1074();return;}
     const tile=event.target?.closest?.('[data-market-v1074]');if(tile&&tile.closest('#market-items')){selected={source:String(tile.dataset.source||''),itemId:String(tile.dataset.itemId||''),side:tile.dataset.positionSide,unitIndex:Number(tile.dataset.unitIndex??-1)};renderV1074();return;}
     const step=event.target?.closest?.('[data-market-qty-step-v139]');if(step&&step.closest('#market-items')){const control=step.closest('[data-market-quantity-v139]'),input=control?.querySelector('[data-market-qty-input-v139]');if(input)input.value=String((Math.trunc(Number(input.value)||1))+(Math.trunc(Number(step.dataset.marketQtyStepV139)||0)));updateQuantityControlV139(control);return;}
@@ -7636,7 +7638,6 @@ const ITEM_TYPE_OPTIONS_V2 = [
   { value: 'shield', label: 'Щиты' },
   { value: 'armor', label: 'Броня' },
   { value: 'implant', label: 'Импланты' },
-  { value: 'stock', label: 'Акции' },
   { value: 'gear', label: 'Снаряжение' },
   { value: 'misc', label: 'Разное' },
   { value: 'tech', label: 'Техника' },
@@ -17204,6 +17205,7 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
   }
 
   function renderOrganizationTickerV48() {
+    return ''; // Stock exchange disabled.
     const orgs = getVisibleOrganizationsV48();
     if (!orgs.length) return '';
     const row = orgs.map(org => {
@@ -17226,10 +17228,6 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
       if (spans[0]) spans[0].textContent = formatQuotePriceV48(q.price);
       if (spans[1]) spans[1].textContent = `${up ? '▲' : '▼'} ${Math.abs(q.percent).toFixed(2)}%`;
     });
-  }
-
-  if (!window.__orgTickerIntervalV48) {
-    window.__orgTickerIntervalV48 = setInterval(refreshOrganizationTickerV48, 2000);
   }
 
   worldLoadSteps.push(function loadOrganizations(payload) {
@@ -17287,7 +17285,7 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
     org = normalizeOrganizationV48(org);
     return `
       <form id="config-editor-form" class="form" data-entity-type="organizations">
-        ${this.renderHeader(org, 'Организация кампании. Данные используются для имитации биржевой строки во вкладке «Новости».')}
+        ${this.renderHeader(org, 'Организация кампании.')}
         ${imageFieldMarkup(org, 'Логотип / знак организации')}
         <div class="cols3">
           <div class="field"><label>ID</label><input class="input" name="id" value="${esc(org.id)}" /></div>
@@ -17296,9 +17294,9 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
         </div>
         <div class="cols4 cols-responsive-4">
           <div class="field"><label>Сектор</label><input class="input" name="sector" value="${esc(org.sector || '')}" placeholder="Транспорт / Добыча / Безопасность" /></div>
-          <div class="field"><label>Цена акции</label><input class="input" type="number" min="0" step="0.01" name="stockPrice" value="${Number(org.stockPrice || 0)}" /></div>
-          <div class="field"><label>Дневное изменение %</label><input class="input" type="number" step="0.01" name="dayChange" value="${Number(org.dayChange || 0)}" /></div>
-          <div class="field"><label>Волатильность</label><input class="input" type="number" min="0" max="25" step="0.1" name="volatility" value="${Number(org.volatility || 0)}" /></div>
+
+
+
         </div>
         <div class="cols2">
           <div class="field"><label>Капитализация / масштаб</label><input class="input" name="marketCap" value="${esc(org.marketCap || '')}" placeholder="2.4T / Доминирующий дом / Средний актив" /></div>
@@ -17360,9 +17358,9 @@ Sync.applyRemoteSnapshot = async function(payload, remoteMeta = {}, options = {}
         ticker: String(formData.get('ticker') || '').trim().toUpperCase(),
         sector: String(formData.get('sector') || '').trim(),
         description: String(formData.get('description') || '').trim(),
-        stockPrice: Number(formData.get('stockPrice') || 0),
-        dayChange: Number(formData.get('dayChange') || 0),
-        volatility: Number(formData.get('volatility') || 0),
+        stockPrice: formData.has('stockPrice')?Number(formData.get('stockPrice')||0):(ORGANIZATIONS[String(formData.get('id'))]?.stockPrice||0),
+        dayChange: formData.has('dayChange')?Number(formData.get('dayChange')||0):(ORGANIZATIONS[String(formData.get('id'))]?.dayChange||0),
+        volatility: formData.has('volatility')?Number(formData.get('volatility')||0):(ORGANIZATIONS[String(formData.get('id'))]?.volatility||0),
         marketCap: String(formData.get('marketCap') || '').trim(),
         color: String(formData.get('color') || '#7df9ff').trim() || '#7df9ff',
         image,
@@ -20928,7 +20926,6 @@ function legacyRegionMapsV181() {
     { value: 'drone', label: 'Дроны' },
     { value: 'armor', label: 'Броня' },
     { value: 'implant', label: 'Импланты' },
-    { value: 'stock', label: 'Акции' }
   ];
   const APPROVAL_V1052 = new Set(['approved', 'pending', 'rejected']);
   let SOCIAL_ORIGINS_V1052 = {};
@@ -21270,6 +21267,7 @@ function legacyRegionMapsV181() {
   }
 
   Configurator.renderEquipmentEditor = function(rawItem) {
+    if(window.GRPGMarketEngineV1071?.isStock(rawItem))return '<p>Раздел отключён.</p>';
     const item = normalizeEquipmentItemV2(rawItem);
     const isWeapon = item.type === 'weapon';
     const isShield = item.type === 'shield';
@@ -21315,7 +21313,6 @@ function legacyRegionMapsV181() {
       <div class="item-specific-v1052 ${isDrone ? '' : 'hidden'}" data-for-item="drone">${unitCombatItemFieldsV105(item, 'Дрон')}</div>
       <div class="item-specific-v1052 ${isArmor ? '' : 'hidden'}" data-for-item="armor"><div class="field"><label>Класс брони</label><input class="input" type="number" min="0" name="armorClass" value="${Number(item.armorClass || 0)}" /></div>${requirementInputsV1052(item)}</div>
       <div class="item-specific-v1052 ${isImplant ? '' : 'hidden'}" data-for-item="implant"><div class="field"><label>Требуемая энергия</label><input class="input" type="number" min="0" name="energyRequired" value="${Number(item.energyRequired || 0)}" /></div>${requirementInputsV1052(item)}<div class="small-note">Установка импланта задаётся отдельно для каждого персонажа в разделе «Персонажи».</div></div>
-      <div class="item-specific-v1052 ${isStock ? '' : 'hidden'}" data-for-item="stock"><div class="cols3"><div class="field"><label>Тикер</label><input class="input" name="ticker" maxlength="12" value="${esc(item.ticker || '')}" placeholder="KTR" /></div><div class="field"><label>Стартовая цена</label><input class="input" type="number" min="0.01" step="0.01" name="stockMinPrice" value="${Number(item.stockMinPrice ?? 100)}" /></div><div class="field"><label>Волатильность</label><input class="input" type="number" min="0.05" max="3" step="0.05" name="stockVolatility" value="${Number(item.stockVolatility ?? 1)}" /></div></div><div class="small-note">Волатильность: 0,5 — стабильная акция; 1 — стандартная; 2 — высокая; 3 — экстремальная. Параметр меняет амплитуду, но не задаёт минимальную или максимальную цену.</div></div>
       <div class="item-specific-v1052 ${item.type === 'gear' ? '' : 'hidden'}" data-for-item="gear"><div class="small-note">Снаряжение хранится в инвентаре и не имеет урона, КБ, энергопотребления или требований характеристик.</div></div>
       <div class="field"><label>Теги (по одному на строку)</label><textarea class="area inv-editor" name="tags">${esc(listText(item.tags))}</textarea></div>
       <div class="field"><label>Связанные статьи</label>${renderRelatedArticlesEditor(item.relatedArticleIds || [])}</div>
@@ -21347,12 +21344,12 @@ function legacyRegionMapsV181() {
     return html;
   };
 
-  Configurator.equipmentCategoryV1052 = Configurator.equipmentCategoryV1052 || 'gear';
+  Configurator.equipmentCategoryV1052 = Configurator.equipmentCategoryV1052==='stock'?'gear':(Configurator.equipmentCategoryV1052||'gear');
   const __getItemsV1052 = Configurator.getItems.bind(Configurator);
   Configurator.getItems = function(type) {
     if (type === 'socialOrigins') return sortEntitiesForList(Object.values(SOCIAL_ORIGINS_V1052));
     if (type === 'geographicOrigins') return sortEntitiesForList(Object.values(GEOGRAPHIC_ORIGINS_V1052));
-    if (type === 'equipment') return sortEntitiesForList(Object.values(EQUIPMENT || {}).map(normalizeEquipmentItemV2).filter(item => item.type === this.equipmentCategoryV1052));
+    if (type === 'equipment') return sortEntitiesForList(Object.values(EQUIPMENT || {}).map(normalizeEquipmentItemV2).filter(item => item.type!=='stock'&&item.type === this.equipmentCategoryV1052));
     return __getItemsV1052(type);
   };
   const __renderEditorV1052 = Configurator.renderEditor.bind(Configurator);
@@ -22628,6 +22625,7 @@ function legacyRegionMapsV181() {
   // Fix the v1.0.66 WC equipment editor override: the later editor had hidden the new creation fields.
   const __renderEquipmentEditorV1067 = Configurator.renderEquipmentEditor.bind(Configurator);
   Configurator.renderEquipmentEditor = function(rawItem) {
+    if(window.GRPGMarketEngineV1071?.isStock(rawItem))return '<p>Раздел отключён.</p>';
     const item = normalizeEquipmentItemV2(rawItem);
     let html = __renderEquipmentEditorV1067(item);
     const anchor = `<div class="field"><label>Название</label><input class="input" name="name" value="${esc(item.name || '')}" /></div>`;
@@ -23671,24 +23669,15 @@ window.scrollVisibleMessageThreadToBottomV1070 = scrollVisibleMessageThreadToBot
   const renderCampaignBeforeStocksV1074 = Configurator.renderCampaignEditor?.bind(Configurator);
   if (renderCampaignBeforeStocksV1074) Configurator.renderCampaignEditor = function(entity) {
     let html = renderCampaignBeforeStocksV1074(entity);
-    const field = `<div class="field campaign-market-date-v1074"><label>Текущая игровая дата рынка</label><input class="input" type="date" name="marketDate" value="${esc(String(entity?.marketDate||entity?.gameDate||'').slice(0,10))}" /><div class="small-note">Смена этой даты переводит рынок на новый игровой день и обновляет котировки.</div></div>`;
+    const field = `<div class="field campaign-market-date-v1074"><label>Текущая игровая дата рынка</label><input class="input" type="date" name="marketDate" value="${esc(String(entity?.marketDate||entity?.gameDate||'').slice(0,10))}" /><div class="small-note">Смена этой даты переводит рынок на новый игровой день и обновляет ассортимент товаров.</div></div>`;
     return html.replace('<div class="field"><label>Описание</label>', field + '<div class="field"><label>Описание</label>');
-  };
-
-  const renderPlanetBeforeStocksV1074 = Configurator.renderPlanetEditor?.bind(Configurator);
-  if (renderPlanetBeforeStocksV1074) Configurator.renderPlanetEditor = function(entity) {
-    let html = renderPlanetBeforeStocksV1074(entity);
-    const legacyEnabled = Array.isArray(entity?.market) && entity.market.some(row=>normalizeEquipmentItemV2(EQUIPMENT?.[row?.itemId]||{}).type==='stock');
-    const enabled = typeof entity?.stockMarketEnabled === 'boolean' ? entity.stockMarketEnabled : legacyEnabled;
-    const field = `<label class="consent-line planet-stock-market-toggle-v1074"><input type="checkbox" name="stockMarketEnabled" ${enabled?'checked':''}/><span><b>На планете доступен фондовый рынок</b><small>При включении терминал показывает все акции кампании по единым глобальным ценам.</small></span></label>`;
-    return html.replace('<div class="field"><label>Рынок</label>', field + '<div class="field"><label>Рынок</label>');
   };
 
   const collectBeforeStocksV1074 = Configurator.collectEntity.bind(Configurator);
   Configurator.collectEntity = function(type, formEl, formData = new FormData(formEl)) {
     const entity = collectBeforeStocksV1074(type, formEl, formData);
     if (type === 'campaigns' && entity) entity.marketDate = String(formData.get('marketDate') || '').slice(0,10);
-    if (type === 'planets' && entity) entity.stockMarketEnabled = formData.get('stockMarketEnabled') === 'on';
+    // Dormant planet stock settings remain unchanged when unrelated fields are saved.
     return entity;
   };
 
@@ -23901,6 +23890,7 @@ window.scrollVisibleMessageThreadToBottomV1070 = scrollVisibleMessageThreadToBot
   }
 
   function renderMarketV1071() {
+    marketTabV1073='goods';
     const planet = Data.getPlanet(UI.selectedPlanetId);
     const user = App.currentUser;
     if (!planet || !user || !isEntityVisible(planet)) return;
@@ -23915,7 +23905,7 @@ window.scrollVisibleMessageThreadToBottomV1070 = scrollVisibleMessageThreadToBot
     $('#market-planet').textContent = planet.name;
     const root = $('#market-items');
     root.innerHTML = `<div class="market-terminal-v1071 ${access.canBuy?'':'locked'}">
-      <div class="market-tabs-v1073" role="tablist" aria-label="Раздел торгового терминала"><button class="secondary ${marketTabV1073 === 'goods' ? 'active' : ''}" type="button" role="tab" aria-selected="${marketTabV1073 === 'goods'}" data-market-tab-v1073="goods">ТОВАРЫ</button><button class="secondary ${marketTabV1073 === 'stocks' ? 'active' : ''}" type="button" role="tab" aria-selected="${marketTabV1073 === 'stocks'}" data-market-tab-v1073="stocks">АКЦИИ</button></div>
+      <div class="market-tabs-v1073" role="tablist" aria-label="Раздел торгового терминала"><button class="secondary ${marketTabV1073 === 'goods' ? 'active' : ''}" type="button" role="tab" aria-selected="${marketTabV1073 === 'goods'}" data-market-tab-v1073="goods">ТОВАРЫ</button></div>
       <div class="market-access-banner-v1071 ${access.canBuy?'ok':'err'}">${access.canBuy ? `Торговля доступна на планете <b>${esc(planet.name)}</b>. Обычные товары продаются за 70%, акции — за 100% текущей цены.` : `<b>Торговля заблокирована.</b> ${esc(access.reason)}`}</div>
       <div class="market-dual-grid-v1071">
         <section class="market-pane-v1071 market-stock-pane-v1071" data-market-stock-drop-v1071><div class="market-pane-head-v1071"><div><span class="mono accent">${marketTabV1073 === 'stocks' ? 'АКЦИИ' : 'ТОВАРЫ'}</span><b>${marketTabV1073 === 'stocks' ? 'Акции' : 'Товары'}</b></div><span>${visibleOffers.length} поз.</span></div><div class="market-shop-grid-v1071">${visibleOffers.map(marketOfferTileV1071).join('') || `<div class="small-note">В текущей ротации нет ${marketTabV1073 === 'stocks' ? 'акций' : 'товаров'}.</div>`}</div></section>
@@ -23984,7 +23974,7 @@ window.scrollVisibleMessageThreadToBottomV1070 = scrollVisibleMessageThreadToBot
 
   document.addEventListener('click', event => {
     const tab=event.target?.closest?.('[data-market-tab-v1073]');
-    if(tab&&tab.closest('#market-items')){marketTabV1073=tab.dataset.marketTabV1073==='stocks'?'stocks':'goods';selection=null;renderMarketV1071();return;}
+    if(tab&&tab.closest('#market-items')){marketTabV1073='goods';selection=null;renderMarketV1071();return;}
     const tile=event.target?.closest?.('[data-market-drag-v1071]');
     if(tile&&tile.closest('#market-items')){selection={source:String(tile.dataset.source||''),itemId:String(tile.dataset.itemId||''),unitIndex:Number(tile.dataset.unitIndex??-1)};renderMarketV1071();return;}
     const action=event.target?.closest?.('[data-market-action-v1071]');

@@ -354,6 +354,15 @@ run(`UI.activeModuleId='config';window.renders302=0;window.renderBefore302=Confi
 await run('Configurator.submit({preventDefault(){},currentTarget:window.currentForm})');
 assert.equal(w.renders302,1,'submit must not render the active form a second time '+JSON.stringify({notices:w.notices,errors}));
 assert.equal(w.notices.some(n=>n.type==='err'),false,JSON.stringify(w.notices));
+// Retired exchange: the actual World Config no longer offers stock types or portfolio controls.
+run("Configurator.insertEntity('equipment',{id:'stock_retired',type:'stock',name:'Retired share',stockMinPrice:123});Configurator.equipmentCategoryV1052='stock';");
+assert.equal(run("Configurator.getItems('equipment').some(i=>i.type==='stock')"),false);
+assert.equal(run("Configurator.renderEquipmentEditor(EQUIPMENT.stock_retired).includes('config-editor-form')"),false);
+render('equipment','weapon');assert.equal(w.document.querySelectorAll('[data-equipment-category-v1052="stock"],[data-for-item="stock"],[data-stock-config-v213]').length,0);
+assert.equal([...w.document.querySelector('[name=type]').options].some(o=>o.value==='stock'),false);
+run("window.portfolio318={positions:{stock_retired:{knownQty:2,costBasis:246}},shortPositions:{},ledger:[{id:'keep'}]};App.state.users.gm.stockPortfolio=JSON.parse(JSON.stringify(window.portfolio318));");
+render('players','gm');assert.equal(w.document.querySelectorAll('[data-stock-config-v213]').length,0);assert.equal(run('JSON.stringify(App.state.users.gm.stockPortfolio)'),JSON.stringify(w.portfolio318));
+assert(!html.includes('./stock-exchange-v148.js'));assert(!html.includes('./stock-config-v213.js'));
 assert.deepEqual(errors,[]);
 await w.happyDOM.abort();fs.rmSync(scratch,{recursive:true,force:true});
 console.log('v134 PASS: all renderer scripts load; real World Config forms/submit/save/reload for drones, turrets, ammo, weapons; zero and negative stats; actual JSON buttons/export/import; toolbar across sections.');

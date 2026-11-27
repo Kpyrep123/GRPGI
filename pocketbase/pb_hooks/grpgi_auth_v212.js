@@ -262,6 +262,10 @@ function protectPlayer(e, creating) {
 // Retired sessions must not keep writing through older, publicly callable routes.
 function guard(e) {
   var method = String(e.request.method), path = String(e.request.url.path);
+  if(/^\/api\/(?:grpgi\/)?stock-exchange(?:-v\d+)?(?:\/|$)/.test(path)||/^\/api\/grpgi\/market\/transaction(?:-v\d+)?$/.test(path)){
+    var disabledStocks=require(__hooks+'/grpgi_stocks_disabled_v318.js');
+    if(disabledStocks.blocked(e))return disabledStocks.deny(e);
+  }
   if (['POST','PUT','PATCH','DELETE'].indexOf(method)>=0 && path.indexOf('/api/grpgi/auth-v212/raids-v290')!==0 && path!=='/api/grpgi/character-applications/submit' && !/^\/api\/grpgi\/auth-v212\/(login|session|recovery\/)/.test(path) && e.request.header?.get('X-GRPGI-Session')) {
     var raidActor=actor(e);
     if(!raidActor.getBool('dm')) {

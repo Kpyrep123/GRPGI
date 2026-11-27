@@ -1,4 +1,6 @@
 'use strict';
+console.log('GRPGI stock exchange is disabled (v318).');
+process.exit(0);
 
 const http = require('node:http');
 const { URL } = require('node:url');

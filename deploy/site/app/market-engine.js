@@ -140,9 +140,7 @@
   }
 
   function stockMarketEnabled(planet = {}, equipment = {}) {
-    if (typeof planet.stockMarketEnabled === 'boolean') return planet.stockMarketEnabled;
-    if (typeof planet.hasStockMarket === 'boolean') return planet.hasStockMarket;
-    return (Array.isArray(planet.market) ? planet.market : []).some(entry => isStock(equipmentItem(equipment, String(entry?.itemId || '')) || {}));
+    return false; // Stock trading is disabled globally, including legacy planet flags.
   }
 
   function claimKey(campaignId, planetId, day, itemId) {
@@ -238,7 +236,7 @@
       const soldClaim = config.unique ? claims[key] : null;
       offers.push({ ...quote, sold: Boolean(soldClaim), soldClaim: soldClaim || null, claimKey: key });
     });
-    const quotes = buildStockQuotes({ campaignId, equipment, planets, marketState, now, gameDate, campaign });
+    const quotes = []; // No quote generation while the exchange is disabled.
     const stockEnabled = stockMarketEnabled(planet, equipment);
     if (stockEnabled) {
       quotes.forEach(quote => offers.push({ ...quote, sold: false, soldClaim: null, claimKey: claimKey(campaignId, 'global-stock', day, quote.itemId) }));

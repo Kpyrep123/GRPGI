@@ -1,0 +1,30 @@
+'use strict';
+const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),os=require('node:os'),path=require('node:path'),{spawnSync,spawn}=require('node:child_process');
+const helper=require('../pocketbase/pb_hooks/grpgi_stocks_disabled_v318.js');
+let touches=0;const forbiddenDB=new Proxy({}, {get(){touches++;throw Error('Unexpected database access');}});
+const event=(url,method='POST',body={})=>({request:{url:{path:url},method},requestInfo:()=>({body}),app:forbiddenDB,json:(status,data)=>({status,data})});
+for(const suffix of ['', '/order','/cancel','/impulse','/tick','/portfolio','/mode','/stream']){
+ const e=event('/api/grpgi/stock-exchange-v148'+suffix);assert(helper.blocked(e));assert.equal(helper.deny(e).status,410);
+}
+assert.equal(touches,0,'exchange endpoints never read the DB');assert(helper.blocked(event('/api/stock-exchange/main/order')));assert(helper.blocked(event('/api/grpgi/market/transaction-v139','POST',{itemId:'stock_foo'})));
+assert(!helper.blocked(event('/api/grpgi/auth-v212/planning-v316/state','GET')));
+const custom=event('/api/grpgi/market/transaction-v139','POST',{campaignId:'main',itemId:'custom-share'});custom.app={findFirstRecordByFilter:()=>({getString:()=>JSON.stringify({equipment:{EQUIPMENT:{'custom-share':{type:'stock'},tool:{type:'gear'}}}})})};assert(helper.blocked(custom));custom.requestInfo=()=>({body:{campaignId:'main',itemId:'tool'}});assert(!helper.blocked(custom),'ordinary equipment is not blocked');
+// Actual PocketBase route handlers and global auth guard both stop before stock code or auth/DB writes.
+const ctx={module:{exports:{}},__hooks:'.',require:p=>{assert(p.endsWith('/grpgi_stocks_disabled_v318.js'));return helper;}};vm.createContext(ctx);vm.runInContext(fs.readFileSync('pocketbase/pb_hooks/grpgi_auth_v212.js','utf8'),ctx);assert.equal(ctx.module.exports.guard(event('/api/grpgi/stock-exchange-v148/order')).status,410);
+const routes=[];vm.runInNewContext(fs.readFileSync('pocketbase/pb_hooks/grpgi_stock_exchange_v148.pb.js','utf8'),{routerAdd:(method,url,fn)=>routes.push({method,url,fn}),require:()=>helper,__hooks:'.'});assert.equal(routes.length,40);for(const r of routes)assert.equal(r.fn(event(r.url,r.method)).status,410);
+const oldCtx={module:{exports:{}},require:()=>helper,__hooks:'.'};vm.createContext(oldCtx);vm.runInContext(fs.readFileSync('pocketbase/pb_hooks/grpgi_stock_exchange_v148.js','utf8'),oldCtx);for(const fn of ['get','order','cancel','manualImpulse','tickAll','portfolio','mode'])assert.equal(oldCtx.module.exports[fn](event('/api/grpgi/stock-exchange-v148')).status,410);
+for(const file of ['stock-worker/worker.js','market-service/server.js']){
+ let imports=0,exits=0;const stopped={};assert.throws(()=>vm.runInNewContext(fs.readFileSync(file,'utf8'),{console:{log(){}},process:{exit(code){assert.equal(code,0);exits++;throw stopped;}},require(){imports++;throw Error('must not open modules');}}),e=>e===stopped);assert.equal(imports,0);assert.equal(exits,1);
+ const result=spawnSync(process.execPath,[file],{env:{...process.env,MARKET_DB:'/does-not-exist/db',POCKETBASE_DB:'/does-not-exist/pb',GRPGI_STOCK_WORKER_TOKEN:''},encoding:'utf8'});assert.equal(result.status,0,result.stderr);
+}
+require('../renderer/market-engine.js');const engine=global.GRPGMarketEngineV1071,equipment={stock_x:{id:'stock_x',type:'stock'},tool:{id:'tool',type:'gear',price:20}},planet={id:'p',stockMarketEnabled:true,market:[{itemId:'stock_x',appearanceChance:100,minPrice:10,maxPrice:10},{itemId:'tool',appearanceChance:100,minPrice:20,maxPrice:20}]};assert.equal(engine.stockMarketEnabled(planet,equipment),false);const rotation=engine.buildRotation({campaignId:'main',planet,equipment,planets:{p:planet}});assert.equal(rotation.quotes.length,0);assert(rotation.offers.some(o=>o.itemId==='tool'));assert(!rotation.offers.some(o=>o.itemId==='stock_x'));
+const legacyMarket=require('../sync-server/market-engine.js');assert(!legacyMarket.buildRotation({planet,equipment}).offers.some(o=>o.itemId==='stock_x'));assert.throws(()=>legacyMarket.executeTransaction({world:{equipment:{EQUIPMENT:equipment}},itemId:'stock_x'}),/Биржа отключена/);
+// The main process refuses old IPC invocations without reading config or making network requests.
+const main=fs.readFileSync('main.js','utf8'),start=main.indexOf("ipcMain.handle('stock-exchange:get'"),end=main.indexOf("ipcMain.handle(",main.indexOf("ipcMain.handle('stock-exchange:impulse'")+20),handlers={};vm.runInNewContext(main.slice(start,end),{ipcMain:{handle:(name,fn)=>handlers[name]=fn}});
+(async()=>{for(const fn of Object.values(handlers))assert.equal((await fn(null,{})).status,'disabled');assert.equal(Object.keys(handlers).length,6);
+ // Real legacy HTTP server rejects stock aliases, but health and ordinary sync remain available.
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'stocks318-')),port=19000+Math.floor(Math.random()*10000),child=spawn(process.execPath,['sync-server/server.js'],{env:{...process.env,PORT:String(port),HOST:'127.0.0.1',DATA_DIR:dir,SYNC_TOKEN:'test'},stdio:['ignore','pipe','pipe']});
+ try{let ready=false;for(let i=0;i<80;i++){try{const r=await fetch(`http://127.0.0.1:${port}/health`,{headers:{Authorization:'Bearer test'}});if(r.ok){ready=true;break;}}catch{}await new Promise(r=>setTimeout(r,50));}assert(ready,'sync server starts');for(const p of ['/api/grpgi/stock-exchange-v148/order','/api/stock-exchange/main/portfolio'])assert.equal((await fetch(`http://127.0.0.1:${port}${p}`,{method:'POST',headers:{Authorization:'Bearer test'}})).status,410);assert.equal(fs.readdirSync(dir).filter(f=>f.includes('stock')).length,0);
+ }finally{child.kill();await new Promise(resolve=>child.once('exit',resolve));fs.rmSync(dir,{recursive:true,force:true});}
+ console.log('PASS stocks disabled: PB middleware + 40 routes + old handlers, custom stock transactions denied, IPC without IO, workers exit before imports/DB/timers, zero quotes, goods preserved and legacy HTTP closed');
+})().catch(e=>{console.error(e);process.exitCode=1;});

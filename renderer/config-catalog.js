@@ -20,7 +20,7 @@
   };
   const commonFacets = [['Категория', item => text(item.category)], ['Тип', item => text(item.type)], ['Статус', item => text(item.status)]];
   function catalogItems(type){
-    if(type==='equipment')return Object.values(EQUIPMENT || {}).map(normalizeEquipmentItemV2);
+    if(type==='equipment')return Object.values(EQUIPMENT || {}).map(normalizeEquipmentItemV2).filter(item=>item.type!=='stock');
     return Configurator.getItems(type);
   }
   function showCatalog(panel,type){
