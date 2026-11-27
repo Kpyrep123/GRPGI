@@ -363,6 +363,18 @@ assert.equal([...w.document.querySelector('[name=type]').options].some(o=>o.valu
 run("window.portfolio318={positions:{stock_retired:{knownQty:2,costBasis:246}},shortPositions:{},ledger:[{id:'keep'}]};App.state.users.gm.stockPortfolio=JSON.parse(JSON.stringify(window.portfolio318));");
 render('players','gm');assert.equal(w.document.querySelectorAll('[data-stock-config-v213]').length,0);assert.equal(run('JSON.stringify(App.state.users.gm.stockPortfolio)'),JSON.stringify(w.portfolio318));
 assert(!html.includes('./stock-exchange-v148.js'));assert(!html.includes('./stock-config-v213.js'));
+// Hub terminal uses the same real assortment modal, draft and normal save as a planet terminal.
+run("Configurator.insertEntity('planets',{id:'hub_terminal319',name:'Hub terminal',locationType:'hub',market:[],hub:{maps:[],dialogs:[]}})");render('planets','hub_terminal319');
+let hubForm319=w.document.getElementById('config-editor-form');const hubEditor319=hubForm319.querySelector('[data-edit-planet-assortment171]');assert(hubEditor319);
+hubEditor319.click();let hubModal319=w.document.querySelector('.assortment-overlay-v171');assert(hubModal319);assert(hubModal319.querySelector('.checkbox-picker-v172'),'multi-value filters use the shared picker');
+let hubItem319=hubModal319.querySelector('[data-stock-item173="weapon"]');assert(hubItem319);hubItem319.checked=true;hubItem319.dispatchEvent(new w.Event('change',{bubbles:true}));hubModal319.querySelector('[data-cancel171]').click();
+assert.equal(JSON.parse(hubForm319.elements.assortmentPolicy171.value),null,'cancelling keeps the parent draft unchanged');assert.equal(run('PLANETS.hub_terminal319.assortmentPolicy==null'),true);
+hubEditor319.click();hubModal319=w.document.querySelector('.assortment-overlay-v171');hubItem319=hubModal319.querySelector('[data-stock-item173="weapon"]');hubItem319.checked=true;hubItem319.dispatchEvent(new w.Event('change',{bubbles:true}));hubModal319.querySelector('[data-save171]').click();
+assert(JSON.parse(hubForm319.elements.assortmentPolicy171.value).overrides.weapon.enabled);assert.equal(run('PLANETS.hub_terminal319.assortmentPolicy==null'),true,'applying modal edits only the parent form');
+w.currentForm=hubForm319;await run('Configurator.submit({preventDefault(){},currentTarget:window.currentForm})');
+const hubSaved319=JSON.parse(fs.readFileSync(path.join(scratch,'world.json'),'utf8')).planets.PLANETS.hub_terminal319;assert.equal(hubSaved319.locationType,'hub');assert(hubSaved319.assortmentPolicy.overrides.weapon.enabled);assert(hubSaved319.market.some(r=>r.itemId==='weapon'));
+await run('window.electronAPI.loadWorldData().then(result=>applyWorldData(result.world))');render('planets','hub_terminal319');assert(JSON.parse(w.document.querySelector('[name=assortmentPolicy171]').value).overrides.weapon.enabled);
+render('equipment','weapon');assert(w.document.querySelector('[data-item-destination171=\'["planet","hub_terminal319","",""]\']'),'hub terminal is editable from the equipment card');
 assert.deepEqual(errors,[]);
 await w.happyDOM.abort();fs.rmSync(scratch,{recursive:true,force:true});
 console.log('v134 PASS: all renderer scripts load; real World Config forms/submit/save/reload for drones, turrets, ammo, weapons; zero and negative stats; actual JSON buttons/export/import; toolbar across sections.');

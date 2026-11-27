@@ -82,6 +82,7 @@ try {
   App.ui.screen='market';renderCurrentScreen();assert.equal(w.document.querySelectorAll('#screen-market [data-web-market-tab-v1073="stocks"],#screen-market .stock-orders-v148').length,0);
   assert.equal(JSON.stringify(App.data.players.get('p').stockPortfolio),JSON.stringify(portfolio318));
   const fake=w.document.createElement('button');fake.dataset.webMarketTabV1073='stocks';w.document.getElementById('screen-market').append(fake);fake.click();assert.equal(w.document.querySelectorAll('#screen-market .stock-orders-v148').length,0,'old stock navigation cannot open the exchange');
+  App.ui.screen='hub-v153';w.GRPGHubBridgeV153.openMarket();assert.equal(App.ui.screen,'market');assert.equal(w.document.querySelectorAll('#screen-market [data-web-market-tab-v1073="stocks"],#screen-market .stock-orders-v148').length,0);assert(w.document.querySelector('#screen-market [data-web-market-tab-v1073="goods"]'));
   console.log('PASS web v313: actual app navigation/render, current section, single initialization, no animation on realtime redraw, preserved draft/focus, reduced motion, GalaGram mapping');
 } finally {
   await w.happyDOM.abort();

@@ -6382,6 +6382,7 @@ function stockFeesV213(fees){if(!fees)return 'Тарифы загрузятся 
     commit: (mutator, notice = 'Состояние хаба сохранено') => commitPlayerMutation(mutator, notice, { rerender: false }),
     openArticle: id => openArticleById(String(id || ''), { directAccess: true }),
     openHub: () => { App.ui.screen = 'hub-v153'; renderCurrentScreen(); },
+    openMarket: () => { marketTabWebV1073='goods';App.ui.screen='market';renderCurrentScreen(); },
     openStocks: () => notify('Биржа отключена','err'),
     notify,
     esc,

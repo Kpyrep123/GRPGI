@@ -20,7 +20,7 @@ const map = { id: 'main', width: 1000, height: 600, objects: [], spawnPoints: [{
 const planet = { id: 'dock', locationType: 'hub', hub: { maps: [map] } };
 let player = { id: 'p', currentPlanetId: planet.id, textInventoryItems: [{ name: '<a href="article:permit">Допуск &amp; пропуск</a>', qty: 1 }] };
 let active = true;
-let writes = 0;
+let writes = 0,terminalOpens319=0;
 let fail = false;
 const notices = [];
 const root = window.document.createElement('main');
@@ -36,6 +36,7 @@ assert.equal(core.reason({ conditions: [{ ...rule.conditions[0], value: false }]
 
 const runtime = window.GRPGHubRuntimeV156.create({
   root: () => root,
+  openMarket: () => {terminalOpens319++;},
   currentPlayer: () => player,
   currentPlanet: () => planet,
   isActive: () => active,
@@ -60,6 +61,7 @@ function advance(milliseconds) {
 
 try {
   runtime.show();
+  root.querySelector('[data-market-terminal]').click();assert.equal(terminalOpens319,1);assert.equal(root.querySelector('[data-stocks]'),null);
   const mapNode = root.querySelector('[data-runtime-map]');
   const token = root.querySelector('.hub-player-v153');
   const first = runtime.walk(460, 300);
